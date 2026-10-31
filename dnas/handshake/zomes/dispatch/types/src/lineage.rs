@@ -197,6 +197,27 @@ pub fn wrote_any(author: &AgentPubKey, chain_top: &ActionHash, order: &ActionHas
     Ok(false)
 }
 
+/// Where the dispatch zome's `OrderConfirmation` and `DeclineNoted` entry
+/// types sit (asserted in `dispatch_integrity`) -- for other zomes'
+/// validation to find a customer's confirmations on their chain.
+pub const ORDER_CONFIRMATION_INDEX: u8 = 14;
+pub const DECLINE_NOTED_INDEX: u8 = 15;
+
+/// The dispatch zome's entry type at `index`, found by the zome's name in
+/// this DNA.
+pub fn dispatch_entry_type(index: u8) -> ExternResult<Option<ScopedEntryDefIndex>> {
+    let Some(zome) = dna_info()?.zome_names.iter().position(|z| z.0 == "dispatch_integrity") else { return Ok(None) };
+    Ok(Some(ScopedEntryDefIndex { zome_index: ZomeIndex(zome as u8), zome_type: EntryDefIndex(index) }))
+}
+
+/// Whether `customer` confirmed seeing their store start on `order`
+/// (`OrderConfirmation`), from `chain_top` back to the order's placement.
+pub fn confirmed(customer: &AgentPubKey, chain_top: &ActionHash, order: &ActionHash) -> ExternResult<bool> {
+    let Some(confirmation) = dispatch_entry_type(ORDER_CONFIRMATION_INDEX)? else { return Ok(false) };
+    let placed = must_get_action(order.clone())?.hashed.content.header.timestamp;
+    Ok(handshake_integrity_support::chain::entries_since(customer, chain_top, placed, &[confirmation])?.into_iter().any(|bytes| super::OrderConfirmation::try_from(bytes).is_ok_and(|c| &c.order == order)))
+}
+
 /// Whether `version` is a version of the order `belongs` was seeded with,
 /// remembering the answer for every version walked through.
 fn of_order(version: &ActionHash, belongs: &mut std::collections::HashMap<ActionHash, bool>) -> ExternResult<bool> {

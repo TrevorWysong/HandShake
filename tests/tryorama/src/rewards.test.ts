@@ -1,33 +1,25 @@
-// A store's rewards program (docs/REWARDS.md): only its owner runs it;
-// points come only from what was paid -- earned once per settled order, at
-// the rate its program version set -- or from the store's own grants; and
-// they're spent only on a reward the member can afford, by one order each.
-// Points spent on an order the store calls off come back from the store.
-// Forgeries are written raw (test-utils), as a modified app would.
+// A store's rewards program (docs/REWARDS.md): only its owner runs it, and
+// nothing about a member's points is published -- the store works them out
+// from its own records, and its member's app the same from theirs. Points
+// come only from what was paid (once the refund period is over) or from the
+// store's own grants, sealed to the member; and they're spent only on a
+// reward the store accepts, after checking the member's points cover it.
+// An order the store never accepted spends nothing. Forgeries are written
+// raw (test-utils), as a modified app would.
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { ActionHash, Record as HcRecord } from "@holochain/client";
 import { ST_PETE, actionHash, bytesEqual, decodeEntry, retryUntil, retryUntilOk, retryingCaller, testApp, useTestCoordinators } from "./helpers.js";
 
-interface PointsState {
-  balance: number;
-  year: number;
-  earned_this_year: number;
-  earned_last_year: number;
-  lifetime_earned: number;
-  orders: number;
-  first_earned_at: number | null;
-  last_earned_at: number | null;
-}
 interface Card {
   balance: number;
+  reserved: number;
   tier: number;
-  state: PointsState | null;
   program: { version: ActionHash } | null;
-  history: { kind: Record<string, unknown>; points: number }[];
+  history: { kind: string; points: number; note: string | null }[];
 }
 interface Order {
-  rewards: { program: ActionHash; redemption: ActionHash | null } | null;
+  rewards: { program: ActionHash; reward: number | null } | null;
   order_total: number;
 }
 
@@ -65,6 +57,8 @@ await runScenario(async (scenario) => {
     rewards: [
       { id: 1, name: "Free bread", cost: 100, benefit: { FreeItem: { item_ref: bread, quantity: 1 } }, min_tier: 0 },
       { id: 2, name: "$5 off", cost: 50, benefit: { FlatOffSubtotal: 500 }, min_tier: 1 },
+      { id: 3, name: "$1 off", cost: 5000, benefit: { FlatOffSubtotal: 100 }, min_tier: 0 },
+      { id: 4, name: "$2 off", cost: 200, benefit: { FlatOffSubtotal: 200 }, min_tier: 0 },
     ],
     birthday_points: 0,
     expiry_days: null,
@@ -83,9 +77,12 @@ await runScenario(async (scenario) => {
   // ===== An order joins the program and earns once it's settled =====
   const pickup = (items: { item_ref: Uint8Array; quantity: number }[], order_total: number, reward: number | null = null) =>
     call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items, order_total, reward });
-  const fulfil = async (order: ActionHash) => {
+  const accept = async (order: ActionHash) => {
     await sync();
     await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order }));
+  };
+  const fulfil = async (order: ActionHash) => {
+    await accept(order);
     await call(merchant, "dispatch")("mark_ready_for_pickup", order);
     await sync();
     await retryUntilOk(() => call(customer, "dispatch")("complete_pickup", order), 40);
@@ -98,110 +95,99 @@ await runScenario(async (scenario) => {
   const firstRef = actionHash(first);
   assert.ok(decodeEntry<Order>(first).rewards, "it joins the store's program");
   await fulfil(firstRef);
-  // Earned by the customer's own sweep, or asked for here: either way once.
-  const earnedCard = await retryUntil(() => rewards(customer)("earn_for_order", firstRef).then(() => card()), (c) => c.balance > 0, 30, 1000);
-  if (earnedCard.balance === 0) console.log("settlement:", await call(customer, "dispatch")("order_settlement", firstRef), "card:", JSON.stringify(earnedCard));
-  // $10 of soup at 10 a dollar, $4 of bread at twice that, and the welcome.
-  assert.equal(earnedCard.balance, 100 + 80 + 50);
-  assert.equal(await rewards(customer)("earn_for_order", firstRef), null, "once");
-  console.log("[PASS] a settled order earns its food at the program's rate, bonus items faster, with a welcome -- once");
+  // $10 of soup at 10 a dollar, $4 of bread at twice that, and the welcome
+  // (a network without issuers has no cards to verify).
+  const earned = await retryUntil(() => card(), (c) => c.balance > 0, 30, 1000);
+  assert.equal(earned.balance, 100 + 80 + 50);
+  assert.deepEqual(earned.history.map((l) => [l.kind, l.points]), [["Earned", 230]], "what it earned, as the rules played it");
+  console.log("[PASS] a settled order earns its food at the program's rate, bonus items faster, with a welcome");
 
-  // ===== Nobody states their own points =====
-  const latest = async () => {
-    const c = await card();
-    const entry = c.history[0];
-    return { state: c.state!, hash: (entry as unknown as { entry: ActionHash }).entry };
-  };
-  const forge = async (p: typeof customer, kind: unknown, points: number, state: Partial<PointsState>, previous?: ActionHash | null) => {
-    const last = p === customer ? await latest() : { state: { balance: 0, year: 2026, earned_this_year: 0, earned_last_year: 0, lifetime_earned: 0, orders: 0, first_earned_at: null, last_earned_at: null }, hash: null };
-    return rewards(p)("create_raw_points_entry_for_testing", { catalog_ref: store, kind, points, state: { ...last.state, ...state }, previous: previous === undefined ? last.hash : previous });
-  };
-  const settlement = await call(customer, "dispatch")<ActionHash | null>("order_settlement", firstRef);
-  const before = (await latest()).state;
-  // What the real earning cited: the store's acceptance of the order.
-  const earnedLine = (await card()).history.find((line) => "Earn" in line.kind)!;
-  const { accepted } = (earnedLine.kind as { Earn: { accepted: ActionHash } }).Earn;
-  const earn = { Earn: { order: firstRef, settlement, accepted, ruling: null } };
-  await assert.rejects(forge(customer, earn, 230, { balance: before.balance + 230 }), /earns once/, "the same order twice");
-  await assert.rejects(forge(stranger, earn, 230, { balance: 230 }, null), /own customer/, "someone else's order");
-  await assert.rejects(forge(customer, { Earn: { ...earn.Earn, accepted: firstRef } }, 230, { balance: before.balance + 230 }), /store accepting/, "happy hours are judged by the store's acceptance, not a version the customer picks");
-  await assert.rejects(forge(customer, { Gift: { grant: firstRef } }, 1000, { balance: before.balance + 1000 }), /store's grant/, "a gift nobody gave");
-  await assert.rejects(forge(customer, { Redeem: { program: (await card()).program!.version, reward: 1 } }, 100, { balance: before.balance }), /must follow/, "spending without paying");
-  await assert.rejects(forge(customer, { Redeem: { program: (await card()).program!.version, reward: 1 } }, 100, { balance: before.balance - 100 }, null), /latest entry/, "nor by starting over");
-  console.log("[PASS] points can't be stated, earned twice, earned on another's order, gifted to oneself, or spent for free");
+  // ===== The store works out the same, from its own records =====
+  const redeemable = (customerKey: Uint8Array, reward: number) => rewards(merchant)("can_redeem", { customer: customerKey, catalog_ref: store, program: earned.program!.version, reward });
+  await redeemable(customer.agentPubKey, 1);
+  await redeemable(customer.agentPubKey, 4);
+  await assert.rejects(redeemable(customer.agentPubKey, 3), /points don't cover/);
+  await assert.rejects(redeemable(customer.agentPubKey, 2), /tier doesn't reach/);
+  await assert.rejects(redeemable(stranger.agentPubKey, 1), /points don't cover/, "a stranger to the store has nothing");
+  await assert.rejects(rewards(stranger)("can_redeem", { customer: customer.agentPubKey, catalog_ref: store, program: earned.program!.version, reward: 1 }), /owner/, "and only the store asks");
+  console.log("[PASS] the store reaches the same points from its own records -- nothing about them is published");
 
-  // ===== Spending: on a reward they can have, once =====
+  // ===== Spending: only what the store accepts, and nothing on an order it never did =====
   await assert.rejects(pickup([{ item_ref: soup, quantity: 1 }], 1000, 1), /doesn't apply/, "a free bread needs bread in the cart");
   await assert.rejects(pickup([{ item_ref: soup, quantity: 2 }], 1500, 2), /higher tier/, "Gold's reward needs Gold");
+  await assert.rejects(pickup([{ item_ref: soup, quantity: 1 }, { item_ref: bread, quantity: 1 }], 1300, 3), /enough points/, "the app checks its own card first");
+  const declined = actionHash(await pickup([{ item_ref: soup, quantity: 1 }, { item_ref: bread, quantity: 1 }], 1000, 1));
+  const held = await card();
+  assert.deepEqual([held.balance, held.reserved], [130, 100], "held for the order while the store answers");
+  await sync();
+  await retryUntilOk(() => call(merchant, "dispatch")("decline_pickup_order", { order_original_action: declined, reason: "TooBusy" }));
+  await sync();
+  assert.deepEqual(await retryUntil(() => card().then((c) => [c.balance, c.reserved]), ([, r]) => r === 0, 30, 1000), [230, 0], "declined before it was accepted: nothing spent");
+
   const spent = await pickup([{ item_ref: soup, quantity: 1 }, { item_ref: bread, quantity: 1 }], 1000, 1);
   const spentRef = actionHash(spent);
-  const redemption = decodeEntry<Order>(spent).rewards!.redemption;
-  assert.ok(redemption, "the order cites what it spent");
   assert.equal(decodeEntry<Order>(spent).order_total, 1000, "the bread is free");
-  assert.equal((await card()).balance, 230 - 100);
-  // A second order citing the same redemption.
+  assert.equal(decodeEntry<Order>(spent).rewards!.reward, 1, "the order names its reward");
+  await accept(spentRef);
+  await sync();
+  assert.equal((await retryUntil(() => card(), (c) => c.reserved === 0)).balance, 130, "spent once the store took it");
+  await assert.rejects(redeemable(customer.agentPubKey, 4), /points don't cover/, "and the store counts it too: 130 left");
+  console.log("[PASS] a reward is spent only when the store accepts its order -- one it declined spends nothing");
+
+  // A modified app can name a reward its points don't cover; the store won't take it.
   const version = actionHash(await call(customer, "catalog")<HcRecord>("get_catalog", store));
-  const raw = (rewardsField: unknown, total: number) =>
-    call(customer, "dispatch")("create_raw_pickup_order_for_testing", {
-      requester: customer.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
+  const programVersion = decodeEntry<Order>(spent).rewards!.program;
+  const raw = (rewardsField: unknown, total: number, who = customer) =>
+    call(who, "dispatch")<HcRecord>("create_raw_pickup_order_for_testing", {
+      requester: who.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
       lines: [{ item_ref: soup, priced_version: soup, quantity: 1, selections: [] }, { item_ref: bread, priced_version: bread, quantity: 1, selections: [] }],
       order_total: total, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null, bag_claim_ref: null,
       loyalty_proof: [], rewards: rewardsField, cancellation: null, ready_by: null, food_hold: null, sealed_customer_name: null,
     });
-  const programVersion = decodeEntry<Order>(spent).rewards!.program;
-  await assert.rejects(raw({ program: programVersion, redemption }, 1000), /pays for one order/, "a redemption pays for one order");
-  await assert.rejects(raw({ program: programVersion, redemption: firstRef }, 1000), /customer's own/, "an order isn't a redemption");
-  await assert.rejects(raw({ program: programVersion, redemption: null }, 1000), /promo code's requirement|lines at their priced versions/, "no discount without a redemption");
-  const stolen = await call(stranger, "rewards")("create_raw_points_entry_for_testing", { catalog_ref: store, kind: { Redeem: { program: programVersion, reward: 1 } }, points: 100, state: { balance: 0, year: 2026, earned_this_year: 0, earned_last_year: 0, lifetime_earned: 0, orders: 0, first_earned_at: null, last_earned_at: null }, previous: null }).catch((e: Error) => e);
-  assert.ok(stolen instanceof Error && /not enough points|must follow/.test(stolen.message), "nobody spends points they don't have");
-  console.log("[PASS] a reward is spent on an order it applies to, at its tier, for its cost -- and pays for that one order only");
+  await assert.rejects(raw({ program: programVersion, reward: 9 }, 1400), /no such reward/, "a reward the program doesn't have");
+  await assert.rejects(raw({ program: programVersion, reward: null }, 1000), /promo code's requirement|lines at their priced versions/, "no discount without a reward");
+  const greedy = actionHash(await raw({ program: programVersion, reward: 3 }, 1300));
+  await sync();
+  await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: greedy }), /points don't cover/, "the store won't accept a reward the points don't cover");
+  await call(customer, "dispatch")("cancel_pickup_order", greedy);
+  await sync();
+  console.log("[PASS] an order naming a reward its customer can't afford isn't accepted");
 
-  // ===== Points spent on an order the store calls off come back =====
+  // ===== The store's grants: sealed, and only the store's count =====
+  await rewards(merchant)<ActionHash>("grant_points", { to: customer.agentPubKey, catalog_ref: store, points: 75, note: "Sorry about the wait" });
+  await assert.rejects(rewards(stranger)("grant_points", { to: customer.agentPubKey, catalog_ref: store, points: 1000, note: "" }), /store's owner/);
+  // A stranger sealing a grant "from" the store: the customer's app knows who sealed it.
+  await rewards(stranger)("create_raw_points_grant_for_testing", { to: customer.agentPubKey, catalog_ref: store, points: 1000, note: "From Mo's, honest" });
   await sync();
-  await retryUntilOk(() => call(merchant, "dispatch")("decline_pickup_order", { order_original_action: spentRef, reason: "TooBusy" }));
-  await sync();
-  await retryUntil(() => call(merchant, "dispatch")("settle_order", spentRef).then(() => rewards(merchant)<ActionHash | null>("restore_for_order", spentRef)), (h) => !!h, 30, 1000);
-  assert.equal(await rewards(merchant)("restore_for_order", spentRef), null, "once");
-  await sync();
-  await retryUntil(() => rewards(customer)<number>("collect_grants", null), (n) => n === 1, 30, 1000);
-  assert.equal((await card()).balance, 230, "every point back");
-  console.log("[PASS] points spent on an order the store calls off come back, from the store, once");
+  const gifted = await retryUntil(() => card(), (c) => c.balance === 205, 30, 1000);
+  assert.equal(gifted.history[0].note, "Sorry about the wait");
+  await redeemable(customer.agentPubKey, 4).catch(() => assert.fail("the store counts its own grant: 205"));
+  console.log("[PASS] a store's grant counts on both sides; one sealed by anyone else counts on neither");
 
-  // ===== The store's own grants, collected once; nobody grants another's =====
-  const goodwill = await rewards(merchant)<ActionHash>("grant_points", { to: customer.agentPubKey, catalog_ref: store, points: 25, note: "Sorry about the wait" });
-  await assert.rejects(rewards(stranger)("grant_points", { to: stranger.agentPubKey, catalog_ref: store, points: 1000, note: "" }), /store's owner/);
-  await assert.rejects(rewards(stranger)("create_raw_points_grant_for_testing", { to: stranger.agentPubKey, catalog_ref: store, program: programVersion, points: 1000, reason: { Goodwill: { note: "" } } }), /only a store's owner/, "the network refuses it too");
-  await sync();
-  await retryUntil(() => rewards(customer)<number>("collect_grants", null), (n) => n === 1, 30, 1000);
-  assert.equal((await card()).balance, 255);
-  await assert.rejects(forge(customer, { Gift: { grant: goodwill } }, 25, { balance: 280 }), /collected once/);
-  console.log("[PASS] a store's grant is its owner's, collected once");
-
-  // ===== A stranger's store can offer points, but they wait to be accepted =====
+  // ===== A stranger's store can offer points; they're shown apart =====
   await rewards(stranger)("save_program", { ...program, catalog_ref: elsewhere, name: "Free Points!", rewards: [], earn: { ...program.earn, item_bonuses: [] } });
   await rewards(stranger)("grant_points", { to: customer.agentPubKey, catalog_ref: elsewhere, points: 500, note: "Claim your prize" });
   await sync();
-  assert.equal(await rewards(customer)("collect_grants", null), 0, "never added by themselves");
   const offers = await retryUntil(() => rewards(customer)<{ store_name: string; points: number }[]>("gift_offers", null), (o) => o.length === 1);
   assert.deepEqual([offers[0].store_name, offers[0].points], ["Elsewhere", 500]);
   assert.equal((await rewards(customer)<unknown[]>("my_cards", null)).length, 1, "the wallet holds only stores they've ordered from");
-  console.log("[PASS] a store the customer never ordered from can only offer points, for them to accept");
-
-  // ===== Unspent points come back only once nothing could use them =====
-  const cardNow = await card();
-  const lone = await rewards(customer)<ActionHash>("redeem", { catalog_ref: store, program: cardNow.program!.version, reward: 1 });
-  assert.equal((await card()).balance, 155);
-  await assert.rejects(forge(customer, { Unspend: { redemption: lone } }, 100, { balance: 255 }), /window has passed/, "not while an order could still cite it");
-  await assert.rejects(forge(customer, { Unspend: { redemption: redemption! } }, 100, { balance: 255 }), /window has passed|paid for an order/, "nor one an order used");
-  console.log("[PASS] a redemption comes back only once its window has passed with no order citing it");
+  console.log("[PASS] a store the customer never ordered from can only offer points");
 
   // ===== The store holds orders to its current program =====
+  // (Another customer's orders: the network limits how fast one places them.)
   await rewards(merchant)("save_program", { ...program, earn: { ...program.earn, points_per_dollar: 1 } });
   await sync();
-  const underOld = actionHash(await raw({ program: programVersion, redemption: null }, 1400) as HcRecord);
+  const underOld = actionHash(await raw({ program: programVersion, reward: null }, 1400, stranger));
   await sync();
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: underOld }), /rewards program's earlier terms/, "an order citing a replaced version isn't accepted");
-  const fresh = decodeEntry<Order>(await retryUntilOk(() => pickup([{ item_ref: soup, quantity: 1 }], 1000)));
+  const fresh = decodeEntry<Order>(await retryUntilOk(() => call(stranger, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: soup, quantity: 1 }], order_total: 1000 })));
   assert.ok(fresh.rewards && !bytesEqual(fresh.rewards.program, programVersion), "a new order cites the current version");
   console.log("[PASS] the store accepts only orders under its current program");
+
+  // ===== Birthdays are private =====
+  await rewards(customer)("set_birth_month", 3);
+  assert.equal(await rewards(customer)("my_birth_month", null), 3);
+  assert.equal(await rewards(stranger)("my_birth_month", null), null);
+  await assert.rejects(rewards(customer)("set_birth_month", 4), /already set/);
+  console.log("[PASS] a birth month stays on its owner's device, told to stores sealed");
 });

@@ -140,6 +140,29 @@ pub fn issue_grant(input: IssueGrantInput) -> ExternResult<ActionHash> {
     Ok(hash)
 }
 
+/// An issuer vouching for an agent's card, new to every other account (see
+/// `CardAttestation`). Safe to repeat.
+#[hdk_extern]
+pub fn attest_card(agent: AgentPubKey) -> ExternResult<()> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let query = LinkQuery::try_new(agent.clone(), LinkTypes::AgentToCardAttestation)?.author(me);
+    if !get_links(query, GetStrategy::Local)?.is_empty() {
+        return Ok(());
+    }
+    let hash = create_entry(&EntryTypes::CardAttestation(CardAttestation { agent: agent.clone() }))?;
+    create_link(agent, hash, LinkTypes::AgentToCardAttestation, ())?;
+    Ok(())
+}
+
+/// Whether an issuer on the roster has vouched for `agent`'s card -- what a
+/// store's offers for newcomers wait on.
+#[hdk_extern]
+pub fn card_verified(agent: AgentPubKey) -> ExternResult<bool> {
+    let issuers = handshake_governance::issuers();
+    let links = get_links(LinkQuery::try_new(agent, LinkTypes::AgentToCardAttestation)?, GetStrategy::default())?;
+    Ok(links.iter().any(|l| issuers.contains(&l.author)))
+}
+
 /// Collects every grant made to the caller that they haven't yet; returns
 /// how many. Each in a call of its own: one that doesn't validate yet can't
 /// hold up the rest.

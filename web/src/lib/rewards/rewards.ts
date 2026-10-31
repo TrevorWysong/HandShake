@@ -2,6 +2,7 @@
 // `rewards_types::points`, which validation enforces. The same cases run in
 // web/test/rewards.test.ts and the Rust tests; keep them in step.
 import type { CartLine } from "../../store/cart";
+import type { ItemRow } from "../menu/menu";
 import type { Accent, PointsState, PointsStatus, PromoReward, Reward, RewardsProgram } from "../../holochain/types";
 import { bytesToHex } from "../../holochain/decode";
 import { computePromoEffect } from "../menu/promotions";
@@ -112,6 +113,16 @@ export function rewardDiscount(benefit: PromoReward, lines: CartLine[]): number 
   return Math.min(subtotal, computePromoEffect(benefit, lines, subtotal).subtotalDiscountCents);
 }
 
+/// The line a reward puts in the bag: the item it gives, free -- `null` for
+/// a reward that takes money off instead.
+export function rewardLine(reward: Reward, menu: ItemRow[]): CartLine | null {
+  if (!("FreeItem" in reward.benefit)) return null;
+  const { item_ref, quantity } = reward.benefit.FreeItem;
+  const row = menu.find((m) => bytesToHex(m.hash) === bytesToHex(item_ref));
+  if (!row) return null;
+  return { itemRef: row.hash, name: row.item.name, basePriceCents: row.item.price_cents, priceCents: row.item.price_cents, quantity, selections: [], choiceLabels: [], rewardId: reward.id };
+}
+
 /// When points expire, in microseconds -- `null` if they don't.
 export function expiresAt(program: RewardsProgram, state: PointsState | null): number | null {
   if (program.expiry_days === null || !state?.last_earned_at) return null;
@@ -166,7 +177,6 @@ export const shortDate = (micros: number) => new Date(micros / 1000).toLocaleDat
 export function pendingLine(status: PointsStatus, t: Translate): string {
   if (status === "Settling") return t("rewards.pending.settling");
   if (status === "InReview") return t("rewards.pending.review");
-  if (status === "Arriving") return t("rewards.pending.arriving");
   if (status === "Earned") return t("rewards.pending.earned");
   return t("rewards.pending.arrives", { date: shortDate(status.RefundPeriod.until) });
 }

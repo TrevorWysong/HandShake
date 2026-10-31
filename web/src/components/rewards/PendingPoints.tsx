@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Check, Clock, Hourglass, Scale, Sparkles } from "lucide-react";
+import { Check, Clock, Hourglass, Scale } from "lucide-react";
 import { Link } from "react-router-dom";
 import clsx from "clsx";
 import type { OrderPoints, PointsStatus, RewardsProgram } from "../../holochain/types";
@@ -12,7 +12,6 @@ import { useT } from "../../i18n";
 function StatusIcon({ status, size = 15 }: { status: PointsStatus; size?: number }) {
   if (status === "Earned") return <Check size={size} strokeWidth={3} />;
   if (status === "InReview") return <Scale size={size} />;
-  if (status === "Arriving") return <Sparkles size={size} />;
   if (status === "Settling") return <Hourglass size={size} />;
   return <Clock size={size} />;
 }

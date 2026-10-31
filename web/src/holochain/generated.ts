@@ -225,14 +225,26 @@ export interface Bid {
 export type BidStatus = "Open" | "Accepted" | "Withdrawn" | "Expired" | "Rejected";
 
 /**
- * The month a member was born in -- set once, ever, for every store's
- * birthday reward. Only the month.
+ * The month a member was born in -- kept on their own device only
+ * (a private entry), to tell the stores they choose (`BirthdayShare`).
  */
 export interface BirthMonth {
   /**
    * 1 (January) to 12.
    */
   month: number;
+}
+
+/**
+ * A member telling one store their birth month, sealed to its owner -- so
+ * only that store learns it. The store takes the first a member sends it.
+ */
+export interface BirthdayShare {
+  catalog_ref: ActionHash;
+  /**
+   * The month (1-12, one byte), sealed to the store's owner.
+   */
+  sealed_month: XSalsa20Poly1305EncryptedData;
 }
 
 /**
@@ -276,37 +288,46 @@ export type Cancellation =
   | "NoDriver";
 
 /**
- * A member's card at a store: where they stand now, and lately.
+ * An issuer vouching that `agent` paid with a card it hadn't seen on any
+ * other account -- one real card, one account. What a store's offers for
+ * newcomers (a welcome bonus, a first-order code) rest on, so they can't be
+ * farmed with fresh keys. The card itself is never on the network: the
+ * issuer keeps only a hash of it, to know it again.
+ */
+export interface CardAttestation {
+  agent: AgentPubKey;
+}
+
+/**
+ * A member's card at a store: where they stand now, and what's coming.
  */
 export interface CardView {
   catalog_ref: ActionHash;
   store_name: string;
   program: ProgramView | null;
-  /**
-   * As of their latest entry.
-   */
   state: PointsState | null;
   /**
-   * What they can spend now -- after any expiry since.
+   * What they can spend now.
    */
   balance: number;
   /**
-   * Their tier now (0 the base).
+   * Points their orders still waiting on the store would spend.
    */
+  reserved: number;
   tier: number;
   /**
    * When their points expire, if they do.
    */
   expires_at: Timestamp | null;
   /**
-   * Newest first, at most `HISTORY`.
-   */
-  history: PointsLine[];
-  /**
    * Orders still to earn here, oldest first -- and what they'll bring.
    */
   pending: OrderPoints[];
   pending_points: number;
+  /**
+   * Every point that's come in or gone out, newest first.
+   */
+  history: PointsLine[];
 }
 
 /**
@@ -434,6 +455,22 @@ export interface CollectRequest {
 }
 
 /**
+ * The customer's app noting its store declined the order before accepting
+ * it (`version`, the store's cancellation from `Placed`) -- what gives
+ * back any promo use it took. Once per order.
+ */
+export interface DeclineNoted {
+  /**
+   * The order's original action.
+   */
+  order: ActionHash;
+  /**
+   * The store's version declining it.
+   */
+  version: ActionHash;
+}
+
+/**
  * What a store tells the customer when it turns an order down.
  */
 export type DeclineReason =
@@ -459,6 +496,22 @@ export type DeclineReason =
    * every customer (`catalog_types::PromoLimits::total`).
    */
   | "PromoUsedUp"
+  /**
+   * It spends a reward the customer's points at the store don't cover,
+   * or their tier doesn't reach -- points the store works out from its
+   * own records (`rewards_types`).
+   */
+  | "RewardUnavailable"
+  /**
+   * Its promo code is for newcomers, and no issuer has vouched for the
+   * customer's card -- so a fresh account can't farm it.
+   */
+  | "CardNotVerified"
+  /**
+   * The customer has called off too many orders here before the store
+   * could answer them, lately.
+   */
+  | "TooManyCancellations"
   | "Other";
 
 /**
@@ -934,7 +987,7 @@ export interface GeoPoint {
 }
 
 /**
- * A grant from a store the caller doesn't belong to, for them to accept.
+ * A grant from a store the caller hasn't ordered from.
  */
 export interface GiftOffer {
   grant: ActionHash;
@@ -984,6 +1037,15 @@ export interface GrantInput {
   note: string;
 }
 
+/**
+ * What a `PointsGrant` says, sealed.
+ */
+export interface GrantPayload {
+  catalog_ref: ActionHash;
+  points: number;
+  reason: GrantReason;
+}
+
 export type GrantReason =
   /**
    * The store's own word ("Sorry about the wait!").
@@ -991,15 +1053,6 @@ export type GrantReason =
   | {
       Goodwill: {
         note: string;
-      };
-    }
-  /**
-   * The points an order (its original action) spent, back: the store
-   * gave its food back.
-   */
-  | {
-      Restore: {
-        order: ActionHash;
       };
     }
   /**
@@ -1723,6 +1776,11 @@ export const MAX_REWARD_QUANTITY = 10;
  */
 export const MAX_SEALED_BYTES = 8192;
 
+/**
+ * The most a sealed grant may weigh.
+ */
+export const MAX_SEALED_GRANT_BYTES = 1024;
+
 export const MAX_STREET_CHARS = 200;
 
 export const MAX_TAGLINE_CHARS = 120;
@@ -1752,6 +1810,27 @@ export const MAX_VEHICLE_CHARS = 100;
  * The fewest and most days points last without an order.
  */
 export const MIN_EXPIRY_DAYS = 30;
+
+/**
+ * A store's own record of an order that joined its program, kept private
+ * on its chain: what it works out its members' points from, alongside its
+ * settlements and grants. Written as it accepts the order.
+ */
+export interface MemberOrder {
+  customer: AgentPubKey;
+  /**
+   * The order's original action.
+   */
+  order: ActionHash;
+  /**
+   * The store's acceptance of it.
+   */
+  accepted: ActionHash;
+  /**
+   * The reward it spent, and what it cost then, if it spent one.
+   */
+  reward: [number, number, number] | null;
+}
 
 export interface MenuItem {
   catalog_ref: ActionHash;
@@ -2188,6 +2267,24 @@ export type OrderChange =
     };
 
 /**
+ * The customer's app confirming it has seen its store start on the order --
+ * the version that set `ready_by` (`version`). Written by itself, the moment
+ * it sees it. Until then the customer may cancel without owing anything,
+ * whatever the store did: their own chain says whether they knew, and in
+ * what order (`ledger_integrity`). Once per order.
+ */
+export interface OrderConfirmation {
+  /**
+   * The order's original action.
+   */
+  order: ActionHash;
+  /**
+   * The store's version of it that started cooking.
+   */
+  version: ActionHash;
+}
+
+/**
  * How an order stands with its store, for its screens.
  */
 export interface OrderDecisions {
@@ -2283,11 +2380,12 @@ export interface OrderRewards {
    */
   program: ActionHash;
   /**
-   * The customer's redemption (`rewards_types::PointsKind::Redeem`) that
-   * pays for a reward on this order. Its discount is in `order_total`, in
-   * place of any promo.
+   * The reward this order spends points on (its id in the program at
+   * `program`). Its discount is in `order_total`, in place of any promo;
+   * the store accepts the order only if the customer's points cover it
+   * (`rewards_types`).
    */
-  redemption: ActionHash | null;
+  reward: number | null;
 }
 
 /**
@@ -2544,106 +2642,35 @@ export interface PlanView {
 }
 
 /**
- * One change to a member's points at a store, on their own chain.
- */
-export interface PointsEntry {
-  /**
-   * The store.
-   */
-  catalog_ref: ActionHash;
-  kind: PointsKind;
-  /**
-   * How many points it moved.
-   */
-  points: number;
-  /**
-   * Where it leaves them -- what validation recomputes.
-   */
-  state: PointsState;
-  /**
-   * Their previous entry at this store -- `None` only for their first.
-   */
-  previous: ActionHash | null;
-}
-
-/**
- * Points a store gives a member, from its own chain: a welcome back, a
- * birthday, points returned for an order it cancelled. The member collects
- * it (`PointsKind::Gift`).
+ * Points a store gives a member: a welcome back, a birthday, an apology.
+ * Everything about it is sealed between the two (`GrantPayload`) -- only
+ * whom it's to is public, so it reaches them. The store counts its own
+ * grants when it works out a member's points; the member's app, opening
+ * it, knows it's the store's (a sealed box names its sender).
  */
 export interface PointsGrant {
   to: AgentPubKey;
-  catalog_ref: ActionHash;
-  /**
-   * The program version in force -- whose limits the points arrive under.
-   */
-  program: ActionHash;
-  points: number;
-  reason: GrantReason;
+  sealed: XSalsa20Poly1305EncryptedData;
 }
-
-export type PointsKind =
-  /**
-   * Points for an order (its original action) the store settled
-   * (`settlement`, its `ItemSettlement`), once its refund period is over.
-   * Under the program version the order cites; its happy hours judged by
-   * when the store accepted it (`accepted`, the store's update of it from
-   * `Placed`). An appealed order cites the arbiter's `ruling`, whose
-   * award it doesn't earn on.
-   */
-  | {
-      Earn: {
-        order: ActionHash;
-        settlement: ActionHash;
-        accepted: ActionHash;
-        ruling: ActionHash | null;
-      };
-    }
-  /**
-   * Points spent on `reward` of the program at version `program` -- cited
-   * by the one order it pays for.
-   */
-  | {
-      Redeem: {
-        program: ActionHash;
-        reward: number;
-      };
-    }
-  /**
-   * A store's grant (`PointsGrant`), collected.
-   */
-  | {
-      Gift: {
-        grant: ActionHash;
-      };
-    }
-  /**
-   * The member's own redemption that no order used, back -- once its
-   * window (`REDEMPTION_WINDOW_SECS`) has passed with none citing it,
-   * after which none can.
-   */
-  | {
-      Unspend: {
-        redemption: ActionHash;
-      };
-    };
 
 /**
  * One line of a member's history at a store.
  */
 export interface PointsLine {
+  /**
+   * What it came from: the order, or the store's grant.
+   */
   entry: ActionHash;
   at: Timestamp;
-  kind: PointsKind;
+  kind: PointsLineKind;
   /**
-   * Points in (positive) or out (negative).
+   * Points in (positive) or out (negative), as it stood then.
    */
   points: number;
-  /**
-   * What a grant said, if it said anything.
-   */
   note: string | null;
 }
+
+export type PointsLineKind = "Earned" | "Spent" | "Gift" | "Birthday";
 
 /**
  * Where a member stands at a store after an entry.
@@ -2698,10 +2725,6 @@ export type PointsStatus =
    * Appealed: earned once the arbiter rules.
    */
   | "InReview"
-  /**
-   * Its refund period is over: it's earned at the next sweep.
-   */
-  | "Arriving"
   /**
    * Earned.
    */
@@ -2774,18 +2797,24 @@ export interface Profile {
 }
 
 /**
- * How a store's program is doing, from its members' own links.
+ * How a store's program is doing, from its own private records.
  */
 export interface ProgramStats {
   /**
-   * Members who've earned here.
+   * Members who've ordered under it.
    */
   members: number;
   /**
-   * Of them, those who earned in the last 30 days.
+   * Of them, those who ordered in the last 30 days.
    */
   active_members: number;
-  points_earned: number;
+  /**
+   * Orders placed under it.
+   */
+  orders: number;
+  /**
+   * Rewards redeemed.
+   */
   redemptions: number;
 }
 
@@ -2831,7 +2860,12 @@ export type PromoBlock =
   /**
    * Every use it allows, across customers, is taken.
    */
-  | "SoldOut";
+  | "SoldOut"
+  /**
+   * It's for new customers, and no issuer has vouched for their card
+   * yet -- adding funds with a card does.
+   */
+  | "CardNotVerified";
 
 /**
  * Merchant-scoped, not global -- one restaurant's "WELCOME10" is a

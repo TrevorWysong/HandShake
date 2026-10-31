@@ -218,11 +218,10 @@ fn check_bag_order_price(order: &OrderPricing<'_>, claim_ref: &ActionHash) -> Ex
 }
 
 /// The rewards an order cites, checked: a version of its own store's
-/// program, running; and a redemption that's the customer's own, at that
-/// version, written just before the order (`REDEMPTION_WINDOW_SECS`), and
-/// paying for no other order of theirs -- every order is on its customer's
-/// own chain, so a walk back to the redemption sees them all. What the
-/// reward takes off, or why the order can't have it.
+/// program, running, and the reward it spends, if any -- what that takes
+/// off the order. Whether the customer's points cover it is the store's to
+/// check as it accepts the order: points are private between the two, and
+/// follow from the store's own records (`rewards_types`).
 fn check_rewards(order: &OrderPricing<'_>) -> ExternResult<Result<Option<PromoReward>, String>> {
     let Some(rewards) = order.rewards else { return Ok(Ok(None)) };
     let program = match rewards_types::program_at(&rewards.program, order.catalog_ref)? {
@@ -232,64 +231,73 @@ fn check_rewards(order: &OrderPricing<'_>) -> ExternResult<Result<Option<PromoRe
     if !program.active {
         return Ok(Err("an order joins a rewards program only while it runs".into()));
     }
-    let Some(redemption) = &rewards.redemption else { return Ok(Ok(None)) };
-    // A scheduled order is accepted against when it opens, not when it was
-    // written -- so its own date bounds nothing, and a redemption dated with
-    // it could dodge an expiry. Rewards are spent on orders placed now.
-    if order.scheduled {
-        return Ok(Err("a reward is spent on an order placed now, not a scheduled one".into()));
-    }
-    let record = must_get_valid_record(redemption.clone())?;
-    let spent = decode::<rewards_types::PointsEntry>(&record).filter(|e| record.action().author() == order.requester && &e.catalog_ref == order.catalog_ref);
-    let Some(rewards_types::PointsKind::Redeem { program: version, reward }) = spent.map(|e| e.kind) else {
-        return Ok(Err("an order's redemption is its customer's own, at its store".into()));
-    };
-    if version != rewards.program {
-        return Ok(Err("a redemption pays for an order under the same version of the program".into()));
-    }
-    let Some(reward) = program.reward(reward) else { return Ok(Err("that program has no such reward".into())) };
-    let redeemed_at = record.action().timestamp();
-    let window = rewards_types::REDEMPTION_WINDOW_SECS * 1_000_000;
-    if order.placed_at < redeemed_at || order.placed_at.as_micros() - redeemed_at.as_micros() > window {
-        return Ok(Err("a redemption pays for an order placed right after it".into()));
-    }
-    let Some(prev) = order.prev_action else { return Ok(Err("an order can't open a chain".into())) };
-    let cites = |bytes: SerializedBytes| {
-        let cited = DeliveryOrder::try_from(bytes.clone()).ok().and_then(|o| o.rewards).or_else(|| PickupOrder::try_from(bytes).ok().and_then(|o| o.rewards));
-        cited.and_then(|r| r.redemption).as_ref() == Some(redemption)
-    };
-    if entries_since(order.requester, prev, redeemed_at, &order_types()?)?.into_iter().any(cites) {
-        return Ok(Err("a redemption pays for one order".into()));
-    }
+    let Some(id) = rewards.reward else { return Ok(Ok(None)) };
+    let Some(reward) = program.reward(id) else { return Ok(Err("that program has no such reward".into())) };
     Ok(Ok(Some(reward.benefit.clone())))
 }
 
 /// One of the customer's earlier orders, as a promo's limits see it.
 struct EarlierOrder {
+    order: ActionHash,
     catalog_ref: ActionHash,
     promo_code_ref: Option<ActionHash>,
     placed_at: Timestamp,
 }
 
+/// The most of a customer's history a promo's limits read: enough for
+/// years of ordering, and a bound on what any one order costs to check.
+const MAX_PROMO_WALK: usize = 50_000;
+
 /// The customer's orders from `chain_top` back to `since`, newest first --
-/// every one they ever placed in that time is on their own chain.
-fn earlier_orders(requester: &AgentPubKey, chain_top: &ActionHash, since: Timestamp) -> ExternResult<Vec<EarlierOrder>> {
+/// every one they ever placed in that time is on their own chain -- less
+/// those that came to nothing before the store took them on: cancelled by
+/// the customer before their app confirmed the store had started, or
+/// declined by the store before accepting (as their app noted). Those use
+/// up no promo, and don't make them a returning customer. `None` if their
+/// history since is longer than `MAX_PROMO_WALK`.
+fn earlier_orders(requester: &AgentPubKey, chain_top: &ActionHash, since: Timestamp) -> ExternResult<Option<Vec<EarlierOrder>>> {
     let types = order_types()?;
+    let confirmation: ScopedEntryDefIndex = UnitEntryTypes::OrderConfirmation.try_into()?;
+    let noted: ScopedEntryDefIndex = UnitEntryTypes::DeclineNoted.try_into()?;
+    let activity = handshake_integrity_support::chain::activity_since(requester, chain_top, since)?;
+    if activity.len() > MAX_PROMO_WALK {
+        return Ok(None);
+    }
     let mut orders = Vec::new();
-    for item in handshake_integrity_support::chain::activity_since(requester, chain_top, since)? {
+    // Orders cancelled by the customer, confirmed, and declined as noted.
+    let (mut cancelled, mut confirmed, mut declined): (Vec<ActionHash>, Vec<ActionHash>, Vec<ActionHash>) = (Vec::new(), Vec::new(), Vec::new());
+    for item in &activity {
         let action = &item.action.hashed.content;
-        if !matches!(action.data, ActionData::Create(_)) || !handshake_integrity_support::chain::creates_one_of(action, &types) {
+        let Some(entry_hash) = action.entry_hash() else { continue };
+        let is_order = handshake_integrity_support::chain::creates_one_of(action, &types);
+        let is_order_update = matches!(&action.data, ActionData::Update(u) if matches!(&u.entry_type, EntryType::App(def) if types.iter().any(|t| t.zome_index == def.zome_index && t.zome_type == def.entry_index)));
+        let is_confirmation = handshake_integrity_support::chain::creates_one_of(action, &[confirmation]);
+        let is_noted = handshake_integrity_support::chain::creates_one_of(action, &[noted]);
+        if !(is_order || is_order_update || is_confirmation || is_noted) {
             continue;
         }
-        let Some(entry_hash) = action.entry_hash() else { continue };
-        let Entry::App(bytes) = handshake_integrity_support::chain::entry_of(&item, entry_hash)? else { continue };
+        let Entry::App(bytes) = handshake_integrity_support::chain::entry_of(item, entry_hash)? else { continue };
         let bytes = SerializedBytes::from(bytes);
-        let order = DeliveryOrder::try_from(bytes.clone()).ok().map(|o| (o.catalog_ref, o.promo_code_ref)).or_else(|| PickupOrder::try_from(bytes).ok().map(|o| (o.catalog_ref, o.promo_code_ref)));
-        if let Some((catalog_ref, promo_code_ref)) = order {
-            orders.push(EarlierOrder { catalog_ref, promo_code_ref, placed_at: action.timestamp() });
+        if is_confirmation {
+            confirmed.extend(OrderConfirmation::try_from(bytes).ok().map(|c| c.order));
+            continue;
+        }
+        if is_noted {
+            declined.extend(DeclineNoted::try_from(bytes).ok().map(|d| d.order));
+            continue;
+        }
+        let order = DeliveryOrder::try_from(bytes.clone()).ok().map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some())).or_else(|| PickupOrder::try_from(bytes).ok().map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some())));
+        let Some((catalog_ref, promo_code_ref, has_cancellation)) = order else { continue };
+        if is_order {
+            orders.push(EarlierOrder { order: item.action.hashed.hash.clone(), catalog_ref, promo_code_ref, placed_at: action.timestamp() });
+        } else if has_cancellation {
+            // The customer's own update cancelling it -- their only one
+            // with a cancellation, since they write nothing after.
+            cancelled.push(original_creation(item.action.hashed.hash.clone())?);
         }
     }
-    Ok(orders)
+    orders.retain(|o| !declined.contains(&o.order) && !(cancelled.contains(&o.order) && !confirmed.contains(&o.order)));
+    Ok(Some(orders))
 }
 
 /// A promo's limits (`catalog_types::PromoLimits`), held against the
@@ -308,7 +316,9 @@ fn check_promo_limits(order: &OrderPricing<'_>, promo_ref: &ActionHash, promo: &
     // Back to when the store opened, for a first order; else to the promo's
     // own creation -- nothing used it before.
     let since = if limits.first_order_only { must_get_action(order.catalog_ref.clone())?.hashed.content.timestamp() } else { must_get_action(identity.clone())?.hashed.content.timestamp() };
-    let earlier = earlier_orders(order.requester, prev, since)?;
+    let Some(earlier) = earlier_orders(order.requester, prev, since)? else {
+        return Ok(Some("this account's history is too long to check this promo's limits".into()));
+    };
     if limits.first_order_only && earlier.iter().any(|o| &o.catalog_ref == order.catalog_ref) {
         return Ok(Some("that promo is for a customer's first order here".into()));
     }

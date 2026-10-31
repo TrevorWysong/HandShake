@@ -229,6 +229,13 @@ pub fn get_active_orders_for_store(catalog_ref: ActionHash) -> ExternResult<Vec<
     active_orders(QueueOwner::Store(&catalog_ref))
 }
 
+/// A store's latest orders, newest first: one page of its own history --
+/// what it reads of its customers' recent behaviour (`acceptance`), with no
+/// need for them to be online.
+pub(crate) fn recent_store_orders(catalog_ref: &ActionHash) -> ExternResult<Vec<OrderEntry>> {
+    Ok(history_page(QueueOwner::Store(catalog_ref), None, Some(MAX_HISTORY_PAGE as u32))?.orders)
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StoreHistoryInput {
     pub catalog_ref: ActionHash,

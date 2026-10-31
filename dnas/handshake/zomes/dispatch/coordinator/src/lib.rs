@@ -41,6 +41,8 @@ mod accounts;
 mod appeals;
 mod bids;
 mod claims;
+mod acceptance;
+mod confirmations;
 mod deliveries;
 mod issues;
 mod lines;

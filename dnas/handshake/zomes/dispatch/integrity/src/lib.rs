@@ -10,6 +10,7 @@ use handshake_integrity_support::{classify, invalid, require, Checked};
 use handshake_types::GeoPoint;
 
 mod verification;
+mod confirmations;
 mod appeals;
 mod bids;
 mod holds;
@@ -37,7 +38,7 @@ use links::{validate_create_link, validate_delete_link, OpLinkFields};
 // The entry structs live in dispatch_types so other integrity zomes can
 // decode them -- see that crate's doc comment. Re-exported here so the
 // coordinator crate imports everything via `dispatch_integrity::*`.
-pub use dispatch_types::{Appeal, AppealAnswer, Ruling, DriverVerification, VerificationCheck, lineage, DropoffShare, LinePricer, Chosen, ChosenInput, OrderItem, Selection, SelectionInput, CollectRequest, claimed_value, CarryRefusal, InHand, PinSecret, DROPOFF_GEOHASH_PRECISION, IssueEvidence, IssueKind, IssueLine, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome, hold_terms, required_collateral, split_delivery_fee, Bid, BidStatus, Cancellation, DeclineReason, DeliveryOrder, DeliveryStatus, DropoffDetails, DropoffPreference, HoldPurpose, OrderLine, OrderRewards, OrderTerms, PickupOrder, PickupStatus, Portion, RequiredAuthor};
+pub use dispatch_types::{Appeal, AppealAnswer, Ruling, OrderConfirmation, DeclineNoted, DriverVerification, VerificationCheck, lineage, DropoffShare, LinePricer, Chosen, ChosenInput, OrderItem, Selection, SelectionInput, CollectRequest, claimed_value, CarryRefusal, InHand, PinSecret, DROPOFF_GEOHASH_PRECISION, IssueEvidence, IssueKind, IssueLine, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome, hold_terms, required_collateral, split_delivery_fee, Bid, BidStatus, Cancellation, DeclineReason, DeliveryOrder, DeliveryStatus, DropoffDetails, DropoffPreference, HoldPurpose, OrderLine, OrderRewards, OrderTerms, PickupOrder, PickupStatus, Portion, RequiredAuthor};
 
 // Built once per write and dropped -- boxing the large order would only
 // add an allocation.
@@ -59,6 +60,8 @@ pub enum EntryTypes {
     Appeal(Appeal),
     AppealAnswer(AppealAnswer),
     Ruling(Ruling),
+    OrderConfirmation(OrderConfirmation),
+    DeclineNoted(DeclineNoted),
 }
 
 #[hdk_link_types]
@@ -113,12 +116,19 @@ pub enum LinkTypes {
     /// original action) -- how the store counts a promo's uses against its
     /// total, and customers see how many are left.
     PromoToOrder,
+    /// The customer's confirmation that they saw their store start on the
+    /// order, base = the order -- so the store sees it.
+    OrderToConfirmation,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
 // `rewards_integrity` finds a member's orders on their chain by these
 // indexes, to prove a redemption paid for none (`PointsKind::Unspend`).
 const _: () = assert!(UnitEntryTypes::DeliveryOrder as u8 == 0 && UnitEntryTypes::PickupOrder as u8 == 3 && UnitEntryTypes::Appeal as u8 == 11, "rewards_integrity reads these entry types' indexes");
+const _: () = assert!(
+    UnitEntryTypes::OrderConfirmation as u8 == lineage::ORDER_CONFIRMATION_INDEX && UnitEntryTypes::DeclineNoted as u8 == lineage::DECLINE_NOTED_INDEX,
+    "other zomes find a customer's confirmations by these indexes"
+);
 
 /// An order (or recurring template) names both a `merchant` and the store
 /// (`catalog_ref`) it's from -- and every per-store thing downstream (the
@@ -155,6 +165,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Appeal(appeal) => appeals::validate_appeal(&appeal, action.author(), action.timestamp(), action.prev_action()),
             EntryTypes::AppealAnswer(answer) => appeals::validate_appeal_answer(&answer, action.author(), action.prev_action()),
             EntryTypes::Ruling(ruling) => appeals::validate_ruling(&ruling, action.author(), action.prev_action()),
+            EntryTypes::OrderConfirmation(c) => confirmations::validate_confirmation(&c, action.author(), action.prev_action()),
+            EntryTypes::DeclineNoted(d) => confirmations::validate_decline_noted(&d, action.author(), action.prev_action()),
         },
         Checked::Update { entry, action } => match entry {
             EntryTypes::DeliveryOrder(order) => validate_order_transition(&order, action.author(), &action.original_action_address, action.timestamp(), action.prev_action()),
@@ -165,6 +177,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                 Ok(ValidateCallbackResult::Invalid("issues, requests and an order's settlement can't be changed".into()))
             }
             EntryTypes::Appeal(_) | EntryTypes::AppealAnswer(_) | EntryTypes::Ruling(_) => Ok(ValidateCallbackResult::Invalid("an appeal, its answer and its ruling are a permanent record".into())),
+            EntryTypes::OrderConfirmation(_) | EntryTypes::DeclineNoted(_) => Ok(ValidateCallbackResult::Invalid("a customer's confirmations are a permanent record".into())),
             EntryTypes::DriverVerification(_) => {
                 Ok(ValidateCallbackResult::Invalid("a verification is renewed with a new one, not changed".into()))
             }

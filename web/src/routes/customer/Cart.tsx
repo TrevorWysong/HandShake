@@ -12,7 +12,7 @@ import { ItemSheet } from "../../components/ItemSheet";
 import { useSession } from "../../store/session";
 import { requestDelivery, requestPickupOrder, createRecurringTemplate, countMyCompletedOrders, myPromoStanding } from "../../holochain/zomes/dispatch";
 import { myCard } from "../../holochain/zomes/rewards";
-import { ACCENTS, earnedFor, orderPoints, rewardDiscount } from "../../lib/rewards/rewards";
+import { ACCENTS, earnedFor, orderPoints, rewardDiscount, rewardLine } from "../../lib/rewards/rewards";
 import { RewardRail, RewardTile } from "../../components/rewards/RewardPieces";
 import { Sparkles as RewardsIcon } from "lucide-react";
 import { wakeTokensForOrder } from "../../lib/network/push";
@@ -289,8 +289,14 @@ export function Cart() {
   const catalogHex = cart.catalogRef ? bytesToHex(cart.catalogRef) : null;
   const { data: rewardsCard } = useResource(catalogHex ? `rewards:card:${catalogHex}` : null, () => myCard(hexToBytes(catalogHex!)));
   const rewardsProgram = rewardsCard?.program?.program.active ? rewardsCard.program.program : null;
-  const [rewardId, setRewardId] = useState<number | null>(null);
-  const chosenReward = rewardsProgram?.rewards.find((r) => r.id === rewardId) ?? null;
+  // The reward redeemed into the bag, as the program offers it now.
+  const chosenReward = (cart.reward && rewardsProgram?.rewards.find((r) => r.id === cart.reward!.id)) || null;
+  const heldPoints = chosenReward?.cost ?? 0;
+  /// Puts a reward in the bag -- or takes it out, tapped again.
+  const toggleReward = (reward: NonNullable<typeof chosenReward>) => {
+    if (chosenReward?.id === reward.id) return cart.releaseReward();
+    cart.redeem(cart.catalogRef!, cart.merchant!, cart.merchantName ?? "", { id: reward.id, name: reward.name, cost: reward.cost }, rewardLine(reward, menuItems));
+  };
   // A deal chosen on the store's page, if it's this store's and theirs to use.
   const dealPromo = promoCodes.find((p) => cart.promoHex === bytesToHex(p.hash) && !p.standing?.blocked) ?? null;
   const appliedPromo = chosenReward ? null : (manualPromo ?? dealPromo ?? autoPromo);
@@ -519,6 +525,39 @@ export function Cart() {
           {cart.lines.map((line) => {
             const key = lineKey(line);
             const row = line.selections.length > 0 ? menuItems.find((m) => bytesToHex(m.hash) === bytesToHex(line.itemRef)) : undefined;
+            if (line.rewardId != null && rewardsProgram) {
+              const colors = ACCENTS[rewardsProgram.accent];
+              return (
+                <motion.div key={key} layout initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3 p-4" style={{ backgroundImage: `linear-gradient(90deg, ${colors.from}14, transparent)` }}>
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white" style={{ backgroundImage: `linear-gradient(135deg, ${colors.from}, ${colors.to})` }}>
+                    <RewardsIcon size={16} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">
+                      {line.quantity > 1 && `${line.quantity}× `}
+                      {line.name}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-xs">
+                      <span className="rounded-full px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white" style={{ background: colors.to }}>
+                        {t("cart.reward.badge")}
+                      </span>
+                      <span className="font-semibold tabular-nums" style={{ color: colors.to }}>
+                        {t("cart.reward.points", { points: (chosenReward?.cost ?? 0).toLocaleString(), name: rewardsProgram.points_name })}
+                      </span>
+                    </p>
+                  </div>
+                  <motion.button whileTap={{ scale: 0.85 }} onClick={() => cart.removeLine(key)} aria-label={t("redeem.remove")} className="grid h-7 w-7 place-items-center rounded-full hover:bg-ink-100 dark:hover:bg-ink-800">
+                    <Trash2 size={14} className="text-ink-400" />
+                  </motion.button>
+                  <div className="w-16 text-right leading-tight">
+                    <p className="text-xs tabular-nums text-ink-400 line-through">{formatCents(line.priceCents * line.quantity)}</p>
+                    <p className="text-sm font-black" style={{ color: colors.to }}>
+                      {t("cart.reward.free")}
+                    </p>
+                  </div>
+                </motion.div>
+              );
+            }
             return (
               <div key={key} className="flex items-center gap-3 p-4">
                 <div className="min-w-0 flex-1">
@@ -769,7 +808,8 @@ export function Cart() {
           title={rewardsProgram.name}
           right={
             <span className="text-xs font-black tabular-nums" style={{ color: ACCENTS[rewardsProgram.accent].to }}>
-              {rewardsCard!.balance.toLocaleString()} {rewardsProgram.points_name}
+              {Math.max(0, rewardsCard!.balance - heldPoints).toLocaleString()} {rewardsProgram.points_name}
+              {heldPoints > 0 && <span className="ml-1 font-semibold text-ink-400">· {t("cart.reward.held", { points: heldPoints.toLocaleString() })}</span>}
             </span>
           }
         >
@@ -777,11 +817,14 @@ export function Cart() {
             {[...rewardsProgram.rewards]
               .sort((a, b) => a.cost - b.cost)
               .map((reward) => (
-                <RewardTile key={reward.id} program={rewardsProgram} reward={reward} balance={rewardsCard!.balance} tier={rewardsCard!.tier} menu={menuItems} selected={rewardId === reward.id} onSelect={() => setRewardId(rewardId === reward.id ? null : reward.id)} />
+                <RewardTile key={reward.id} program={rewardsProgram} reward={reward} balance={rewardsCard!.balance} tier={rewardsCard!.tier} menu={menuItems} selected={chosenReward?.id === reward.id} onSelect={() => toggleReward(reward)} />
               ))}
           </RewardRail>
           {chosenReward && rewardDiscountCents === 0 && <p className="mt-1 text-xs text-amber-600">{t("rewards.addItemToUse")}</p>}
           {chosenReward && rewardDiscountCents > 0 && <p className="mt-1 text-xs text-ink-500">{t("rewards.usingInstead")}</p>}
+          <button type="button" onClick={() => navigate(`/rewards/${catalogHex}/redeem`)} className="mt-2 text-xs font-bold hover:underline" style={{ color: ACCENTS[rewardsProgram.accent].to }}>
+            {t("cart.reward.browse")} →
+          </button>
         </Section>
       )}
 

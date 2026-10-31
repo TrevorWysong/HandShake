@@ -1,6 +1,6 @@
 # Rewards
 
-Each store can run its own rewards program: points for what customers spend, rewards they buy with them, status levels, boosts, birthdays and expiry. It's the store's program, not the platform's, and it runs without a server. Each customer's points live on their own chain, and every rule below is enforced by every peer's validation.
+Each store can run its own rewards program: points for what customers spend, rewards they buy with them, status levels, boosts, birthdays and expiry. It's the store's program, not the platform's, and it runs without a server. A member's points are private between them and the store: nothing about them is published. Both sides work them out from what already happened, with the same rules.
 
 ## What a store can set
 
@@ -22,69 +22,65 @@ The program is versioned: changing it writes a new version. Each order cites the
 
 ## How points move
 
-Points are entries on the member's own chain, one running line per store (`PointsEntry`, in `rewards_types`). Each entry carries the state it leaves them in and points at their previous entry at that store. That state is their balance, both years' earnings, lifetime earnings, order count, and first and last earning times. Validation walks their chain to check nothing was skipped. It then recomputes the state with the same pure functions the app uses (`rewards_types::points`), so nobody can state their own balance, tier or expiry.
+Nobody keeps a points ledger, so there is no balance to forge, and nothing to read. A member's points at a store follow from what the store itself holds:
 
-- **Earn.** Cites the member's own order at that store, placed under an active program version, and the store's settlement of it (`ItemSettlement`, which only the store can write, once).
-  - **Only once the refund period is over.** That's the network's window to appeal the settlement (`appeal_window_secs`, 14 days by default), on a network with arbiters. Until then the points show as pending: on the card, in an "On the way" list, and on the order's page. Validation enforces it, because nobody can date an entry ahead of now, so an earning dated after the window was written after it. An appeal must come within the window, so every appeal there will ever be is already on the customer's chain.
-  - **An appealed order** waits for the arbiter's ruling, and earns on what the customer kept paying: the award is taken off. It must cite the ruling, and an order that wasn't appealed can't cite one.
-  - Points come from the food paid, after discounts, the refund and any award, without tax, split across the lines. Bonus items earn faster, then a happy hour by when the *store* accepted the order, then the member's tier, then the per-order cap, then the welcome bonus on their first order.
-  - Each order earns once. The earning is dated by the store's settlement.
-- **Redeem.** Spends exactly a reward's cost at an active program version, if the member has the points and the level.
-  - The order that uses it cites it, and its total must take exactly that reward off, priced like a promo with no requirement.
-  - A reward replaces any promo code, and doesn't apply to goodie bags.
-  - Each redemption pays for one order. Every order is on its customer's own chain, so validation walks back to the redemption and refuses a second.
-- **Gift.** Collects a store's `PointsGrant`, once. Only the store's owner writes grants, from their own chain, so grants cost only the store. Stores use them for:
-  - goodwill points;
-  - birthdays;
-  - points back for an order whose food the store gave back (`Restore`, sent automatically by the store's app when it waives the food).
-- **Unspend.** Takes back a redemption that no order used, once its window (`REDEMPTION_WINDOW_SECS`, an hour) has passed: a checkout that failed after spending, say.
-  - It can be proven, not just assumed: an order may cite a redemption only within an hour of it, from the customer's own chain.
-  - So once the hour is past, a walk back to the redemption sees every order that ever could.
-  - The app runs this automatically.
+- the orders it accepted from them that joined its program (`MemberOrder`, a private entry on the store's chain, written as it accepts each one);
+- its settlement of each, once the refund period is over;
+- the rewards those orders spent;
+- its own grants to them.
+
+The store's app plays those through the pure rules in `rewards_types::points` (`replay`) before it accepts an order that spends a reward. The member's app works out the same from their own orders and the grants sealed to them, to show their card, what's on its way and what they've redeemed. The two agree because they read the same records with the same function.
+
+- **Earn.** An order earns once the store has settled it and the refund period is over.
+  - **The refund period** is the network's window to appeal the settlement (`appeal_window_secs`, 14 days by default), on a network with arbiters. Until then the points show as pending: on the card, in an "On the way" list, and on the order's page. The store doesn't count them yet either.
+  - **An appealed order** waits for the arbiter's ruling, and earns on what the customer kept paying: the award is taken off.
+  - Points come from the food paid, after discounts, the refund and any award, without tax, split across the lines. Bonus items earn faster, then a happy hour (judged by when the *store* accepted the order), then the member's tier, then the per-order cap, then the welcome bonus on their first order.
+- **Redeem.** In the app, a member opens a store's rewards and taps one: it goes in their bag, free, and its points are held, shown as spent, until the order goes in. Taking it out frees them.
+  - The order names the reward (`OrderRewards::reward`). Validation checks the order's total takes exactly that reward off, priced like a promo with no requirement, at a running program version. A reward replaces any promo code, and doesn't apply to goodie bags.
+  - **The store decides whether the points cover it**, from its own records, as it accepts the order (`can_redeem`). An order whose points don't cover it, or whose tier doesn't reach it, is declined (`RewardUnavailable`), and nothing is charged.
+  - An order the store never accepted spends nothing: cancelled first, or declined. One whose food the store gave back returns its points too.
+- **Gift.** A store's grant (`PointsGrant`) is sealed between the store and the member: only whom it's to is public, so it reaches them. The member's app knows it's the store's, because only the store's key could have sealed it. Stores use grants for goodwill and birthdays.
 
 ## Time can't be faked
 
 People choose their own entries' timestamps, so no rule depends on one where faking it would pay:
 
-- **Earning** is dated by the store's settlement, not the customer. That decides expiry and which year counts toward their tier.
-- **Happy hours** are judged by when the store accepted the order: the store's own update, on its own clock. The earning cites that acceptance, and validation checks it really is the store's update from `Placed`.
-- **A redemption** must be followed by its order within the hour, and the store's acceptance pins that order to the real time. A redemption backdated to slip past an expiry buys nothing. A scheduled order is accepted against when it opens, not when it was written, so it can't carry a reward.
+- **Earning** is dated by the store's settlement. That decides expiry and which year counts toward their tier.
+- **Happy hours** are judged by when the store accepted the order, on the store's own clock.
+- **Spending** is dated by the store's acceptance, and checked then.
 - **Gifts** don't count as activity, so a grant can't keep points from expiring.
-- **Birthdays** are granted by the store's own app in the member's month, once a year, and only to members who first earned there at least 30 days before. The member sets their birth month once, ever (`BirthMonth`), and only the month is shared. A customer can't claim a birthday themselves: they could cite an older, more generous program version, and nothing could stop that.
+- **Birthdays.** A member sets their birth month once, on their device only (`BirthMonth`, a private entry). Their app tells each store they order from, sealed so only that store can read it (`BirthdayShare`). The store takes the first month a member tells it, and celebrates once a year, only for members who first ordered there at least 30 days before.
 
 ## Abuse considered
 
 | Attempt | What stops it |
 |---|---|
-| Stating a balance, skipping an entry, starting the line over | Validation recomputes every entry from the member's previous one, and refuses a gap |
-| Earning twice on one order, or on someone else's | One earning per order, by its own customer, checked on their chain |
-| Earning on a made-up or self-written settlement | Only the order's store can write its settlement, once (`dispatch_integrity`) |
-| Spending more than they have, or a reward above their level | Validation recomputes the redemption against their state |
-| One redemption paying for two orders | Both orders are on the customer's chain; the second is refused |
-| A discount without a redemption, or a bigger one than the reward | The order's total is recomputed, with the redemption's reward or none |
-| Citing an old, more generous program version | Validation can't tell it's old, so the store's app refuses to accept the order |
-| Getting points back for an order that used them | Only the store returns points for an order, as a grant; `Unspend` is refused while any order cites the redemption |
-| Granting points for someone else's store | Only the store's owner may grant |
-| Fake accounts farming welcome or birthday points | A welcome needs a settled, paid order that earns on its own. Birthdays need 30 days of membership, once a year. Points are only good at that store, for its food, so farming costs the store and nobody else |
+| Stating a balance, or spending more than they have | There's no balance to state. The store works out their points from its own records before accepting a reward, and declines it if they don't cover it |
+| A reward above their level | The same: the store's replay knows their tier |
+| A discount without a reward, or a bigger one than the reward | Validation recomputes the order's total, with the named reward or none |
+| Citing an old, more generous program version | The store's app refuses to accept the order |
+| A gift "from" a store, sealed by someone else | The member's app opens a grant with its sealer's key and counts it only if that's the store's owner. The store counts only its own |
+| Fake accounts farming welcome bonuses | Where the network has issuers, a welcome needs a card an issuer vouched for as new to the network (`CardAttestation`): one real card, one account. And it needs a settled order that earns on its own |
+| Fake accounts farming birthdays | 30 days of membership, once a year |
 | A store and a customer colluding | They can only give away the store's own food |
-| Earning on an order, then getting it refunded | Points are earned only after the refund period, on what was finally paid, less any arbiter's award |
-| Backdating an order into a happy hour, or a redemption past an expiry | Happy hours are dated by the store's acceptance; rewards aren't spent on scheduled orders, whose own date bounds nothing |
-| A stranger's store filling someone's chain and wallet with gifts | Only gifts from stores they've ordered from (or points back for their own order) are collected by themselves. Others wait in "Gifts from stores", to accept or ignore. Only the newest 100 grants are read |
-| Linking a birth month to a store over and over | The store's app handles each member once a sweep, and reads its own grants once |
-| Faking a store's members or redemptions | Every rewards link is written by the author of the record it points to, under the store that record is about. A birth month linked to a store many times is still celebrated once a year |
+| Earning on an order, then getting it refunded | Points are earned only after the refund period, on what was finally paid |
+| Learning someone's points or birthday | Neither is published. A grant's and a birthday's contents are sealed; a store's member records are private to its device |
+| A stranger's store filling someone's wallet with gifts | Gifts from stores they haven't ordered from are shown apart. Only the newest 200 grants are read |
 
 ## What's left
 
-- **A lost store key.** When an issuer refunds a lost store's food (docs/RECOVERY.md), the points spent on that order don't come back, because only the store can return them.
-- **Branched orders.** A store whose order history branches still decides from what its app sees. That's the same as the rest of settlement.
+- **Orders are public.** Anyone can see who ordered from whom, and so could estimate someone's points at a store from their orders. The balance itself, the gifts, the rewards and the birth month aren't published.
+- **A lost store key** loses its member records with it: a store that recovers its account starts its members' points afresh.
+- **A store could refuse a reward its member can afford.** It's the store's own program, and the refusal is recorded on the order, so the customer knows.
 
 ## Where it lives
 
-- `dnas/handshake/zomes/rewards/types`: the program, entries and grants; `points.rs`, the rules (unit-tested); `earn.rs`, what an order earns.
-- `dnas/handshake/zomes/rewards/integrity`: validation.
-- `dnas/handshake/zomes/rewards/coordinator`: saving programs, cards, earning, redeeming, grants, birthdays, reclaiming unspent redemptions, stats.
+- `dnas/handshake/zomes/rewards/types`: the program, grants and private records; `points.rs`, the rules and `replay` (unit-tested); `earn.rs`, what an order earns.
+- `dnas/handshake/zomes/rewards/integrity`: validation of programs, sealed grants and birthdays.
+- `dnas/handshake/zomes/rewards/coordinator`: programs, cards (the member's view), `can_redeem` and `record_member_order` (the store's), grants, birthdays, stats.
+- `dnas/handshake/zomes/dispatch/coordinator/src/acceptance.rs`: what the store checks before accepting: points, a newcomer's verified card, serial cancellers.
 - `dnas/handshake/zomes/dispatch/integrity/src/checks.rs`: an order's rewards and reward pricing (`check_rewards`).
-- `dnas/handshake/zomes/dispatch/coordinator/src/pricing.rs`: joining a program at checkout, and the store's current-version check (`ensure_current_program`); `settlement.rs`, the sweep that earns and returns points.
+- `dnas/handshake/zomes/dispatch/coordinator/src/pricing.rs`: joining a program at checkout, and the store's current-version check (`ensure_current_program`); `settlement.rs`, the store's settlement that earning rests on.
 - `web/src/lib/rewards/rewards.ts`: the same rules, for previews (`web/test/rewards.test.ts` runs the Rust cases).
-- `web/src/routes/customer/Rewards.tsx`: the wallet, each card, the store page's strip. `web/src/routes/merchant/Rewards.tsx`: the program builder. `web/src/components/rewards/`: the card, the tiles, the levels.
-- Tests: `tests/tryorama/src/rewards.test.ts` (every forgery above, on real conductors), `web/e2e/rewards.spec.ts`.
+- `web/src/routes/customer/Rewards.tsx`: the wallet, each card, the store page's strip. `web/src/routes/customer/RedeemRewards.tsx`: the redeem screen. The bag holds the reward (`web/src/store/cart.ts`). `web/src/routes/merchant/Rewards.tsx`: the program builder. `web/src/components/rewards/`: the card, the tiles, the levels.
+- Tests: `tests/tryorama/src/rewards.test.ts` (on real conductors), `rewards-refund-period.test.ts`, `newcomer-protections.test.ts`, `web/e2e/rewards.spec.ts`.

@@ -39,10 +39,17 @@ test("a customer finds a store's program on its page, in Rewards, and at checkou
   await expect(page.getByText("Platinum").first()).toBeVisible();
   await shoot(page, "rewards-detail");
 
+  // The redeem screen: points up top, rewards by what they cost.
+  await page.getByRole("button", { name: "Redeem", exact: true }).click();
+  await expect(page.getByText("Free Latte").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "All", exact: true })).toBeVisible();
+  await shoot(page, "rewards-redeem");
+  await page.goBack();
+
   // At checkout -- while the café's open (07:00-18:00): a closed store's
   // items can't be added, and the app's clock can't be faked, since zome
   // calls are signed with the real time.
-  await page.getByRole("button", { name: `Order from ${cafe.name}` }).click();
+  await page.getByRole("button", { name: "Order", exact: true }).click();
   const add = page.getByRole("button", { name: "Add Almond Croissant" });
   if (await add.isEnabled()) {
     await add.click();

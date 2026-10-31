@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Cake, ChevronRight, Gift, Minus, Plus, ShoppingBag, Sparkles } from "lucide-react";
 import clsx from "clsx";
-import { acceptGift, giftOffers, myBirthMonth, myCard, myCards, setBirthMonth } from "../../holochain/zomes/rewards";
+import { giftOffers, myBirthMonth, myCard, myCards, setBirthMonth } from "../../holochain/zomes/rewards";
 import { PendingList } from "../../components/rewards/PendingPoints";
 import { bytesToHex, hexToBytes } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
@@ -15,6 +15,7 @@ import { HowYouEarn, RewardRail, RewardTile, TierLadder } from "../../components
 import { Button, Card, Skeleton } from "../../components/ui";
 import { describeError } from "../../lib/ui/errors";
 import type { CardView, PointsLine } from "../../holochain/types";
+import { useCart } from "../../store/cart";
 import { useT } from "../../i18n";
 
 /// Every rewards card the customer holds, most recently used first, and
@@ -85,9 +86,9 @@ function ignoredGifts(): string[] {
 /// leave -- never added by themselves, so a stranger can't fill a wallet.
 function GiftOffers() {
   const t = useT();
-  const { data: offers, reload } = useResource("rewards:gift-offers", giftOffers);
+  const navigate = useNavigate();
+  const { data: offers } = useResource("rewards:gift-offers", giftOffers);
   const [hidden, setHidden] = useState<string[]>(ignoredGifts);
-  const [busy, setBusy] = useState<string | null>(null);
   const shown = (offers ?? []).filter((o) => !hidden.includes(bytesToHex(o.grant)));
   if (shown.length === 0) return null;
   const hide = (hex: string) => {
@@ -121,19 +122,7 @@ function GiftOffers() {
                 <Button variant="ghost" className="flex-1 py-2" onClick={() => hide(hex)}>
                   {t("rewards.gifts.ignore")}
                 </Button>
-                <Button
-                  className="flex-1 py-2"
-                  loading={busy === hex}
-                  onClick={async () => {
-                    setBusy(hex);
-                    try {
-                      await acceptGift(offer.grant);
-                      await reload();
-                    } finally {
-                      setBusy(null);
-                    }
-                  }}
-                >
+                <Button className="flex-1 py-2" onClick={() => navigate(`/customer/merchant/${bytesToHex(offer.catalog_ref)}`)}>
                   {t("rewards.gifts.accept")}
                 </Button>
               </div>
@@ -226,6 +215,8 @@ export function RewardsDetail() {
   const catalogRef = hexToBytes(hash ?? "");
   const { data: card } = useResource(hash ? `rewards:card:${hash}` : null, () => myCard(catalogRef));
   const { data: menu = [] } = useResource(hash ? `store-menu-items:${hash}` : null, () => fetchMenu(catalogRef));
+  const bagReward = useCart((s) => s.reward);
+  const bagStore = useCart((s) => (s.catalogRef ? bytesToHex(s.catalogRef) : null));
 
   if (!card) {
     return (
@@ -240,6 +231,8 @@ export function RewardsDetail() {
   }
   const program = card.program.program;
   const rewards = [...program.rewards].sort((a, b) => a.cost - b.cost);
+  // Points a reward in this store's bag holds, until the order goes in.
+  const held = bagReward && bagStore === hash ? bagReward.cost : 0;
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-28 pt-4">
@@ -247,12 +240,15 @@ export function RewardsDetail() {
         <ArrowLeft size={16} /> {t("common.back")}
       </motion.button>
       <motion.div variants={fadeSlideUp}>
-        <RewardsCard program={program} storeName={card.store_name} balance={card.balance} tier={card.tier} pendingPoints={card.pending_points} expiresAt={card.expires_at ?? expiresAt(program, card.state)} />
+        <RewardsCard program={program} storeName={card.store_name} balance={Math.max(0, card.balance - held)} tier={card.tier} pendingPoints={card.pending_points} expiresAt={card.expires_at ?? expiresAt(program, card.state)} />
       </motion.div>
 
-      <motion.div variants={fadeSlideUp} className="mt-4">
-        <Button className="w-full" onClick={() => navigate(`/customer/merchant/${hash}`)}>
-          <ShoppingBag size={16} /> {t("rewards.orderFrom", { store: card.store_name })}
+      <motion.div variants={fadeSlideUp} className="mt-4 grid grid-cols-2 gap-2">
+        <Button className="w-full" onClick={() => navigate(`/rewards/${hash}/redeem`)} disabled={rewards.length === 0}>
+          <Gift size={16} /> {t("redeem.open")}
+        </Button>
+        <Button variant="ghost" className="w-full" onClick={() => navigate(`/customer/merchant/${hash}`)}>
+          <ShoppingBag size={16} /> {t("rewards.order")}
         </Button>
       </motion.div>
 
@@ -271,7 +267,9 @@ export function RewardsDetail() {
               <RewardTile key={reward.id} program={program} reward={reward} balance={card.balance} tier={card.tier} menu={menu} />
             ))}
           </RewardRail>
-          <p className="mt-1 text-xs text-ink-400">{t("rewards.useAtCheckout")}</p>
+          <button onClick={() => navigate(`/rewards/${hash}/redeem`)} className="mt-1 text-xs font-semibold text-ink-500 hover:underline">
+            {t("rewards.useAtCheckout")}
+          </button>
         </motion.section>
       )}
 
@@ -300,9 +298,9 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 function lineLabel(line: PointsLine, t: ReturnType<typeof useT>): string {
-  if ("Earn" in line.kind) return t("rewards.line.earn");
-  if ("Redeem" in line.kind) return t("rewards.line.redeem");
-  if ("Unspend" in line.kind) return t("rewards.line.unspend");
+  if (line.kind === "Earned") return t("rewards.line.earn");
+  if (line.kind === "Spent") return t("rewards.line.redeem");
+  if (line.kind === "Birthday") return t("rewards.line.birthday");
   return line.note ?? t("rewards.line.gift");
 }
 

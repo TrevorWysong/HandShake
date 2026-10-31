@@ -9,6 +9,10 @@ export interface CompletedPayment {
   /// Who it's for (an agent id), as the top-up said.
   agent: string;
   amount: number;
+  /// The processor's fingerprint of the card that paid -- the same for one
+  /// card wherever it's used, so the issuer knows a card it's seen before.
+  /// Kept only as a hash (`Store::claimCard`).
+  card?: string;
 }
 
 /// A card saved for someone, as they'd recognise it.

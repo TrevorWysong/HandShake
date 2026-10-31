@@ -419,7 +419,9 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
     ensure_current_terms(&order_original_action, &order.catalog_ref, &order.catalog_version)?;
     crate::pricing::ensure_current_program(&order_original_action, &order.catalog_ref, order.rewards.as_ref())?;
     crate::promos::ensure_promo_left(&order_original_action, order.promo_code_ref.as_ref())?;
+    crate::acceptance::ensure_acceptable(&order.requester, &order.catalog_ref, order.promo_code_ref.as_ref(), order.rewards.as_ref())?;
     let promo = order.promo_code_ref.clone();
+    let rewards = order.rewards.clone();
     if let Some(claim_ref) = &order.bag_claim_ref {
         crate::claims::redeem_bag_claim(claim_ref)?;
     }
@@ -453,6 +455,7 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
     let updated = update_version(&current, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)?;
     publish_to_open_anchor(&updated, &dropoff_geohash, sys_time()?)?;
     crate::promos::record_promo_use(&original, promo.as_ref())?;
+    crate::acceptance::record_member_order(&original, &updated, rewards.as_ref())?;
     written(updated)
 }
 

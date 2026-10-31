@@ -151,5 +151,6 @@ export function describeBlock(block: PromoBlock): string {
   if (block === "FirstOrderOnly") return t("deals.block.first");
   if (block === "UsedUp") return t("deals.block.used");
   if (block === "SoldOut") return t("deals.block.soldOut");
+  if (block === "CardNotVerified") return t("deals.block.card");
   return t(`deals.block.again.${block.ThisPeriod}`);
 }

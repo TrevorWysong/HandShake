@@ -144,9 +144,9 @@ struct Facts {
     /// How many versions, across every branch of its history, cancel it.
     /// More than one, and `cancellation` is only one of them.
     cancellations: usize,
-    /// The store started cooking it -- on any branch -- and never called it
-    /// off itself: a customer's cancellation then owes the food
-    /// (`ledger_integrity::store_cooked`).
+    /// The customer's app confirmed seeing the store start on it, and the
+    /// store never called it off itself: a customer's cancellation then
+    /// owes the food (`ledger_integrity::confirmed_cooking`).
     store_cooked: bool,
     /// Every driver's bid the customer accepted, on any branch: a driver
     /// they took is owed their fee if they cancel (`customer_took`).
@@ -201,7 +201,7 @@ fn facts(order: &ActionHash) -> ExternResult<Option<Facts>> {
             }
         }
     }
-    facts.store_cooked &= !store_cancelled;
+    facts.store_cooked &= !store_cancelled && crate::confirmations::customer_confirmed(order, &requester)?;
     let prior_of = |record: &Record| match &record.action().data {
         ActionData::Update(update) => all.iter().find(|r| r.action_address() == &update.original_action_address),
         _ => None,
@@ -738,17 +738,12 @@ fn candidates(days: i64) -> ExternResult<Vec<ActionHash>> {
 /// Settles each candidate in a zome call of its own: a write that doesn't
 /// validate yet (its basis still gossiping here) fails only that order's
 /// call, never the rest of the sweep.
-///
-/// Then the order's rewards, each in a call of its own too: a customer
-/// earns the points it's settled for, and a store gives back the points it
-/// spent once the store's given its food back (the rewards zome).
 fn sweep(days: i64) -> u32 {
+    // What the caller's app has seen of their own orders, confirmed first.
+    let _ = crate::confirmations::tend_confirmations();
     let mut decided = 0;
     for order in candidates(days).unwrap_or_default() {
         decided += handshake_coordinator_support::isolated::<_, u32>("settle_order", order.clone()).unwrap_or(0);
-        for function in ["earn_for_order", "restore_for_order"] {
-            let _ = call(CallTargetCell::Local, "rewards", function.into(), None, order.clone());
-        }
     }
     decided
 }
