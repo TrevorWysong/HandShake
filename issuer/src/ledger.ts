@@ -124,6 +124,9 @@ export interface IssuerLedger {
   /// The issuer's own agent key.
   readonly issuer: AgentPubKey;
   issueGrant(to: AgentPubKey, amount: number, reference: string, inPlaceOf?: HeldPart): Promise<void>;
+  /// Vouches that `agent` paid with a card no other account has: what
+  /// stores' offers for newcomers wait on. Safe to repeat.
+  attestCard(agent: AgentPubKey): Promise<void>;
   cashOutRequests(after: number | null): Promise<CashOutRequestsPage>;
   decideCashOut(redemption: Uint8Array, outcome: PayoutOutcome): Promise<void>;
   setProfile(profile: IssuerProfile): Promise<void>;
@@ -217,6 +220,7 @@ export async function connectIssuerLedger(adminUrl: string, appId: string): Prom
   return {
     issuer: connection.agent,
     issueGrant: async (to, amount, reference, inPlaceOf) => void (await call("issue_grant", { to, amount, reference, in_place_of: inPlaceOf ?? null })),
+    attestCard: async (agent) => void (await call("attest_card", agent)),
     cashOutRequests: (after) => call<CashOutRequestsPage>("get_cash_out_requests", { after }),
     decideCashOut: async (redemption, outcome) => void (await call("decide_cash_out", { redemption, outcome })),
     setProfile: async (profile) => void (await call("set_issuer_profile", profile)),

@@ -18,18 +18,38 @@ export interface CartLine {
   selections: SelectionInput[];
   /// The choices as the customer reads them: "Large", "Oat milk".
   choiceLabels: string[];
+  /// Set on the line a reward put in the bag (`CartReward`): free, and kept
+  /// apart from any units of the same item the customer pays for.
+  rewardId?: number;
+}
+
+/// A reward the customer redeemed into their bag: its points are held for
+/// it -- shown as spent -- until the order goes in, and come back if they
+/// take it out. The store checks the points again as it accepts the order.
+export interface CartReward {
+  id: number;
+  name: string;
+  cost: number;
 }
 
 /// A line's identity: its item and its choices. The same item with other
 /// choices is another line.
-export function lineKey(line: Pick<CartLine, "itemRef" | "selections">): string {
-  return `${bytesToHex(line.itemRef)}|${selectionsKey(line.selections)}`;
+export function lineKey(line: Pick<CartLine, "itemRef" | "selections" | "rewardId">): string {
+  return `${bytesToHex(line.itemRef)}|${selectionsKey(line.selections)}${line.rewardId == null ? "" : `|reward:${line.rewardId}`}`;
 }
 
-/// The cart as an order's items -- one per line, with its quantity and
-/// choices.
+/// The cart as an order's items -- one per item and choices, its quantity
+/// the paid units and a reward's together: the order prices the reward off
+/// them, as validation does.
 export function cartItems(lines: CartLine[]): OrderItem[] {
-  return lines.map((line) => ({ item_ref: line.itemRef, quantity: line.quantity, selections: line.selections }));
+  const items: (OrderItem & { key: string })[] = [];
+  for (const line of lines) {
+    const key = lineKey({ ...line, rewardId: undefined });
+    const same = items.find((i) => i.key === key);
+    if (same) same.quantity += line.quantity;
+    else items.push({ key, item_ref: line.itemRef, quantity: line.quantity, selections: line.selections });
+  }
+  return items.map(({ key: _key, ...item }) => item);
 }
 
 interface CartState {
@@ -41,6 +61,14 @@ interface CartState {
   /// action, hex) -- applied at checkout if it's this cart's store's.
   promoHex: string | null;
   choosePromo: (hex: string | null) => void;
+  /// The reward redeemed into the bag, if any -- one an order.
+  reward: CartReward | null;
+  /// Redeems `reward` into the bag at the store: in place of any other
+  /// reward, with `line` (the item it gives, if it gives one). A bag from
+  /// another store is emptied first, as adding an item does.
+  redeem: (catalogRef: ActionHash, merchant: Uint8Array, merchantName: string, reward: CartReward, line: CartLine | null) => void;
+  /// Takes the reward back out of the bag, and its line: the points are free again.
+  releaseReward: () => void;
 
   /// Adds `line` (its `quantity` units) -- to the line with the same item
   /// and choices if there is one.
@@ -79,8 +107,18 @@ export const useCart = create<CartState>()(
       merchantName: null,
       lines: [],
       promoHex: null,
+      reward: null,
 
       choosePromo: (promoHex) => set({ promoHex }),
+
+      redeem: (catalogRef, merchant, merchantName, reward, line) => {
+        const state = get();
+        const sameCatalog = state.catalogRef && bytesToHex(state.catalogRef) === bytesToHex(catalogRef);
+        const kept = (sameCatalog ? state.lines : []).filter((l) => l.rewardId == null);
+        set({ catalogRef, merchant, merchantName, reward, promoHex: null, lines: line ? [...kept, { ...line, rewardId: reward.id }] : kept });
+      },
+
+      releaseReward: () => set({ reward: null, lines: get().lines.filter((l) => l.rewardId == null) }),
 
       addLine: (catalogRef, merchant, merchantName, line) => {
         const state = get();
@@ -88,31 +126,35 @@ export const useCart = create<CartState>()(
         // delivery app enforces, since one order can only reference one
         // catalog_ref/merchant on the backend.
         const sameCatalog = state.catalogRef && bytesToHex(state.catalogRef) === bytesToHex(catalogRef);
-        set({ catalogRef, merchant, merchantName, lines: merged(sameCatalog ? state.lines : [], line) });
+        set({ catalogRef, merchant, merchantName, lines: merged(sameCatalog ? state.lines : [], line), ...(sameCatalog ? {} : { reward: null }) });
       },
 
       replaceLine: (key, line) => set({ lines: merged(get().lines.filter((l) => lineKey(l) !== key), line) }),
 
-      removeLine: (key) => set({ lines: get().lines.filter((l) => lineKey(l) !== key) }),
+      removeLine: (key) => {
+        const removed = get().lines.find((l) => lineKey(l) === key);
+        set({ lines: get().lines.filter((l) => lineKey(l) !== key), ...(removed?.rewardId != null ? { reward: null } : {}) });
+      },
 
       setQuantity: (key, quantity) => {
         if (quantity <= 0) {
           get().removeLine(key);
           return;
         }
-        set({ lines: get().lines.map((l) => (lineKey(l) === key ? { ...l, quantity } : l)) });
+        // A reward's line holds what the reward gives, no more.
+        set({ lines: get().lines.map((l) => (lineKey(l) === key && l.rewardId == null ? { ...l, quantity } : l)) });
       },
 
-      setCart: (catalogRef, merchant, merchantName, lines) => set({ catalogRef, merchant, merchantName, lines: lines.reduce(merged, [] as CartLine[]) }),
+      setCart: (catalogRef, merchant, merchantName, lines) => set({ catalogRef, merchant, merchantName, reward: null, lines: lines.reduce(merged, [] as CartLine[]) }),
 
-      clear: () => set({ catalogRef: null, merchant: null, merchantName: null, lines: [], promoHex: null }),
+      clear: () => set({ catalogRef: null, merchant: null, merchantName: null, lines: [], promoHex: null, reward: null }),
 
       total: () => get().lines.reduce((sum, l) => sum + l.priceCents * l.quantity, 0),
     }),
     {
       name: "handshake.cart.v1",
       storage: createJSONStorage(() => localStorage, { replacer, reviver }),
-      partialize: ({ catalogRef, merchant, merchantName, lines, promoHex }) => ({ catalogRef, merchant, merchantName, lines, promoHex }),
+      partialize: ({ catalogRef, merchant, merchantName, lines, promoHex, reward }) => ({ catalogRef, merchant, merchantName, lines, promoHex, reward }),
     },
   ),
 );

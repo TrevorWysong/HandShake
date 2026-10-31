@@ -135,7 +135,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
       {stats && data.view && (
         <motion.div variants={fadeSlideUp} className="mt-5 grid grid-cols-2 gap-3">
           <Stat icon={Users} label={t("rewardsAdmin.stats.members")} value={stats.members} sub={t("rewardsAdmin.stats.active", { count: stats.active_members })} />
-          <Stat icon={Sparkles} label={t("rewardsAdmin.stats.earned")} value={stats.points_earned} sub={draft.points_name} />
+          <Stat icon={Sparkles} label={t("rewardsAdmin.stats.orders")} value={stats.orders} sub={t("rewardsAdmin.stats.ordersSub")} />
           <Stat icon={Gift} label={t("rewardsAdmin.stats.redeemed")} value={stats.redemptions} sub={t("rewardsAdmin.stats.rewards")} />
           <Stat icon={Crown} label={t("rewardsAdmin.stats.tiers")} value={draft.tiers.length} sub={t("rewardsAdmin.stats.levels")} />
         </motion.div>

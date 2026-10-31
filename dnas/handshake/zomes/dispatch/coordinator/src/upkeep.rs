@@ -157,6 +157,8 @@ fn tend_customer_orders() -> ExternResult<Option<Duration>> {
             next = Some(next.map_or(due, |earliest| earliest.min(due)));
         }
     }
+    // What the app has seen of them: a store starting, or declining.
+    let _ = crate::confirmations::tend_confirmations();
     // Confirmed goodie-bag claims become their orders.
     crate::claims::redeem_confirmed_claims()?;
     // Standing orders that are due fire too.
@@ -336,21 +338,22 @@ struct WaitingOrder {
     catalog_version: ActionHash,
     /// The rewards program version it joined.
     rewards: Option<OrderRewards>,
+    requester: AgentPubKey,
 }
 
 impl WaitingOrder {
     fn from_entry(entry: &OrderEntry) -> Option<Self> {
-        let (lines, bag_claim_ref, promo_code_ref, catalog_ref, catalog_version, rewards) = match entry.kind {
+        let (lines, bag_claim_ref, promo_code_ref, catalog_ref, catalog_version, rewards, requester) = match entry.kind {
             OrderKind::Delivery => {
                 let order = decode_or::<DeliveryOrder>(&entry.record).filter(|o| o.status == DeliveryStatus::Placed)?;
-                (order.lines, order.bag_claim_ref, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards)
+                (order.lines, order.bag_claim_ref, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester)
             }
             OrderKind::Pickup => {
                 let order = decode_or::<PickupOrder>(&entry.record).filter(|o| o.status == PickupStatus::Placed)?;
-                (order.lines, order.bag_claim_ref, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards)
+                (order.lines, order.bag_claim_ref, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester)
             }
         };
-        Some(Self { kind: entry.kind, bag_order: bag_claim_ref.is_some(), lines, bag_claim_ref, promo_code_ref, catalog_ref, catalog_version, rewards })
+        Some(Self { kind: entry.kind, bag_order: bag_claim_ref.is_some(), lines, bag_claim_ref, promo_code_ref, catalog_ref, catalog_version, rewards, requester })
     }
 
     /// Accepts it, with the store's usual prep time -- or declines it if
@@ -369,7 +372,7 @@ impl WaitingOrder {
         } else if crate::promos::promo_used_up(order_ref, self.promo_code_ref.as_ref())? {
             Some(DeclineReason::PromoUsedUp)
         } else {
-            None
+            crate::acceptance::decline_for(&self.requester, &self.catalog_ref, self.promo_code_ref.as_ref(), self.rewards.as_ref())?
         };
         let accept = AcceptOrderInput { order_original_action: order_ref.clone(), prep_minutes: None };
         match (&self.kind, decline) {

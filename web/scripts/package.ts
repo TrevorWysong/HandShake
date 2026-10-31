@@ -86,6 +86,16 @@ if (properties.credit_limit_cents > 0 && process.env.HANDSHAKE_ALLOW_CREDIT !== 
 if (properties.credit_limit_cents === 0 && properties.issuers.length === 0) {
   fail("With credit_limit_cents 0 and no issuers, nobody could ever have funds -- name at least one issuer.");
 }
+// Separation of powers: whoever rules on an appeal mustn't also be able to
+// pay the award out of thin air. One key holding both could rule for itself
+// and fund the ruling; a stolen one could do both at once.
+const both = (properties.arbiters ?? []).filter((key: string) => properties.issuers.includes(key));
+if (both.length) {
+  fail(`An arbiter can't also be an issuer: ${both.join(", ")}. Give appeals and money different keys, held by different people.`);
+}
+if (properties.issuer_daily_limit_cents !== undefined && (!Number.isInteger(properties.issuer_daily_limit_cents) || properties.issuer_daily_limit_cents <= 0)) {
+  fail("issuer_daily_limit_cents is the most one issuer may issue in a day, in cents -- a whole number above 0.");
+}
 
 function fail(message: string): never {
   console.error(message);

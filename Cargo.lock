@@ -1153,6 +1153,7 @@ dependencies = [
  "catalog_types",
  "dispatch_types",
  "handshake_coordinator_support",
+ "handshake_governance",
  "handshake_integrity_support",
  "hdk",
  "rewards_integrity",

@@ -95,6 +95,20 @@ pub struct IssuerGrant {
     pub in_place_of: Option<HeldPart>,
 }
 
+/// An issuer vouching that `agent` paid with a card it hadn't seen on any
+/// other account -- one real card, one account. What a store's offers for
+/// newcomers (a welcome bonus, a first-order code) rest on, so they can't be
+/// farmed with fresh keys. The card itself is never on the network: the
+/// issuer keeps only a hash of it, to know it again.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+// Decodes only from its own fields: a record of another type that
+// happens to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct CardAttestation {
+    pub agent: AgentPubKey,
+}
+
 /// A part of a hold its recipient would give back to its payer, but can't:
 /// the recipient's key is lost, and `succession` is the new key that took
 /// over their account (docs/RECOVERY.md).

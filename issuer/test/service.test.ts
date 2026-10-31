@@ -62,8 +62,12 @@ function fakeLedger(requests: CashOutRequest[] = [], accounts: Accounts = { succ
   const grants: { to: string; amount: number; reference: string; inPlaceOf?: HeldPart }[] = [];
   const decisions: { redemption: string; outcome: PayoutOutcome }[] = [];
   let failNextGrant = false;
+  const attested: string[] = [];
   const ledger: IssuerLedger = {
     issuer: identity().key,
+    async attestCard(agent) {
+      if (!attested.includes(agentId(agent))) attested.push(agentId(agent));
+    },
     async issueGrant(to, amount, reference, inPlaceOf) {
       if (failNextGrant) {
         failNextGrant = false;
@@ -108,7 +112,7 @@ function fakeLedger(requests: CashOutRequest[] = [], accounts: Accounts = { succ
     },
     rulingsAgainst: async (owner) => (accounts.rulings ?? []).filter((r) => agentId(r.order) === agentId(owner)),
   };
-  return { ledger, grants, decisions, failGrant: () => (failNextGrant = true) };
+  return { ledger, grants, decisions, attested, failGrant: () => (failNextGrant = true) };
 }
 
 /// Stripe, faked: `ready` payout accounts can be paid; `refundable` is what
@@ -222,6 +226,20 @@ test("a payment is granted once, however often it's reported", async () => {
   const second = { ...payment, payment: "pi_2" };
   await assert.rejects(grantPayment(store, ledger, second));
   assert.equal(await grantPayment(store, ledger, second), "granted");
+});
+
+test("a card is vouched for on the first account it pays for, and never another", async () => {
+  const store = new Store(":memory:");
+  const { ledger, attested } = fakeLedger();
+  const first = agentId(identity().key);
+  const second = agentId(identity().key);
+  await grantPayment(store, ledger, { payment: "pi_a", agent: first, amount: 2000, card: "fp_visa" });
+  await grantPayment(store, ledger, { payment: "pi_b", agent: second, amount: 2000, card: "fp_visa" });
+  assert.deepEqual(attested, [first], "the same card on a second account earns it no word");
+  await grantPayment(store, ledger, { payment: "pi_c", agent: second, amount: 2000, card: "fp_amex" });
+  assert.deepEqual(attested, [first, second], "a card of its own does");
+  await grantPayment(store, ledger, { payment: "pi_d", agent: second, amount: 2000 });
+  assert.equal(attested.length, 2, "a payment with no card says nothing");
 });
 
 test("reconciliation grants exactly the payments that have no grant, once", async () => {

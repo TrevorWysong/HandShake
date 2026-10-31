@@ -20,6 +20,7 @@ import { MerchantOrders } from "./routes/merchant/Orders";
 import { MerchantCatalog } from "./routes/merchant/Catalog";
 import { MerchantRewards } from "./routes/merchant/Rewards";
 import { RewardsDetail, RewardsPage } from "./routes/customer/Rewards";
+import { RedeemRewards } from "./routes/customer/RedeemRewards";
 import { NewStore } from "./routes/merchant/NewStore";
 import { ProfilePage } from "./routes/Profile";
 import { Transparency } from "./routes/Transparency";
@@ -221,6 +222,7 @@ export default function App() {
           <Route path="/merchant/rewards" element={<MerchantRewards />} />
           <Route path="/rewards" element={<RewardsPage />} />
           <Route path="/rewards/:hash" element={<RewardsDetail />} />
+          <Route path="/rewards/:hash/redeem" element={<RedeemRewards />} />
           <Route path="/merchant/stores/new" element={<NewStore />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/transparency" element={<Transparency />} />

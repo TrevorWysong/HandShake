@@ -5,6 +5,15 @@
 import { defineConfig } from './src/main/defineConfig';
 import network from '../network.json';
 
+// An update is only as trustworthy as its signature: without one, anyone who
+// could publish a release could replace the app on every machine. So a
+// platform updates itself only when its build is signed -- the workflow
+// supplies the certificates as secrets (desktop/README.md). Unsigned builds
+// still install and run; their users download new versions themselves.
+const macSigned = !!(process.env.CSC_LINK && process.env.APPLE_ID && process.env.APPLE_TEAM_ID);
+const windowsSigned = !!process.env.WIN_CSC_LINK;
+const signed = process.platform === 'darwin' ? macSigned : process.platform === 'win32' ? windowsSigned : false;
+
 export default defineConfig({
   // Where the app keeps its data. Never change it once released: installs
   // would start over with a new, empty node.
@@ -14,12 +23,13 @@ export default defineConfig({
   // a breaking bump (0.1 -> 0.2) starts a separate one. Bump the minor for a
   // new network or Holochain line, the patch for anything else.
   version: '0.1.0',
-  macOSCodeSigning: false,
+  macOSCodeSigning: macSigned,
   windowsEVCodeSigning: false,
   // The UI routes by hash, so a missing file is really missing.
   fallbackToIndexHtml: false,
-  // Checks this repo's GitHub releases on start (build.ts points it here).
-  autoUpdates: true,
+  // Checks this repo's GitHub releases on start (build.ts points it here) --
+  // only where this build is signed.
+  autoUpdates: signed,
   // Closing the window keeps the node running from the tray: a store's
   // orders still arrive and its upkeep still runs (docs/DEPLOYMENT.md).
   systray: true,

@@ -61,6 +61,12 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
                 "a standing order is listed only by its owner, under their own key",
             )
         }
+        // The customer's confirmation, under their order.
+        LinkTypes::OrderToConfirmation => {
+            let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
+            let ours = decode::<OrderConfirmation>(&record).is_some_and(|c| link.base == &AnyLinkableHash::from(c.order)) && record.action().author() == link.author;
+            require(ours, "a confirmation is linked by its customer, under its order")
+        }
         // Only the order's store counts it, under the promo it cites.
         LinkTypes::PromoToOrder => {
             let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
@@ -103,7 +109,7 @@ fn validate_open_order_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCal
 
 pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
     match link.link_type {
-        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder => invalid("this dispatch link type can't be deleted"),
+        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder | LinkTypes::OrderToConfirmation => invalid("this dispatch link type can't be deleted"),
         LinkTypes::DriverToVerification => {
             let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
             require(record.action().author() == link.author, "only its verifier unlinks a verification")

@@ -2,6 +2,7 @@
 // already turned into grants, each person's payout account, link nonces,
 // and how far its sweep of cash-outs has got. The ledger is the record of
 // money; this is only what the service needs to act exactly once.
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 export interface PayoutAccount {
@@ -38,6 +39,7 @@ export class Store {
   constructor(path: string) {
     this.db = new DatabaseSync(path);
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS card_owners (card TEXT PRIMARY KEY, agent TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS granted_payments (payment TEXT PRIMARY KEY, agent TEXT NOT NULL, amount INTEGER NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS payout_accounts (agent TEXT PRIMARY KEY, account TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS customers (agent TEXT PRIMARY KEY, customer TEXT NOT NULL);
@@ -70,6 +72,17 @@ export class Store {
   claimPayment(payment: string, agent: string, amount: number): boolean {
     const result = this.db.prepare("INSERT OR IGNORE INTO granted_payments (payment, agent, amount, at) VALUES (?, ?, ?, ?)").run(payment, agent, amount, Date.now());
     return result.changes === 1;
+  }
+
+  /// Records `card` (its processor's fingerprint) as `agent`'s, if no other
+  /// account has paid with it: `true` if it's theirs -- first seen on their
+  /// account -- and `false` if it was first another's. Only a hash of the
+  /// fingerprint is kept.
+  claimCard(card: string, agent: string): boolean {
+    const hash = createHash("sha256").update(`handshake-card:${card}`).digest("hex");
+    this.db.prepare("INSERT OR IGNORE INTO card_owners (card, agent, at) VALUES (?, ?, ?)").run(hash, agent, Date.now());
+    const row = this.db.prepare("SELECT agent FROM card_owners WHERE card = ?").get(hash) as { agent: string };
+    return row.agent === agent;
   }
 
   /// Forgets a claim whose grant didn't go through, so a retry can grant it.

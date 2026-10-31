@@ -97,6 +97,17 @@ jobs:
           path: deploy
       - name: Build and upload
         run: node desktop/build.ts ${{ matrix.target }}
+        # Signing certificates, when the repo has them as secrets. A build
+        # without them installs but doesn't update itself
+        # (desktop/kangaroo.config.ts): an unsigned update could be anyone's.
+        env:
+          CSC_LINK: ${{ startsWith(matrix.target, 'mac') && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ startsWith(matrix.target, 'mac') && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
       - name: Linux package fix-ups
         if: matrix.target == 'linux'
         working-directory: desktop/.kangaroo

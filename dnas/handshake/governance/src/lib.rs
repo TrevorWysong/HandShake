@@ -39,6 +39,11 @@ pub struct HandShakeDnaProperties {
     /// everything is prepaid. Unset, it's a development allowance.
     #[serde(default)]
     pub credit_limit_cents: Option<u64>,
+    /// The most one issuer may issue in any 24 hours, in minor units -- so
+    /// a stolen issuer key mints at most this before the roster drops it.
+    /// Unset, `DEFAULT_ISSUER_DAILY_LIMIT_CENTS`.
+    #[serde(default)]
+    pub issuer_daily_limit_cents: Option<u64>,
     /// The ISO 4217 code of the currency every amount is in, in its minor
     /// units ("cents" for USD). Display only: the ledger is unit-agnostic.
     #[serde(default)]
@@ -209,6 +214,16 @@ const DEVELOPMENT_CREDIT_LIMIT_CENTS: u64 = 1_000_000;
 /// How far below zero a balance may go.
 pub fn credit_limit_cents() -> u64 {
     setting(|p| p.credit_limit_cents, DEVELOPMENT_CREDIT_LIMIT_CENTS)
+}
+
+/// The most an issuer issues in 24 hours unless the network says otherwise:
+/// $20,000 -- room for a busy launch, while bounding what a stolen key mints.
+const DEFAULT_ISSUER_DAILY_LIMIT_CENTS: u64 = 2_000_000;
+
+/// The most one issuer may issue in any 24 hours (see
+/// `HandShakeDnaProperties::issuer_daily_limit_cents`).
+pub fn issuer_daily_limit_cents() -> u64 {
+    setting(|p| p.issuer_daily_limit_cents, DEFAULT_ISSUER_DAILY_LIMIT_CENTS)
 }
 
 /// Whether `agent` may issue funds -- see `HandShakeDnaProperties::issuers`. A

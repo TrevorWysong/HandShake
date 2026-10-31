@@ -52,7 +52,7 @@ pub enum Event {
 }
 
 impl Event {
-    fn at(&self) -> Timestamp {
+    pub fn at(&self) -> Timestamp {
         match self {
             Event::Earn { at, .. } | Event::Spend { at, .. } | Event::Credit { at, .. } => *at,
         }
@@ -192,6 +192,44 @@ pub fn step(program: &RewardsProgram, prior: Option<&PointsState>, event: Event)
             Ok((state, points))
         }
     }
+}
+
+/// A member's standing at a store from everything that happened, in any
+/// order: their earning orders, the rewards the store accepted, its
+/// grants -- each with whatever it came from (`S`). Played oldest first
+/// through `step`. A reward the store accepted is taken whatever the rules
+/// would say now -- it was checked when the store took it -- and never below
+/// nothing. `welcome`: whether the member may have the program's welcome
+/// bonus (a verified card, where the network has issuers). The state (`None`
+/// before anything happened), and what each event moved, signed, in order.
+pub fn replay<S>(program: &RewardsProgram, mut events: Vec<(Event, S)>, welcome: bool) -> (Option<PointsState>, Vec<(S, Event, i64)>) {
+    events.sort_by_key(|(e, _)| e.at());
+    let mut rules = program.clone();
+    if !welcome {
+        rules.earn.welcome_bonus = 0;
+    }
+    let signed = |n: u64| i64::try_from(n).unwrap_or(i64::MAX);
+    let mut state: Option<PointsState> = None;
+    let mut log = Vec::new();
+    for (event, source) in events {
+        match step(&rules, state.as_ref(), event) {
+            Ok((next, moved)) => {
+                state = Some(next);
+                log.push((source, event, if matches!(event, Event::Spend { .. }) { -signed(moved) } else { signed(moved) }));
+            }
+            Err(_) => {
+                if let Event::Spend { at, cost, .. } = event {
+                    let start = state.clone().unwrap_or(PointsState { year: local_time(at, &rules.time_zone).year, ..PointsState::default() });
+                    let mut next = roll(&rules, &start, at);
+                    let taken = next.balance.min(cost);
+                    next.balance -= taken;
+                    state = Some(next);
+                    log.push((source, event, -signed(taken)));
+                }
+            }
+        }
+    }
+    (state, log)
 }
 
 /// What an order earns before the member's tier: each line's share of the
@@ -351,6 +389,24 @@ mod tests {
         // An order settled earlier than one already counted doesn't expire anything.
         let (late, _) = step(&p, Some(&s), Event::Earn { at: days_after(june(12), -1), base: 100 }).unwrap();
         assert_eq!((late.balance, late.last_earned_at), (600, Some(june(12))));
+    }
+
+    #[test]
+    fn a_history_replays_in_order_and_accepted_rewards_always_count() {
+        let mut p = program();
+        p.earn.welcome_bonus = 50;
+        let events = vec![
+            (Event::Spend { at: june(14), cost: 120, min_tier: 0 }, 'c'),
+            (Event::Earn { at: june(12), base: 100 }, 'a'),
+            (Event::Credit { at: june(13), points: 10 }, 'b'),
+        ];
+        let (state, log) = replay(&p, events.clone(), true);
+        assert_eq!(state.unwrap().balance, 100 + 50 + 10 - 120, "earned, welcomed, given, spent -- in time order");
+        assert_eq!(log.iter().map(|(s, _, n)| (*s, *n)).collect::<Vec<_>>(), vec![('a', 150), ('b', 10), ('c', -120)]);
+        let (state, log) = replay(&p, events, false);
+        assert_eq!(state.unwrap().balance, 0, "without the welcome, the accepted reward still takes what there is");
+        assert_eq!(log.last().map(|(_, _, n)| *n), Some(-110), "and says what it took");
+        assert_eq!(replay::<()>(&p, Vec::new(), true).0, None);
     }
 
     #[test]

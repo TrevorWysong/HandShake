@@ -17,7 +17,7 @@ function rewardItem(benefit: PromoReward): Uint8Array | null {
 }
 
 /// A reward's look: the item's photo when it's for an item, else a symbol.
-function RewardArt({ benefit, menu, accent }: { benefit: PromoReward; menu: ItemRow[]; accent: RewardsProgram["accent"] }) {
+export function RewardArt({ benefit, menu, accent }: { benefit: PromoReward; menu: ItemRow[]; accent: RewardsProgram["accent"] }) {
   const item = rewardItem(benefit);
   const photo = item ? menu.find((m) => bytesToHex(m.hash) === bytesToHex(item))?.item.photo_data_uri : undefined;
   if (photo) return <img src={photo} alt="" className="h-full w-full object-cover" />;

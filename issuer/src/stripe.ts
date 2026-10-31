@@ -31,8 +31,13 @@ export function stripeRail(secretKey: string, webhookSecret: string, publicUrl: 
   const refundsFor = (charges: Stripe.Charge[], key: string) => charges.flatMap((c) => c.refunds?.data ?? []).filter((r) => r.metadata?.cash_out === key && r.status !== "failed" && r.status !== "canceled");
 
   /// A succeeded PaymentIntent made for an agent, as a completed payment.
-  const completed = (intent: Stripe.PaymentIntent): CompletedPayment | null =>
-    intent.status === "succeeded" && intent.metadata?.agent && intent.amount_received > 0 ? { payment: intent.id, agent: intent.metadata.agent, amount: intent.amount_received } : null;
+  /// Its intent's `latest_charge` expanded, for the card's fingerprint.
+  const completed = (intent: Stripe.PaymentIntent): CompletedPayment | null => {
+    if (intent.status !== "succeeded" || !intent.metadata?.agent || intent.amount_received <= 0) return null;
+    const charge = typeof intent.latest_charge === "object" ? intent.latest_charge : null;
+    const card = charge?.payment_method_details?.card?.fingerprint ?? undefined;
+    return { payment: intent.id, agent: intent.metadata.agent, amount: intent.amount_received, ...(card ? { card } : {}) };
+  };
 
   return {
     async customer(agent, existing) {
@@ -68,7 +73,10 @@ export function stripeRail(secretKey: string, webhookSecret: string, publicUrl: 
           // Only money that's actually in: a delayed method settles later.
           const payment = intentOf(session.payment_intent);
           if (session.payment_status !== "paid" || !session.amount_total || !session.metadata?.agent || !payment) return null;
-          return { kind: "paid", payment: { payment, agent: session.metadata.agent, amount: session.amount_total } };
+          // The card that paid, from its intent -- the session doesn't say.
+          const intent = await stripe.paymentIntents.retrieve(payment, { expand: ["latest_charge"] }).catch(() => null);
+          const card = intent && typeof intent.latest_charge === "object" ? (intent.latest_charge?.payment_method_details?.card?.fingerprint ?? undefined) : undefined;
+          return { kind: "paid", payment: { payment, agent: session.metadata.agent, amount: session.amount_total, ...(card ? { card } : {}) } };
         }
         case "charge.dispute.created": {
           const payment = intentOf(event.data.object.payment_intent);
@@ -86,7 +94,7 @@ export function stripeRail(secretKey: string, webhookSecret: string, publicUrl: 
 
     async paymentsSince(since) {
       const payments: CompletedPayment[] = [];
-      for await (const intent of stripe.paymentIntents.list({ created: { gte: Math.floor(since / 1000) }, limit: 100 })) {
+      for await (const intent of stripe.paymentIntents.list({ created: { gte: Math.floor(since / 1000) }, limit: 100, expand: ["data.latest_charge"] })) {
         const payment = completed(intent);
         if (payment) payments.push(payment);
       }
@@ -104,7 +112,7 @@ export function stripeRail(secretKey: string, webhookSecret: string, publicUrl: 
       if (!data[0]) throw new Error("No card is saved yet.");
       try {
         const intent = await stripe.paymentIntents.create(
-          { amount, currency, customer, payment_method: data[0].id, off_session: true, confirm: true, metadata: { agent } },
+          { amount, currency, customer, payment_method: data[0].id, off_session: true, confirm: true, metadata: { agent }, expand: ["latest_charge"] },
           { idempotencyKey },
         );
         const paid = completed(intent);

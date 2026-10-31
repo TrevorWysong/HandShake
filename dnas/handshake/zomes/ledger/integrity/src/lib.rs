@@ -62,6 +62,7 @@ pub enum EntryTypes {
     IssuerGrant(IssuerGrant),
     RedemptionOutcome(RedemptionOutcome),
     IssuerProfile(IssuerProfile),
+    CardAttestation(CardAttestation),
 }
 
 #[hdk_link_types]
@@ -87,6 +88,8 @@ pub enum LinkTypes {
     /// A grant's collection, base = the grant, so its recipient knows it's
     /// collected without reading back through their ledger.
     GrantToDeposit,
+    /// An issuer's attestation of an agent's card, base = the agent.
+    AgentToCardAttestation,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -96,9 +99,10 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     match classify(op.flattened::<EntryTypes, LinkTypes>()?)? {
         Checked::Create { entry, action } => match entry {
             EntryTypes::LedgerEntry(entry) => validate_entry(&entry, action.author(), action.timestamp(), action.prev_action()),
-            EntryTypes::IssuerGrant(grant) => validate_grant(&grant, action.author()),
+            EntryTypes::IssuerGrant(grant) => validate_grant(&grant, action.author(), action.timestamp(), action.prev_action()),
             EntryTypes::RedemptionOutcome(outcome) => validate_outcome(&outcome, action.author(), action.timestamp(), action.prev_action()),
             EntryTypes::IssuerProfile(profile) => validate_issuer_profile(&profile, action.author()),
+            EntryTypes::CardAttestation(attestation) => validate_card_attestation(&attestation, action.author()),
         },
         // An issuer keeps its profile current; nothing else changes.
         Checked::Update { entry: EntryTypes::IssuerProfile(profile), action } => {
@@ -118,9 +122,20 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     }
 }
 
-fn validate_grant(grant: &IssuerGrant, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+fn validate_grant(grant: &IssuerGrant, author: &AgentPubKey, at: Timestamp, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
     if !handshake_governance::is_issuer(author)? {
         return invalid("only an issuer on the network's roster may issue funds");
+    }
+    // What it issues fresh, bounded per day. A grant in place of a hold's
+    // part isn't new money: it's exactly that part, collected once, as it.
+    if grant.in_place_of.is_none() {
+        let Some(prev) = prev_action else { return invalid("a grant can't open a chain") };
+        let since = Timestamp::from_micros(at.as_micros().saturating_sub(86_400_000_000));
+        let earlier = handshake_integrity_support::chain::entries_since(author, prev, since, &[UnitEntryTypes::IssuerGrant.try_into()?])?;
+        let issued = earlier.into_iter().filter_map(|bytes| IssuerGrant::try_from(bytes).ok()).filter(|g| g.in_place_of.is_none()).fold(grant.amount, |sum, g| sum.saturating_add(g.amount));
+        if issued > handshake_governance::issuer_daily_limit_cents() {
+            return invalid("an issuer issues no more than the network's daily limit");
+        }
     }
     if grant.amount == 0 || grant.reference.trim().is_empty() {
         return invalid("a grant must be for something, with the issuer's reference");
@@ -135,6 +150,12 @@ fn validate_grant(grant: &IssuerGrant, author: &AgentPubKey) -> ExternResult<Val
         Some(part) => validate_in_place_of(grant, part),
         None => valid(),
     }
+}
+
+/// An issuer's word on a card, from an issuer on the roster. A repeat says
+/// nothing more, so it isn't walked for: an issuer's chain is long.
+fn validate_card_attestation(_: &CardAttestation, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    require(handshake_governance::is_issuer(author)?, "only an issuer on the network's roster attests a card")
 }
 
 /// A grant in place of a part of a hold: to the hold's payer, for exactly
@@ -191,6 +212,7 @@ fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target: &A
             _ => None,
         },
         LinkTypes::RedemptionToOutcome => decode::<RedemptionOutcome>(&record).map(|o| o.redemption.into()),
+        LinkTypes::AgentToCardAttestation => decode::<CardAttestation>(&record).map(|a| a.agent.into()),
         LinkTypes::IssuerToProfile => decode::<IssuerProfile>(&record).filter(|_| matches!(record.action().data, ActionData::Create(_))).map(|_| author.clone().into()),
     };
     match expected {
@@ -741,13 +763,14 @@ fn basis_of(basis_ref: &ActionHash, hold: &HoldContext) -> ExternResult<Result<B
     Ok(Ok(Basis::Cancelled(Cancelled { by, from: delivery_stage(&prior.order.status), cooking: prior.order.ready_by.is_some(), bid: prior.order.accepted_bid.clone(), liable, version: basis_ref.clone(), author })))
 }
 
-/// Whether `store`'s own chain, from `chain_top` back, shows it started
-/// cooking `order` -- and never called it off itself. What a customer
-/// cancelling on an older version of the order can't undo: validation sees
-/// only the version a cancellation updates, but the store's chain holds
-/// every version it wrote.
-fn store_cooked(store: &AgentPubKey, chain_top: &ActionHash, order: &ActionHash) -> ExternResult<bool> {
-    if !lineage::wrote_any(store, chain_top, order, |v| v.ready_by().is_some())? {
+/// Whether the customer who cancelled had confirmed seeing their store
+/// start on `order` before they did (`OrderConfirmation`, on their own
+/// chain, behind the cancellation) -- and the store (`store`, collecting)
+/// never called it off itself. Validation sees only the version a
+/// cancellation updates, so a customer could cancel on an older one; their
+/// own chain says what they knew when.
+fn confirmed_cooking(c: &Cancelled, order: &ActionHash, store: &AgentPubKey, chain_top: &ActionHash) -> ExternResult<bool> {
+    if !lineage::confirmed(&c.author, &c.version, order)? {
         return Ok(false);
     }
     Ok(!lineage::wrote_any(store, chain_top, order, |v| matches!(v.cancellation(), Some(Cancellation::ByStore(_))))?)
@@ -851,12 +874,14 @@ fn validate_collect(entry: &LedgerEntry, hold_ref: &ActionHash, portion: Portion
         (portion, Basis::Cancelled(c)) => match c.by {
             // A customer who cancels once the store is cooking owes the food;
             // once a driver is assigned, their fee too.
-            // A customer who cancels once the store is cooking owes the
-            // food; once a driver is assigned, their fee too -- whichever
-            // version of the order they cancelled: the store's own chain
-            // says it cooked, and the customer's that they took the driver.
+            // A customer who cancels once they know the store is cooking
+            // owes the food; once a driver is assigned, their fee too --
+            // whichever version of the order they cancelled. What they knew
+            // is on their own chain, in order: the version they cancelled,
+            // their app's confirmation that it saw the store start, the
+            // driver they took. Before any of that, cancelling costs nothing.
             Cancellation::ByCustomer => match portion {
-                Portion::Food => is_recipient && ((c.cooking && c.from != Stage::Waiting && c.from != Stage::Other) || store_cooked(author, prev_action, &hold.order)?),
+                Portion::Food => is_recipient && ((c.cooking && c.from != Stage::Waiting && c.from != Stage::Other) || confirmed_cooking(&c, &hold.order, author, prev_action)?),
                 Portion::Fee => is_recipient && driver_pay && ((matches!(c.from, Stage::DriverAssigned | Stage::AtStore) && ours(&c.bid)) || customer_took(&c, &hold.order, hold_bid, author, prev_action)?),
                 _ => false,
             },
@@ -888,10 +913,9 @@ fn validate_collect(entry: &LedgerEntry, hold_ref: &ActionHash, portion: Portion
                 Portion::Collateral => is_recipient && c.liable.as_ref() == hold_bid,
                 _ => false,
             },
-            // The customer saying the store never answered -- on a version
-            // from before it did: a store whose own chain says it accepted
-            // and cooked in time answered, and is paid for the food.
-            Cancellation::StoreDidNotRespond => portion == Portion::Food && is_recipient && store_cooked(author, prev_action, &hold.order)?,
+            // The customer saying the store never answered -- after their
+            // own app confirmed it had: the store is paid for the food.
+            Cancellation::StoreDidNotRespond => portion == Portion::Food && is_recipient && confirmed_cooking(&c, &hold.order, author, prev_action)?,
         },
         // A part its recipient gave back.
         (_, Basis::Waived { by, hold: waived, portion: p }) => is_payer && by == share.recipient && &waived == hold_ref && p == portion,

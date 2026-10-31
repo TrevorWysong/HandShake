@@ -209,6 +209,16 @@ pub enum DeclineReason {
     /// Its promo code had been used as many times as it allows, across
     /// every customer (`catalog_types::PromoLimits::total`).
     PromoUsedUp,
+    /// It spends a reward the customer's points at the store don't cover,
+    /// or their tier doesn't reach -- points the store works out from its
+    /// own records (`rewards_types`).
+    RewardUnavailable,
+    /// Its promo code is for newcomers, and no issuer has vouched for the
+    /// customer's card -- so a fresh account can't farm it.
+    CardNotVerified,
+    /// The customer has called off too many orders here before the store
+    /// could answer them, lately.
+    TooManyCancellations,
     Other,
 }
 
@@ -532,6 +542,38 @@ pub struct DeliveryOrder {
     pub auto_match: bool,
 }
 
+/// The customer's app confirming it has seen its store start on the order --
+/// the version that set `ready_by` (`version`). Written by itself, the moment
+/// it sees it. Until then the customer may cancel without owing anything,
+/// whatever the store did: their own chain says whether they knew, and in
+/// what order (`ledger_integrity`). Once per order.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+// Decodes only from its own fields: a record of another type that
+// happens to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct OrderConfirmation {
+    /// The order's original action.
+    pub order: ActionHash,
+    /// The store's version of it that started cooking.
+    pub version: ActionHash,
+}
+
+/// The customer's app noting its store declined the order before accepting
+/// it (`version`, the store's cancellation from `Placed`) -- what gives
+/// back any promo use it took. Once per order.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+// Decodes only from its own fields: a record of another type that
+// happens to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct DeclineNoted {
+    /// The order's original action.
+    pub order: ActionHash,
+    /// The store's version declining it.
+    pub version: ActionHash,
+}
+
 /// A customer asking to collect their delivery from the store themselves --
 /// when no driver has it, or its driver is late. The store records it
 /// (`DeliveryStatus::Collecting`), citing this. One per order.
@@ -768,10 +810,11 @@ pub struct OrderRewards {
     /// The program's version the order is placed under -- what it earns at,
     /// and what its reward costs. The store accepts only its current one.
     pub program: ActionHash,
-    /// The customer's redemption (`rewards_types::PointsKind::Redeem`) that
-    /// pays for a reward on this order. Its discount is in `order_total`, in
-    /// place of any promo.
-    pub redemption: Option<ActionHash>,
+    /// The reward this order spends points on (its id in the program at
+    /// `program`). Its discount is in `order_total`, in place of any promo;
+    /// the store accepts the order only if the customer's points cover it
+    /// (`rewards_types`).
+    pub reward: Option<u16>,
 }
 
 #[cfg(test)]

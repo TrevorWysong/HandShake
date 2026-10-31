@@ -2,8 +2,9 @@
 // so many uses per customer, once a day -- held by validation against the
 // customer's own chain, so an order written past the app is refused too --
 // and a total across customers, which the store holds orders to as it
-// accepts them. Forgeries are written raw (test-utils), as a modified app
-// would.
+// accepts them. An order that came to nothing before the store took it on --
+// cancelled first, or declined -- uses none of them up. Forgeries are written
+// raw (test-utils), as a modified app would.
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { ActionHash, Record as HcRecord } from "@holochain/client";
@@ -20,8 +21,8 @@ interface Standing {
 }
 
 await runScenario(async (scenario) => {
-  const [merchant, ana, ben, cal] = await scenario.addPlayersWithApps([testApp, testApp, testApp, testApp]);
-  const all = [merchant, ana, ben, cal];
+  const [merchant, ana, ben, cal, dee] = await scenario.addPlayersWithApps([testApp, testApp, testApp, testApp, testApp]);
+  const all = [merchant, ana, ben, cal, dee];
   await scenario.shareAllAgents();
   for (const p of [ana, ben]) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, merchant.cells[0].cell_id[0]);
@@ -82,6 +83,23 @@ await runScenario(async (scenario) => {
   await assert.rejects(order(ben, daily), /this time around/);
   await assert.rejects(raw(ben, daily), /this period/, "the network refuses it too");
   console.log("[PASS] a once-a-day code works once a day, in the store's time");
+
+  // ===== An order that came to nothing gives its promo back =====
+  const declined = actionHash(await retryUntilOk(() => order(dee, welcome)));
+  await sync();
+  await retryUntilOk(() => call(merchant, "dispatch")("decline_pickup_order", { order_original_action: declined, reason: "TooBusy" }));
+  await sync();
+  // The customer's app notes the decline by itself; or here.
+  await retryUntil(() => call(dee, "dispatch")("confirm_what_i_saw", declined).then(() => standing(dee, welcome)), (s) => s.blocked === null);
+  await retryUntilOk(() => order(dee, welcome));
+  console.log("[PASS] a store declining an order gives back its new-customers code: the next order is still their first");
+
+  const cancelled = actionHash(await retryUntilOk(() => order(dee, once)));
+  await call(dee, "dispatch")("cancel_pickup_order", cancelled);
+  const after = await standing(dee, once);
+  assert.deepEqual([after.uses, after.blocked], [0, null], "cancelled before the store took it on: not a use");
+  await retryUntilOk(() => order(dee, once));
+  console.log("[PASS] an order cancelled before the store accepted it gives back its once-only code");
 
   // ===== A total across customers, held by the store =====
   const orders = [];

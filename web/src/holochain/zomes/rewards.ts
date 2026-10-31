@@ -16,15 +16,10 @@ export async function myCard(catalogRef: ActionHash): Promise<CardView> {
   return callZome("rewards", "my_card", catalogRef);
 }
 
-/// Every card the caller holds. Collects any points stores have given, and
-/// takes back points spent on a checkout that never became an order, first.
+/// Every card the caller holds -- worked out on this device from their own
+/// orders and what stores sealed to them: nothing about points is public.
 export async function myCards(): Promise<CardView[]> {
-  await Promise.allSettled([callZome("rewards", "collect_grants", null), callZome("rewards", "reclaim_unspent", null)]);
   return callZome("rewards", "my_cards", null);
-}
-
-export async function collectGrants(): Promise<number> {
-  return callZome("rewards", "collect_grants", null);
 }
 
 /// The caller's store giving a customer points.
@@ -40,7 +35,8 @@ export async function myBirthMonth(): Promise<number | null> {
   return callZome("rewards", "my_birth_month", null);
 }
 
-/// Once, ever.
+/// Once, ever. Kept on this device; each store they order from is told,
+/// sealed so only it can read it.
 export async function setBirthMonth(month: number): Promise<void> {
   return callZome("rewards", "set_birth_month", month);
 }
@@ -50,12 +46,8 @@ export async function orderPoints(order: ActionHash): Promise<OrderPoints | null
   return callZome("rewards", "order_points", order);
 }
 
-/// Points from stores the caller doesn't belong to yet, waiting to be accepted.
+/// Points from stores the caller hasn't ordered from yet -- theirs once
+/// they order there.
 export async function giftOffers(): Promise<GiftOffer[]> {
   return callZome("rewards", "gift_offers", null);
-}
-
-/// Accepts a store's gift of points.
-export async function acceptGift(grant: ActionHash): Promise<ActionHash> {
-  return callZome("rewards", "collect_grant", grant);
 }

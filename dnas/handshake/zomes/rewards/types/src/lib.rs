@@ -9,18 +9,22 @@
 //!   which fixes what it earns and what its reward costs. The store's app
 //!   refuses an order citing a version that's been replaced, as it does an
 //!   order priced from an old menu.
-//! - **Points are the customer's own chain.** Each change is an entry
-//!   carrying the state it leaves them in at that store, and pointing at
-//!   their previous entry there. Validation walks their chain to check none
-//!   is skipped, and recomputes the state with the same pure functions the
-//!   app uses (`points`). Nobody states a balance, a tier or an expiry.
+//! - **Points are private, between a member and a store.** No points ledger
+//!   is published. A member's points at a store follow from what the store
+//!   itself holds: the orders it accepted from them that joined its program
+//!   (its private `MemberOrder` records), its settlements of them once their
+//!   refund period is over, the rewards it accepted, and its own grants
+//!   (sealed to the member). The store works them out with the pure rules
+//!   in `points` before honouring a reward; the member's app works out the
+//!   same from its own orders, to show them.
 //! - **Points come only from what was paid, or from the store.** Earning
-//!   cites a completed order and the store's settlement of it. Anything
-//!   else -- a welcome back, a birthday, points returned for a cancelled
-//!   order -- is the store's own grant, from its own chain, which costs
-//!   only it.
-//! - **Points leave only into an order.** A redemption is cited by the one
-//!   order it pays for, in the same commit, at that store.
+//!   rests on the store's own settlement; anything else is the store's own
+//!   grant, which costs only it.
+//! - **Points leave only into an order the store accepts.** An order names
+//!   the reward it spends; its price must reflect exactly that reward
+//!   (`dispatch_integrity`); and the store accepts it only if the member's
+//!   points cover it. An order cancelled before the store accepts spends
+//!   nothing; one whose food the store gives back returns what it spent.
 
 use catalog_types::PromoReward;
 use hdi::prelude::*;
@@ -69,6 +73,8 @@ pub const MAX_REWARD_NAME_CHARS: usize = 60;
 pub const MAX_TIER_NAME_CHARS: usize = 24;
 pub const MAX_PERK_CHARS: usize = 120;
 pub const MAX_GRANT_NOTE_CHARS: usize = 200;
+/// The most a sealed grant may weigh.
+pub const MAX_SEALED_GRANT_BYTES: usize = 1_024;
 
 /// A store's rewards program, as one version of it stands.
 #[hdk_entry_helper]
@@ -184,47 +190,11 @@ pub struct Reward {
     pub min_tier: u8,
 }
 
-/// One change to a member's points at a store, on their own chain.
-#[hdk_entry_helper]
-#[derive(Clone, PartialEq, Eq)]
-// Decodes only from its own fields: a record of another type that
-// happens to share these can never pass for this one.
-#[serde(deny_unknown_fields)]
-pub struct PointsEntry {
-    /// The store.
-    pub catalog_ref: ActionHash,
-    pub kind: PointsKind,
-    /// How many points it moved.
-    pub points: u64,
-    /// Where it leaves them -- what validation recomputes.
-    pub state: PointsState,
-    /// Their previous entry at this store -- `None` only for their first.
-    pub previous: Option<ActionHash>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub enum PointsKind {
-    /// Points for an order (its original action) the store settled
-    /// (`settlement`, its `ItemSettlement`), once its refund period is over.
-    /// Under the program version the order cites; its happy hours judged by
-    /// when the store accepted it (`accepted`, the store's update of it from
-    /// `Placed`). An appealed order cites the arbiter's `ruling`, whose
-    /// award it doesn't earn on.
-    Earn { order: ActionHash, settlement: ActionHash, accepted: ActionHash, ruling: Option<ActionHash> },
-    /// Points spent on `reward` of the program at version `program` -- cited
-    /// by the one order it pays for.
-    Redeem { program: ActionHash, reward: u16 },
-    /// A store's grant (`PointsGrant`), collected.
-    Gift { grant: ActionHash },
-    /// The member's own redemption that no order used, back -- once its
-    /// window (`REDEMPTION_WINDOW_SECS`) has passed with none citing it,
-    /// after which none can.
-    Unspend { redemption: ActionHash },
-}
-
-/// Points a store gives a member, from its own chain: a welcome back, a
-/// birthday, points returned for an order it cancelled. The member collects
-/// it (`PointsKind::Gift`).
+/// Points a store gives a member: a welcome back, a birthday, an apology.
+/// Everything about it is sealed between the two (`GrantPayload`) -- only
+/// whom it's to is public, so it reaches them. The store counts its own
+/// grants when it works out a member's points; the member's app, opening
+/// it, knows it's the store's (a sealed box names its sender).
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq, Eq)]
 // Decodes only from its own fields: a record of another type that
@@ -232,9 +202,13 @@ pub enum PointsKind {
 #[serde(deny_unknown_fields)]
 pub struct PointsGrant {
     pub to: AgentPubKey,
+    pub sealed: XSalsa20Poly1305EncryptedData,
+}
+
+/// What a `PointsGrant` says, sealed.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct GrantPayload {
     pub catalog_ref: ActionHash,
-    /// The program version in force -- whose limits the points arrive under.
-    pub program: ActionHash,
     pub points: u32,
     pub reason: GrantReason,
 }
@@ -243,15 +217,12 @@ pub struct PointsGrant {
 pub enum GrantReason {
     /// The store's own word ("Sorry about the wait!").
     Goodwill { note: String },
-    /// The points an order (its original action) spent, back: the store
-    /// gave its food back.
-    Restore { order: ActionHash },
     /// A member's birthday month, in `year`.
     Birthday { year: i32 },
 }
 
-/// The month a member was born in -- set once, ever, for every store's
-/// birthday reward. Only the month.
+/// The month a member was born in -- kept on their own device only
+/// (a private entry), to tell the stores they choose (`BirthdayShare`).
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq, Eq)]
 // Decodes only from its own fields: a record of another type that
@@ -260,6 +231,37 @@ pub enum GrantReason {
 pub struct BirthMonth {
     /// 1 (January) to 12.
     pub month: u8,
+}
+
+/// A member telling one store their birth month, sealed to its owner -- so
+/// only that store learns it. The store takes the first a member sends it.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+// Decodes only from its own fields: a record of another type that
+// happens to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct BirthdayShare {
+    pub catalog_ref: ActionHash,
+    /// The month (1-12, one byte), sealed to the store's owner.
+    pub sealed_month: XSalsa20Poly1305EncryptedData,
+}
+
+/// A store's own record of an order that joined its program, kept private
+/// on its chain: what it works out its members' points from, alongside its
+/// settlements and grants. Written as it accepts the order.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+// Decodes only from its own fields: a record of another type that
+// happens to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct MemberOrder {
+    pub customer: AgentPubKey,
+    /// The order's original action.
+    pub order: ActionHash,
+    /// The store's acceptance of it.
+    pub accepted: ActionHash,
+    /// The reward it spent, and what it cost then, if it spent one.
+    pub reward: Option<(u16, u32, u8)>,
 }
 
 impl RewardsProgram {

@@ -373,21 +373,34 @@ pub(crate) fn joining(catalog_ref: &ActionHash, reward: Option<u16>) -> ExternRe
     Ok(Some(Joining { program: view.version, reward }))
 }
 
-/// The order's rewards, once priced: spending the points for its reward
-/// now, in the same commit as the order that cites it.
+/// Mirrors `rewards::CardView`, as far as needed.
+#[derive(Deserialize, Debug)]
+struct CardWire {
+    balance: u64,
+    tier: u8,
+}
+
+/// The order's rewards, once priced: the reward it spends named, after the
+/// caller's own card says their points cover it -- what the store checks
+/// again, from its own records, before accepting.
 pub(crate) fn join(catalog_ref: &ActionHash, joining: Option<Joining>) -> ExternResult<Option<OrderRewards>> {
     let Some(joining) = joining else { return Ok(None) };
-    #[derive(Serialize, Debug)]
-    struct RedeemWire<'a> {
-        catalog_ref: &'a ActionHash,
-        program: &'a ActionHash,
-        reward: u16,
-    }
-    let redemption = match joining.reward {
-        Some((reward, _)) => Some(rewards_call::<_, ActionHash>("redeem", RedeemWire { catalog_ref, program: &joining.program, reward })?),
+    let reward = match joining.reward {
+        Some((id, _)) => {
+            let program: Option<ProgramViewWire> = rewards_call("program_of", catalog_ref.clone())?;
+            let offered = program.and_then(|p| p.program.reward(id).cloned()).ok_or(guest("That reward isn't offered anymore."))?;
+            let card: CardWire = rewards_call("my_card", catalog_ref.clone())?;
+            if card.tier < offered.min_tier {
+                return Err(guest("That reward is for a higher tier."));
+            }
+            if card.balance < u64::from(offered.cost) {
+                return Err(guest("You don't have enough points for that reward yet."));
+            }
+            Some(id)
+        }
         None => None,
     };
-    Ok(Some(OrderRewards { program: joining.program, redemption }))
+    Ok(Some(OrderRewards { program: joining.program, reward }))
 }
 
 /// Whether an order joined the store's rewards program under a version
