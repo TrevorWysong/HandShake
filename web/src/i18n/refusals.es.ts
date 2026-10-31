@@ -197,4 +197,9 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.you-can-give-between-1-and-points": "Puedes dar entre 1 y {MAX_GRANT_POINTS} puntos a la vez.",
   "refusal.you-don-t-have-enough-points-for": "No tienes suficientes puntos para esa recompensa.",
   "refusal.your-birthday-month-is-already-set": "El mes de tu cumpleaños ya está fijado.",
+  "refusal.that-promo-code-has-been-used-up": "Ese código promocional se agotó.",
+  "refusal.that-promo-code-is-for-your-first": "Ese código promocional es para tu primer pedido aquí.",
+  "refusal.this-order-s-promo-code-has-been": "El código promocional de este pedido ya se usó tantas veces como permite, así que no se puede aceptar: recházalo.",
+  "refusal.you-ve-already-used-that-promo-code": "Ya usaste ese código promocional en este periodo. Inténtalo más tarde.",
+  "refusal.you-ve-used-that-promo-code-as": "Ya usaste ese código promocional tantas veces como permite.",
 };

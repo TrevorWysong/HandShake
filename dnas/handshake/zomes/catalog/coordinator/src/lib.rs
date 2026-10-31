@@ -596,6 +596,9 @@ pub struct CreatePromoCodeInput {
     pub expires_at: Option<Timestamp>,
     #[serde(default)]
     pub auto_apply: bool,
+    /// Who may use it, and how often (`catalog_types::PromoLimits`).
+    #[serde(default)]
+    pub limits: PromoLimits,
 }
 
 /// Cross-zome read for `dispatch::request_delivery`'s best-effort "is this
@@ -621,7 +624,11 @@ pub fn create_promo_code(input: CreatePromoCodeInput) -> ExternResult<Record> {
         expires_at: input.expires_at,
         created_at: sys_time()?,
         auto_apply: input.auto_apply,
+        limits: input.limits,
     };
+    if let Some(problem) = promo.limits.problem() {
+        return Err(guest(problem));
+    }
     let action_hash = create_entry(&EntryTypes::PromoCode(promo))?;
     create_link(input.catalog_ref.clone(), action_hash.clone(), LinkTypes::CatalogToPromoCode, ())?;
     create_link(input.catalog_ref, action_hash.clone(), LinkTypes::CatalogToLivePromo, ())?;

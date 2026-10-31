@@ -366,6 +366,8 @@ impl WaitingOrder {
             Some(DeclineReason::TermsChanged)
         } else if outdated_item(order_ref, &self.lines, self.bag_claim_ref.as_ref(), self.promo_code_ref.as_ref())?.is_some() {
             Some(DeclineReason::OutdatedPrices)
+        } else if crate::promos::promo_used_up(order_ref, self.promo_code_ref.as_ref())? {
+            Some(DeclineReason::PromoUsedUp)
         } else {
             None
         };

@@ -131,7 +131,13 @@ pub(crate) fn check_pricing(order: OrderPricing<'_>) -> ExternResult<Option<Stri
             if let Some(reason) = check_promo_code(promo_ref, order.catalog_ref, order.placed_at)? {
                 return Ok(Some(reason));
             }
-            decode::<PromoCode>(&must_get_valid_record(promo_ref.clone())?)
+            let promo = decode::<PromoCode>(&must_get_valid_record(promo_ref.clone())?);
+            if let Some(promo) = &promo {
+                if let Some(reason) = check_promo_limits(&order, promo_ref, promo)? {
+                    return Ok(Some(reason));
+                }
+            }
+            promo
         }
         None => None,
     };
@@ -256,6 +262,80 @@ fn check_rewards(order: &OrderPricing<'_>) -> ExternResult<Result<Option<PromoRe
         return Ok(Err("a redemption pays for one order".into()));
     }
     Ok(Ok(Some(reward.benefit.clone())))
+}
+
+/// One of the customer's earlier orders, as a promo's limits see it.
+struct EarlierOrder {
+    catalog_ref: ActionHash,
+    promo_code_ref: Option<ActionHash>,
+    placed_at: Timestamp,
+}
+
+/// The customer's orders from `chain_top` back to `since`, newest first --
+/// every one they ever placed in that time is on their own chain.
+fn earlier_orders(requester: &AgentPubKey, chain_top: &ActionHash, since: Timestamp) -> ExternResult<Vec<EarlierOrder>> {
+    let types = order_types()?;
+    let mut orders = Vec::new();
+    for item in handshake_integrity_support::chain::activity_since(requester, chain_top, since)? {
+        let action = &item.action.hashed.content;
+        if !matches!(action.data, ActionData::Create(_)) || !handshake_integrity_support::chain::creates_one_of(action, &types) {
+            continue;
+        }
+        let Some(entry_hash) = action.entry_hash() else { continue };
+        let Entry::App(bytes) = handshake_integrity_support::chain::entry_of(&item, entry_hash)? else { continue };
+        let bytes = SerializedBytes::from(bytes);
+        let order = DeliveryOrder::try_from(bytes.clone()).ok().map(|o| (o.catalog_ref, o.promo_code_ref)).or_else(|| PickupOrder::try_from(bytes).ok().map(|o| (o.catalog_ref, o.promo_code_ref)));
+        if let Some((catalog_ref, promo_code_ref)) = order {
+            orders.push(EarlierOrder { catalog_ref, promo_code_ref, placed_at: action.timestamp() });
+        }
+    }
+    Ok(orders)
+}
+
+/// A promo's limits (`catalog_types::PromoLimits`), held against the
+/// customer's own earlier orders: their first order at the store, so many
+/// uses in all, once a day, week or month in the store's time. An order
+/// counts once it's placed, cancelled or not. A promo is known by its
+/// original action, whichever version an order cites. (`total`, across
+/// customers, is the store's to enforce -- see `PromoLimits`.)
+fn check_promo_limits(order: &OrderPricing<'_>, promo_ref: &ActionHash, promo: &PromoCode) -> ExternResult<Option<String>> {
+    let limits = &promo.limits;
+    if !limits.first_order_only && limits.per_customer.is_none() && limits.once_per.is_none() {
+        return Ok(None);
+    }
+    let Some(prev) = order.prev_action else { return Ok(Some("an order can't open a chain".into())) };
+    let identity = original_creation(promo_ref.clone())?;
+    // Back to when the store opened, for a first order; else to the promo's
+    // own creation -- nothing used it before.
+    let since = if limits.first_order_only { must_get_action(order.catalog_ref.clone())?.hashed.content.timestamp() } else { must_get_action(identity.clone())?.hashed.content.timestamp() };
+    let earlier = earlier_orders(order.requester, prev, since)?;
+    if limits.first_order_only && earlier.iter().any(|o| &o.catalog_ref == order.catalog_ref) {
+        return Ok(Some("that promo is for a customer's first order here".into()));
+    }
+    let mut uses = Vec::new();
+    for o in &earlier {
+        if let Some(cited) = &o.promo_code_ref {
+            if &o.catalog_ref == order.catalog_ref && original_creation(cited.clone())? == identity {
+                uses.push(o.placed_at);
+            }
+        }
+    }
+    if limits.per_customer.is_some_and(|n| uses.len() >= n as usize) {
+        return Ok(Some("that promo has been used as many times as it allows".into()));
+    }
+    if let Some(period) = limits.once_per {
+        // A scheduled order is accepted against when it opens, not when it
+        // was written -- so its own date could be set back into a period
+        // not yet used. Once-a-period promos are for orders placed now.
+        if order.scheduled {
+            return Ok(Some("a promo limited to once a day, week or month is used on an order placed now".into()));
+        }
+        let now = rewards_types::period_of(order.placed_at, &order.store.time_zone, period);
+        if uses.iter().any(|at| rewards_types::period_of(*at, &order.store.time_zone, period) == now) {
+            return Ok(Some("that promo has been used already this period".into()));
+        }
+    }
+    Ok(None)
 }
 
 /// How many distinct earlier orders at this store `proof` shows the

@@ -10,7 +10,7 @@ import { distanceKm } from "../../lib/places/geohash";
 import { useCart, cartItems, lineKey, type CartLine } from "../../store/cart";
 import { ItemSheet } from "../../components/ItemSheet";
 import { useSession } from "../../store/session";
-import { requestDelivery, requestPickupOrder, createRecurringTemplate, countMyCompletedOrders } from "../../holochain/zomes/dispatch";
+import { requestDelivery, requestPickupOrder, createRecurringTemplate, countMyCompletedOrders, myPromoStanding } from "../../holochain/zomes/dispatch";
 import { myCard } from "../../holochain/zomes/rewards";
 import { ACCENTS, earnedFor, orderPoints, rewardDiscount } from "../../lib/rewards/rewards";
 import { RewardRail, RewardTile } from "../../components/rewards/RewardPieces";
@@ -22,7 +22,7 @@ import { currencySymbol, formatCents, formatDistance, fromMinorUnits, nowMicros,
 import { useCustomerSettings } from "../../store/roleSettings";
 import { useTerms } from "../../store/network";
 import { appLocale, t as translate, useT, type MessageKey } from "../../i18n";
-import { computePromoEffect, describeRequirement, describeReward, evaluatePromo, isPromoEligible } from "../../lib/menu/promotions";
+import { computePromoEffect, describeBlock, describeLimits, describeRequirement, describeReward, evaluatePromo, isPromoEligible } from "../../lib/menu/promotions";
 import { fetchMenu, type ItemRow } from "../../lib/menu/menu";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { describeError } from "../../lib/ui/errors";
@@ -32,7 +32,7 @@ import { orderTax, totalWithTax } from "../../lib/menu/tax";
 import { CardPaySheet } from "../../components/CardPaySheet";
 import { isPayable, MAX_CARD_PAYMENT_CENTS, MIN_CARD_PAYMENT_CENTS } from "../../lib/money/issuerService";
 import { getBalance, listIssuers } from "../../holochain/zomes/ledger";
-import type { ActionHash, DropoffPreference, GeoPoint, MerchantCatalog, PromoCode, RecurrenceRule, TaxRate } from "../../holochain/types";
+import type { ActionHash, DropoffPreference, GeoPoint, MerchantCatalog, PromoCode, RecurrenceRule, TaxRate, PromoStanding } from "../../holochain/types";
 import { useClock } from "../../lib/hooks/useClock";
 import { storeStatus } from "../../lib/menu/storeHours";
 import { MAX_NOTE_CHARS, MAX_PROMO_CODE_CHARS } from "../../holochain/types";
@@ -106,7 +106,7 @@ function ToggleChip({ active, onClick, children, className }: { active: boolean;
   );
 }
 
-type PromoRow = { hash: ActionHash; promo: PromoCode };
+type PromoRow = { hash: ActionHash; promo: PromoCode; standing?: PromoStanding };
 const NO_PROMOS: PromoRow[] = [];
 const NO_ITEMS: ItemRow[] = [];
 
@@ -143,7 +143,7 @@ interface CartStoreInfo {
 /// once per store. Each part degrades independently on failure, same as
 /// before -- a missing promo list shouldn't block checkout.
 async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartStoreInfo> {
-  const [catalog, promoCodes, menuItems, completedOrderCount] = await Promise.all([
+  const [catalog, livePromos, menuItems, completedOrderCount, standings] = await Promise.all([
     getCatalog(catalogRef)
       .then((record) => decodeEntry<MerchantCatalog>(record))
       .catch(() => null),
@@ -160,7 +160,10 @@ async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartStoreInfo
     // Loyalty rewards ("order 5 times, your 6th is discounted") count this
     // customer's completed orders at *this* store, delivery and pickup.
     countMyCompletedOrders(catalogRef).catch(() => 0),
+    // Where the customer stands with each code: used up, once a day...
+    myPromoStanding(catalogRef).catch(() => [] as PromoStanding[]),
   ]);
+  const promoCodes = livePromos.map((row) => ({ ...row, standing: standings.find((s) => bytesToHex(s.promo) === bytesToHex(row.hash)) }));
   return {
     subsidyPercent: catalog?.delivery_subsidy_percent ?? 0,
     merchantLocation: catalog?.location ?? null,
@@ -185,6 +188,7 @@ function bestAutoApplyPromo(promoCodes: PromoRow[], lines: CartLine[], total: nu
     (p) =>
       p.promo.auto_apply &&
       p.promo.active &&
+      !p.standing?.blocked &&
       (p.promo.expires_at === null || p.promo.expires_at > now) &&
       isPromoEligible(p.promo.requirement, lines, total, completedOrderCount),
   );
@@ -287,7 +291,9 @@ export function Cart() {
   const rewardsProgram = rewardsCard?.program?.program.active ? rewardsCard.program.program : null;
   const [rewardId, setRewardId] = useState<number | null>(null);
   const chosenReward = rewardsProgram?.rewards.find((r) => r.id === rewardId) ?? null;
-  const appliedPromo = chosenReward ? null : (manualPromo ?? autoPromo);
+  // A deal chosen on the store's page, if it's this store's and theirs to use.
+  const dealPromo = promoCodes.find((p) => cart.promoHex === bytesToHex(p.hash) && !p.standing?.blocked) ?? null;
+  const appliedPromo = chosenReward ? null : (manualPromo ?? dealPromo ?? autoPromo);
 
   const itemName = (hex: string) => menuItems.find((m) => bytesToHex(m.hash) === hex)?.item.name;
 
@@ -298,6 +304,10 @@ export function Cart() {
     const match = promoCodes.find((p) => p.promo.code.toUpperCase() === typed && p.promo.active && (p.promo.expires_at === null || p.promo.expires_at > now));
     if (!match) {
       setPromoError(t("cart.promo.invalid"));
+      return;
+    }
+    if (match.standing?.blocked) {
+      setPromoError(describeBlock(match.standing.blocked));
       return;
     }
     if (!isPromoEligible(match.promo.requirement, cart.lines, cart.total(), completedOrderCount)) {
@@ -793,6 +803,7 @@ export function Cart() {
                 <button
                   onClick={() => {
                     if (manualPromo) setManualPromo(null);
+                    else if (dealPromo) cart.choosePromo(null);
                     else setAutoPromoDismissed(true);
                     setPromoInput("");
                   }}
@@ -802,6 +813,15 @@ export function Cart() {
                 </button>
               </div>
               <p className="mt-0.5 text-xs opacity-80">{describeReward(appliedPromo.promo.reward, itemName)}</p>
+              {describeLimits(appliedPromo.promo, appliedPromo.standing).length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {describeLimits(appliedPromo.promo, appliedPromo.standing).map((chip) => (
+                    <span key={chip} className="rounded-full bg-presence-500/15 px-2 py-0.5 text-[10px] font-semibold">
+                      {chip}
+                    </span>
+                  ))}
+                </div>
+              )}
               {!promoEvaluation?.eligible && <p className="mt-1 text-xs text-red-600">{t("cart.promo.noLonger", { requirement: describeRequirement(appliedPromo.promo.requirement, itemName) })}</p>}
               {promoAwaitingRewardItem && <p className="mt-1 text-xs text-amber-600">{t("cart.promo.addItem")}</p>}
             </motion.div>

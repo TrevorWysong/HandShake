@@ -1,5 +1,5 @@
 import { hexToBytes } from "../../../holochain/decode";
-import type { PromoRequirement, PromoReward } from "../../../holochain/types";
+import type { PromoLimits, PromoPeriod, PromoRequirement, PromoReward } from "../../../holochain/types";
 import { toMinorUnits } from "../../../lib/ui/format";
 
 // Requirement and reward are picked independently (two dropdowns), the
@@ -21,9 +21,27 @@ export const EMPTY_PROMO_FORM = {
   rewardItemHex: "",
   rewardQuantity: 1,
   autoApply: false,
+  /// Who may use it, and how often.
+  firstOrderOnly: false,
+  /// "any", "once", or a number of uses per customer.
+  perCustomer: "any" as "any" | "once" | "custom",
+  perCustomerCount: 3,
+  oncePer: "any" as "any" | PromoPeriod,
+  totalLimited: false,
+  total: 100,
 };
 
 export type PromoForm = typeof EMPTY_PROMO_FORM;
+
+/// The form's limits, as the network takes them.
+export function buildLimits(form: PromoForm): PromoLimits {
+  return {
+    first_order_only: form.firstOrderOnly,
+    per_customer: form.perCustomer === "once" ? 1 : form.perCustomer === "custom" ? Math.min(1000, Math.max(1, Math.round(form.perCustomerCount))) : null,
+    once_per: form.oncePer === "any" ? null : form.oncePer,
+    total: form.totalLimited ? Math.min(1_000_000, Math.max(1, Math.round(form.total))) : null,
+  };
+}
 
 /// `null` while the form is incomplete (an item-scoped kind with no item).
 export function buildRequirement(form: PromoForm): PromoRequirement | null {

@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, GeoPoint, TaxRate, HcRecord, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoRequirement, PromoReward, GoodieBag, Timestamp } from "../types";
+import type { ActionHash, AgentPubKey, GeoPoint, TaxRate, HcRecord, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoRequirement, PromoReward, GoodieBag, Timestamp, PromoLimits } from "../types";
 import { nowMicros } from "../../lib/ui/format";
 
 // An entry's stable identity (its original action) alongside its latest
@@ -189,6 +189,8 @@ export async function createPromoCode(input: {
   reward: PromoReward;
   expires_at?: Timestamp | null;
   auto_apply?: boolean;
+  /// Who may use it, and how often.
+  limits?: PromoLimits;
 }): Promise<HcRecord> {
   return callZome("catalog", "create_promo_code", { expires_at: null, auto_apply: false, ...input });
 }

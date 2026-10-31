@@ -56,6 +56,7 @@ pub fn request_pickup_order(input: RequestPickupOrderInput) -> ExternResult<Reco
 
     if let Some(promo_ref) = &input.promo_code_ref {
         ensure_promo_usable(promo_ref, &input.catalog_ref)?;
+        crate::promos::ensure_promo_allowed(promo_ref, &input.catalog_ref)?;
     }
     if let Some(claim_ref) = &input.bag_claim_ref {
         ensure_claim_confirmed(claim_ref)?;
@@ -134,6 +135,8 @@ pub fn accept_pickup_order(input: AcceptOrderInput) -> ExternResult<Record> {
     ensure_priced_from_current_menu(&order_original_action, &order.lines, order.bag_claim_ref.as_ref(), order.promo_code_ref.as_ref())?;
     ensure_current_terms(&order_original_action, &order.catalog_ref, &order.catalog_version)?;
     crate::pricing::ensure_current_program(&order_original_action, &order.catalog_ref, order.rewards.as_ref())?;
+    crate::promos::ensure_promo_left(&order_original_action, order.promo_code_ref.as_ref())?;
+    let promo = order.promo_code_ref.clone();
     if let Some(claim_ref) = &order.bag_claim_ref {
         crate::claims::redeem_bag_claim(claim_ref)?;
     }
@@ -142,6 +145,7 @@ pub fn accept_pickup_order(input: AcceptOrderInput) -> ExternResult<Record> {
     order.ready_by = Some(ready_by(&order.catalog_ref, input.prep_minutes)?);
     order.status = PickupStatus::MerchantConfirmed;
     let updated = update_version(&current, &EntryTypes::PickupOrder(order), LinkTypes::Version)?;
+    crate::promos::record_promo_use(&original, promo.as_ref())?;
     written(updated)
 }
 

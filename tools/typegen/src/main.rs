@@ -84,6 +84,7 @@ const SOURCES: &[Source] = &[
     only("dnas/handshake/zomes/dispatch/coordinator/src/deliveries.rs", &["OrderTiming", "StoreStep", "StoreStepDue"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/matching.rs", &["RankedBid"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/live.rs", &["LiveCounterpart"]),
+    only("dnas/handshake/zomes/dispatch/coordinator/src/promos.rs", &["PromoBlock", "PromoStanding"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/reach.rs", &["NetworkReach"]),
     only("dnas/handshake/zomes/reputation/coordinator/src/lib.rs", &["ReputationSummary", "RatingSummary"]),
     renamed("dnas/handshake/zomes/dispatch/coordinator/src/signals.rs", &["LocalSignal", "OrderChange", "OrderRole"], &[("LocalSignal", "DispatchLocalSignal")]),

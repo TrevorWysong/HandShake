@@ -185,7 +185,9 @@ fn fire(template: &RecurringOrderTemplate, details: &TemplateDetails) -> ExternR
     if items.is_empty() {
         return Ok(());
     }
-    let promo = template.promo_code_ref.clone().filter(|promo| ensure_promo_usable(promo, &template.catalog_ref).is_ok());
+    // A code the customer can't use now (used up, once a period, scheduled
+    // orders aside) is left off rather than holding up their standing order.
+    let promo = template.promo_code_ref.clone().filter(|promo| ensure_promo_usable(promo, &template.catalog_ref).is_ok() && crate::promos::ensure_promo_allowed(promo, &template.catalog_ref).is_ok());
     let (priced, promo) = match price_menu_order(&template.catalog_ref, &store, &items, promo.as_ref(), None) {
         Ok(priced) => (priced, promo),
         Err(_) if promo.is_some() => (price_menu_order(&template.catalog_ref, &store, &items, None, None)?, None),

@@ -194,7 +194,7 @@ fn copy_promos(source: &Source, from: &ActionHash, to: &ActionHash, items: &BTre
             },
             other => other,
         };
-        create_promo_code(CreatePromoCodeInput { catalog_ref: to.clone(), code: promo.code, requirement, reward, expires_at: promo.expires_at, auto_apply: promo.auto_apply })?;
+        create_promo_code(CreatePromoCodeInput { catalog_ref: to.clone(), code: promo.code, requirement, reward, expires_at: promo.expires_at, auto_apply: promo.auto_apply, limits: promo.limits })?;
     }
     Ok(())
 }

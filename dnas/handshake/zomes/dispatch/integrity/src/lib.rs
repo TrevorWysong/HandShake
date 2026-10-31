@@ -109,6 +109,10 @@ pub enum LinkTypes {
     /// A customer's standing orders, base = the customer -- so their own
     /// conductor finds them to fire without reading back through its chain.
     OwnerToTemplate,
+    /// An order its store accepted with a promo code, base = the promo (its
+    /// original action) -- how the store counts a promo's uses against its
+    /// total, and customers see how many are left.
+    PromoToOrder,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");

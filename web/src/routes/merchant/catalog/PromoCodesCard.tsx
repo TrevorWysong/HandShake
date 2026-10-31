@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Gift, ListChecks, Plus, Sparkles, Tag } from "lucide-react";
+import { Gift, ListChecks, Plus, Sparkles, Tag, Users } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPromoCode, listPromoCodesForCatalog, setPromoCodeActive } from "../../../holochain/zomes/catalog";
 import { bytesToHex, decodeEntry } from "../../../holochain/decode";
 import { useResource } from "../../../lib/hooks/useResource";
 import { describeRequirement, describeReward } from "../../../lib/menu/promotions";
 import { itemNamesByHex, type ItemRow } from "../../../lib/menu/menu";
-import { Button, Card, Checkbox, Input, Select } from "../../../components/ui";
-import { buildRequirement, buildReward, EMPTY_PROMO_FORM, type PromoForm, type RequirementKind, type RewardKind } from "./promoForm";
+import { Button, Card, Checkbox, Input, SegmentedTabs, Select, Switch } from "../../../components/ui";
+import { buildLimits, buildRequirement, buildReward, EMPTY_PROMO_FORM, type PromoForm, type RequirementKind, type RewardKind } from "./promoForm";
+import { describeLimits } from "../../../lib/menu/promotions";
+import { myPromoUses } from "../../../holochain/zomes/dispatch";
 import type { PromoCode, Timestamp } from "../../../holochain/types";
 import { MAX_PROMO_CODE_CHARS } from "../../../holochain/types";
 import { currencySymbol } from "../../../lib/ui/format";
@@ -107,6 +109,7 @@ export function PromoCodesCard({ storeHex, catalogRef, items }: { storeHex: stri
                 <p className="text-xs text-ink-400">
                   {describeRequirement(row.promo.requirement, itemName)} · {describeReward(row.promo.reward, itemName)}
                 </p>
+                <PromoTerms row={row} />
               </div>
               <Button variant={row.promo.active ? "secondary" : "ghost"} className="px-3 py-1.5 text-xs" loading={toggling === row.hex} onClick={() => toggle(row)}>
                 {row.promo.active ? t("orders.active") : t("promoEditor.inactive")}
@@ -139,7 +142,7 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
     if (!ready) return;
     setSaving(true);
     try {
-      await createPromoCode({ catalog_ref: catalogRef, code: form.code.trim().toUpperCase(), requirement: requirement!, reward: reward!, auto_apply: form.autoApply });
+      await createPromoCode({ catalog_ref: catalogRef, code: form.code.trim().toUpperCase(), requirement: requirement!, reward: reward!, auto_apply: form.autoApply, limits: buildLimits(form) });
       await onCreated();
     } finally {
       setSaving(false);
@@ -233,11 +236,67 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
         )}
       </div>
 
+      <div className="rounded-xl bg-ink-50 dark:bg-ink-800/50 p-3">
+        <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-400">
+          <Users size={13} className="text-handshake-500" /> {t("promoEditor.limits")}
+        </p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("promoEditor.newOnly")}</p>
+            <p className="text-xs text-ink-400">{t("promoEditor.newOnlyHint")}</p>
+          </div>
+          <Switch checked={form.firstOrderOnly} onChange={(firstOrderOnly) => set({ firstOrderOnly })} label={t("promoEditor.newOnly")} />
+        </div>
+        {!form.firstOrderOnly && (
+          <>
+            <p className="mb-1.5 mt-3 text-xs font-semibold text-ink-500">{t("promoEditor.perCustomer")}</p>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <SegmentedTabs
+                  tabs={[
+                    { value: "any", label: t("promoEditor.unlimited") },
+                    { value: "once", label: t("promoEditor.onceOnly") },
+                    { value: "custom", label: t("promoEditor.times") },
+                  ]}
+                  value={form.perCustomer}
+                  onChange={(perCustomer) => set({ perCustomer })}
+                />
+              </div>
+              {form.perCustomer === "custom" && <Input type="number" min={2} max={1000} value={form.perCustomerCount} onChange={(e) => set({ perCustomerCount: Number(e.target.value) })} className="w-20" aria-label={t("promoEditor.times")} />}
+            </div>
+            {form.perCustomer !== "once" && (
+              <>
+                <p className="mb-1.5 mt-3 text-xs font-semibold text-ink-500">{t("promoEditor.howOften")}</p>
+                <SegmentedTabs
+                  tabs={[
+                    { value: "any", label: t("promoEditor.anyTime") },
+                    { value: "Day", label: t("promoEditor.perDay") },
+                    { value: "Week", label: t("promoEditor.perWeek") },
+                    { value: "Month", label: t("promoEditor.perMonth") },
+                  ]}
+                  value={form.oncePer}
+                  onChange={(oncePer) => set({ oncePer })}
+                />
+              </>
+            )}
+          </>
+        )}
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("promoEditor.totalLimit")}</p>
+            <p className="text-xs text-ink-400">{t("promoEditor.totalHint")}</p>
+          </div>
+          <Switch checked={form.totalLimited} onChange={(totalLimited) => set({ totalLimited })} label={t("promoEditor.totalLimit")} />
+        </div>
+        {form.totalLimited && <Input type="number" min={1} max={1000000} value={form.total} onChange={(e) => set({ total: Number(e.target.value) })} suffix={t("promoEditor.orders")} className="mt-2" />}
+      </div>
+
       {requirement && reward && (
         <div className="flex items-start gap-2 rounded-xl bg-handshake-50 dark:bg-handshake-900/20 px-3 py-2.5 text-xs text-handshake-700 dark:text-handshake-300">
           <Sparkles size={14} className="mt-0.5 shrink-0" />
           <span>
             {describeRequirement(requirement, itemName)} · {describeReward(reward, itemName)}
+            {describeLimits({ limits: buildLimits(form), expires_at: null } as PromoCode).map((chip) => ` · ${chip}`)}
           </span>
         </div>
       )}
@@ -246,5 +305,24 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
         {t("promoEditor.create")}
       </Button>
     </motion.div>
+  );
+}
+
+/// A code's limits, and -- for one with a total -- how much of it is used.
+function PromoTerms({ row }: { row: PromoRow }) {
+  const t = useT();
+  const total = row.promo.limits.total;
+  const { data: used } = useResource(total ? `promo-uses:${row.hex}` : null, () => myPromoUses(row.hash));
+  const chips = describeLimits(row.promo);
+  if (chips.length === 0 && !total) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {chips.map((chip) => (
+        <span key={chip} className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-ink-500 dark:bg-ink-900">
+          {chip}
+        </span>
+      ))}
+      {total && used !== undefined && <span className="rounded-full bg-handshake-50 px-2 py-0.5 text-[10px] font-bold text-handshake-700 dark:bg-handshake-900/30 dark:text-handshake-300">{t("promoEditor.used", { used, total })}</span>}
+    </div>
   );
 }

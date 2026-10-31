@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, AppealView, AppealsPage, Beacon, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PinSecret, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
+import type { ActionHash, AgentPubKey, AppealView, AppealsPage, Beacon, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PinSecret, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary, PromoStanding } from "../types";
 
 // --- orders ---
 
@@ -533,4 +533,15 @@ export async function getMyDocket(before: Timestamp | null = null): Promise<Appe
 /// Appeals of the caller's decisions as a store owner, paged the same way.
 export async function getAppealsAgainstMe(before: Timestamp | null = null): Promise<AppealsPage> {
   return callZome("dispatch", "get_appeals_against_me", { before });
+}
+
+/// The caller's standing with each of a store's live promo codes: how often
+/// they've used it, and why they can't now, if they can't.
+export async function myPromoStanding(catalogRef: ActionHash): Promise<PromoStanding[]> {
+  return callZome("dispatch", "my_promo_standing", catalogRef);
+}
+
+/// How many orders the caller's store has accepted with a promo code.
+export async function myPromoUses(promo: ActionHash): Promise<number> {
+  return callZome("dispatch", "my_promo_uses", promo);
 }
