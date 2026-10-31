@@ -8,7 +8,7 @@
 // `case`/`in` arm in exactly one place (here), not a new code path threaded
 // through Cart.tsx or the merchant catalog UI.
 import { lineKey, type CartLine } from "../../store/cart";
-import type { ActionHash, PromoCode, PromoRequirement, PromoReward } from "../../holochain/types";
+import type { ActionHash, PromoBlock, PromoCode, PromoLimits, PromoRequirement, PromoReward, PromoStanding } from "../../holochain/types";
 import { bytesToHex } from "../../holochain/decode";
 import { formatCents } from "../ui/format";
 import { t } from "../../i18n";
@@ -130,4 +130,26 @@ export function describeReward(reward: PromoReward, itemName: (hex: string) => s
     return t("promo.reward.percentItem", { percent, count: quantity, item: itemName(bytesToHex(item_ref)) ?? t("promo.item") });
   }
   return t("promo.reward.unknown");
+}
+
+/// A promo's terms, as short chips: who it's for, how often, until when,
+/// how many are left.
+export function describeLimits(promo: PromoCode, standing?: PromoStanding): string[] {
+  const limits: PromoLimits = promo.limits;
+  const chips: string[] = [];
+  if (limits.first_order_only) chips.push(t("deals.chip.new"));
+  if (limits.per_customer === 1) chips.push(t("deals.chip.once"));
+  else if (limits.per_customer) chips.push(t("deals.chip.uses", { count: limits.per_customer }));
+  if (limits.once_per) chips.push(t(`deals.chip.per.${limits.once_per}`));
+  if (promo.expires_at) chips.push(t("deals.chip.ends", { date: new Date(promo.expires_at / 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }) }));
+  if (standing?.remaining != null && standing.remaining > 0 && standing.remaining <= 50) chips.push(t("deals.chip.left", { count: standing.remaining }));
+  return chips;
+}
+
+/// Why a customer can't use a promo now, in words.
+export function describeBlock(block: PromoBlock): string {
+  if (block === "FirstOrderOnly") return t("deals.block.first");
+  if (block === "UsedUp") return t("deals.block.used");
+  if (block === "SoldOut") return t("deals.block.soldOut");
+  return t(`deals.block.again.${block.ThisPeriod}`);
 }

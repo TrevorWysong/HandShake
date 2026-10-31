@@ -61,6 +61,17 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
                 "a standing order is listed only by its owner, under their own key",
             )
         }
+        // Only the order's store counts it, under the promo it cites.
+        LinkTypes::PromoToOrder => {
+            let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
+            if !matches!(record.action().data, ActionData::Create(_)) {
+                return invalid("a promo's use links an order by its original action");
+            }
+            let cited = decode::<DeliveryOrder>(&record).map(|o| (o.merchant, o.promo_code_ref)).or_else(|| decode::<PickupOrder>(&record).map(|o| (o.merchant, o.promo_code_ref)));
+            let Some((merchant, Some(promo))) = cited else { return invalid("a promo's use links an order that cites it") };
+            let promo = handshake_integrity_support::original_creation(promo)?;
+            require(&merchant == link.author && link.base == &AnyLinkableHash::from(promo), "a promo's use is counted by the order's store, under the promo the order cites")
+        }
     }
 }
 
@@ -92,7 +103,7 @@ fn validate_open_order_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCal
 
 pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
     match link.link_type {
-        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate => invalid("this dispatch link type can't be deleted"),
+        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder => invalid("this dispatch link type can't be deleted"),
         LinkTypes::DriverToVerification => {
             let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
             require(record.action().author() == link.author, "only its verifier unlinks a verification")

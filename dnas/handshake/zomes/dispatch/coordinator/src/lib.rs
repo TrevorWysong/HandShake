@@ -52,6 +52,7 @@ mod orders;
 mod pickup;
 mod pin;
 mod pricing;
+mod promos;
 mod reach;
 mod receipts;
 mod recurring;

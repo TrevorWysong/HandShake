@@ -83,6 +83,20 @@ pub fn local_time(at: Timestamp, time_zone: &str) -> LocalTime {
     }
 }
 
+/// Which day, week or month `at` falls in, in `time_zone`, as a number --
+/// equal for two moments in the same period. A week starts on Monday.
+pub fn period_of(at: Timestamp, time_zone: &str, period: catalog_types::PromoPeriod) -> i64 {
+    let tz: chrono_tz::Tz = time_zone.parse().unwrap_or(chrono_tz::Tz::UTC);
+    let local = chrono::DateTime::from_timestamp_micros(at.as_micros()).unwrap_or_default().with_timezone(&tz);
+    let day = i64::from(local.date_naive().num_days_from_ce());
+    match period {
+        catalog_types::PromoPeriod::Day => day,
+        // Day 1 of the common era was a Monday.
+        catalog_types::PromoPeriod::Week => (day - 1).div_euclid(7),
+        catalog_types::PromoPeriod::Month => i64::from(local.year()) * 12 + i64::from(local.month()),
+    }
+}
+
 /// The tier `state` puts a member in: 0 for the base, `n` for the program's
 /// `n`th tier -- the highest whose threshold either year's earning reached.
 pub fn tier_of(program: &RewardsProgram, state: &PointsState) -> u8 {
@@ -237,6 +251,20 @@ mod tests {
         let t = local_time(june(12), "America/New_York");
         assert_eq!((t.year, t.month, t.weekday, t.minute), (2026, 6, 0, 12 * 60));
         assert_eq!(local_time(june(12), "Nowhere/Atall").minute, 16 * 60, "an unknown zone is UTC");
+    }
+
+    #[test]
+    fn periods_follow_the_store_calendar() {
+        use catalog_types::PromoPeriod::{Day, Month, Week};
+        let tz = "America/New_York";
+        // Monday 2026-06-15, 23:30 and the next day 00:30, New York time.
+        let late = Timestamp::from_micros(june(23).as_micros() + 30 * 60_000_000);
+        let early = Timestamp::from_micros(late.as_micros() + 3_600_000_000);
+        assert_ne!(period_of(late, tz, Day), period_of(early, tz, Day), "midnight in the store's zone");
+        assert_eq!(period_of(late, tz, Week), period_of(early, tz, Week), "Monday and Tuesday share a week");
+        assert_ne!(period_of(june(12), tz, Week), period_of(days_after(june(12), -1), tz, Week), "Sunday is the week before");
+        assert_eq!(period_of(june(12), tz, Month), period_of(days_after(june(12), 10), tz, Month));
+        assert_ne!(period_of(june(12), tz, Month), period_of(days_after(june(12), 20), tz, Month));
     }
 
     #[test]

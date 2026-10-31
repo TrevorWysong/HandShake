@@ -454,6 +454,11 @@ export type DeclineReason =
    * delivery area or fee share -- which had since changed.
    */
   | "TermsChanged"
+  /**
+   * Its promo code had been used as many times as it allows, across
+   * every customer (`catalog_types::PromoLimits::total`).
+   */
+  | "PromoUsedUp"
   | "Other";
 
 /**
@@ -2808,6 +2813,27 @@ export interface ProgramView {
 }
 
 /**
+ * Why a customer can't use a code now.
+ */
+export type PromoBlock =
+  /**
+   * It's for a first order here, and they've ordered here before.
+   */
+  | "FirstOrderOnly"
+  /**
+   * They've used it as many times as it allows.
+   */
+  | "UsedUp"
+  /**
+   * They've used it already this day, week or month.
+   */
+  | { ThisPeriod: PromoPeriod }
+  /**
+   * Every use it allows, across customers, is taken.
+   */
+  | "SoldOut";
+
+/**
  * Merchant-scoped, not global -- one restaurant's "WELCOME10" is a
  * completely independent code from another's, looked up by
  * `(catalog_ref, code)` rather than a globally unique string. Immutable
@@ -2833,7 +2859,42 @@ export interface PromoCode {
    * behavior is unchanged.
    */
   auto_apply: boolean;
+  /**
+   * Who may use it, and how often -- fixed at creation, like the rest.
+   */
+  limits: PromoLimits;
 }
+
+/**
+ * How a promo code may be used. Every limit but `total` is checked by
+ * validation, against the customer's own chain -- every order they place
+ * is on it -- so no client gets around it. `total` counts orders across
+ * customers, which no single chain holds: the store's app enforces it as it
+ * accepts orders, from its own record of them.
+ */
+export interface PromoLimits {
+  /**
+   * Only on a customer's first order at the store.
+   */
+  first_order_only: boolean;
+  /**
+   * How many orders of one customer's may use it, in all. `None`: any.
+   */
+  per_customer: number | null;
+  /**
+   * At most once each day, week or month (the store's time) per customer.
+   */
+  once_per: PromoPeriod | null;
+  /**
+   * How many orders may use it, across every customer. `None`: any.
+   */
+  total: number | null;
+}
+
+/**
+ * A calendar period, in the store's time zone. A week starts on Monday.
+ */
+export type PromoPeriod = "Day" | "Week" | "Month";
 
 /**
  * What a cart must satisfy for a `PromoCode` to apply -- the "purchase
@@ -2924,6 +2985,28 @@ export type PromoReward =
         quantity: number;
       };
     };
+
+/**
+ * A customer's standing with one of a store's codes.
+ */
+export interface PromoStanding {
+  /**
+   * The code (its original action).
+   */
+  promo: ActionHash;
+  /**
+   * How many of their orders have used it.
+   */
+  uses: number;
+  /**
+   * How many uses are left across every customer, for a code with a total.
+   */
+  remaining: number | null;
+  /**
+   * Why they can't use it now -- `None` if they can.
+   */
+  blocked: PromoBlock | null;
+}
 
 /**
  * Kept separate from `Profile` because verification status churns independently

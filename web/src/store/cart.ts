@@ -37,6 +37,10 @@ interface CartState {
   merchant: Uint8Array | null;
   merchantName: string | null;
   lines: CartLine[];
+  /// A promo code the customer chose from the store's deals (its original
+  /// action, hex) -- applied at checkout if it's this cart's store's.
+  promoHex: string | null;
+  choosePromo: (hex: string | null) => void;
 
   /// Adds `line` (its `quantity` units) -- to the line with the same item
   /// and choices if there is one.
@@ -74,6 +78,9 @@ export const useCart = create<CartState>()(
       merchant: null,
       merchantName: null,
       lines: [],
+      promoHex: null,
+
+      choosePromo: (promoHex) => set({ promoHex }),
 
       addLine: (catalogRef, merchant, merchantName, line) => {
         const state = get();
@@ -98,14 +105,14 @@ export const useCart = create<CartState>()(
 
       setCart: (catalogRef, merchant, merchantName, lines) => set({ catalogRef, merchant, merchantName, lines: lines.reduce(merged, [] as CartLine[]) }),
 
-      clear: () => set({ catalogRef: null, merchant: null, merchantName: null, lines: [] }),
+      clear: () => set({ catalogRef: null, merchant: null, merchantName: null, lines: [], promoHex: null }),
 
       total: () => get().lines.reduce((sum, l) => sum + l.priceCents * l.quantity, 0),
     }),
     {
       name: "handshake.cart.v1",
       storage: createJSONStorage(() => localStorage, { replacer, reviver }),
-      partialize: ({ catalogRef, merchant, merchantName, lines }) => ({ catalogRef, merchant, merchantName, lines }),
+      partialize: ({ catalogRef, merchant, merchantName, lines, promoHex }) => ({ catalogRef, merchant, merchantName, lines, promoHex }),
     },
   ),
 );

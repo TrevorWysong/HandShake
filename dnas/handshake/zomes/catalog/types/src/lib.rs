@@ -277,6 +277,51 @@ pub struct PromoCode {
     /// behavior is unchanged.
     #[serde(default)]
     pub auto_apply: bool,
+    /// Who may use it, and how often -- fixed at creation, like the rest.
+    #[serde(default)]
+    pub limits: PromoLimits,
+}
+
+/// How a promo code may be used. Every limit but `total` is checked by
+/// validation, against the customer's own chain -- every order they place
+/// is on it -- so no client gets around it. `total` counts orders across
+/// customers, which no single chain holds: the store's app enforces it as it
+/// accepts orders, from its own record of them.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct PromoLimits {
+    /// Only on a customer's first order at the store.
+    pub first_order_only: bool,
+    /// How many orders of one customer's may use it, in all. `None`: any.
+    pub per_customer: Option<u32>,
+    /// At most once each day, week or month (the store's time) per customer.
+    pub once_per: Option<PromoPeriod>,
+    /// How many orders may use it, across every customer. `None`: any.
+    pub total: Option<u32>,
+}
+
+/// A calendar period, in the store's time zone. A week starts on Monday.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromoPeriod {
+    Day,
+    Week,
+    Month,
+}
+
+/// The most uses a limit may set.
+pub const MAX_PROMO_USES_PER_CUSTOMER: u32 = 1_000;
+pub const MAX_PROMO_USES_TOTAL: u32 = 1_000_000;
+
+impl PromoLimits {
+    /// What's wrong with these limits, if anything.
+    pub fn problem(&self) -> Option<&'static str> {
+        if self.per_customer.is_some_and(|n| n == 0 || n > MAX_PROMO_USES_PER_CUSTOMER) {
+            return Some("a promo's uses per customer are between 1 and 1,000");
+        }
+        if self.total.is_some_and(|n| n == 0 || n > MAX_PROMO_USES_TOTAL) {
+            return Some("a promo's total uses are between 1 and 1,000,000");
+        }
+        None
+    }
 }
 
 /// A goodie bag: a quantity-limited, time-windowed, discounted mystery bag

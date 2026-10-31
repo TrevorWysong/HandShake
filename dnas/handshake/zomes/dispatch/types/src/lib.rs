@@ -206,6 +206,9 @@ pub enum DeclineReason {
     /// Placed under the store's earlier terms -- its minimum order,
     /// delivery area or fee share -- which had since changed.
     TermsChanged,
+    /// Its promo code had been used as many times as it allows, across
+    /// every customer (`catalog_types::PromoLimits::total`).
+    PromoUsedUp,
     Other,
 }
 

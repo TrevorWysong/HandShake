@@ -49,6 +49,20 @@ const propertiesPath = path.join(REPO, "deploy/properties.json");
 if (!network.properties && !existsSync(propertiesPath)) fail("deploy/properties.json is missing -- copy deploy/properties.example.json and fill it in.");
 const properties = network.properties ?? JSON.parse(readFileSync(propertiesPath, "utf8"));
 
+// Every setting must be one the network reads (handshake_governance's
+// HandShakeDnaProperties). The DNA ignores a name it doesn't know, so a
+// misspelled one would silently leave its feature at the default -- appeals
+// off, say -- for everyone, for good.
+const governance = readFileSync(path.join(REPO, "dnas/handshake/governance/src/lib.rs"), "utf8");
+const struct = governance.slice(governance.indexOf("pub struct HandShakeDnaProperties {"));
+const known = [...struct.slice(0, struct.indexOf("\n}")).matchAll(/^\s*pub (\w+):/gm)].map((m) => m[1]);
+if (known.length === 0) fail("couldn't read the network's settings from handshake_governance -- has HandShakeDnaProperties moved?");
+const unknown = Object.keys(properties).filter((key) => !known.includes(key));
+if (unknown.length) {
+  const near = (key: string) => known.find((k) => k.startsWith(key.slice(0, 4)) || key.startsWith(k.slice(0, 4)));
+  fail(`Unknown network settings: ${unknown.map((key) => (near(key) ? `${key} (did you mean ${near(key)}?)` : key)).join(", ")}. The network ignores a name it doesn't know; fix or remove them.`);
+}
+
 // Money: a network states how far into debt anyone may go (0 recommended:
 // everything prepaid, so a fresh identity can't order on credit), and who
 // may issue funds -- without an issuer, nobody with a 0 limit could ever

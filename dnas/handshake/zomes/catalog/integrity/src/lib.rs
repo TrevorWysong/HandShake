@@ -17,7 +17,7 @@ pub use links::catalog_geohash_path;
 // a direct dependency on this crate wouldn't work. Re-exported here so
 // nothing else in this crate or the coordinator crate (which imports via
 // `catalog_integrity::*`) needs to change.
-pub use catalog_types::{listing_stake, listing_tag, BagClaim, BagClaimFulfillment, BagClaimStatus, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
+pub use catalog_types::{listing_stake, listing_tag, BagClaim, BagClaimFulfillment, BagClaimStatus, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
 
 /// Precision used for the merchant-discovery anchor -- coarse (city-block
 /// scale), matching open orders' drop-off precision so both discovery paths
@@ -468,6 +468,9 @@ fn validate_new_promo_code(promo: &PromoCode, author: &AgentPubKey) -> ExternRes
     if let Some(reason) = validate_reward(&promo.reward) {
         return Ok(ValidateCallbackResult::Invalid(reason.into()));
     }
+    if let Some(reason) = promo.limits.problem() {
+        return Ok(ValidateCallbackResult::Invalid(reason.into()));
+    }
     for item_ref in requirement_item_ref(&promo.requirement).into_iter().chain(reward_item_ref(&promo.reward)) {
         if !item_belongs_to_catalog(item_ref, &promo.catalog_ref)? {
             return Ok(ValidateCallbackResult::Invalid(
@@ -510,7 +513,8 @@ fn validate_promo_code_update(promo: &PromoCode, author: &AgentPubKey, original_
         && prior.reward == promo.reward
         && prior.expires_at == promo.expires_at
         && prior.created_at == promo.created_at
-        && prior.auto_apply == promo.auto_apply;
+        && prior.auto_apply == promo.auto_apply
+        && prior.limits == promo.limits;
     if !unchanged {
         return Ok(ValidateCallbackResult::Invalid(
             "a promo code update may only change active -- every other field must stay the same".into(),
