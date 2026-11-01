@@ -233,10 +233,12 @@ test("a card is vouched for on the first account it pays for, and never another"
   const { ledger, attested } = fakeLedger();
   const first = agentId(identity().key);
   const second = agentId(identity().key);
-  await grantPayment(store, ledger, { payment: "pi_a", agent: first, amount: 2000, card: "fp_visa" });
-  await grantPayment(store, ledger, { payment: "pi_b", agent: second, amount: 2000, card: "fp_visa" });
+  await grantPayment(store, ledger, { payment: "pi_a", agent: first, amount: 2000, card: "fp_visa", cardVouches: true });
+  await grantPayment(store, ledger, { payment: "pi_b", agent: second, amount: 2000, card: "fp_visa", cardVouches: true });
   assert.deepEqual(attested, [first], "the same card on a second account earns it no word");
-  await grantPayment(store, ledger, { payment: "pi_c", agent: second, amount: 2000, card: "fp_amex" });
+  await grantPayment(store, ledger, { payment: "pi_p", agent: second, amount: 2000, card: "fp_prepaid", cardVouches: false });
+  assert.deepEqual(attested, [first], "nor does a prepaid card");
+  await grantPayment(store, ledger, { payment: "pi_c", agent: second, amount: 2000, card: "fp_amex", cardVouches: true });
   assert.deepEqual(attested, [first, second], "a card of its own does");
   await grantPayment(store, ledger, { payment: "pi_d", agent: second, amount: 2000 });
   assert.equal(attested.length, 2, "a payment with no card says nothing");

@@ -13,6 +13,10 @@ export interface CompletedPayment {
   /// card wherever it's used, so the issuer knows a card it's seen before.
   /// Kept only as a hash (`Store::claimCard`).
   card?: string;
+  /// Whether that card is a credit or debit card on a bank account -- not
+  /// prepaid, which anyone can buy by the dozen. Only such a card vouches
+  /// for an account (`vouchForCard`).
+  cardVouches?: boolean;
 }
 
 /// A card saved for someone, as they'd recognise it.

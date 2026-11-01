@@ -114,7 +114,8 @@ function GiftOffers() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("rewards.gifts.offer", { points: offer.points.toLocaleString(), store: offer.store_name || t("rewards.gifts.aStore") })}</p>
-                  {offer.note && <p className="mt-0.5 line-clamp-2 text-xs text-ink-500">“{offer.note}”</p>}
+                  {/* A store they don't know: its words, kept short and plainly its own. */}
+                  {offer.note && <p className="mt-0.5 line-clamp-1 text-xs italic text-ink-400">“{offer.note.slice(0, 80)}”</p>}
                   <p className="mt-1 text-[11px] text-ink-400">{t("rewards.gifts.unknown")}</p>
                 </div>
               </div>

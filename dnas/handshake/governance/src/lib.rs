@@ -80,6 +80,11 @@ pub struct HandShakeDnaProperties {
     pub max_concurrent_deliveries: Option<u32>,
     #[serde(default)]
     pub max_pending_orders: Option<u32>,
+    /// How many orders a customer may call off in a day before any store
+    /// answered them, across every store, before the network refuses their
+    /// next one until the day has passed. Unset, 10.
+    #[serde(default)]
+    pub max_daily_early_cancels: Option<u32>,
     #[serde(default)]
     pub min_redemption_cents: Option<u64>,
     #[serde(default)]
@@ -331,6 +336,11 @@ pub fn min_redemption_cents() -> u64 {
 
 pub fn max_pending_orders() -> u32 {
     setting(|p| p.max_pending_orders, 5).max(1)
+}
+
+/// See `HandShakeDnaProperties::max_daily_early_cancels`.
+pub fn max_daily_early_cancels() -> u32 {
+    setting(|p| p.max_daily_early_cancels, 10).max(1)
 }
 
 /// What listing a store for customers to find sets aside, in minor units --

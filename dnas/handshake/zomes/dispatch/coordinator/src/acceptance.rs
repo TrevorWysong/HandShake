@@ -56,20 +56,27 @@ pub(crate) const MAX_EARLY_CANCELS: usize = 3;
 const CANCEL_WINDOW_MICROS: i64 = 24 * 3_600_000_000;
 
 /// Whether `requester` has called off `MAX_EARLY_CANCELS` orders at
-/// `catalog_ref` lately, each before the store had answered it -- read from
-/// the store's own recent history, so it needs nothing from the customer.
+/// `catalog_ref` lately without paying for them: before the store answered,
+/// or before they saw it start (the stale-branch race, which a modified app
+/// could otherwise play every time). Read from the store's own recent
+/// history, so it needs nothing from the customer.
 pub(crate) fn serial_canceller(requester: &AgentPubKey, catalog_ref: &ActionHash) -> ExternResult<bool> {
     let since = sys_time()?.as_micros() - CANCEL_WINDOW_MICROS;
-    let early = crate::order_queues::recent_store_orders(catalog_ref)?
-        .into_iter()
-        .filter(|entry| entry.record.action().timestamp().as_micros() >= since)
-        .filter(|entry| {
-            // Its latest version: called off by its customer, never started.
-            decode_or::<DeliveryOrder>(&entry.record).is_some_and(|o| &o.requester == requester && o.cancellation == Some(Cancellation::ByCustomer) && o.prep_minutes.is_none())
-                || decode_or::<PickupOrder>(&entry.record).is_some_and(|o| &o.requester == requester && o.cancellation == Some(Cancellation::ByCustomer) && o.ready_by.is_none())
-        })
-        .count();
-    Ok(early >= MAX_EARLY_CANCELS)
+    let mut free = 0;
+    for entry in crate::order_queues::recent_store_orders(catalog_ref)? {
+        if entry.record.action().timestamp().as_micros() < since {
+            continue;
+        }
+        let theirs = decode_or::<DeliveryOrder>(&entry.record).map(|o| o.requester).or_else(|| decode_or::<PickupOrder>(&entry.record).map(|o| o.requester));
+        if theirs.as_ref() != Some(requester) || !crate::confirmations::cancelled_in_time(entry.original_action.clone())? {
+            continue;
+        }
+        free += 1;
+        if free >= MAX_EARLY_CANCELS {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Why the store won't accept this order, of these, if one applies.

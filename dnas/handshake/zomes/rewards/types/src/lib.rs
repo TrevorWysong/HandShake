@@ -246,6 +246,21 @@ pub struct BirthdayShare {
     pub sealed_month: XSalsa20Poly1305EncryptedData,
 }
 
+/// A store's own record of a member's birth month, once it has read what
+/// they told it (`BirthdayShare`) -- private on its chain, so its birthday
+/// sweep needs no lookups for members it knows.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+// Decodes only from its own fields: a record of another type that
+// happens to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct MemberBirthday {
+    pub catalog_ref: ActionHash,
+    pub customer: AgentPubKey,
+    /// 1 (January) to 12.
+    pub month: u8,
+}
+
 /// A store's own record of an order that joined its program, kept private
 /// on its chain: what it works out its members' points from, alongside its
 /// settlements and grants. Written as it accepts the order.
@@ -255,6 +270,8 @@ pub struct BirthdayShare {
 // happens to share these can never pass for this one.
 #[serde(deny_unknown_fields)]
 pub struct MemberOrder {
+    /// The store it was placed at.
+    pub catalog_ref: ActionHash,
     pub customer: AgentPubKey,
     /// The order's original action.
     pub order: ActionHash,

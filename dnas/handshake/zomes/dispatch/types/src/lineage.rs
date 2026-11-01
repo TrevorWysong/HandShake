@@ -218,6 +218,29 @@ pub fn confirmed(customer: &AgentPubKey, chain_top: &ActionHash, order: &ActionH
     Ok(handshake_integrity_support::chain::entries_since(customer, chain_top, placed, &[confirmation])?.into_iter().any(|bytes| super::OrderConfirmation::try_from(bytes).is_ok_and(|c| &c.order == order)))
 }
 
+/// Whether `cancel` -- a version calling an order off -- was written on a
+/// version of `store`'s that had started on it. Its writer read that
+/// version to write on it, so they saw the start whether or not their app
+/// wrote a confirmation: a modified app can't withhold one and cancel on it
+/// for free.
+pub fn cancels_started(cancel: &ActionHash, store: &AgentPubKey) -> ExternResult<bool> {
+    let ActionData::Update(update) = must_get_action(cancel.clone())?.hashed.content.data else { return Ok(false) };
+    let prior = must_get_valid_record(update.original_action_address.clone())?;
+    if prior.action().author() != store {
+        return Ok(false);
+    }
+    let started = handshake_integrity_support::decode::<DeliveryOrder>(&prior).map(|o| o.ready_by.is_some()).or_else(|| handshake_integrity_support::decode::<PickupOrder>(&prior).map(|o| o.ready_by.is_some()));
+    Ok(started == Some(true))
+}
+
+/// Whether the customer who wrote `cancel` had seen their store start on
+/// `order`: confirmed it on their own chain, or cancelled on the store's
+/// started version. Once they had, cancelling owes the food, and uses the
+/// order's promo; before, it costs nothing.
+pub fn saw_start(customer: &AgentPubKey, cancel: &ActionHash, order: &ActionHash, store: &AgentPubKey) -> ExternResult<bool> {
+    Ok(confirmed(customer, cancel, order)? || cancels_started(cancel, store)?)
+}
+
 /// Whether `version` is a version of the order `belongs` was seeded with,
 /// remembering the answer for every version walked through.
 fn of_order(version: &ActionHash, belongs: &mut std::collections::HashMap<ActionHash, bool>) -> ExternResult<bool> {

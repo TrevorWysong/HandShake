@@ -20,12 +20,13 @@ export async function grantPayment(store: Store, ledger: IssuerLedger, payment: 
   }
 }
 
-/// Vouches for the card that paid, if it's new to every other account: one
-/// real card, one account a store's newcomer offers can welcome. A card
-/// first seen on another account gets no word -- the money still lands.
-/// Never fails the grant: reconciliation asks again.
+/// Vouches for the card that paid, if it's a credit or debit card new to
+/// every other account: one real card, one account a store's newcomer
+/// offers can welcome. A prepaid card, or one first seen on another
+/// account, gets no word -- the money still lands. Never fails the grant:
+/// reconciliation asks again.
 async function vouchForCard(store: Store, ledger: IssuerLedger, payment: CompletedPayment): Promise<void> {
-  if (!payment.card || !store.claimCard(payment.card, payment.agent)) return;
+  if (!payment.card || !payment.cardVouches || !store.claimCard(payment.card, payment.agent)) return;
   await ledger.attestCard(agentKey(payment.agent)).catch(() => {});
 }
 

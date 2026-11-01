@@ -126,16 +126,40 @@ fn validate_grant(grant: &IssuerGrant, author: &AgentPubKey, at: Timestamp, prev
     if !handshake_governance::is_issuer(author)? {
         return invalid("only an issuer on the network's roster may issue funds");
     }
-    // What it issues fresh, bounded per day. A grant in place of a hold's
-    // part isn't new money: it's exactly that part, collected once, as it.
-    if grant.in_place_of.is_none() {
-        let Some(prev) = prev_action else { return invalid("a grant can't open a chain") };
-        let since = Timestamp::from_micros(at.as_micros().saturating_sub(86_400_000_000));
-        let earlier = handshake_integrity_support::chain::entries_since(author, prev, since, &[UnitEntryTypes::IssuerGrant.try_into()?])?;
-        let issued = earlier.into_iter().filter_map(|bytes| IssuerGrant::try_from(bytes).ok()).filter(|g| g.in_place_of.is_none()).fold(grant.amount, |sum, g| sum.saturating_add(g.amount));
-        if issued > handshake_governance::issuer_daily_limit_cents() {
-            return invalid("an issuer issues no more than the network's daily limit");
+    // What it issues fresh, bounded per UTC day: a running total, carried
+    // from the issuer's previous grant -- found walking back only to it, or
+    // to the day's start, so checking costs the same however busy they are.
+    let Some(prev) = prev_action else { return invalid("a grant can't open a chain") };
+    let today = utc_day(at);
+    let grant_type: ScopedEntryDefIndex = UnitEntryTypes::IssuerGrant.try_into()?;
+    let mut before = 0u64;
+    let mut failed = None;
+    handshake_integrity_support::chain::walk_back(author, prev, |item| {
+        let action = &item.action.hashed.content;
+        if utc_day(action.timestamp()) != today {
+            return Ok(std::ops::ControlFlow::Break(()));
         }
+        if !handshake_integrity_support::chain::creates_one_of(action, &[grant_type]) {
+            return Ok(std::ops::ControlFlow::Continue(()));
+        }
+        let Some(hash) = action.entry_hash() else { return Ok(std::ops::ControlFlow::Break(())) };
+        match handshake_integrity_support::chain::entry_of(&item, hash)? {
+            Entry::App(bytes) => match IssuerGrant::try_from(SerializedBytes::from(bytes)) {
+                Ok(previous) => before = previous.issued_today,
+                Err(_) => failed = Some("an issuer's previous grant can't be read"),
+            },
+            _ => failed = Some("an issuer's previous grant can't be read"),
+        }
+        Ok(std::ops::ControlFlow::Break(()))
+    })?;
+    if let Some(reason) = failed {
+        return invalid(reason);
+    }
+    if grant.issued_today != before.saturating_add(grant.fresh()) {
+        return invalid("a grant carries its issuer's total for the day, this one included");
+    }
+    if grant.issued_today > handshake_governance::issuer_daily_limit_cents() {
+        return invalid("an issuer issues no more than the network's daily limit");
     }
     if grant.amount == 0 || grant.reference.trim().is_empty() {
         return invalid("a grant must be for something, with the issuer's reference");
@@ -770,7 +794,7 @@ fn basis_of(basis_ref: &ActionHash, hold: &HoldContext) -> ExternResult<Result<B
 /// cancellation updates, so a customer could cancel on an older one; their
 /// own chain says what they knew when.
 fn confirmed_cooking(c: &Cancelled, order: &ActionHash, store: &AgentPubKey, chain_top: &ActionHash) -> ExternResult<bool> {
-    if !lineage::confirmed(&c.author, &c.version, order)? {
+    if !lineage::saw_start(&c.author, &c.version, order, store)? {
         return Ok(false);
     }
     Ok(!lineage::wrote_any(store, chain_top, order, |v| matches!(v.cancellation(), Some(Cancellation::ByStore(_))))?)
