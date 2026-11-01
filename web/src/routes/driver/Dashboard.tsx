@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Bike, Link2, MapPin, Power, Route, ShieldCheck, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getOpenOrdersNear, submitBid, withdrawBid, getMyActiveDeliveries, getOrderPrivateDetails, dropOrder, commitToOrder } from "../../holochain/zomes/dispatch";
-import { sendLocationUpdate } from "../../holochain/live";
+import { useLocationSharing } from "../../lib/hooks/useLocationSharing";
 import { Sheet } from "../../components/Sheet";
 import { decodeEntry, actionHash, bytesToHex, bytesEqual, hexToBytes } from "../../holochain/decode";
 import { getCatalog } from "../../holochain/zomes/catalog";
@@ -56,31 +56,6 @@ const ON_THE_WAY: DeliveryStatus[] = ["DriverEnRouteToMerchant", "MerchantConfir
 /// Orders this device has bid on automatically, so a poll never bids twice
 /// (the network refuses a second bid regardless).
 const autoBidOn = new Set<string>();
-const LOCATION_BROADCAST_MS = 8000;
-
-/// Browser geolocation, throttled client-side (nothing on the network can
-/// rate-limit a direct signal -- see holochain/live.ts) and silently inert
-/// if the API is unavailable or the user denies permission. Named, not hidden: a driver who never grants
-/// location access simply never appears on the customer's live map --
-/// everything else about the delivery still works.
-function useLocationBroadcast(orderRef: Uint8Array, active: boolean) {
-  const lastSentRef = useRef(0);
-  useEffect(() => {
-    if (!active || !("geolocation" in navigator)) return;
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const now = Date.now();
-        if (now - lastSentRef.current < LOCATION_BROADCAST_MS) return;
-        lastSentRef.current = now;
-        sendLocationUpdate(orderRef, pos.coords.latitude, pos.coords.longitude).catch(() => {});
-      },
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 5000 },
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [orderRef, active]);
-}
-
 interface OrderRow {
   /// The order's identity (its original action) -- what every order call takes.
   hash: Uint8Array;
@@ -397,7 +372,7 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
-  useLocationBroadcast(row.hash, TRACKED_STATUSES.includes(row.order.status));
+  useLocationSharing(TRACKED_STATUSES.includes(row.order.status) ? bytesToHex(row.hash) : null);
   // A driver leaving an order the store has started cooking answers for the
   // food until another driver takes it on.
   const cooking = row.order.ready_by !== null;
