@@ -52,9 +52,18 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     match classify(op.flattened::<EntryTypes, LinkTypes>()?)? {
         Checked::Create { entry, action } => match entry {
             EntryTypes::RewardsProgram(program) => validate_new_program(&program, action.author(), action.prev_action()),
-            EntryTypes::PointsGrant(grant) => sealed_problem("a grant", &grant.sealed),
+            EntryTypes::PointsGrant(grant) => match store_owner(&grant.catalog_ref)? {
+                Some((owner, _)) if &owner == action.author() => match ordered_there(&grant.order, &grant.to, &grant.catalog_ref)? {
+                    true => sealed_problem("a grant", &grant.sealed),
+                    false => invalid("a store grants points only to someone who's ordered there, citing their order"),
+                },
+                _ => invalid("only a store's owner grants its points"),
+            },
             EntryTypes::BirthdayShare(share) => match store_owner(&share.catalog_ref)? {
-                Some(_) => sealed_problem("a birthday", &share.sealed_month),
+                Some(_) => match ordered_there(&share.order, action.author(), &share.catalog_ref)? {
+                    true => sealed_problem("a birthday", &share.sealed_month),
+                    false => invalid("a birthday is shared only with a store one has ordered from, citing the order"),
+                },
                 None => invalid("a birthday is shared with a store, by its original action"),
             },
             // Private to their author's device: checked as they write them.
@@ -78,6 +87,16 @@ fn sealed_problem(what: &str, sealed: &XSalsa20Poly1305EncryptedData) -> ExternR
         Some(_) => invalid(&format!("{what} is sealed, and small")),
         None => valid(),
     }
+}
+
+/// Whether `order` is an order `customer` placed at `catalog_ref`, by its
+/// original action.
+fn ordered_there(order: &ActionHash, customer: &AgentPubKey, catalog_ref: &ActionHash) -> ExternResult<bool> {
+    if &original_creation(order.clone())? != order {
+        return Ok(false);
+    }
+    let record = must_get_valid_record(order.clone())?;
+    Ok(rewards_types::OrderForRewards::of(&record).is_some_and(|o| &o.requester == customer && &o.catalog_ref == catalog_ref && record.action().author() == customer))
 }
 
 // --- programs ---

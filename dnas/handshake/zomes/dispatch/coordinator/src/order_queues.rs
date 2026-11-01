@@ -297,9 +297,10 @@ pub(crate) fn ensure_order_rate() -> ExternResult<()> {
     let types = [EntryType::try_from(UnitEntryTypes::DeliveryOrder)?, EntryType::try_from(UnitEntryTypes::PickupOrder)?];
     let day_ago = Timestamp::from_micros(sys_time()?.as_micros() - 86_400_000_000);
     let mut early = 0;
-    for record in mine(&types).since(day_ago).records()? {
+    let day = mine(&types).since(day_ago).records()?;
+    for record in &day {
         let ActionData::Update(update) = &record.action().data else { continue };
-        let by_customer = decode_or::<DeliveryOrder>(&record).map(|o| o.cancellation == Some(Cancellation::ByCustomer)).or_else(|| decode_or::<PickupOrder>(&record).map(|o| o.cancellation == Some(Cancellation::ByCustomer)));
+        let by_customer = decode_or::<DeliveryOrder>(record).map(|o| o.cancellation == Some(Cancellation::ByCustomer)).or_else(|| decode_or::<PickupOrder>(record).map(|o| o.cancellation == Some(Cancellation::ByCustomer)));
         if by_customer != Some(true) {
             continue;
         }

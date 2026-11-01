@@ -15,7 +15,8 @@
 // Installers land in desktop/.kangaroo/dist. Releasing is
 // .github/workflows/desktop.yml.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +28,10 @@ const WEBHAPP = path.join(REPO, "deploy/handshake.webhapp");
 /// Kangaroo's main branch (its Holochain 0.7 line). Bump deliberately, and
 /// re-check that every patch still applies -- this script fails if one doesn't.
 const KANGAROO_COMMIT = "68019666ad5c09e2dcdbe1a78e8ac4cdff1537c8";
+// What that commit's files hash to (`treeHash`) -- checked before anything
+// in them runs, so a swapped download can't reach a signed build. Change
+// it with KANGAROO_COMMIT, from a copy you've read.
+const KANGAROO_TREE_SHA256 = "9f211a7f941164d2e60a69f06e86700ea2d4feef65d710b183c9afea13d5e761";
 
 /// Where releases (and so auto-updates) live: this repo, or the one CI runs in.
 const RELEASES = process.env.GITHUB_REPOSITORY ?? "TrevorWysong/HandShake";
@@ -78,6 +83,9 @@ for (const { file, from, to } of PATCHES) {
 // The one webhapp in its pouch: ours.
 copyFileSync(WEBHAPP, path.join(KANGAROO, "pouch/handshake.webhapp"));
 
+// Exactly the dependency versions its lockfile names, or nothing: a
+// release never picks up a newer (or swapped) package on its own.
+run("yarn", ["install", "--frozen-lockfile"]);
 run("yarn", ["setup"]);
 run("yarn", [script]);
 
@@ -91,6 +99,25 @@ function fetchKangaroo() {
   run("curl", ["-fsSL", "-o", tarball, `https://codeload.github.com/holochain/kangaroo-electron/tar.gz/${KANGAROO_COMMIT}`], DESKTOP);
   run("tar", ["-xzf", tarball, "-C", KANGAROO, "--strip-components=1"], DESKTOP);
   rmSync(tarball);
+  const got = treeHash(KANGAROO);
+  if (got !== KANGAROO_TREE_SHA256) fail(`Kangaroo's files at ${KANGAROO_COMMIT} aren't what was reviewed (${got}). Nothing from them has run.`);
+}
+
+/// A hash of every file under `root`: each one's path and contents, in
+/// order -- the same for the same files however they were packed.
+function treeHash(root: string): string {
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir).sort()) {
+      const at = path.join(dir, name);
+      if (statSync(at).isDirectory()) walk(at);
+      else files.push(at);
+    }
+  };
+  walk(root);
+  const hash = createHash("sha256");
+  for (const file of files) hash.update(`${path.relative(root, file).split(path.sep).join("/")}\0${createHash("sha256").update(readFileSync(file)).digest("hex")}\n`);
+  return hash.digest("hex");
 }
 
 function run(cmd: string, args: string[], cwd = KANGAROO) {

@@ -32,6 +32,8 @@ export async function migrationSweep(store: Store, previous: IssuerLedger, curre
       const standing = await previous.standingAt(request.account, request.close);
       const amount = Math.max(0, standing.balance);
       if (amount > 0) await current.issueGrant(request.successor, amount, `migration:${account}`);
+      // A card vouched for there is vouched for here: the same person.
+      if (await previous.cardVerified(request.account)) await current.attestCard(request.successor);
       store.recordMigration(account, agentId(request.successor), amount);
       credited++;
       log(`carried ${amount} from ${account} to ${agentId(request.successor)} on the new network`);

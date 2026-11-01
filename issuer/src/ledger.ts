@@ -127,6 +127,10 @@ export interface IssuerLedger {
   /// Vouches that `agent` paid with a card no other account has: what
   /// stores' offers for newcomers wait on. Safe to repeat.
   attestCard(agent: AgentPubKey): Promise<void>;
+  /// Withdraws that word: the payment behind it was disputed. Safe to repeat.
+  revokeCard(agent: AgentPubKey): Promise<void>;
+  /// Whether an issuer on the network's roster vouches for `agent`'s card.
+  cardVerified(agent: AgentPubKey): Promise<boolean>;
   cashOutRequests(after: number | null): Promise<CashOutRequestsPage>;
   decideCashOut(redemption: Uint8Array, outcome: PayoutOutcome): Promise<void>;
   setProfile(profile: IssuerProfile): Promise<void>;
@@ -221,6 +225,8 @@ export async function connectIssuerLedger(adminUrl: string, appId: string): Prom
     issuer: connection.agent,
     issueGrant: async (to, amount, reference, inPlaceOf) => void (await call("issue_grant", { to, amount, reference, in_place_of: inPlaceOf ?? null })),
     attestCard: async (agent) => void (await call("attest_card", agent)),
+    revokeCard: async (agent) => void (await call("revoke_card", agent)),
+    cardVerified: (agent) => call<boolean>("card_verified", agent),
     cashOutRequests: (after) => call<CashOutRequestsPage>("get_cash_out_requests", { after }),
     decideCashOut: async (redemption, outcome) => void (await call("decide_cash_out", { redemption, outcome })),
     setProfile: async (profile) => void (await call("set_issuer_profile", profile)),

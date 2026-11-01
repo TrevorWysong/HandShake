@@ -128,6 +128,18 @@ pub struct CardAttestation {
     pub agent: AgentPubKey,
 }
 
+/// An issuer withdrawing its word on `agent`'s card: the payment that
+/// verified it was disputed, or found to be fraud. An issuer's latest word
+/// on an agent stands -- it can vouch again if the dispute goes its way.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+// Decodes only from its own fields: a record of another type that
+// happens to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct CardRevocation {
+    pub agent: AgentPubKey,
+}
+
 /// A part of a hold its recipient would give back to its payer, but can't:
 /// the recipient's key is lost, and `succession` is the new key that took
 /// over their account (docs/RECOVERY.md).

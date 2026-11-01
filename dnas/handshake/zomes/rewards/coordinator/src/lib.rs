@@ -310,8 +310,8 @@ fn my_grants_to(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResul
     let types = [EntryType::try_from(UnitEntryTypes::PointsGrant)?];
     let mut out = Vec::new();
     for record in mine(&types).records()? {
-        let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| &g.to == customer) else { continue };
-        if let Some(payload) = open::<GrantPayload>(customer, &grant.sealed)?.filter(|p| &p.catalog_ref == catalog_ref) {
+        let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| &g.to == customer && &g.catalog_ref == catalog_ref) else { continue };
+        if let Some(payload) = open::<GrantPayload>(customer, &grant.sealed)? {
             out.push((record.action_address().clone(), record.action().timestamp(), payload));
         }
     }
@@ -406,14 +406,29 @@ pub struct GrantInput {
     pub catalog_ref: ActionHash,
     pub points: u32,
     pub note: String,
+    /// An order of theirs at the store to cite -- by default, their latest
+    /// one under its program.
+    #[serde(default)]
+    pub order: Option<ActionHash>,
 }
 
-fn grant(to: AgentPubKey, catalog_ref: ActionHash, points: u32, reason: GrantReason) -> ExternResult<ActionHash> {
+/// The caller's store's latest record of an order `customer` placed under
+/// its program -- what a grant to them cites.
+fn latest_member_order(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResult<Option<ActionHash>> {
+    let types = [EntryType::try_from(UnitEntryTypes::MemberOrder)?];
+    Ok(mine(&types).find(|r| decode_or::<MemberOrder>(r).is_some_and(|m| &m.customer == customer && &m.catalog_ref == catalog_ref))?.and_then(|r| decode_or::<MemberOrder>(&r)).map(|m| m.order))
+}
+
+fn grant(to: AgentPubKey, catalog_ref: ActionHash, order: Option<ActionHash>, points: u32, reason: GrantReason) -> ExternResult<ActionHash> {
     if points == 0 || points > MAX_GRANT_POINTS {
         return Err(guest(format!("You can give between 1 and {MAX_GRANT_POINTS} points at a time.")));
     }
-    let sealed = seal(&to, &GrantPayload { catalog_ref, points, reason })?;
-    let hash = create_entry(&EntryTypes::PointsGrant(PointsGrant { to: to.clone(), sealed }))?;
+    let order = match order {
+        Some(order) => order,
+        None => latest_member_order(&catalog_ref, &to)?.ok_or(guest("You can give points only to customers who've ordered here."))?,
+    };
+    let sealed = seal(&to, &GrantPayload { points, reason })?;
+    let hash = create_entry(&EntryTypes::PointsGrant(PointsGrant { to: to.clone(), catalog_ref, order, sealed }))?;
     create_link(to, hash.clone(), LinkTypes::AgentToGrant, ())?;
     Ok(hash)
 }
@@ -428,31 +443,25 @@ pub fn grant_points(input: GrantInput) -> ExternResult<ActionHash> {
     if input.note.chars().count() > MAX_GRANT_NOTE_CHARS {
         return Err(guest("Keep the note short."));
     }
-    grant(input.to, input.catalog_ref, input.points, GrantReason::Goodwill { note: input.note })
+    grant(input.to, input.catalog_ref, input.order, input.points, GrantReason::Goodwill { note: input.note })
 }
 
-/// Grants to the caller, opened: from whom, when, and what. Only the key
-/// that sealed one can have sent it. `from`: only those one store's owner
-/// wrote -- read by their key, so nobody else's grants, however many, can
-/// crowd a store's out. Without it, the newest from anyone (gift offers).
-fn grants_to_me(from: Option<&AgentPubKey>) -> ExternResult<Vec<GrantToMe>> {
-    let mut query = LinkQuery::try_new(me()?, LinkTypes::AgentToGrant)?;
-    if let Some(owner) = from {
-        query = query.author(owner.clone());
-    }
-    let mut links = get_links(query, GetStrategy::default())?;
-    links.sort_by_key(|l| std::cmp::Reverse(l.timestamp));
+/// The grants `owner`'s store `catalog_ref` gave the caller, opened. Read by
+/// the owner's key, all of them -- as many as it counts itself -- so nobody
+/// else's, however many, can crowd them out; and only the key that sealed
+/// one can have sent it.
+fn grants_from(owner: &AgentPubKey, catalog_ref: &ActionHash) -> ExternResult<Vec<GrantToMe>> {
+    let query = LinkQuery::try_new(me()?, LinkTypes::AgentToGrant)?.author(owner.clone());
     let mut out = Vec::new();
-    // Anyone's are read no further than the newest few; one store's, all --
-    // as many as it counts itself.
-    let most = if from.is_some() { usize::MAX } else { MAX_GRANTS_READ };
-    for link in links.into_iter().take(most) {
+    for link in get_links(query, GetStrategy::default())? {
         let Some(hash) = link.target.into_action_hash() else { continue };
         let Some(record) = get(hash, GetOptions::default())? else { continue };
-        let Some(grant) = decode_or::<PointsGrant>(&record) else { continue };
-        let from = record.action().author().clone();
-        if let Some(payload) = open::<GrantPayload>(&from, &grant.sealed)? {
-            out.push(GrantToMe { grant: record.action_address().clone(), from, at: record.action().timestamp(), payload });
+        let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| &g.catalog_ref == catalog_ref) else { continue };
+        if record.action().author() != owner {
+            continue;
+        }
+        if let Some(payload) = open::<GrantPayload>(owner, &grant.sealed)? {
+            out.push(GrantToMe { grant: record.action_address().clone(), at: record.action().timestamp(), payload });
         }
     }
     Ok(out)
@@ -461,48 +470,8 @@ fn grants_to_me(from: Option<&AgentPubKey>) -> ExternResult<Vec<GrantToMe>> {
 /// A grant to the caller, opened.
 struct GrantToMe {
     grant: ActionHash,
-    /// Who sealed it: only they could have.
-    from: AgentPubKey,
     at: Timestamp,
     payload: GrantPayload,
-}
-
-/// How many of the newest grants from anyone to the caller are read: anyone
-/// can grant to anyone, so a flood of them is read no further.
-const MAX_GRANTS_READ: usize = 200;
-
-/// A grant from a store the caller hasn't ordered from.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GiftOffer {
-    pub grant: ActionHash,
-    pub catalog_ref: ActionHash,
-    pub store_name: String,
-    pub points: u32,
-    pub note: String,
-    pub at: Timestamp,
-}
-
-/// Gifts from stores the caller hasn't ordered from -- shown apart, so a
-/// stranger's points are theirs to take up (by ordering there) or ignore.
-#[hdk_extern]
-pub fn gift_offers(_: ()) -> ExternResult<Vec<GiftOffer>> {
-    let mine_at: Vec<ActionHash> = my_orders()?.into_iter().map(|(_, catalog_ref, _)| catalog_ref).collect();
-    let mut offers = Vec::new();
-    for GrantToMe { grant, from, at, payload } in grants_to_me(None)? {
-        if mine_at.contains(&payload.catalog_ref) {
-            continue;
-        }
-        let Ok(store_info) = store(&payload.catalog_ref) else { continue };
-        if store_info.owner != from {
-            continue;
-        }
-        let note = match payload.reason {
-            GrantReason::Goodwill { note } => note,
-            GrantReason::Birthday { .. } => String::new(),
-        };
-        offers.push(GiftOffer { grant, catalog_ref: payload.catalog_ref, store_name: store_info.business_name, points: payload.points, note, at });
-    }
-    Ok(offers)
 }
 
 // --- the member's side ---
@@ -599,7 +568,7 @@ pub enum PointsLineKind {
 fn card_for(catalog_ref: &ActionHash, orders: Vec<(ActionHash, Timestamp)>) -> ExternResult<CardView> {
     let program = program_of(catalog_ref.clone())?;
     let store_info = store(catalog_ref)?;
-    let grants = grants_to_me(Some(&store_info.owner))?;
+    let grants = grants_from(&store_info.owner, catalog_ref)?;
     let me = me()?;
     let mut views = Vec::new();
     let mut reserved = 0u64;
@@ -616,7 +585,7 @@ fn card_for(catalog_ref: &ActionHash, orders: Vec<(ActionHash, Timestamp)>) -> E
         }
         views.push(view);
     }
-    let theirs: Vec<&GrantToMe> = grants.iter().filter(|g| g.from == store_info.owner && &g.payload.catalog_ref == catalog_ref).collect();
+    let theirs: Vec<&GrantToMe> = grants.iter().collect();
     let Some(view) = program.clone() else {
         return Ok(CardView { catalog_ref: catalog_ref.clone(), store_name: store_info.business_name, program, state: None, balance: 0, reserved, tier: 0, expires_at: None, pending: Vec::new(), pending_points: 0, history: Vec::new() });
     };
@@ -743,14 +712,16 @@ pub fn share_birthdays(_: ()) -> ExternResult<u32> {
     let Some(month) = my_birth_month(())? else { return Ok(0) };
     let types = [EntryType::try_from(UnitEntryTypes::BirthdayShare)?];
     let told: Vec<ActionHash> = mine(&types).records()?.iter().filter_map(decode_or::<BirthdayShare>).map(|b| b.catalog_ref).collect();
-    let mut stores: Vec<ActionHash> = my_orders()?.into_iter().map(|(_, c, _)| c).collect();
+    let orders = my_orders()?;
+    let mut stores: Vec<ActionHash> = orders.iter().map(|(_, c, _)| c.clone()).collect();
     stores.sort();
     stores.dedup();
     let mut count = 0;
     for catalog_ref in stores.into_iter().filter(|c| !told.contains(c)) {
         let Ok(store_info) = store(&catalog_ref) else { continue };
         let sealed_month = seal(&store_info.owner, &month)?;
-        let hash = create_entry(&EntryTypes::BirthdayShare(BirthdayShare { catalog_ref: catalog_ref.clone(), sealed_month }))?;
+        let Some(order) = orders.iter().find(|(_, c, _)| c == &catalog_ref).map(|(o, _, _)| o.clone()) else { continue };
+        let hash = create_entry(&EntryTypes::BirthdayShare(BirthdayShare { catalog_ref: catalog_ref.clone(), order, sealed_month }))?;
         create_link(catalog_ref, hash, LinkTypes::CatalogToBirthday, ())?;
         count += 1;
     }
@@ -854,7 +825,7 @@ pub fn grant_birthday(input: BirthdayInput) -> ExternResult<ActionHash> {
     if store(&input.catalog_ref)?.owner != me()? {
         return Err(guest("not this store's owner"));
     }
-    grant(input.to, input.catalog_ref, input.points, GrantReason::Birthday { year: input.year })
+    grant(input.to, input.catalog_ref, None, input.points, GrantReason::Birthday { year: input.year })
 }
 
 /// Celebrates birthdays and tells new stores a member's month, a few times
@@ -931,8 +902,9 @@ mod test_utils {
     /// pretending to be a store would write.
     #[hdk_extern]
     pub fn create_raw_points_grant_for_testing(input: GrantInput) -> ExternResult<ActionHash> {
-        let sealed = seal(&input.to, &GrantPayload { catalog_ref: input.catalog_ref, points: input.points, reason: GrantReason::Goodwill { note: input.note } })?;
-        let hash = create_entry(&EntryTypes::PointsGrant(PointsGrant { to: input.to.clone(), sealed }))?;
+        let sealed = seal(&input.to, &GrantPayload { points: input.points, reason: GrantReason::Goodwill { note: input.note } })?;
+        let order = input.order.ok_or(guest("a raw grant names its order"))?;
+        let hash = create_entry(&EntryTypes::PointsGrant(PointsGrant { to: input.to.clone(), catalog_ref: input.catalog_ref, order, sealed }))?;
         create_link(input.to, hash.clone(), LinkTypes::AgentToGrant, ())?;
         Ok(hash)
     }

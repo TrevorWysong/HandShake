@@ -39,7 +39,7 @@ The store's app plays those through the pure rules in `rewards_types::points` (`
   - The order names the reward (`OrderRewards::reward`). Validation checks the order's total takes exactly that reward off, priced like a promo with no requirement, at a running program version. A reward replaces any promo code, and doesn't apply to goodie bags.
   - **The store decides whether the points cover it**, from its own records, as it accepts the order (`can_redeem`). An order whose points don't cover it, or whose tier doesn't reach it, is declined (`RewardUnavailable`), and nothing is charged.
   - An order the store never accepted spends nothing: cancelled first, or declined. One whose food the store gave back returns its points too.
-- **Gift.** A store's grant (`PointsGrant`) is sealed between the store and the member: only whom it's to is public, so it reaches them. The member's app reads a store's grants by its owner's key, so nobody else's can crowd them out, and knows each is the store's, because only the store's key could have sealed it. Stores use grants for goodwill and birthdays.
+- **Gift.** A store's grant (`PointsGrant`) is sealed between the store and the member: what it gives is private; whom it's to, from which store, and an order they placed there are public. A store can only give points to its own customers, so nobody can fill a stranger's inbox. The member's app reads a store's grants by its owner's key, so nobody else's can crowd them out, and knows each is the store's, because only the store's key could have sealed it. Stores use grants for goodwill and birthdays.
 
 ## Time can't be faked
 
@@ -65,7 +65,8 @@ People choose their own entries' timestamps, so no rule depends on one where fak
 | A store and a customer colluding | They can only give away the store's own food |
 | Earning on an order, then getting it refunded | Points are earned only after the refund period, on what was finally paid |
 | Learning someone's points or birthday | Neither is published. A grant's and a birthday's contents are sealed; a store's member records are private to its device |
-| A stranger's store filling someone's wallet with gifts | Gifts from stores they haven't ordered from are shown apart; only the newest 200 of those are read. A store's own grants are read by its key, so a flood can't hide them |
+| A stranger's store filling someone's wallet or inbox with gifts | A grant must cite an order its recipient placed at that store, by its owner (validation), so only a store's own customers can be sent one. A store's grants are read by its owner's key, so nobody else's can hide them |
+| Flooding a store with birthday shares | A share must cite an order its author placed there; the store reads only its own buying members', by key |
 | Spending a reward on an order, then cancelling it on a stale branch | The reward comes back only if the order was called off before the customer saw the store start -- the same rule as the food |
 
 ## What's left

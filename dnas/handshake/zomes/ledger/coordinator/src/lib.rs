@@ -149,13 +149,33 @@ pub fn issue_grant(input: IssueGrantInput) -> ExternResult<ActionHash> {
     Ok(hash)
 }
 
+/// One issuer's word on an agent's card: when it last vouched for it, and
+/// when it last withdrew that.
+struct CardWord {
+    attested: Option<Timestamp>,
+    revoked: Option<Timestamp>,
+}
+
+/// Each issuer's word on `agent`'s card.
+fn card_words(agent: &AgentPubKey, issuers: &[AgentPubKey], strategy: GetStrategy) -> ExternResult<Vec<CardWord>> {
+    let attested = get_links(LinkQuery::try_new(agent.clone(), LinkTypes::AgentToCardAttestation)?, strategy)?;
+    let revoked = get_links(LinkQuery::try_new(agent.clone(), LinkTypes::AgentToCardRevocation)?, strategy)?;
+    let latest = |links: &[Link], issuer: &AgentPubKey| links.iter().filter(|l| &l.author == issuer).map(|l| l.timestamp).max();
+    Ok(issuers.iter().map(|i| CardWord { attested: latest(&attested, i), revoked: latest(&revoked, i) }).collect())
+}
+
+/// Whether an issuer's latest word on a card is that it vouches.
+fn vouches(word: &CardWord) -> bool {
+    word.attested.is_some_and(|attested| word.revoked.is_none_or(|revoked| attested > revoked))
+}
+
 /// An issuer vouching for an agent's card, new to every other account (see
-/// `CardAttestation`). Safe to repeat.
+/// `CardAttestation`). Safe to repeat: it writes only if its latest word on
+/// them isn't already that.
 #[hdk_extern]
 pub fn attest_card(agent: AgentPubKey) -> ExternResult<()> {
     let me = agent_info()?.agent_initial_pubkey;
-    let query = LinkQuery::try_new(agent.clone(), LinkTypes::AgentToCardAttestation)?.author(me);
-    if !get_links(query, GetStrategy::Local)?.is_empty() {
+    if card_words(&agent, std::slice::from_ref(&me), GetStrategy::Local)?.first().is_some_and(vouches) {
         return Ok(());
     }
     let hash = create_entry(&EntryTypes::CardAttestation(CardAttestation { agent: agent.clone() }))?;
@@ -163,13 +183,36 @@ pub fn attest_card(agent: AgentPubKey) -> ExternResult<()> {
     Ok(())
 }
 
-/// Whether an issuer on the roster has vouched for `agent`'s card -- what a
-/// store's offers for newcomers wait on.
+/// An issuer withdrawing its word on an agent's card (see `CardRevocation`).
+/// Safe to repeat.
+#[hdk_extern]
+pub fn revoke_card(agent: AgentPubKey) -> ExternResult<()> {
+    let me = agent_info()?.agent_initial_pubkey;
+    if !card_words(&agent, std::slice::from_ref(&me), GetStrategy::Local)?.first().is_some_and(vouches) {
+        return Ok(());
+    }
+    let hash = create_entry(&EntryTypes::CardRevocation(CardRevocation { agent: agent.clone() }))?;
+    create_link(agent, hash, LinkTypes::AgentToCardRevocation, ())?;
+    Ok(())
+}
+
+/// Whether an issuer on the roster vouches for `agent`'s card -- what a
+/// store's offers for newcomers wait on. Its latest word counts, so one it
+/// withdrew counts no more. An account that moved to a new key keeps what
+/// its earlier keys had (the account zome's `lineage`).
 #[hdk_extern]
 pub fn card_verified(agent: AgentPubKey) -> ExternResult<bool> {
     let issuers = handshake_governance::issuers();
-    let links = get_links(LinkQuery::try_new(agent, LinkTypes::AgentToCardAttestation)?, GetStrategy::default())?;
-    Ok(links.iter().any(|l| issuers.contains(&l.author)))
+    let mut keys = vec![agent.clone()];
+    if let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "account", "lineage".into(), None, agent)? {
+        keys.extend(io.decode::<Vec<AgentPubKey>>().map_err(|e| wasm_error!(e))?);
+    }
+    for key in keys {
+        if card_words(&key, &issuers, GetStrategy::default())?.iter().any(vouches) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Collects every grant made to the caller that they haven't yet; returns

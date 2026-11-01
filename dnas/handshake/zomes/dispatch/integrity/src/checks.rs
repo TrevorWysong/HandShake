@@ -482,8 +482,12 @@ pub(crate) fn check_order_rate(requester: &AgentPubKey, at: Timestamp, prev_acti
 }
 
 /// The most of a customer's last day a placement walks for their early
-/// cancellations: the order rate bounds how many orders a day holds, so an
-/// honest chain never comes near it.
+/// cancellations. An ordinary customer's day is a few dozen actions; a key
+/// that also runs a busy store can be more. Past it the network-wide
+/// allowance isn't checked -- each store still declines a customer who
+/// keeps cancelling on it (`acceptance::serial_canceller`) -- rather than
+/// refusing every order such a key places. Writing that many actions a day
+/// to slip past it is more spam than it saves.
 const MAX_CANCEL_WALK: usize = 20_000;
 
 /// Why a customer can't place an order: they've called off the network's
@@ -494,7 +498,7 @@ pub(crate) fn early_cancels_problem(requester: &AgentPubKey, prev_action: &Actio
     let since = Timestamp::from_micros(at.as_micros() - 86_400_000_000);
     let activity = handshake_integrity_support::chain::activity_since(requester, prev_action, since)?;
     if activity.len() > MAX_CANCEL_WALK {
-        return Ok(Some("this account's last day is too long to check; try again later".into()));
+        return Ok(None);
     }
     let types = order_types()?;
     let most = handshake_governance::max_daily_early_cancels() as usize;
