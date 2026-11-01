@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { TimeAgo } from "../../components/TimeAgo";
 import { useNavigate } from "react-router-dom";
 import { Bike, ClipboardList, ShoppingBag, Store } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -36,7 +37,7 @@ import { Button, Card, Chip, ChipRow, EmptyState, SegmentedTabs, Skeleton, StatN
 import { StatusBadge, PickupStatusBadge } from "../../components/OrderStatus";
 import { ChatPanel } from "../../components/ChatPanel";
 import { bytesEqual } from "../../holochain/decode";
-import { formatCents, formatClockTime, formatDeadline, formatEta, nowMicros, timeAgo } from "../../lib/ui/format";
+import { formatCents, formatClockTime, formatDeadline, formatEta } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import type { DeclineReason, Timestamp } from "../../holochain/types";
 import { POLL, isOrderSignal } from "../../lib/network/poll";
@@ -356,6 +357,7 @@ interface HistoryState {
 /// next page of each store that still has one.
 function OrderHistory({ stores, storeLabel, scope }: ListProps) {
   const terms = useTerms();
+  const now = useClock();
   const [loadingMore, setLoadingMore] = useState(false);
   const t = useT();
   const { data, mutate } = useResource<HistoryState>(`merchant-history:${storesKey(stores)}`, () => fetchHistoryPages(stores, null));
@@ -381,7 +383,7 @@ function OrderHistory({ stores, storeLabel, scope }: ListProps) {
     <div className="flex flex-col gap-3">
       {data.rows.map((row) => (
         <OrderCard key={row.hex} row={row} storeLabel={storeLabel(row.storeHex)} showTime>
-          {mayHaveOpenIssues(row, terms) && <OrderIssues orderRef={row.ref} role="store" />}
+          {mayHaveOpenIssues(row, terms, now) && <OrderIssues orderRef={row.ref} role="store" />}
         </OrderCard>
       ))}
       {hasMore && (
@@ -403,12 +405,12 @@ async function fetchHistoryPages(stores: StoreRow[], cursors: Record<string, Tim
 
 /// Whether a finished order may still have reports to answer: completed
 /// (its latest version, `writtenAt`) within the network's report window
-/// plus the store's grace to answer a late one. Older orders aren't checked,
-/// which keeps a long history cheap to show.
-function mayHaveOpenIssues(row: QueueRow, terms: { report_window_secs: number; answer_grace_secs: number }): boolean {
+/// plus the store's grace to answer a late one, as of `now`. Older orders
+/// aren't checked, which keeps a long history cheap to show.
+function mayHaveOpenIssues(row: QueueRow, terms: { report_window_secs: number; answer_grace_secs: number }, now: Date): boolean {
   const completed = row.kind === "Delivery" ? received(row.order.status) : row.order.status === "PickedUp";
   const openForMicros = (terms.report_window_secs + terms.answer_grace_secs) * 1_000_000;
-  return completed && nowMicros() - row.writtenAt < openForMicros;
+  return completed && now.getTime() * 1000 - row.writtenAt < openForMicros;
 }
 
 function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; storeLabel: string | null; showTime?: boolean; children?: React.ReactNode }) {
@@ -427,7 +429,7 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
             <Store size={11} /> {storeLabel}
           </span>
         )}
-        {showTime && <span className="ml-auto font-normal normal-case tracking-normal text-ink-300">{timeAgo(order.requested_at)}</span>}
+        {showTime && <span className="ml-auto font-normal normal-case tracking-normal text-ink-300"><TimeAgo at={order.requested_at} /></span>}
       </div>
       <div className="flex items-center justify-between">
         <StatNumber className="text-sm">{formatCents(order.order_total)}</StatNumber>

@@ -1,10 +1,11 @@
 import { ArrowDownCircle, ArrowUpCircle, Lock, ShieldCheck } from "lucide-react";
+import { TimeAgo } from "../components/TimeAgo";
 import { motion } from "framer-motion";
 import { useSession } from "../store/session";
 import { listMyLedger, getBalance } from "../holochain/zomes/ledger";
 import { decodeEntry, actionHash, bytesToHex, timestampOf } from "../holochain/decode";
 import { Card, Skeleton, StatNumber } from "../components/ui";
-import { formatCents, timeAgo } from "../lib/ui/format";
+import { formatCents } from "../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
 import { useResource } from "../lib/hooks/useResource";
 import type { LedgerEntry } from "../holochain/types";
@@ -128,7 +129,7 @@ export function Transparency() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{label}</p>
                   <p className="text-xs text-ink-400">
-                    {timeAgo(row.at)} · balance {formatCents(row.entry.balance)}
+                    <TimeAgo at={row.at} /> · balance {formatCents(row.entry.balance)}
                   </p>
                 </div>
                 {direction !== "none" && (

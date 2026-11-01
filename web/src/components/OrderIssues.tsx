@@ -4,6 +4,7 @@
 // refunding what it accepted or never answered (see the dispatch `issues`
 // module). Shown on both sides of the order.
 import { useState } from "react";
+import { TimeAgo } from "./TimeAgo";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, CheckCircle2, Clock3, Minus, PackageX, Plus, Repeat2, ShieldCheck, XCircle } from "lucide-react";
 import { getIssueItems, getIssuesForOrder, getOrderDecisions, reportIssue, respondToIssue } from "../holochain/zomes/dispatch";
@@ -11,7 +12,7 @@ import { bytesToHex } from "../holochain/decode";
 import { MAX_NOTE_CHARS, type IssueItems, type IssueKind, type IssueLine, type IssueView, type OrderDecisions } from "../holochain/types";
 import { claimedValue } from "../lib/orders/issues";
 import { describeError } from "../lib/ui/errors";
-import { formatCents, formatDeadline, timeAgo } from "../lib/ui/format";
+import { formatCents, formatDeadline } from "../lib/ui/format";
 import { POLL } from "../lib/network/poll";
 import { useClock } from "../lib/hooks/useClock";
 import { useResource } from "../lib/hooks/useResource";
@@ -163,7 +164,7 @@ function IssueRow({ issue, items, role, canAnswer, onAnswered }: { issue: IssueV
 
       <div className="mt-3 flex items-center justify-between gap-2">
         <StatusChip accepted={issue.accepted} role={role} />
-        <span className="text-[11px] text-ink-400">{timeAgo(issue.reported_at)}</span>
+        <span className="text-[11px] text-ink-400"><TimeAgo at={issue.reported_at} /></span>
       </div>
 
       {canAnswer && issue.accepted === null && (

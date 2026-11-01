@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { TimeAgo } from "../../components/TimeAgo";
 import { Link, useNavigate } from "react-router-dom";
 import { Bike, ClipboardList, PackageOpen, Pause, Play, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,7 +13,7 @@ import { cartLinesFromOrder, fetchMenu } from "../../lib/menu/menu";
 import { customerOrderPath, isFinished, itemCount, mergeNewestFirst, toOrderRow, type OrderRow } from "../../lib/orders/orderEntries";
 import { Button, Card, EmptyState, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
 import { StatusBadge, PickupStatusBadge } from "../../components/OrderStatus";
-import { formatCents, timeAgo } from "../../lib/ui/format";
+import { formatCents } from "../../lib/ui/format";
 import { describeRecurrence } from "../../lib/orders/recurrence";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import type { BagClaim, GoodieBag, MerchantCatalog, RecurringOrderTemplate, Timestamp } from "../../holochain/types";
@@ -133,7 +134,7 @@ function OrderCard({ row, showTime, children }: { row: OrderRow; showTime?: bool
             {row.kind === "Delivery" ? <Bike size={11} /> : <ShoppingBag size={11} />}
             {t(row.kind === "Delivery" ? "cart.delivery" : "cart.pickup")}
           </span>
-          {showTime && <span className="font-normal normal-case tracking-normal text-ink-300">{timeAgo(row.order.requested_at)}</span>}
+          {showTime && <span className="font-normal normal-case tracking-normal text-ink-300"><TimeAgo at={row.order.requested_at} /></span>}
         </div>
         <StatNumber className="text-sm">{formatCents(row.order.order_total)}</StatNumber>
         <p className="text-xs text-ink-400">

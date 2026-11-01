@@ -3,13 +3,14 @@
 // alone -- and the ruling. An award is paid from the store's next
 // cash-out.
 import { useState } from "react";
+import { TimeAgo } from "../components/TimeAgo";
 import { Gavel } from "lucide-react";
 import type { AppealsPage, AppealView } from "../holochain/types";
 import { getMyDocket, ruleOnAppeal } from "../holochain/zomes/dispatch";
 import { bytesToHex } from "../holochain/decode";
 import { Button, Card, Input, Textarea } from "../components/ui";
 import { describeError } from "../lib/ui/errors";
-import { currencySymbol, formatCents, fromMinorUnits, timeAgo, toMinorUnits } from "../lib/ui/format";
+import { currencySymbol, formatCents, fromMinorUnits, toMinorUnits } from "../lib/ui/format";
 import { POLL } from "../lib/network/poll";
 import { useResource } from "../lib/hooks/useResource";
 import { MAX_NOTE_CHARS } from "../holochain/types";
@@ -89,7 +90,7 @@ function Case({ appeal, onRuled }: { appeal: AppealView; onRuled: () => Promise<
     <Card className="flex flex-col gap-3 p-4">
       <div className="flex items-baseline justify-between">
         <p className="font-bold text-ink-900 dark:text-ink-50">{t("arbitrate.asks", { amount: formatCents(appeal.amount) })}</p>
-        <p className="text-xs text-ink-400">{timeAgo(appeal.filed_at)}</p>
+        <p className="text-xs text-ink-400"><TimeAgo at={appeal.filed_at} /></p>
       </div>
       <p className="text-xs text-ink-500">
         {t("arbitrate.orderOf", { total: formatCents(appeal.order_total), refund: formatCents(appeal.refund) })}
