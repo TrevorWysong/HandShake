@@ -39,7 +39,7 @@ The store's app plays those through the pure rules in `rewards_types::points` (`
   - The order names the reward (`OrderRewards::reward`). Validation checks the order's total takes exactly that reward off, priced like a promo with no requirement, at a running program version. A reward replaces any promo code, and doesn't apply to goodie bags.
   - **The store decides whether the points cover it**, from its own records, as it accepts the order (`can_redeem`). An order whose points don't cover it, or whose tier doesn't reach it, is declined (`RewardUnavailable`), and nothing is charged.
   - An order the store never accepted spends nothing: cancelled first, or declined. One whose food the store gave back returns its points too.
-- **Gift.** A store's grant (`PointsGrant`) is sealed between the store and the member: only whom it's to is public, so it reaches them. The member's app knows it's the store's, because only the store's key could have sealed it. Stores use grants for goodwill and birthdays.
+- **Gift.** A store's grant (`PointsGrant`) is sealed between the store and the member: only whom it's to is public, so it reaches them. The member's app reads a store's grants by its owner's key, so nobody else's can crowd them out, and knows each is the store's, because only the store's key could have sealed it. Stores use grants for goodwill and birthdays.
 
 ## Time can't be faked
 
@@ -49,7 +49,7 @@ People choose their own entries' timestamps, so no rule depends on one where fak
 - **Happy hours** are judged by when the store accepted the order, on the store's own clock.
 - **Spending** is dated by the store's acceptance, and checked then.
 - **Gifts** don't count as activity, so a grant can't keep points from expiring.
-- **Birthdays.** A member sets their birth month once, on their device only (`BirthMonth`, a private entry). Their app tells each store they order from, sealed so only that store can read it (`BirthdayShare`). The store takes the first month a member tells it, and celebrates once a year, only for members who first ordered there at least 30 days before.
+- **Birthdays.** A member sets their birth month once, on their device only (`BirthMonth`, a private entry). Their app tells each store they order from, sealed so only that store can read it (`BirthdayShare`). The store looks up only its own members, by their keys, and keeps each month privately once read (`MemberBirthday`). It takes the first month a member tells it, and celebrates once a year, only members who've bought there (a settled order) and first ordered at least 30 days before.
 
 ## Abuse considered
 
@@ -65,7 +65,8 @@ People choose their own entries' timestamps, so no rule depends on one where fak
 | A store and a customer colluding | They can only give away the store's own food |
 | Earning on an order, then getting it refunded | Points are earned only after the refund period, on what was finally paid |
 | Learning someone's points or birthday | Neither is published. A grant's and a birthday's contents are sealed; a store's member records are private to its device |
-| A stranger's store filling someone's wallet with gifts | Gifts from stores they haven't ordered from are shown apart. Only the newest 200 grants are read |
+| A stranger's store filling someone's wallet with gifts | Gifts from stores they haven't ordered from are shown apart; only the newest 200 of those are read. A store's own grants are read by its key, so a flood can't hide them |
+| Spending a reward on an order, then cancelling it on a stale branch | The reward comes back only if the order was called off before the customer saw the store start -- the same rule as the food |
 
 ## What's left
 

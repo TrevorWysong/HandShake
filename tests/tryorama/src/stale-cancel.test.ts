@@ -70,4 +70,18 @@ await runScenario(async (scenario) => {
 
   await retryUntil(() => call(merchant, "dispatch")("settle_order", order).then(() => balance(merchant)), (b) => b === storeBefore + 900, 60, 1000);
   console.log("[PASS] once the customer's app saw the store start, the food is the store's, whichever version they cancelled");
+
+  // ===== A modified app that never confirms, cancelling on what it saw =====
+  // Writing on the store's started version is seeing it: no confirmation
+  // needed for the food to be owed.
+  const third = await place();
+  const thirdRef = actionHash(third);
+  await sync();
+  const thirdAccepted = await retryUntilOk(() => call(merchant, "dispatch")<HcRecord>("accept_pickup_order", { order_original_action: thirdRef }));
+  await sync();
+  const storeThen = await balance(merchant);
+  await call(customer, "dispatch")("update_raw_pickup_order_for_testing", { version: actionHash(thirdAccepted), order: { ...decodeEntry<Record<string, unknown>>(thirdAccepted), status: "Cancelled", cancellation: "ByCustomer" } });
+  await sync();
+  await retryUntil(() => call(merchant, "dispatch")("settle_order", thirdRef).then(() => balance(merchant)), (b) => b === storeThen + 900, 60, 1000);
+  console.log("[PASS] cancelling on the store's started version owes the food, confirmed or not");
 });

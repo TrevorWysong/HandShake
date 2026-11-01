@@ -168,6 +168,18 @@ The tests in `tests/tryorama/src/security-regressions.test.ts` and `ledger-rules
 | Desktop apps updated themselves from unsigned releases, so whoever could publish a release could replace the app everywhere | High | A build updates itself only when it's signed (`desktop/kangaroo.config.ts`); the workflow passes signing certificates as secrets |
 | One key could be both arbiter and issuer: rule for itself, then fund the ruling | Medium | Packaging refuses a network whose arbiters and issuers overlap |
 
+Follow-up review of the same day:
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| A modified customer app could withhold its confirmation, then cancel on the store's accepted version and owe nothing for food it had seen the store start | High | Cancelling on the store's started version is seeing it start (`lineage::saw_start`), confirmation or not -- for the food, the promo's limits and points alike. The stale-branch race that remains costs the store at most `MAX_EARLY_CANCELS` orders before it declines the customer, since it counts every order called off without paying |
+| Anyone could crowd a store's grants out of a customer's view with a flood of their own, so the customer's app refused rewards the store would honour | Medium | A store's grants are read by its owner's key, all of them; only gift offers from strangers are capped |
+| Disposable virtual and prepaid cards could each verify a new account | Medium | The issuer vouches only for a credit or debit card that passed the processor's checks; a prepaid card neither vouches nor claims the card |
+| Validating an issuer's daily limit re-read its whole day per grant, quadratic at volume | Medium | Each grant carries the day's running total, checked against the issuer's previous grant alone. The limit is per UTC day, so a burst either side of midnight can reach twice it in 24 hours |
+| Anyone could attach birthday shares under a store, and its sweep read and opened them all | Low | The sweep looks up only its own members who've bought there, by their keys, at most 200 a sweep in turn, and keeps each month privately once read |
+| Order-and-cancel spam spread across many stores escaped each store's own limit | Low | A customer who calls off `max_daily_early_cancels` orders (10) before stores answered, anywhere, can't place another for a day -- checked on their own chain |
+| A workflow's third-party actions were referenced by movable tags, and `main`, tags and releases had no protection | Medium | Actions pinned to commits; only the owner can push to `main`, make or move tags, or publish; published releases are immutable; the release workflow writes only drafts, and its signing secrets need the owner's approval each run (`release` environment); outside pull requests run CI only once approved |
+
 Cancelling is free until the customer's app has seen the store start, and the app says so by the cancel button. A store that starts cooking before the customer's app has heard back takes that risk itself. Its acceptance reaches the customer's app within seconds, by signal, and the app confirms by itself, so the window is small. Neither side's clock can settle which came first, so the customer's own chain decides.
 
 ## What remains

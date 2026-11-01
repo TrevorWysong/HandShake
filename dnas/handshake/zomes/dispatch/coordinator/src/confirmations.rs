@@ -110,15 +110,31 @@ pub(crate) fn customer_confirmed(order: &ActionHash, requester: &AgentPubKey) ->
     Ok(!get_links(query, GetStrategy::default())?.is_empty())
 }
 
+/// Whether an order's customer saw their store start on it (see
+/// `dispatch_types::lineage::saw_start`): confirmed it, or cancelled on the
+/// store's started version.
+pub(crate) fn saw_start(order: &ActionHash, requester: &AgentPubKey, merchant: &AgentPubKey) -> ExternResult<bool> {
+    if customer_confirmed(order, requester)? {
+        return Ok(true);
+    }
+    for record in versions_of(order)? {
+        let cancels = record.action().author() == requester && fields(&record).is_some_and(|f| f.cancellation.is_some());
+        if cancels && dispatch_integrity::lineage::cancels_started(record.action_address(), merchant)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Whether an order (its original action) was called off by its customer in
-/// time: cancelled before their app confirmed seeing the store start, so it
-/// cost them nothing -- and spent no points (the rewards zome).
+/// time: cancelled before they saw the store start, so it cost them nothing
+/// -- and spent no points (the rewards zome).
 #[hdk_extern]
 pub fn cancelled_in_time(order: ActionHash) -> ExternResult<bool> {
     let Some(original) = get(order.clone(), GetOptions::default())? else { return Ok(false) };
-    let Some(Fields { requester, .. }) = fields(&original) else { return Ok(false) };
+    let Some(Fields { requester, merchant, .. }) = fields(&original) else { return Ok(false) };
     let by_customer = versions_of(&order)?.iter().any(|r| r.action().author() == &requester && fields(r).is_some_and(|f| f.cancellation == Some(Cancellation::ByCustomer)));
-    Ok(by_customer && !customer_confirmed(&order, &requester)?)
+    Ok(by_customer && !saw_start(&order, &requester, &merchant)?)
 }
 
 /// Whether the caller confirmed seeing the store start on their order --

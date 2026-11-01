@@ -292,6 +292,25 @@ pub(crate) fn ensure_order_rate() -> ExternResult<()> {
         let window_minutes = window / 60_000_000;
         return Err(guest(format!("You've placed {most} orders in the last {window_minutes} minutes, the most the network allows. Try again in about {minutes} min.")));
     }
+    // Orders called off before any store answered, in the last day -- the
+    // network's daily allowance (`checks::early_cancels_problem`), told first.
+    let types = [EntryType::try_from(UnitEntryTypes::DeliveryOrder)?, EntryType::try_from(UnitEntryTypes::PickupOrder)?];
+    let day_ago = Timestamp::from_micros(sys_time()?.as_micros() - 86_400_000_000);
+    let mut early = 0;
+    for record in mine(&types).since(day_ago).records()? {
+        let ActionData::Update(update) = &record.action().data else { continue };
+        let by_customer = decode_or::<DeliveryOrder>(&record).map(|o| o.cancellation == Some(Cancellation::ByCustomer)).or_else(|| decode_or::<PickupOrder>(&record).map(|o| o.cancellation == Some(Cancellation::ByCustomer)));
+        if by_customer != Some(true) {
+            continue;
+        }
+        let prior = get(update.original_action_address.clone(), GetOptions::local())?;
+        if prior.as_ref().is_some_and(|p| decode_or::<DeliveryOrder>(p).is_some_and(|o| o.status == DeliveryStatus::Placed) || decode_or::<PickupOrder>(p).is_some_and(|o| o.status == PickupStatus::Placed)) {
+            early += 1;
+        }
+    }
+    if early >= handshake_governance::max_daily_early_cancels() {
+        return Err(guest("You've called off a lot of orders today before stores could answer them. You can order again tomorrow."));
+    }
     Ok(())
 }
 

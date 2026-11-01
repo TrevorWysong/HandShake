@@ -93,6 +93,25 @@ pub struct IssuerGrant {
     /// plain deposit, so never both.
     #[serde(default)]
     pub in_place_of: Option<HeldPart>,
+    /// What its issuer has issued fresh on this UTC day, this grant
+    /// included -- a running total, like a balance, checked against their
+    /// previous grant alone, and held to the network's daily limit. A grant
+    /// in place of a hold's part adds nothing: it isn't new money.
+    #[serde(default)]
+    pub issued_today: u64,
+}
+
+/// The UTC day a moment falls on, as days since the epoch -- what an
+/// issuer's daily limit counts by.
+pub fn utc_day(at: Timestamp) -> i64 {
+    at.as_micros().div_euclid(86_400_000_000)
+}
+
+impl IssuerGrant {
+    /// What it adds to its issuer's day.
+    pub fn fresh(&self) -> u64 {
+        if self.in_place_of.is_some() { 0 } else { self.amount }
+    }
 }
 
 /// An issuer vouching that `agent` paid with a card it hadn't seen on any

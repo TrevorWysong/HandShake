@@ -201,7 +201,7 @@ fn facts(order: &ActionHash) -> ExternResult<Option<Facts>> {
             }
         }
     }
-    facts.store_cooked &= !store_cancelled && crate::confirmations::customer_confirmed(order, &requester)?;
+    facts.store_cooked &= !store_cancelled && crate::confirmations::saw_start(order, &requester, &merchant)?;
     let prior_of = |record: &Record| match &record.action().data {
         ActionData::Update(update) => all.iter().find(|r| r.action_address() == &update.original_action_address),
         _ => None,

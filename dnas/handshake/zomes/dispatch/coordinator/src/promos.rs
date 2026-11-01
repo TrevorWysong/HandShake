@@ -53,11 +53,16 @@ fn my_orders() -> ExternResult<Vec<(ActionHash, Option<ActionHash>, Timestamp)>>
     }
     let mut orders = Vec::new();
     for record in mine(&types).records()? {
-        let cited = decode_or::<DeliveryOrder>(&record).map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some())).or_else(|| decode_or::<PickupOrder>(&record).map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some())));
-        let Some((catalog_ref, promo, has_cancellation)) = cited else { continue };
+        let cited = decode_or::<DeliveryOrder>(&record).map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some(), o.merchant)).or_else(|| decode_or::<PickupOrder>(&record).map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some(), o.merchant)));
+        let Some((catalog_ref, promo, has_cancellation, merchant)) = cited else { continue };
         if matches!(record.action().data, ActionData::Update(_)) {
             if has_cancellation {
-                cancelled.push(original_action_of(record.action_address().clone())?);
+                let original = original_action_of(record.action_address().clone())?;
+                // Cancelled on the store's started version: seen started.
+                if dispatch_integrity::lineage::cancels_started(record.action_address(), &merchant)? {
+                    confirmed.push(original.clone());
+                }
+                cancelled.push(original);
             }
             continue;
         }

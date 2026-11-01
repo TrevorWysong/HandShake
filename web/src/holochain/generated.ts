@@ -1241,6 +1241,13 @@ export interface IssuerGrant {
    * plain deposit, so never both.
    */
   in_place_of: HeldPart | null;
+  /**
+   * What its issuer has issued fresh on this UTC day, this grant
+   * included -- a running total, like a balance, checked against their
+   * previous grant alone, and held to the network's daily limit. A grant
+   * in place of a hold's part adds nothing: it isn't new money.
+   */
+  issued_today: number;
 }
 
 /**
@@ -1812,11 +1819,29 @@ export const MAX_VEHICLE_CHARS = 100;
 export const MIN_EXPIRY_DAYS = 30;
 
 /**
+ * A store's own record of a member's birth month, once it has read what
+ * they told it (`BirthdayShare`) -- private on its chain, so its birthday
+ * sweep needs no lookups for members it knows.
+ */
+export interface MemberBirthday {
+  catalog_ref: ActionHash;
+  customer: AgentPubKey;
+  /**
+   * 1 (January) to 12.
+   */
+  month: number;
+}
+
+/**
  * A store's own record of an order that joined its program, kept private
  * on its chain: what it works out its members' points from, alongside its
  * settlements and grants. Written as it accepts the order.
  */
 export interface MemberOrder {
+  /**
+   * The store it was placed at.
+   */
+  catalog_ref: ActionHash;
   customer: AgentPubKey;
   /**
    * The order's original action.

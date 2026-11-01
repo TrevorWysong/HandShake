@@ -135,7 +135,16 @@ pub fn issue_grant(input: IssueGrantInput) -> ExternResult<ActionHash> {
         return Ok(existing);
     }
     let to = input.to.clone();
-    let hash = create_entry(&EntryTypes::IssuerGrant(IssuerGrant { to: input.to, amount: input.amount, reference: input.reference, in_place_of: input.in_place_of }))?;
+    // The day's running total, from the caller's previous grant today.
+    let now = sys_time()?;
+    let types = [EntryType::try_from(UnitEntryTypes::IssuerGrant)?];
+    let before = mine(&types).since(Timestamp::from_micros(utc_day(now) * 86_400_000_000)).records()?.first().and_then(decode_or::<IssuerGrant>).map_or(0, |g| g.issued_today);
+    let mut grant = IssuerGrant { to: input.to, amount: input.amount, reference: input.reference, in_place_of: input.in_place_of, issued_today: 0 };
+    grant.issued_today = before.saturating_add(grant.fresh());
+    if grant.issued_today > handshake_governance::issuer_daily_limit_cents() {
+        return Err(guest("That's more than the network lets an issuer issue in a day. It resets at midnight UTC."));
+    }
+    let hash = create_entry(&EntryTypes::IssuerGrant(grant))?;
     create_link(to, hash.clone(), LinkTypes::AgentToGrant, tag)?;
     Ok(hash)
 }
@@ -595,7 +604,7 @@ pub fn my_holds_for_order(order: ActionHash) -> ExternResult<Vec<HoldView>> {
 #[cfg(feature = "test-utils")]
 mod test_utils {
     use hdk::prelude::*;
-    use ledger_integrity::{EntryTypes, LedgerEntry, LinkTypes};
+    use ledger_integrity::{EntryTypes, IssuerGrant, LedgerEntry, LinkTypes};
     handshake_coordinator_support::raw_link_test_externs!(OrderToHold, HoldToWaive, AgentToGrant, IssuerToRedemption, RedemptionToOutcome, IssuerToProfile, GrantToDeposit);
 
     /// Writes a cash-out's outcome exactly as given -- what a modified
@@ -610,5 +619,11 @@ mod test_utils {
     #[hdk_extern]
     pub fn create_raw_ledger_entry_for_testing(entry: LedgerEntry) -> ExternResult<ActionHash> {
         create_entry(&EntryTypes::LedgerEntry(entry))
+    }
+
+    /// The same, for an issuer's grant.
+    #[hdk_extern]
+    pub fn create_raw_issuer_grant_for_testing(grant: IssuerGrant) -> ExternResult<ActionHash> {
+        create_entry(&EntryTypes::IssuerGrant(grant))
     }
 }

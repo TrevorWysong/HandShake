@@ -286,14 +286,19 @@ fn earlier_orders(requester: &AgentPubKey, chain_top: &ActionHash, since: Timest
             declined.extend(DeclineNoted::try_from(bytes).ok().map(|d| d.order));
             continue;
         }
-        let order = DeliveryOrder::try_from(bytes.clone()).ok().map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some())).or_else(|| PickupOrder::try_from(bytes).ok().map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some())));
-        let Some((catalog_ref, promo_code_ref, has_cancellation)) = order else { continue };
+        let order = DeliveryOrder::try_from(bytes.clone()).ok().map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some(), o.merchant)).or_else(|| PickupOrder::try_from(bytes).ok().map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some(), o.merchant)));
+        let Some((catalog_ref, promo_code_ref, has_cancellation, merchant)) = order else { continue };
         if is_order {
             orders.push(EarlierOrder { order: item.action.hashed.hash.clone(), catalog_ref, promo_code_ref, placed_at: action.timestamp() });
         } else if has_cancellation {
             // The customer's own update cancelling it -- their only one
-            // with a cancellation, since they write nothing after.
-            cancelled.push(original_creation(item.action.hashed.hash.clone())?);
+            // with a cancellation, since they write nothing after. Written
+            // on the store's started version, it was seen started.
+            let original = original_creation(item.action.hashed.hash.clone())?;
+            if dispatch_types::lineage::cancels_started(&item.action.hashed.hash, &merchant)? {
+                confirmed.push(original.clone());
+            }
+            cancelled.push(original);
         }
     }
     orders.retain(|o| !declined.contains(&o.order) && !(cancelled.contains(&o.order) && !confirmed.contains(&o.order)));
@@ -470,5 +475,51 @@ pub(crate) fn check_order_rate(requester: &AgentPubKey, at: Timestamp, prev_acti
     let window = handshake_governance::store_response_window().as_micros() as i64;
     let since = Timestamp::from_micros(at.as_micros() - window);
     let placed = entries_since(requester, prev_action, since, &order_types()?)?.len();
-    Ok((placed >= handshake_governance::max_pending_orders() as usize).then(|| "you've placed as many orders as the network allows at once; wait for a store to answer".into()))
+    if placed >= handshake_governance::max_pending_orders() as usize {
+        return Ok(Some("you've placed as many orders as the network allows at once; wait for a store to answer".into()));
+    }
+    early_cancels_problem(requester, prev_action, at)
+}
+
+/// The most of a customer's last day a placement walks for their early
+/// cancellations: the order rate bounds how many orders a day holds, so an
+/// honest chain never comes near it.
+const MAX_CANCEL_WALK: usize = 20_000;
+
+/// Why a customer can't place an order: they've called off the network's
+/// daily allowance of orders before any store answered them
+/// (`handshake_governance::max_daily_early_cancels`) -- spread across stores
+/// or not -- in the day before `at`. Read from their own chain.
+pub(crate) fn early_cancels_problem(requester: &AgentPubKey, prev_action: &ActionHash, at: Timestamp) -> ExternResult<Option<String>> {
+    let since = Timestamp::from_micros(at.as_micros() - 86_400_000_000);
+    let activity = handshake_integrity_support::chain::activity_since(requester, prev_action, since)?;
+    if activity.len() > MAX_CANCEL_WALK {
+        return Ok(Some("this account's last day is too long to check; try again later".into()));
+    }
+    let types = order_types()?;
+    let most = handshake_governance::max_daily_early_cancels() as usize;
+    let mut early = 0;
+    for item in &activity {
+        let action = &item.action.hashed.content;
+        let ActionData::Update(update) = &action.data else { continue };
+        if !matches!(&update.entry_type, EntryType::App(def) if types.iter().any(|t| t.zome_index == def.zome_index && t.zome_type == def.entry_index)) {
+            continue;
+        }
+        let Entry::App(bytes) = handshake_integrity_support::chain::entry_of(item, &update.entry_hash)? else { continue };
+        let bytes = SerializedBytes::from(bytes);
+        let by_customer = DeliveryOrder::try_from(bytes.clone()).ok().map(|o| o.cancellation == Some(Cancellation::ByCustomer)).or_else(|| PickupOrder::try_from(bytes).ok().map(|o| o.cancellation == Some(Cancellation::ByCustomer)));
+        if by_customer != Some(true) {
+            continue;
+        }
+        // Before any store answered: it cancelled the order as placed.
+        let prior = must_get_valid_record(update.original_action_address.clone())?;
+        let from_placed = decode::<DeliveryOrder>(&prior).is_some_and(|o| o.status == DeliveryStatus::Placed) || decode::<PickupOrder>(&prior).is_some_and(|o| o.status == PickupStatus::Placed);
+        if from_placed {
+            early += 1;
+            if early >= most {
+                return Ok(Some("you've called off as many orders today as the network allows before stores could answer; try again tomorrow".into()));
+            }
+        }
+    }
+    Ok(None)
 }

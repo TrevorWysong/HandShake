@@ -298,11 +298,9 @@ fn member_orders(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResu
     let types = [EntryType::try_from(UnitEntryTypes::MemberOrder)?];
     let mut out = Vec::new();
     for record in mine(&types).records()? {
-        let Some(m) = decode_or::<MemberOrder>(&record).filter(|m| &m.customer == customer) else { continue };
+        let Some(m) = decode_or::<MemberOrder>(&record).filter(|m| &m.customer == customer && &m.catalog_ref == catalog_ref) else { continue };
         let Some(placed) = get(m.order.clone(), GetOptions::default())? else { continue };
-        if OrderForRewards::of(&placed).is_some_and(|o| &o.catalog_ref == catalog_ref) {
-            out.push(MemberOrderView { order: m.order, placed_at: placed.action().timestamp(), accepted: Some(m.accepted), reward: m.reward.map(|(id, ..)| id) });
-        }
+        out.push(MemberOrderView { order: m.order, placed_at: placed.action().timestamp(), accepted: Some(m.accepted), reward: m.reward.map(|(id, ..)| id) });
     }
     Ok(out)
 }
@@ -386,7 +384,7 @@ pub fn record_member_order(input: MemberOrderInput) -> ExternResult<()> {
         Some(id) => program_at(&rewards.program, &placed.catalog_ref)?.ok().and_then(|p| p.reward(id).map(|r| (id, r.cost, r.min_tier))),
         None => None,
     };
-    create_entry(&EntryTypes::MemberOrder(MemberOrder { customer: placed.requester, order: input.order, accepted: input.accepted, reward }))?;
+    create_entry(&EntryTypes::MemberOrder(MemberOrder { catalog_ref: placed.catalog_ref, customer: placed.requester, order: input.order, accepted: input.accepted, reward }))?;
     Ok(())
 }
 
@@ -433,13 +431,22 @@ pub fn grant_points(input: GrantInput) -> ExternResult<ActionHash> {
     grant(input.to, input.catalog_ref, input.points, GrantReason::Goodwill { note: input.note })
 }
 
-/// Every grant to the caller, opened: from whom (the store's owner), when,
-/// and what. Only the store that sealed it can have sent it.
-fn grants_to_me() -> ExternResult<Vec<GrantToMe>> {
-    let mut links = get_links(LinkQuery::try_new(me()?, LinkTypes::AgentToGrant)?, GetStrategy::default())?;
+/// Grants to the caller, opened: from whom, when, and what. Only the key
+/// that sealed one can have sent it. `from`: only those one store's owner
+/// wrote -- read by their key, so nobody else's grants, however many, can
+/// crowd a store's out. Without it, the newest from anyone (gift offers).
+fn grants_to_me(from: Option<&AgentPubKey>) -> ExternResult<Vec<GrantToMe>> {
+    let mut query = LinkQuery::try_new(me()?, LinkTypes::AgentToGrant)?;
+    if let Some(owner) = from {
+        query = query.author(owner.clone());
+    }
+    let mut links = get_links(query, GetStrategy::default())?;
     links.sort_by_key(|l| std::cmp::Reverse(l.timestamp));
     let mut out = Vec::new();
-    for link in links.into_iter().take(MAX_GRANTS_READ) {
+    // Anyone's are read no further than the newest few; one store's, all --
+    // as many as it counts itself.
+    let most = if from.is_some() { usize::MAX } else { MAX_GRANTS_READ };
+    for link in links.into_iter().take(most) {
         let Some(hash) = link.target.into_action_hash() else { continue };
         let Some(record) = get(hash, GetOptions::default())? else { continue };
         let Some(grant) = decode_or::<PointsGrant>(&record) else { continue };
@@ -460,8 +467,8 @@ struct GrantToMe {
     payload: GrantPayload,
 }
 
-/// How many of the newest grants to the caller are read: anyone can grant
-/// to anyone, so a flood of them is read no further.
+/// How many of the newest grants from anyone to the caller are read: anyone
+/// can grant to anyone, so a flood of them is read no further.
 const MAX_GRANTS_READ: usize = 200;
 
 /// A grant from a store the caller hasn't ordered from.
@@ -481,7 +488,7 @@ pub struct GiftOffer {
 pub fn gift_offers(_: ()) -> ExternResult<Vec<GiftOffer>> {
     let mine_at: Vec<ActionHash> = my_orders()?.into_iter().map(|(_, catalog_ref, _)| catalog_ref).collect();
     let mut offers = Vec::new();
-    for GrantToMe { grant, from, at, payload } in grants_to_me()? {
+    for GrantToMe { grant, from, at, payload } in grants_to_me(None)? {
         if mine_at.contains(&payload.catalog_ref) {
             continue;
         }
@@ -589,9 +596,10 @@ pub enum PointsLineKind {
     Birthday,
 }
 
-fn card_for(catalog_ref: &ActionHash, orders: Vec<(ActionHash, Timestamp)>, grants: &[GrantToMe]) -> ExternResult<CardView> {
+fn card_for(catalog_ref: &ActionHash, orders: Vec<(ActionHash, Timestamp)>) -> ExternResult<CardView> {
     let program = program_of(catalog_ref.clone())?;
     let store_info = store(catalog_ref)?;
+    let grants = grants_to_me(Some(&store_info.owner))?;
     let me = me()?;
     let mut views = Vec::new();
     let mut reserved = 0u64;
@@ -661,14 +669,13 @@ fn order_called_off(order: &ActionHash) -> ExternResult<bool> {
 #[hdk_extern]
 pub fn my_card(catalog_ref: ActionHash) -> ExternResult<CardView> {
     let orders = my_orders()?.into_iter().filter(|(_, c, _)| c == &catalog_ref).map(|(o, _, at)| (o, at)).collect();
-    card_for(&catalog_ref, orders, &grants_to_me()?)
+    card_for(&catalog_ref, orders)
 }
 
 /// Every card the caller holds: a store they've ordered from under its
 /// program. Most recent first.
 #[hdk_extern]
 pub fn my_cards(_: ()) -> ExternResult<Vec<CardView>> {
-    let grants = grants_to_me()?;
     let mut stores: Vec<(ActionHash, Vec<(ActionHash, Timestamp)>)> = Vec::new();
     for (order, catalog_ref, at) in my_orders()? {
         match stores.iter_mut().find(|(s, _)| s == &catalog_ref) {
@@ -676,7 +683,7 @@ pub fn my_cards(_: ()) -> ExternResult<Vec<CardView>> {
             None => stores.push((catalog_ref, vec![(order, at)])),
         }
     }
-    stores.into_iter().map(|(store, orders)| card_for(&store, orders, &grants)).collect()
+    stores.into_iter().map(|(store, orders)| card_for(&store, orders)).collect()
 }
 
 /// One of the caller's orders, as its points stand -- for its order page.
@@ -696,7 +703,7 @@ pub fn order_points(order: ActionHash) -> ExternResult<Option<OrderPoints>> {
     let (_, status) = order_events(&view, &merchant, sys_time()?)?;
     let Some((status, base)) = status else { return Ok(None) };
     // What it earns at the member's standing without it.
-    let card = card_for(&placed.catalog_ref, my_orders()?.into_iter().filter(|(o, c, _)| c == &placed.catalog_ref && o != &order).map(|(o, _, at)| (o, at)).collect(), &grants_to_me()?)?;
+    let card = card_for(&placed.catalog_ref, my_orders()?.into_iter().filter(|(o, c, _)| c == &placed.catalog_ref && o != &order).map(|(o, _, at)| (o, at)).collect())?;
     let mut rules = program.program.clone();
     if !may_be_welcomed(&placed.requester)? {
         rules.earn.welcome_bonus = 0;
@@ -754,9 +761,16 @@ pub fn share_birthdays(_: ()) -> ExternResult<u32> {
 /// them: a fresh account set up for the birthday alone gets nothing.
 const BIRTHDAY_AFTER_DAYS: i64 = 30;
 
+/// How many members a store looks up a birth month for, each sweep, among
+/// those it doesn't know yet -- taken in turn, so every member is reached.
+const BIRTHDAYS_LOOKED_UP: usize = 200;
+
 /// The caller's stores giving their birthday points to members whose month
 /// it is: once a year each, to members who've ordered there for a while,
-/// taking the first month each member told it. Returns how many it gave.
+/// taking the first month each member told it. Only members are looked up,
+/// each by their own key -- what anyone else links under the store is never
+/// read -- and a month once read is kept privately (`MemberBirthday`).
+/// Returns how many it gave.
 #[hdk_extern]
 pub fn celebrate_birthdays(_: ()) -> ExternResult<u32> {
     let types = [EntryType::try_from(UnitEntryTypes::RewardsProgram)?];
@@ -768,32 +782,57 @@ pub fn celebrate_birthdays(_: ()) -> ExternResult<u32> {
         if !program.active || program.birthday_points == 0 {
             continue;
         }
+        let catalog_ref = program.catalog_ref.clone();
         let local = local_time(now, &program.time_zone);
+        // Members, by when they first ordered here, oldest first.
         let member_types = [EntryType::try_from(UnitEntryTypes::MemberOrder)?];
-        let members: Vec<(AgentPubKey, Timestamp)> = mine(&member_types).records()?.iter().filter_map(|r| decode_or::<MemberOrder>(r).map(|m| (m.customer, r.action().timestamp()))).collect();
-        let mut links = get_links(LinkQuery::try_new(program.catalog_ref.clone(), LinkTypes::CatalogToBirthday)?, GetStrategy::default())?;
-        links.sort_by_key(|l| l.timestamp);
-        let mut seen: Vec<AgentPubKey> = Vec::new();
-        for link in links {
-            let member = link.author.clone();
-            if seen.contains(&member) {
-                continue;
+        let mut members: Vec<(AgentPubKey, Timestamp)> = Vec::new();
+        for record in mine(&member_types).records()? {
+            let Some(m) = decode_or::<MemberOrder>(&record).filter(|m| m.catalog_ref == catalog_ref) else { continue };
+            let at = record.action().timestamp();
+            match members.iter_mut().find(|(c, _)| c == &m.customer) {
+                Some((_, first)) => *first = (*first).min(at),
+                None => members.push((m.customer, at)),
             }
-            seen.push(member.clone());
-            let first_order = members.iter().filter(|(c, _)| c == &member).map(|(_, at)| *at).min();
+        }
+        members.sort_by_key(|(_, at)| *at);
+        let known_types = [EntryType::try_from(UnitEntryTypes::MemberBirthday)?];
+        let mut known: Vec<(AgentPubKey, u8)> = mine(&known_types).records()?.iter().filter_map(decode_or::<MemberBirthday>).filter(|b| b.catalog_ref == catalog_ref).map(|b| (b.customer, b.month)).collect();
+        // Look up some of those it doesn't know, in turn.
+        let unknown: Vec<&AgentPubKey> = members.iter().map(|(c, _)| c).filter(|c| !known.iter().any(|(k, _)| k == *c)).collect();
+        if !unknown.is_empty() {
+            let turn = (now.as_micros() / 10_800_000_000) as usize % unknown.len().div_ceil(BIRTHDAYS_LOOKED_UP);
+            for member in unknown.into_iter().skip(turn * BIRTHDAYS_LOOKED_UP).take(BIRTHDAYS_LOOKED_UP) {
+                let query = LinkQuery::try_new(catalog_ref.clone(), LinkTypes::CatalogToBirthday)?.author(member.clone());
+                let Some(earliest) = get_links(query, GetStrategy::default())?.into_iter().min_by_key(|l| l.timestamp) else { continue };
+                let Some(share) = earliest.target.into_action_hash().and_then(|h| get(h, GetOptions::default()).ok().flatten()).and_then(|r| decode_or::<BirthdayShare>(&r)) else { continue };
+                let Some(month) = open::<u8>(member, &share.sealed_month)?.filter(|m| (1..=12).contains(m)) else { continue };
+                create_entry(&EntryTypes::MemberBirthday(MemberBirthday { catalog_ref: catalog_ref.clone(), customer: member.clone(), month }))?;
+                known.push((member.clone(), month));
+            }
+        }
+        for (member, _) in known.into_iter().filter(|(_, m)| *m == local.month) {
+            let first_order = members.iter().find(|(c, _)| c == &member).map(|(_, at)| *at);
             if !first_order.is_some_and(|at| now.as_micros() - at.as_micros() >= BIRTHDAY_AFTER_DAYS * 86_400_000_000) {
                 continue;
             }
-            let Some(share) = link.target.into_action_hash().and_then(|h| get(h, GetOptions::default()).ok().flatten()).and_then(|r| decode_or::<BirthdayShare>(&r)) else { continue };
-            let Some(month) = open::<u8>(&member, &share.sealed_month)? else { continue };
-            if month != local.month {
+            // A member is someone who's bought here: an order the store settled,
+            // not one called off in time, which cost them nothing.
+            let mut bought = false;
+            for view in member_orders(&catalog_ref, &member)? {
+                if dispatch::<_, Option<ActionHash>>("order_settlement", view.order.clone())?.is_some() {
+                    bought = true;
+                    break;
+                }
+            }
+            if !bought {
                 continue;
             }
-            let celebrated = my_grants_to(&program.catalog_ref, &member)?.iter().any(|(_, _, g)| matches!(g.reason, GrantReason::Birthday { year } if year == local.year));
+            let celebrated = my_grants_to(&catalog_ref, &member)?.iter().any(|(_, _, g)| matches!(g.reason, GrantReason::Birthday { year } if year == local.year));
             if celebrated {
                 continue;
             }
-            if handshake_coordinator_support::isolated::<_, ActionHash>("grant_birthday", BirthdayInput { to: member, catalog_ref: program.catalog_ref.clone(), points: program.birthday_points, year: local.year }).is_some() {
+            if handshake_coordinator_support::isolated::<_, ActionHash>("grant_birthday", BirthdayInput { to: member, catalog_ref: catalog_ref.clone(), points: program.birthday_points, year: local.year }).is_some() {
                 given += 1;
             }
         }
@@ -863,11 +902,7 @@ pub fn program_stats(catalog_ref: ActionHash) -> ExternResult<ProgramStats> {
     let mut members: Vec<(AgentPubKey, bool)> = Vec::new();
     let mut stats = ProgramStats::default();
     for record in mine(&types).records()? {
-        let Some(m) = decode_or::<MemberOrder>(&record) else { continue };
-        let ours = get(m.order.clone(), GetOptions::local())?.and_then(|r| OrderForRewards::of(&r)).is_some_and(|o| o.catalog_ref == catalog_ref);
-        if !ours {
-            continue;
-        }
+        let Some(m) = decode_or::<MemberOrder>(&record).filter(|m| m.catalog_ref == catalog_ref) else { continue };
         stats.orders += 1;
         stats.redemptions += u32::from(m.reward.is_some());
         let recent = now - record.action().timestamp().as_micros() <= 30 * 86_400_000_000;
