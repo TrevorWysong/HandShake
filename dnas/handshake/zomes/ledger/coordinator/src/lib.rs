@@ -8,7 +8,7 @@ use dispatch_types::{hold_amount, hold_terms, Bid, DeliveryOrder, OrderTerms, Pi
 use hdk::prelude::*;
 use ledger_integrity::*;
 use handshake_coordinator_support::chain::{chain_head_of, latest_created, mine};
-use handshake_coordinator_support::{decode_or, original_action_of};
+use handshake_coordinator_support::{call_local, decode_or, original_action_of};
 
 mod cash_out;
 mod standing;
@@ -204,8 +204,8 @@ pub fn revoke_card(agent: AgentPubKey) -> ExternResult<()> {
 pub fn card_verified(agent: AgentPubKey) -> ExternResult<bool> {
     let issuers = handshake_governance::issuers();
     let mut keys = vec![agent.clone()];
-    if let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "account", "lineage".into(), None, agent)? {
-        keys.extend(io.decode::<Vec<AgentPubKey>>().map_err(|e| wasm_error!(e))?);
+    if let Ok(earlier) = call_local::<_, Vec<AgentPubKey>>("account", "lineage", agent)? {
+        keys.extend(earlier);
     }
     for key in keys {
         if card_words(&key, &issuers, GetStrategy::default())?.iter().any(vouches) {

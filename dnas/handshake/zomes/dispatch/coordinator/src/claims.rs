@@ -18,7 +18,7 @@ use crate::pricing::OrderItem;
 use crate::stores::current_catalog;
 use catalog_types::{BagClaim, BagClaimFulfillment, BagClaimStatus, GoodieBag};
 use hdk::prelude::*;
-use handshake_coordinator_support::{decode_or, guest, original_action_of, resolve_latest};
+use handshake_coordinator_support::{call_local, decode_or, guest, original_action_of, resolve_latest};
 use handshake_types::GeoPoint;
 
 /// Mirrors `catalog::MyClaim` over the zome-call boundary.
@@ -33,10 +33,7 @@ pub struct MyClaimWire {
 /// have one yet. One claim failing (the bag still gossiping, say) doesn't
 /// hold up the rest; the next run tries it again.
 pub(crate) fn redeem_confirmed_claims() -> ExternResult<()> {
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", "get_my_bag_claims".into(), None, ())? else {
-        return Err(guest("reading your goodie-bag claims failed"));
-    };
-    let claims: Vec<MyClaimWire> = io.decode().map_err(|e| wasm_error!(e))?;
+    let claims: Vec<MyClaimWire> = call_local("catalog", "get_my_bag_claims", ())?.map_err(|_| guest("reading your goodie-bag claims failed"))?;
     for claim in claims {
         handshake_coordinator_support::isolated::<_, ()>("redeem_one_claim", claim);
     }
@@ -69,10 +66,7 @@ fn redeem(mine: &MyClaimWire) -> ExternResult<()> {
     if get_my_order_for_claim(claim_ref.clone())?.is_some() {
         return Ok(());
     }
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", "get_goodie_bag".into(), None, claim.bag_ref.clone())? else {
-        return Err(guest("reading the goodie bag failed"));
-    };
-    let bag_record: Record = io.decode().map_err(|e| wasm_error!(e))?;
+    let bag_record: Record = call_local("catalog", "get_goodie_bag", claim.bag_ref.clone())?.map_err(|_| guest("reading the goodie bag failed"))?;
     let bag = decode_or::<GoodieBag>(&bag_record).ok_or(guest("that isn't a goodie bag"))?;
     let store = current_catalog(&bag.catalog_ref)?;
     let merchant = store.owner.clone();
@@ -145,9 +139,6 @@ pub(crate) fn redeem_bag_claim(claim_ref: &ActionHash) -> ExternResult<()> {
     if bag_hold_lapsed(claim_ref)? {
         return Err(guest("This goodie bag's hold ran out before the order came in, so it went back on sale. Decline the order."));
     }
-    match call(CallTargetCell::Local, "catalog", "redeem_claim".into(), None, claim_ref.clone())? {
-        ZomeCallResponse::Ok(_) => Ok(()),
-        other => Err(guest(format!("couldn't record the goodie bag as sold: {other:?}"))),
-    }
+    call_local::<_, serde::de::IgnoredAny>("catalog", "redeem_claim", claim_ref.clone())?.map(drop).map_err(|why| guest(format!("couldn't record the goodie bag as sold: {why}")))
 }
 

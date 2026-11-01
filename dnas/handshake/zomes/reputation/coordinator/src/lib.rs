@@ -16,7 +16,7 @@
 //! doc comment for why.
 
 use hdk::prelude::*;
-use handshake_coordinator_support::{decode_or, guest, original_action_of, resolve_latest, written};
+use handshake_coordinator_support::{call_local, call_role, decode_or, guest, original_action_of, resolve_latest, written};
 use std::collections::BTreeMap;
 use reputation_integrity::*;
 
@@ -41,17 +41,11 @@ enum Subject<'a> {
 /// zome's `store_line`). A record follows its subject to a new key.
 fn bases_of(base: AnyLinkableHash, subject: Subject) -> ExternResult<Vec<AnyLinkableHash>> {
     let mut bases = vec![base];
-    let earlier = match subject {
-        Subject::Person(agent) => call(CallTargetCell::Local, "account", "lineage".into(), None, agent.clone())?,
-        Subject::Store(catalog) => call(CallTargetCell::Local, "catalog", "store_line".into(), None, catalog.clone())?,
+    let earlier: Result<Vec<AnyLinkableHash>, _> = match subject {
+        Subject::Person(agent) => call_local::<_, Vec<AgentPubKey>>("account", "lineage", agent.clone())?.map(|keys| keys.into_iter().map(Into::into).collect()),
+        Subject::Store(catalog) => call_local::<_, Vec<ActionHash>>("catalog", "store_line", catalog.clone())?.map(|stores| stores.into_iter().map(Into::into).collect()),
     };
-    if let ZomeCallResponse::Ok(io) = earlier {
-        let earlier: Vec<AnyLinkableHash> = match subject {
-            Subject::Person(_) => io.decode::<Vec<AgentPubKey>>().map_err(|e| wasm_error!(e))?.into_iter().map(Into::into).collect(),
-            Subject::Store(_) => io.decode::<Vec<ActionHash>>().map_err(|e| wasm_error!(e))?.into_iter().map(Into::into).collect(),
-        };
-        bases.extend(earlier);
-    }
+    bases.extend(earlier.unwrap_or_default());
     Ok(bases)
 }
 
@@ -240,17 +234,11 @@ impl ReputationSummary {
 fn previous_target(target: &ReputationTarget) -> ExternResult<Option<ReputationTarget>> {
     Ok(match target {
         ReputationTarget::Store(catalog) => {
-            let found = match call(CallTargetCell::Local, "catalog", "imported_from".into(), None, catalog.clone())? {
-                ZomeCallResponse::Ok(io) => io.decode::<Option<ActionHash>>().ok().flatten(),
-                _ => None,
-            };
+            let found = call_local::<_, Option<ActionHash>>("catalog", "imported_from", catalog.clone())?.ok().flatten();
             found.map(ReputationTarget::Store)
         }
         ReputationTarget::Driver(agent) | ReputationTarget::Customer(agent) => {
-            let found = match call(CallTargetCell::Local, "account", "arrived_from".into(), None, agent.clone())? {
-                ZomeCallResponse::Ok(io) => io.decode::<Option<AgentPubKey>>().ok().flatten(),
-                _ => None,
-            };
+            let found = call_local::<_, Option<AgentPubKey>>("account", "arrived_from", agent.clone())?.ok().flatten();
             found.map(|previous| match target {
                 ReputationTarget::Driver(_) => ReputationTarget::Driver(previous),
                 _ => ReputationTarget::Customer(previous),
@@ -267,10 +255,7 @@ fn on_previous_network<I: Serialize + std::fmt::Debug, O: for<'de> Deserialize<'
 ) -> ExternResult<Option<O>> {
     let Some(previous) = previous_target(target)? else { return Ok(None) };
     let (function, input) = request(previous);
-    Ok(match call(CallTargetCell::OtherRole("previous".into()), "reputation", function.into(), None, input) {
-        Ok(ZomeCallResponse::Ok(io)) => io.decode().ok(),
-        _ => None,
-    })
+    Ok(call_role("previous", "reputation", function, input).ok().and_then(Result::ok))
 }
 
 // --- store/driver reviews ---

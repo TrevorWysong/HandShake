@@ -6,7 +6,7 @@
 
 use crate::order_queues::my_completions_at;
 use catalog_types::{order_tax, order_total, total_with_tax, BagClaim, GoodieBag, MerchantCatalog, MenuItem, PricedLine, PromoCode, PromoRequirement, PromoReward, TaxableLine};
-use handshake_coordinator_support::{decode_or, guest, original_action_of, resolve_latest};
+use handshake_coordinator_support::{call_local, decode_or, guest, original_action_of, resolve_latest};
 use dispatch_integrity::*;
 use hdk::prelude::*;
 
@@ -301,10 +301,7 @@ fn honoured(versions: &[ItemVersionWire], cited: &ActionHash, placed_at: Timesta
 /// many reasons (its hours, being busy) that change nothing an order holds
 /// it to, and a customer's view of it can lag a little.
 pub(crate) fn terms_outdated(order_ref: &ActionHash, catalog_ref: &ActionHash, catalog_version: &ActionHash) -> ExternResult<bool> {
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", "get_my_store_versions".into(), None, catalog_ref.clone())? else {
-        return Err(guest("reading your store's history failed"));
-    };
-    let versions: Vec<ItemVersionWire> = io.decode().map_err(|e| wasm_error!(e))?;
+    let versions: Vec<ItemVersionWire> = call_local("catalog", "get_my_store_versions", catalog_ref.clone())?.map_err(|_| guest("reading your store's history failed"))?;
     let (Some(cited), Some(current)) = (store_at(catalog_version)?, versions.last().map(|v| store_at(&v.action)).transpose()?.flatten()) else {
         // Not one of this store's versions at all.
         return Ok(true);
@@ -339,10 +336,7 @@ struct ProgramViewWire {
 }
 
 fn rewards_call<I: Serialize + std::fmt::Debug, O: serde::de::DeserializeOwned + std::fmt::Debug>(function: &str, input: I) -> ExternResult<O> {
-    match call(CallTargetCell::Local, "rewards", function.into(), None, input)? {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e)),
-        other => Err(guest(format!("rewards {function}: {other:?}"))),
-    }
+    call_local("rewards", function, input)?.map_err(|why| guest(format!("rewards {function}: {why}")))
 }
 
 /// How an order placed now joins its store's rewards program: its current
@@ -436,10 +430,7 @@ struct PromoVersionWire {
 /// didn't just race it. Read from the store's own chain.
 fn promo_lapsed(order_ref: &ActionHash, promo_ref: &ActionHash) -> ExternResult<bool> {
     let promo = original_action_of(promo_ref.clone())?;
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", "get_my_promo_versions".into(), None, promo)? else {
-        return Err(guest("reading your promo codes failed"));
-    };
-    let versions: Vec<PromoVersionWire> = io.decode().map_err(|e| wasm_error!(e))?;
+    let versions: Vec<PromoVersionWire> = call_local("catalog", "get_my_promo_versions", promo)?.map_err(|_| guest("reading your promo codes failed"))?;
     // Not one of this store's codes at all.
     let Some(current) = versions.last() else { return Ok(true) };
     let now = sys_time()?;
@@ -476,10 +467,7 @@ fn my_item_versions(item_refs: Vec<ActionHash>) -> ExternResult<Vec<ItemVersions
 
 /// Each item's or choice group's history from the store's own chain.
 fn my_versions(function: &str, refs: Vec<ActionHash>) -> ExternResult<Vec<ItemVersionsWire>> {
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", function.into(), None, refs)? else {
-        return Err(guest("reading your menu's history failed"));
-    };
-    io.decode().map_err(|e| wasm_error!(e))
+    call_local("catalog", function, refs)?.map_err(|_| guest("reading your menu's history failed"))
 }
 
 /// When the order was placed: its creation action's own timestamp.

@@ -48,7 +48,7 @@ use crate::signals::RemoteSignal;
 use dispatch_integrity::lineage::{self, Version};
 use dispatch_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{decode_or, EntryVersion, guest, original_action_of, resolve_latest, resolve_version_decoded, update_version, written};
+use handshake_coordinator_support::{call_local, decode_or, EntryVersion, guest, original_action_of, resolve_latest, resolve_version_decoded, update_version, written};
 use handshake_types::Beacon;
 
 /// The order as it stands.
@@ -717,7 +717,7 @@ pub(crate) fn tend_driver_deliveries() -> ExternResult<u32> {
             DeliveryStatus::BidAccepted => call_own("commit_to_order", &order_ref),
             DeliveryStatus::DriverAtStore => {
                 // Handed over: the store's record of it has reached us.
-                let handed_over = matches!(call(CallTargetCell::Local, "attestation", "pickup_proof_for_order".into(), None, order_ref.clone())?, ZomeCallResponse::Ok(io) if io.decode::<Option<ActionHash>>().ok().flatten().is_some());
+                let handed_over = matches!(call_local::<_, Option<ActionHash>>("attestation", "pickup_proof_for_order", order_ref.clone())?, Ok(Some(_)));
                 if !handed_over {
                     continue;
                 }

@@ -16,13 +16,10 @@ use crate::stores::my_stores;
 use hdk::prelude::*;
 use dispatch_integrity::lineage;
 use handshake_coordinator_support::chain::mine;
-use handshake_coordinator_support::{decode_or, guest, original_action_of};
+use handshake_coordinator_support::{call_local, decode_or, guest, original_action_of};
 
 fn ledger<I: Serialize + std::fmt::Debug, O: serde::de::DeserializeOwned + std::fmt::Debug>(function: &str, input: I) -> ExternResult<O> {
-    match call(CallTargetCell::Local, "ledger", function.into(), None, input)? {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e)),
-        other => Err(guest(format!("{function}: {other:?}"))),
-    }
+    call_local("ledger", function, input)?.map_err(|why| guest(format!("{function}: {why}")))
 }
 
 #[derive(Serialize, Debug)]

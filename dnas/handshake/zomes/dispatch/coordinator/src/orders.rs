@@ -12,7 +12,7 @@ use crate::stores::{closed_reason, current_catalog, current_catalog_version};
 use crate::upkeep;
 use dispatch_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{decode_or, guest, open, original_action_of, resolve_latest, resolve_version_decoded, seal, update_version, written};
+use handshake_coordinator_support::{call_local, decode_or, guest, open, original_action_of, resolve_latest, resolve_version_decoded, seal, update_version, written};
 use handshake_types::GeoPoint;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -95,10 +95,8 @@ pub(crate) fn publish_to_open_anchor(opened: &ActionHash, dropoff_geohash: &str,
 /// The caller's own name, from their profile (where it's sealed to them);
 /// empty if they haven't given one.
 pub(crate) fn my_name() -> ExternResult<String> {
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "profiles", "get_my_name".into(), None, ())? else {
-        return Err(guest("reading your name failed"));
-    };
-    Ok(io.decode::<Option<String>>().map_err(|e| wasm_error!(e))?.unwrap_or_default())
+    let name: Option<String> = call_local("profiles", "get_my_name", ())?.map_err(|_| guest("reading your name failed"))?;
+    Ok(name.unwrap_or_default())
 }
 
 /// A note sealed to `recipient`, or `None` if there's nothing to say.
@@ -217,8 +215,8 @@ fn open_for_parties(me: &AgentPubKey, requester: &AgentPubKey, merchant: &AgentP
 /// too, but pricing runs first and would otherwise report them as a price
 /// mismatch.
 pub(crate) fn ensure_promo_usable(promo_ref: &ActionHash, catalog_ref: &ActionHash) -> ExternResult<()> {
-    if let Ok(ZomeCallResponse::Ok(io)) = call(CallTargetCell::Local, "catalog", "get_promo_code".into(), None, promo_ref.clone()) {
-        if let Ok(Some(promo)) = io.decode::<Record>().map(|r| r.entry().to_app_option::<catalog_types::PromoCode>().ok().flatten()) {
+    if let Ok(Ok(record)) = call_local::<_, Record>("catalog", "get_promo_code", promo_ref.clone()) {
+        if let Some(promo) = decode_or::<catalog_types::PromoCode>(&record) {
             let refuse = |reason: &str| Err(guest(reason));
             if &promo.catalog_ref != catalog_ref {
                 return refuse("promo_code_ref does not belong to this order's store");
@@ -235,8 +233,8 @@ pub(crate) fn ensure_promo_usable(promo_ref: &ActionHash, catalog_ref: &ActionHa
 }
 
 pub(crate) fn ensure_claim_confirmed(claim_ref: &ActionHash) -> ExternResult<()> {
-    if let Ok(ZomeCallResponse::Ok(io)) = call(CallTargetCell::Local, "catalog", "get_bag_claim".into(), None, claim_ref.clone()) {
-        if let Ok(Some(claim)) = io.decode::<Record>().map(|r| r.entry().to_app_option::<catalog_types::BagClaim>().ok().flatten()) {
+    if let Ok(Ok(record)) = call_local::<_, Record>("catalog", "get_bag_claim", claim_ref.clone()) {
+        if let Some(claim) = decode_or::<catalog_types::BagClaim>(&record) {
             if claim.status != catalog_types::BagClaimStatus::Confirmed {
                 return Err(guest("The store hasn't confirmed this goodie bag yet."));
             }
@@ -643,11 +641,7 @@ pub fn pick_up_order(order_original_action: ActionHash) -> ExternResult<Record> 
     if order.status != DeliveryStatus::DriverAtStore {
         return Err(guest("An order can be picked up only once the store has checked its driver in."));
     }
-    let proof = call(CallTargetCell::Local, "attestation", "pickup_proof_for_order".into(), None, order_original_action.clone())?;
-    let proof: Option<ActionHash> = match proof {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e))?,
-        _ => None,
-    };
+    let proof: Option<ActionHash> = call_local("attestation", "pickup_proof_for_order", order_original_action.clone())?.unwrap_or(None);
     order.pickup_proof = Some(proof.ok_or(guest("Have the store scan your code, or confirm they've handed it over."))?);
     order.status = DeliveryStatus::PickedUp;
     let updated = update_version(&current, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)?;
@@ -777,11 +771,7 @@ pub fn complete_delivery(input: CompleteDeliveryInput) -> ExternResult<Record> {
     }
 
     // Proof the customer has it -- see `attestation::delivery_proof_for_order`.
-    let proof_response = call(CallTargetCell::Local, "attestation", "delivery_proof_for_order".into(), None, input.order_original_action.clone())?;
-    let proof: Option<ActionHash> = match proof_response {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e))?,
-        other => return Err(guest(format!("cannot complete this delivery yet: {other:?}"))),
-    };
+    let proof: Option<ActionHash> = call_local("attestation", "delivery_proof_for_order", input.order_original_action.clone())?.map_err(|why| guest(format!("cannot complete this delivery yet: {why}")))?;
     let proof = proof.ok_or(guest("There's no proof yet that the customer has it: scan their code, or have them confirm."))?;
 
     let parties = OrderParties::delivery(&input.order_original_action, &order)?;

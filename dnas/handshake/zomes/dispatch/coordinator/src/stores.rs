@@ -2,7 +2,7 @@
 //! the caller runs, and a store's current settings.
 
 use hdk::prelude::*;
-use handshake_coordinator_support::guest;
+use handshake_coordinator_support::{call_local, guest};
 
 /// The store's catalog at its latest state.
 pub(crate) fn current_catalog(catalog_ref: &ActionHash) -> ExternResult<catalog_types::MerchantCatalog> {
@@ -11,10 +11,7 @@ pub(crate) fn current_catalog(catalog_ref: &ActionHash) -> ExternResult<catalog_
 
 /// The store's latest version -- its action, and its catalog.
 pub(crate) fn current_catalog_version(catalog_ref: &ActionHash) -> ExternResult<(ActionHash, catalog_types::MerchantCatalog)> {
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", "get_catalog".into(), None, catalog_ref.clone())? else {
-        return Err(guest("couldn't read the store's details"));
-    };
-    let record: Record = io.decode().map_err(|e| wasm_error!(e))?;
+    let record: Record = call_local("catalog", "get_catalog", catalog_ref.clone())?.map_err(|_| guest("couldn't read the store's details"))?;
     let catalog = record
         .entry()
         .to_app_option::<catalog_types::MerchantCatalog>()
@@ -31,20 +28,14 @@ struct StoreView {
 
 /// Every store the caller runs, by identity.
 pub(crate) fn my_stores() -> ExternResult<Vec<ActionHash>> {
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", "list_my_catalogs".into(), None, ())? else {
-        return Err(guest("listing your stores failed"));
-    };
-    let stores: Vec<StoreView> = io.decode().map_err(|e| wasm_error!(e))?;
+    let stores: Vec<StoreView> = call_local("catalog", "list_my_catalogs", ())?.map_err(|_| guest("listing your stores failed"))?;
     Ok(stores.into_iter().map(|store| store.original_action).collect())
 }
 
 /// Every store `owner` has published, by identity -- an account's, seen
 /// from someone else's node.
 pub(crate) fn stores_of(owner: &AgentPubKey) -> ExternResult<Vec<ActionHash>> {
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", "catalogs_of".into(), None, owner.clone())? else {
-        return Err(guest("listing that account's stores failed"));
-    };
-    let stores: Vec<StoreView> = io.decode().map_err(|e| wasm_error!(e))?;
+    let stores: Vec<StoreView> = call_local("catalog", "catalogs_of", owner.clone())?.map_err(|_| guest("listing that account's stores failed"))?;
     Ok(stores.into_iter().map(|store| store.original_action).collect())
 }
 

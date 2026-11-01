@@ -1,0 +1,114 @@
+//! A store's menu: its items, added and changed by its owner, and read a
+//! page at a time -- with the store's dietary tags kept as their union.
+
+use super::*;
+
+/// Recomputes `MerchantCatalog.dietary_tags` as the sorted, deduplicated
+/// union of every one of this catalog's menu items' own `dietary_tags` --
+/// called after any menu-item create/update so the denormalized field
+/// never drifts from the real per-item data. Walks every page rather than
+/// just the first: a merchant's menu is realistically a few dozen items at
+/// most (this is a write-time-only cost, paid on menu edits, not on every
+/// browse read -- see `MerchantCatalog.dietary_tags`'s own doc comment for
+/// why that tradeoff is the right one here), but silently truncating at one
+/// page would mean an item on page 2 could never contribute its tags.
+pub(crate) fn recompute_dietary_tags(catalog_ref: &ActionHash) -> ExternResult<()> {
+    let mut tags: Vec<String> = Vec::new();
+    let mut after = None;
+    loop {
+        let page = list_menu_items(ListMenuItemsInput { catalog_ref: catalog_ref.clone(), after })?;
+        for view in &page.items {
+            if let Ok(Some(item)) = view.record.entry().to_app_option::<MenuItem>() {
+                tags.extend(item.dietary_tags);
+            }
+        }
+        after = page.next_after;
+        if after.is_none() {
+            break;
+        }
+    }
+    tags.sort();
+    tags.dedup();
+
+    let (catalog_record, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(catalog_ref.clone(), "MerchantCatalog")?;
+    if catalog.dietary_tags != tags {
+        catalog.dietary_tags = tags;
+        update_version(&catalog_record, &EntryTypes::MerchantCatalog(catalog), LinkTypes::Version)?;
+    }
+    Ok(())
+}
+
+#[hdk_extern]
+pub fn add_menu_item(item: MenuItem) -> ExternResult<Record> {
+    let catalog_ref = item.catalog_ref.clone();
+    let action_hash = create_entry(&EntryTypes::MenuItem(item.clone()))?;
+    create_link(catalog_ref.clone(), action_hash.clone(), LinkTypes::CatalogToMenuItem, ())?;
+    recompute_dietary_tags(&catalog_ref)?;
+    written(action_hash)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdateMenuItemInput {
+    pub original_action: ActionHash,
+    pub item: MenuItem,
+}
+
+#[hdk_extern]
+pub fn update_menu_item(input: UpdateMenuItemInput) -> ExternResult<Record> {
+    // Built on the caller's own latest version, which this device always
+    // has: building on an older one would fork the item's history.
+    let current = match my_current_version(input.original_action.clone())? {
+        Some(current) => current,
+        None => resolve_version(input.original_action)?,
+    };
+    let catalog_ref = input.item.catalog_ref.clone();
+    let updated = update_version(&current, &EntryTypes::MenuItem(input.item), LinkTypes::Version)?;
+    recompute_dietary_tags(&catalog_ref)?;
+    written(updated)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ListMenuItemsInput {
+    pub catalog_ref: ActionHash,
+    /// Page cursor -- pass back the previous call's `next_after` to continue.
+    /// `None` starts from the beginning.
+    pub after: Option<Timestamp>,
+}
+
+/// A menu item's stable identity (its original action -- what orders,
+/// carts, promos and item reviews reference) alongside its latest content.
+/// The latest record's own hash changes on every edit, even toggling it
+/// sold out, so it can't be the identity -- see `CatalogView`.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MenuItemView {
+    pub original_action: ActionHash,
+    pub record: Record,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MenuItemsPage {
+    pub items: Vec<MenuItemView>,
+    pub next_after: Option<Timestamp>,
+}
+
+#[hdk_extern]
+pub fn list_menu_items(input: ListMenuItemsInput) -> ExternResult<MenuItemsPage> {
+    let mut query = LinkQuery::try_new(input.catalog_ref.clone(), LinkTypes::CatalogToMenuItem)?;
+    query.after = input.after;
+    let mut links = get_links(query, GetStrategy::default())?;
+    links.sort_by_key(|l| l.timestamp);
+    let next_after = if links.len() > MENU_ITEM_PAGE_SIZE {
+        Some(next_page_cursor(links[MENU_ITEM_PAGE_SIZE - 1].timestamp))
+    } else {
+        None
+    };
+    links.truncate(MENU_ITEM_PAGE_SIZE);
+    // Link validation already guarantees this; checking again keeps a menu
+    // honest even if that guarantee ever regressed.
+    let items = resolve_links_to_records_with_original(links)
+        .into_iter()
+        .filter(|(_, record)| decode_or::<MenuItem>(record).is_some_and(|item| item.catalog_ref == input.catalog_ref))
+        .map(|(original_action, record)| MenuItemView { original_action, record })
+        .collect();
+    Ok(MenuItemsPage { items, next_after })
+}

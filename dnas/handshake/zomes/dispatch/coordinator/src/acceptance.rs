@@ -8,15 +8,8 @@
 //! holds or can look up without its customer online.
 
 use dispatch_integrity::*;
-use handshake_coordinator_support::{decode_or, guest};
+use handshake_coordinator_support::{call_local, decode_or, guest};
 use hdk::prelude::*;
-
-fn call_zome<I: Serialize + std::fmt::Debug, O: serde::de::DeserializeOwned + std::fmt::Debug>(zome: &str, function: &str, input: I) -> ExternResult<Result<O, String>> {
-    Ok(match call(CallTargetCell::Local, zome, function.into(), None, input)? {
-        ZomeCallResponse::Ok(io) => Ok(io.decode().map_err(|e| wasm_error!(e))?),
-        other => Err(format!("{other:?}")),
-    })
-}
 
 /// Whether the order spends a reward the customer's points at the store
 /// don't cover (the rewards zome's `can_redeem`).
@@ -30,7 +23,7 @@ pub(crate) fn reward_unavailable(requester: &AgentPubKey, catalog_ref: &ActionHa
         program: &'a ActionHash,
         reward: u16,
     }
-    Ok(call_zome::<_, ()>("rewards", "can_redeem", RedeemCheck { customer: requester, catalog_ref, program: &rewards.program, reward })?.is_err())
+    Ok(call_local::<_, ()>("rewards", "can_redeem", RedeemCheck { customer: requester, catalog_ref, program: &rewards.program, reward })?.is_err())
 }
 
 /// Whether an issuer on the roster vouched for `agent`'s card. On a network
@@ -39,7 +32,7 @@ pub(crate) fn card_verified(agent: &AgentPubKey) -> ExternResult<bool> {
     if handshake_governance::issuers().is_empty() {
         return Ok(true);
     }
-    Ok(call_zome::<_, bool>("ledger", "card_verified", agent.clone())?.unwrap_or(false))
+    Ok(call_local::<_, bool>("ledger", "card_verified", agent.clone())?.unwrap_or(false))
 }
 
 /// Whether the order's code is for newcomers and the customer's card isn't
@@ -110,5 +103,5 @@ pub(crate) fn record_member_order(order: &ActionHash, accepted: &ActionHash, rew
         order: &'a ActionHash,
         accepted: &'a ActionHash,
     }
-    call_zome::<_, ()>("rewards", "record_member_order", MemberOrderInput { order, accepted })?.map_err(|e| guest(format!("recording the order for rewards: {e}")))
+    call_local::<_, ()>("rewards", "record_member_order", MemberOrderInput { order, accepted })?.map_err(|e| guest(format!("recording the order for rewards: {e}")))
 }

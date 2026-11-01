@@ -21,7 +21,7 @@ use attestation_integrity::*;
 use dispatch_types::DeliveryOrder;
 use hdk::prelude::*;
 use handshake_coordinator_support::chain::mine;
-use handshake_coordinator_support::{decode_or, guest, open, open_chunked, original_action_of, resolve_latest, resolve_latest_decoded, seal_chunked, written};
+use handshake_coordinator_support::{call_agent, call_local, decode_or, guest, open, open_chunked, original_action_of, resolve_latest, resolve_latest_decoded, seal_chunked, written};
 use handshake_types::GeoPoint;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -131,11 +131,7 @@ pub fn acknowledge_leg(leg_action: ActionHash) -> ExternResult<Record> {
 
 /// Calls the dispatch zome on this cell.
 fn dispatch<O: serde::de::DeserializeOwned + std::fmt::Debug>(function: &str, input: impl Serialize + std::fmt::Debug) -> ExternResult<O> {
-    match call(CallTargetCell::Local, "dispatch", function.into(), None, input)? {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e)),
-        ZomeCallResponse::NetworkError(message) => Err(guest(&message)),
-        other => Err(guest(format!("{other:?}"))),
-    }
+    call_local("dispatch", function, input)?.map_err(guest)
 }
 
 // --- checking in at the store ---
@@ -154,10 +150,7 @@ pub struct CheckInInput {
 #[hdk_extern]
 pub fn check_in_at_store(input: CheckInInput) -> ExternResult<()> {
     let (_, order): (_, DeliveryOrder) = resolve_latest_decoded(input.order_ref.clone(), "DeliveryOrder")?;
-    let check: CodeCheck = match call_remote(order.merchant, zome_info()?.name, "confirm_check_in".into(), None, input)? {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e))?,
-        _ => return Err(guest("The store's app isn't reachable. Ask them to open it, then try again.")),
-    };
+    let check: CodeCheck = call_agent(order.merchant, zome_info()?.name, "confirm_check_in", input)?.map_err(|_| guest("The store's app isn't reachable. Ask them to open it, then try again."))?;
     match check {
         // The store dates the check-in, and its wait runs from then: one
         // dated well off this driver's own clock is refused here, so they
@@ -250,10 +243,7 @@ pub fn handoff_by_code(input: HandoffCodeInput) -> ExternResult<ActionHash> {
     if leg.kind == LegKind::MerchantHandoff {
         return Err(guest("The store hands the order over by scanning your code, or confirming in its app."));
     }
-    let check: CodeCheck = match call_remote(leg.to, zome_info()?.name, "confirm_by_code".into(), None, input)? {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e))?,
-        _ => return Err(guest("Their app isn't reachable. Ask them to open it, or scan their code instead.")),
-    };
+    let check: CodeCheck = call_agent(leg.to, zome_info()?.name, "confirm_by_code", input)?.map_err(|_| guest("Their app isn't reachable. Ask them to open it, or scan their code instead."))?;
     match check {
         CodeCheck::Confirmed(receipt) => Ok(receipt),
         CodeCheck::Wrong { tries_left: 1 } => Err(guest("That code isn't right. One try left.")),

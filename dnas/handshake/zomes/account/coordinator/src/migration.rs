@@ -7,7 +7,7 @@
 use crate::{decoded, guest, linked_records, me, own_links};
 use account_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{next_page_cursor, open_chunked, seal_chunked};
+use handshake_coordinator_support::{call_local, call_role, next_page_cursor, open_chunked, seal_chunked};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MigrateInput {
@@ -26,10 +26,8 @@ pub struct MigrateInput {
 fn unfinished() -> ExternResult<Option<String>> {
     // Any entry at all: what they are doesn't matter here.
     let busy = |zome: &str, function: &str| -> ExternResult<bool> {
-        Ok(match call(CallTargetCell::Local, zome, function.into(), None, ())? {
-            ZomeCallResponse::Ok(io) => !io.decode::<Vec<serde::de::IgnoredAny>>().map_err(|e| wasm_error!(e))?.is_empty(),
-            _ => false,
-        })
+        let entries: Result<Vec<serde::de::IgnoredAny>, _> = call_local(zome, function, ())?;
+        Ok(entries.is_ok_and(|entries| !entries.is_empty()))
     };
     if busy("dispatch", "get_my_active_orders")? || busy("dispatch", "get_my_active_deliveries")? {
         return Ok(Some("Finish your orders in progress first: what they owe you can only come to this account.".into()));
@@ -38,12 +36,10 @@ fn unfinished() -> ExternResult<Option<String>> {
     struct CatalogView {
         original_action: ActionHash,
     }
-    if let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", "list_my_catalogs".into(), None, ())? {
-        for store in io.decode::<Vec<CatalogView>>().map_err(|e| wasm_error!(e))? {
-            if let ZomeCallResponse::Ok(listed) = call(CallTargetCell::Local, "catalog", "is_store_listed".into(), None, store.original_action)? {
-                if listed.decode::<bool>().map_err(|e| wasm_error!(e))? {
-                    return Ok(Some("Take your stores' listings down first: their stakes come back only to this account.".into()));
-                }
+    if let Ok(stores) = call_local::<_, Vec<CatalogView>>("catalog", "list_my_catalogs", ())? {
+        for store in stores {
+            if call_local::<_, bool>("catalog", "is_store_listed", store.original_action)? == Ok(true) {
+                return Ok(Some("Take your stores' listings down first: their stakes come back only to this account.".into()));
             }
         }
     }
@@ -197,10 +193,7 @@ pub const PREVIOUS_ROLE: &str = "previous";
 /// Calls `function` in `zome` on the previous network (the app's `previous`
 /// role) -- `None` if this app has no previous network, or it won't answer.
 pub(crate) fn on_previous<I: Serialize + std::fmt::Debug, O: for<'de> Deserialize<'de> + std::fmt::Debug>(zome: &str, function: &str, input: I) -> ExternResult<Option<O>> {
-    match call(CallTargetCell::OtherRole(PREVIOUS_ROLE.into()), zome, function.into(), None, input) {
-        Ok(ZomeCallResponse::Ok(io)) => Ok(io.decode().ok()),
-        _ => Ok(None),
-    }
+    Ok(call_role(PREVIOUS_ROLE, zome, function, input).ok().and_then(Result::ok))
 }
 
 /// This network's DNA -- what an app asks of its previous role.

@@ -5,16 +5,15 @@
 //! from their new key. Asked of the account zome.
 
 use hdk::prelude::*;
-use handshake_coordinator_support::guest;
+use handshake_coordinator_support::{call_local, guest};
 
 /// Whether `agent`'s account has moved on to a new key. An unreachable
 /// account zome says it hasn't: trade isn't blocked on it.
 pub(crate) fn has_moved(agent: &AgentPubKey) -> ExternResult<bool> {
     #[derive(Deserialize, Debug)]
     struct Moved {}
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "account", "successions_of".into(), None, agent.clone())? else { return Ok(false) };
-    let successions: Vec<Moved> = io.decode().map_err(|e| wasm_error!(e))?;
-    Ok(!successions.is_empty())
+    let successions: Result<Vec<Moved>, _> = call_local("account", "successions_of", agent.clone())?;
+    Ok(successions.is_ok_and(|moves| !moves.is_empty()))
 }
 
 /// Refuses to deal with `agent` if their account has moved on; `who` names

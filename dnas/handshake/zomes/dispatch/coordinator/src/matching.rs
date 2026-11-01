@@ -12,7 +12,7 @@
 use dispatch_integrity::{open_order_anchor, LinkTypes, OPEN_ORDER_BUCKET_MILLIS};
 use hdi::hash_path::path::Path;
 use hdk::prelude::*;
-use handshake_coordinator_support::{decode_or, guest, original_action_of, resolve_latest};
+use handshake_coordinator_support::{call_local, decode_or, guest, original_action_of, resolve_latest};
 
 pub(crate) fn open_order_anchor_path(geohash: &str, bucket: i64) -> ExternResult<hdi::hash_path::path::TypedPath> {
     Path::from(open_order_anchor(geohash, bucket)).typed(LinkTypes::OpenOrderGeohashAnchor)
@@ -158,10 +158,7 @@ enum ReputationTargetWire {
 }
 
 fn driver_record(driver: &AgentPubKey) -> ExternResult<DriverRecord> {
-    match call(CallTargetCell::Local, "reputation", "get_reputation_summary".into(), None, ReputationTargetWire::Driver(driver.clone()))? {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e)),
-        _ => Ok(DriverRecord::default()),
-    }
+    Ok(call_local("reputation", "get_reputation_summary", ReputationTargetWire::Driver(driver.clone()))?.unwrap_or_default())
 }
 
 /// For a customer's order set to match automatically: once the bid window
