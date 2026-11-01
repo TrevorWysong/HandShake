@@ -14,7 +14,7 @@ use crate::orders::{record_reputation_event, ReputationEventKindWire, Reputation
 use crate::settlement::find_hold;
 use dispatch_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{decode_or, guest, open_chunked, original_action_of, resolve_latest, seal_chunked, written};
+use handshake_coordinator_support::{call_local, decode_or, guest, open_chunked, original_action_of, resolve_latest, seal_chunked, written};
 
 // --- the order, as issues need it ---
 
@@ -345,10 +345,7 @@ pub fn write_decision(decision: DecisionWire) -> ExternResult<ActionHash> {
 }
 
 fn record_decision(decision: DecisionWire) -> ExternResult<ActionHash> {
-    match call(CallTargetCell::Local, zome_info()?.name, "write_decision".into(), None, decision)? {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e)),
-        other => Err(guest(format!("couldn't record the decision: {other:?}"))),
-    }
+    call_local(zome_info()?.name, "write_decision", decision)?.map_err(|why| guest(format!("couldn't record the decision: {why}")))
 }
 
 /// The caller (an order's store) making whatever decisions on it are due:

@@ -7,7 +7,7 @@
 use catalog_types::{PromoCode, PromoLimits, PromoPeriod};
 use dispatch_integrity::*;
 use handshake_coordinator_support::chain::mine;
-use handshake_coordinator_support::{decode_or, guest, original_action_of};
+use handshake_coordinator_support::{call_local, decode_or, guest, original_action_of};
 use hdk::prelude::*;
 
 /// Why a customer can't use a code now.
@@ -117,15 +117,12 @@ fn standing(promo_ref: &ActionHash, promo: &PromoCode, store: &catalog_types::Me
 #[hdk_extern]
 pub fn my_promo_standing(catalog_ref: ActionHash) -> ExternResult<Vec<PromoStanding>> {
     let store = crate::stores::current_catalog(&catalog_ref)?;
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "catalog", "list_live_promo_codes".into(), None, catalog_ref)? else {
-        return Err(guest("reading the store's promo codes failed"));
-    };
     #[derive(Deserialize, Debug)]
     struct PromoViewWire {
         original_action: ActionHash,
         record: Record,
     }
-    let views: Vec<PromoViewWire> = io.decode().map_err(|e| wasm_error!(e))?;
+    let views: Vec<PromoViewWire> = call_local("catalog", "list_live_promo_codes", catalog_ref)?.map_err(|_| guest("reading the store's promo codes failed"))?;
     let orders = my_orders()?;
     views.into_iter().filter_map(|v| decode_or::<PromoCode>(&v.record).map(|p| (v.original_action, p))).map(|(hash, promo)| standing(&hash, &promo, &store, &orders)).collect()
 }

@@ -4,7 +4,7 @@
 //! plain characters -- none that a `mailto:` link reads as more than the
 //! address (`?cc=`, `%`) -- and a web address with a real host and nothing
 //! in front of it. The app's forms apply the same rules
-//! (`web/src/lib/menu/contact.ts`), and its links check them again.
+//! (`web/src/lib/storefront/contact.ts`), and its links check them again.
 //!
 //! Both may be empty: a store needn't give either.
 

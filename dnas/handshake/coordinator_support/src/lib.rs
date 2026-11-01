@@ -354,6 +354,48 @@ fn ensure_grant(grant: CapGrantEntry) -> ExternResult<bool> {
     Ok(true)
 }
 
+/// Asks `function` of `zome` on this cell, and decodes its answer. The outer
+/// error is the call itself failing -- the zome refusing, which carries its
+/// reason -- or an answer that doesn't decode; the inner one, that it
+/// couldn't be asked (unauthorized, say), as text. Each caller decides which
+/// it can read past: a guard refuses on either, a best-effort read on
+/// neither.
+pub fn call_local<I, O>(zome: impl Into<ZomeName>, function: &str, input: I) -> ExternResult<Result<O, String>>
+where
+    I: Serialize + std::fmt::Debug,
+    O: for<'de> Deserialize<'de> + std::fmt::Debug,
+{
+    answer(call(CallTargetCell::Local, zome.into(), function.into(), None, input)?)
+}
+
+/// `call_local`, of the app's `role` -- its previous network, say, whose
+/// answers may not decode at all (it's another version).
+pub fn call_role<I, O>(role: &str, zome: impl Into<ZomeName>, function: &str, input: I) -> ExternResult<Result<O, String>>
+where
+    I: Serialize + std::fmt::Debug,
+    O: for<'de> Deserialize<'de> + std::fmt::Debug,
+{
+    answer(call(CallTargetCell::OtherRole(role.into()), zome.into(), function.into(), None, input)?)
+}
+
+/// `call_local`, of `agent`'s own node, over the network -- the inner error
+/// when it can't be reached.
+pub fn call_agent<I, O>(agent: AgentPubKey, zome: impl Into<ZomeName>, function: &str, input: I) -> ExternResult<Result<O, String>>
+where
+    I: Serialize + std::fmt::Debug,
+    O: for<'de> Deserialize<'de> + std::fmt::Debug,
+{
+    answer(call_remote(agent, zome.into(), function.into(), None, input)?)
+}
+
+fn answer<O: for<'de> Deserialize<'de> + std::fmt::Debug>(response: ZomeCallResponse) -> ExternResult<Result<O, String>> {
+    match response {
+        ZomeCallResponse::Ok(io) => Ok(Ok(io.decode().map_err(|e| wasm_error!(e))?)),
+        ZomeCallResponse::NetworkError(message) => Ok(Err(message)),
+        other => Ok(Err(format!("{other:?}"))),
+    }
+}
+
 /// Calls `function`, one of the calling zome's own externs, in a call of its
 /// own, and decodes its answer -- `None` if it failed. For a background
 /// sweep over many orders: a zome call commits all its writes or none, so
@@ -365,9 +407,5 @@ where
     I: Serialize + std::fmt::Debug,
     O: for<'de> Deserialize<'de> + std::fmt::Debug,
 {
-    let zome = zome_info().ok()?.name;
-    match call(CallTargetCell::Local, zome, function.into(), None, input) {
-        Ok(ZomeCallResponse::Ok(io)) => io.decode().ok(),
-        _ => None,
-    }
+    call_local(zome_info().ok()?.name, function, input).ok()?.ok()
 }

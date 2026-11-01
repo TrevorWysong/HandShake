@@ -8,7 +8,7 @@
 //! stake from the new key's balance.
 
 use crate::*;
-use handshake_coordinator_support::chain::mine;
+use handshake_coordinator_support::{call_local, call_role, chain::mine};
 use std::collections::BTreeMap;
 
 /// How far back a store's line is followed.
@@ -45,10 +45,7 @@ pub fn catalogs_of(owner: AgentPubKey) -> ExternResult<Vec<CatalogView>> {
 #[hdk_extern]
 pub fn move_store(from: ActionHash) -> ExternResult<ActionHash> {
     let me = agent_info()?.agent_initial_pubkey;
-    let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "account", "my_succession".into(), None, ())? else {
-        return Err(guest("Couldn't read this device's account."));
-    };
-    let mine: Option<MySuccession> = io.decode().map_err(|e| wasm_error!(e))?;
+    let mine: Option<MySuccession> = call_local("account", "my_succession", ())?.map_err(|_| guest("Couldn't read this device's account."))?;
     let mine = mine.ok_or(guest("This device hasn't taken over an account."))?;
     // Safe to repeat: a move is linked from the store it moved.
     let moved = LinkQuery::try_new(from.clone(), LinkTypes::CatalogToSuccessor)?.author(me.clone());
@@ -85,14 +82,11 @@ pub(crate) enum Source {
 impl Source {
     /// One of the catalog zome's reads, on the source network.
     pub(crate) fn read<I: Serialize + std::fmt::Debug, O: for<'de> Deserialize<'de> + std::fmt::Debug>(&self, function: &str, input: I) -> ExternResult<O> {
-        let target = match self {
-            Source::Here => CallTargetCell::Local,
-            Source::Previous => CallTargetCell::OtherRole("previous".into()),
+        let answer = match self {
+            Source::Here => call_local("catalog", function, input)?,
+            Source::Previous => call_role("previous", "catalog", function, input)?,
         };
-        match call(target, "catalog", function.into(), None, input)? {
-            ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e)),
-            other => Err(guest(format!("couldn't read the store to copy ({function}): {other:?}"))),
-        }
+        answer.map_err(|why| guest(format!("couldn't read the store to copy ({function}): {why}")))
     }
 }
 
@@ -208,8 +202,7 @@ fn standing_moves(catalog: &ActionHash, link_type: LinkTypes) -> ExternResult<Ve
     for record in resolve_links_to_records_with_original(links).into_iter().map(|(_, r)| r) {
         let Some(moved) = decode_or::<StoreSuccession>(&record) else { continue };
         let Some(old) = get(moved.from.clone(), GetOptions::default())? else { continue };
-        let ZomeCallResponse::Ok(io) = call(CallTargetCell::Local, "account", "successions_of".into(), None, old.action().author().clone())? else { continue };
-        let successions: Vec<SuccessionView> = io.decode().map_err(|e| wasm_error!(e))?;
+        let Ok(successions) = call_local::<_, Vec<SuccessionView>>("account", "successions_of", old.action().author().clone())? else { continue };
         if successions.iter().any(|s| &s.successor == record.action().author()) {
             moves.push(moved);
         }
@@ -252,10 +245,7 @@ pub(crate) fn has_moved(catalog: &ActionHash) -> ExternResult<bool> {
 
 /// The account zome's answer for who an agent was on the previous network.
 fn arrived_from(agent: AgentPubKey) -> ExternResult<Option<AgentPubKey>> {
-    match call(CallTargetCell::Local, "account", "arrived_from".into(), None, agent)? {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e)),
-        _ => Ok(None),
-    }
+    Ok(call_local("account", "arrived_from", agent)?.unwrap_or(None))
 }
 
 /// The stores the caller's account ran on the previous network.
@@ -283,10 +273,7 @@ pub fn import_store(from: ActionHash) -> ExternResult<ActionHash> {
     if store.owner != previous {
         return Err(guest("That store wasn't this account's."));
     }
-    let previous_network: DnaHash = match call(CallTargetCell::OtherRole("previous".into()), "account", "network_hash".into(), None, ())? {
-        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(e))?,
-        _ => return Err(guest("Couldn't reach the previous network.")),
-    };
+    let previous_network: DnaHash = call_role("previous", "account", "network_hash", ())?.map_err(|_| guest("Couldn't reach the previous network."))?;
     // The store's settings are the network's own now: its rules and limits
     // may have changed, so the copy starts from what this network allows.
     let to = create_entry(&EntryTypes::MerchantCatalog(MerchantCatalog { owner: me.clone(), dietary_tags: Vec::new(), ..store }))?;
