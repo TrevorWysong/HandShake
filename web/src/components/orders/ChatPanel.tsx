@@ -9,14 +9,15 @@ import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, MessageCircle, Send } from "lucide-react";
 import clsx from "clsx";
-import { sendChatMessage } from "../holochain/live";
-import { myAgentPubKey } from "../holochain/client";
-import { useLiveSignal } from "../lib/hooks/useResource";
-import { bytesEqual } from "../holochain/decode";
-import { formatClockTime, nowMicros } from "../lib/ui/format";
-import type { ActionHash } from "../holochain/types";
-import { MAX_NOTE_CHARS } from "../holochain/types";
-import { useT } from "../i18n";
+import { sendChatMessage } from "../../holochain/live";
+import { myAgentPubKey } from "../../holochain/client";
+import { useLiveSignal } from "../../lib/hooks/useResource";
+import { bytesEqual } from "../../holochain/decode";
+import { formatClockTime, nowMicros } from "../../lib/ui/format";
+import type { ActionHash } from "../../holochain/types";
+import { MAX_NOTE_CHARS } from "../../holochain/types";
+import { useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 interface ChatLine {
   /// Its place in the conversation -- what's been read is up to one.
@@ -46,8 +47,7 @@ export function ChatPanel({ orderRef, title, counterpart, collapsible = false }:
   const [open, setOpen] = useState(!collapsible);
   const [readUpTo, setReadUpTo] = useState(0);
   const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const sending = useAction();
   const nextSeq = useRef(1);
 
   const append = (line: Omit<ChatLine, "seq">) => {
@@ -70,23 +70,18 @@ export function ChatPanel({ orderRef, title, counterpart, collapsible = false }:
     setReadUpTo(latest);
   }
 
-  async function send() {
+  function send() {
     const text = draft.trim();
-    if (!text || sending) return;
-    setSending(true);
-    setFailed(false);
-    try {
+    if (!text) return;
+    // Kept in the box when it fails, to try again: the other side may be
+    // offline.
+    return sending.run(async () => {
       await sendChatMessage(orderRef, text);
       // A direct signal only reaches the *other* party -- show our own line
       // here as it goes.
       append({ mine: true, text, sentAt: nowMicros() });
       setDraft("");
-    } catch {
-      // Kept in the box to try again: the other side may be offline.
-      setFailed(true);
-    } finally {
-      setSending(false);
-    }
+    });
   }
 
   return (
@@ -151,14 +146,14 @@ export function ChatPanel({ orderRef, title, counterpart, collapsible = false }:
               <motion.button
                 whileTap={{ scale: 0.9 }}
                 type="submit"
-                disabled={!draft.trim() || sending}
+                disabled={!draft.trim() || sending.busy}
                 aria-label={t("chat.send")}
                 className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-handshake-500 text-white transition-opacity disabled:opacity-40"
               >
                 <Send size={15} />
               </motion.button>
             </form>
-            {failed && <p className="px-4 pb-2 text-[11px] text-amber-600">{t("chat.notSent")}</p>}
+            {sending.error && <p className="px-4 pb-2 text-[11px] text-amber-600">{t("chat.notSent")}</p>}
           </motion.div>
         )}
       </AnimatePresence>

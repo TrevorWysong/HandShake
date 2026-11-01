@@ -2,7 +2,7 @@
 // app's forms and links agree with what the network accepts.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { directionsHref, isStoreEmail, isStoreWebsite, mailtoHref, normalizeWebsite, opensAppLinks, telHref, websiteHref, websiteLabel } from "../src/lib/menu/contact.ts";
+import { directionsHref, isStoreEmail, isStoreWebsite, mailtoHref, normalizeWebsite, opensAppLinks, telHref, websiteHref, websiteLabel } from "../src/lib/storefront/contact.ts";
 
 test("plain addresses pass", () => {
   for (const ok of ["", "hi@mos.com", "first.last+orders@mail.example.co.uk", "o'brien@pub.ie"]) assert.ok(isStoreEmail(ok), ok);

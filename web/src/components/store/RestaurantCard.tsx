@@ -1,16 +1,16 @@
 import { Link } from "react-router-dom";
 import { Clock, Heart } from "lucide-react";
 import { motion } from "framer-motion";
-import type { GeoPoint, MerchantCatalog } from "../holochain/types";
-import { deliveryEstimate } from "../lib/driving/eta";
-import { formatDistance } from "../lib/ui/format";
-import { bytesToHex } from "../holochain/decode";
-import { Badge } from "./ui";
-import { StarRating } from "./StarRating";
-import { fadeSlideUp } from "../lib/ui/motion";
+import type { GeoPoint, MerchantCatalog } from "../../holochain/types";
+import { deliveryEstimate } from "../../lib/driving/eta";
+import { formatDistance } from "../../lib/ui/format";
+import { bytesToHex } from "../../holochain/decode";
+import { Badge } from "../ui";
+import { StarRating } from "../StarRating";
+import { fadeSlideUp } from "../../lib/ui/motion";
 import clsx from "clsx";
-import { storeStatus } from "../lib/menu/storeHours";
-import { useT } from "../i18n";
+import { storeStatus } from "../../lib/storefront/storeHours";
+import { useT } from "../../i18n";
 
 // Purely-cosmetic fallback for a merchant with no banner photo set yet --
 // deterministic per catalog action hash so the same restaurant always

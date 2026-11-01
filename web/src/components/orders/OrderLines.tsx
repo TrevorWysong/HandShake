@@ -1,12 +1,12 @@
 // What an order is -- each line's quantity, item and choices ("Large, Oat
 // milk, 2 x Extra shot") -- for the kitchen making it and the customer
 // checking it. An order's lines never change, so they're read once.
-import { getOrderLines } from "../holochain/zomes/dispatch";
-import { bytesToHex } from "../holochain/decode";
-import { formatCents } from "../lib/ui/format";
-import { useResource } from "../lib/hooks/useResource";
-import { Card, Skeleton } from "./ui";
-import { useT } from "../i18n";
+import { getOrderLines } from "../../holochain/zomes/dispatch";
+import { bytesToHex } from "../../holochain/decode";
+import { formatCents } from "../../lib/ui/format";
+import { useResource } from "../../lib/hooks/useResource";
+import { Card, Skeleton } from "../ui";
+import { useT } from "../../i18n";
 
 export function OrderLines({ orderRef, prices = false, className = "" }: { orderRef: Uint8Array; prices?: boolean; className?: string }) {
   const { data: lines } = useResource(`order-lines:${bytesToHex(orderRef)}`, () => getOrderLines(orderRef));

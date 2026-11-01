@@ -2,12 +2,12 @@ import { useState } from "react";
 import { Clock, Pencil, Plus, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { deviceTimeZone, detailsOf, updateCatalogDetails } from "../../../holochain/zomes/catalog";
-import { describeWeek, fromTimeInput, toTimeInput, WEEK } from "../../../lib/menu/storeHours";
-import { describeError } from "../../../lib/ui/errors";
-import { Button, Card, Field, Input, Switch } from "../../../components/ui";
+import { describeWeek, fromTimeInput, toTimeInput, WEEK } from "../../../lib/storefront/storeHours";
+import { Button, Card, Field, Input, Notice, SectionLabel, Switch } from "../../../components/ui";
 import type { MerchantCatalog, OpeningPeriod } from "../../../holochain/types";
 import { useT } from "../../../i18n";
 import { weekdayName } from "../../../lib/ui/format";
+import { useAction } from "../../../lib/hooks/useAction";
 
 /// What a newly opened day starts as.
 const DEFAULT_PERIOD = { opens: 9 * 60, closes: 21 * 60 };
@@ -21,9 +21,7 @@ export function HoursCard({ catalog, catalogRef, onSaved }: { catalog: MerchantC
   return (
     <Card className="mb-4 p-4">
       <div className="mb-2 flex items-center justify-between">
-        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-          <Clock size={12} /> {t("hoursEditor.title")}
-        </p>
+        <SectionLabel icon={<Clock size={12} />}>{t("hoursEditor.title")}</SectionLabel>
         <button onClick={() => setEditing((v) => !v)} className="text-ink-400 hover:text-handshake-600" aria-label={t("hoursEditor.edit")}>
           <Pencil size={14} />
         </button>
@@ -81,26 +79,17 @@ function HoursEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: (w
   const [setHours, setSetHours] = useState(catalog.weekly_hours.length > 0);
   const [week, setWeek] = useState<Week>(() => weekFrom(catalog.weekly_hours));
   const [prep, setPrep] = useState(String(catalog.prep_minutes));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
   const update = (day: number, periods: { opens: number; closes: number }[]) => setWeek((w) => ({ ...w, [day]: periods }));
   const copyToAll = (day: number) => setWeek(Object.fromEntries(WEEK.map((d) => [d, week[day].map((p) => ({ ...p }))])) as Week);
   const prepMinutes = Math.round(Number(prep));
   const prepValid = Number.isFinite(prepMinutes) && prepMinutes >= 1 && prepMinutes <= 240;
 
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const schedule = setHours ? WEEK.flatMap((weekday) => week[weekday].map((p) => ({ weekday, ...p }))) : [];
-      await onSave(schedule, prepMinutes);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
-  }
+  const save = () => action.run(async () => {
+    const schedule = setHours ? WEEK.flatMap((weekday) => week[weekday].map((p) => ({ weekday, ...p }))) : [];
+    await onSave(schedule, prepMinutes);
+  });
 
   return (
     <div className="flex flex-col gap-3">
@@ -153,8 +142,8 @@ function HoursEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: (w
       <p className="text-[11px] text-ink-400">
         {t("hoursEditor.prepDetail", { zone: deviceTimeZone().replace(/_/g, " ") })}
       </p>
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
-      <Button loading={saving} onClick={save} disabled={!prepValid || (setHours && WEEK.some((d) => week[d].some((p) => p.closes === p.opens)))} className="py-2 text-xs">
+      {action.error && <Notice>{action.error}</Notice>}
+      <Button loading={action.busy} onClick={save} disabled={!prepValid || (setHours && WEEK.some((d) => week[d].some((p) => p.closes === p.opens)))} className="py-2 text-xs">
         {t("common.save")}
       </Button>
     </div>

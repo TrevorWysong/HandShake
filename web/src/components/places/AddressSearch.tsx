@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { ArrowRight, MapPin, Search } from "lucide-react";
 import clsx from "clsx";
-import { Input, Spinner } from "./ui";
-import { searchAddress, reverseGeocode } from "../lib/places/geocoding";
-import type { GeoPoint } from "../holochain/types";
-import type { AddressComponents, GeocodeResult } from "../lib/places/geocoding";
-import { useT } from "../i18n";
-import { useResource } from "../lib/hooks/useResource";
+import { Input, Spinner } from "../ui";
+import { searchAddress, reverseGeocode } from "../../lib/places/geocoding";
+import type { GeoPoint } from "../../holochain/types";
+import type { AddressComponents, GeocodeResult } from "../../lib/places/geocoding";
+import { useT } from "../../i18n";
+import { useResource } from "../../lib/hooks/useResource";
 
 // A search runs when the person asks for one -- Enter, or the button --
 // never as they type: the geocoder's usage policy forbids search-as-you-type

@@ -1,11 +1,11 @@
 import { Printer, Receipt as ReceiptIcon } from "lucide-react";
-import { getOrderReceipt } from "../holochain/zomes/dispatch";
-import { bytesToHex } from "../holochain/decode";
-import { useResource } from "../lib/hooks/useResource";
-import { formatCents } from "../lib/ui/format";
-import { portionLabel } from "../lib/money/ledger";
-import { Button, Card, Skeleton } from "./ui";
-import { appLocale, useT } from "../i18n";
+import { getOrderReceipt } from "../../holochain/zomes/dispatch";
+import { bytesToHex } from "../../holochain/decode";
+import { useResource } from "../../lib/hooks/useResource";
+import { formatCents } from "../../lib/ui/format";
+import { portionLabel } from "../../lib/money/ledger";
+import { Button, Card, SectionLabel, Skeleton } from "../ui";
+import { appLocale, useT } from "../../i18n";
 
 /// The itemized receipt for a completed order: each item at the price it
 /// was ordered at, the fees and the payments that settled it -- each
@@ -28,9 +28,7 @@ export function OrderReceipt({ orderRef }: { orderRef: Uint8Array }) {
     <Card className="print-receipt mt-4 p-4 text-sm">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-            <ReceiptIcon size={12} /> {t("receipt.title")}
-          </p>
+          <SectionLabel icon={<ReceiptIcon size={12} />}>{t("receipt.title")}</SectionLabel>
           <p className="mt-1 font-bold text-ink-900 dark:text-ink-50">{receipt.store_name}</p>
           {receipt.store_address && <p className="text-xs text-ink-400">{receipt.store_address}</p>}
           <p className="text-xs text-ink-400">

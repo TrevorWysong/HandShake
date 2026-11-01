@@ -7,15 +7,15 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ListChecks, Pencil, Plus, Trash2, X } from "lucide-react";
 import { createModifierGroup, updateModifierGroup } from "../../../holochain/zomes/catalog";
-import { bytesToHex, hexToBytes } from "../../../holochain/decode";
+import { bytesEqual, bytesToHex, hexToBytes } from "../../../holochain/decode";
 import type { ModifierGroup, ModifierOption } from "../../../holochain/types";
 import { MAX_GROUP_OPTIONS, MAX_NAME_CHARS, MAX_OPTION_QUANTITY } from "../../../holochain/types";
-import { groupProblem, rangeLabel } from "../../../lib/menu/choices";
-import { describeError } from "../../../lib/ui/errors";
+import { groupProblem, rangeLabel } from "../../../lib/storefront/choices";
 import { currencySymbol, fromMinorUnits, toMinorUnits } from "../../../lib/ui/format";
 import { fadeSlideUp } from "../../../lib/ui/motion";
-import { Button, Card, Field, Input, Select, Switch } from "../../../components/ui";
+import { Button, Card, Field, Input, SectionLabel, Select, Switch } from "../../../components/ui";
 import { useT } from "../../../i18n";
+import { useAction } from "../../../lib/hooks/useAction";
 
 /// One of the store's choice groups: its identity and latest content.
 export interface GroupRow {
@@ -31,9 +31,7 @@ export function ChoicesSection({ catalogRef, groups, onChanged }: { catalogRef: 
   return (
     <motion.div variants={fadeSlideUp} className="mb-6">
       <div className="mb-3 flex items-center justify-between">
-        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-          <ListChecks size={13} /> {t("choicesEditor.title")}
-        </p>
+        <SectionLabel icon={<ListChecks size={13} />}>{t("choicesEditor.title")}</SectionLabel>
         <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setEditing(editing ? null : { kind: "new" })}>
           {editing ? <X size={14} /> : <Plus size={14} />} {editing ? t("common.cancel") : t("choicesEditor.add")}
         </Button>
@@ -45,7 +43,7 @@ export function ChoicesSection({ catalogRef, groups, onChanged }: { catalogRef: 
             <GroupForm
               catalogRef={catalogRef}
               row={editing.kind === "edit" ? editing.row : null}
-              others={groups.filter((g) => editing.kind !== "edit" || bytesToHex(g.hash) !== bytesToHex(editing.row.hash))}
+              others={groups.filter((g) => editing.kind !== "edit" || !bytesEqual(g.hash, editing.row.hash))}
               onSaved={async () => {
                 setEditing(null);
                 await onChanged();
@@ -105,8 +103,7 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
   // Ids stay unique for the group's life, so an id an old order names is
   // never another option's.
   const [nextId, setNextId] = useState(() => Math.max(0, ...(initial?.options.map((o) => o.id) ?? [1])) + 1);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
   const group: ModifierGroup = {
     catalog_ref: initial?.catalog_ref ?? catalogRef,
@@ -120,19 +117,13 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
   const problem = groupProblem(group);
   const setOption = (id: number, patch: Partial<OptionDraft>) => setOptions((all) => all.map((o) => (o.id === id ? { ...o, ...patch } : o)));
 
-  async function save() {
+  function save() {
     if (problem) return;
-    setSaving(true);
-    setError(null);
-    try {
+    return action.run(async () => {
       if (row) await updateModifierGroup(row.hash, group);
       else await createModifierGroup(group);
       await onSaved();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
+    });
   }
 
   return (
@@ -212,12 +203,12 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
         )}
       </div>
 
-      {(problem || error) && <p className="text-xs text-red-600 dark:text-red-400">{error ?? problem}</p>}
+      {(problem || action.error) && <p className="text-xs text-red-600 dark:text-red-400">{action.error ?? problem}</p>}
       <p className="text-[11px] leading-relaxed text-ink-400">
         {free > 0 ? `${t("choicesEditor.cheapestFree", { count: free })} ` : ""}
         {t("choicesEditor.changesApply")}
       </p>
-      <Button loading={saving} disabled={!!problem} onClick={save} className="py-2 text-xs">
+      <Button loading={action.busy} disabled={!!problem} onClick={save} className="py-2 text-xs">
         {row ? t("choicesEditor.save") : t("choicesEditor.create")}
       </Button>
     </Card>

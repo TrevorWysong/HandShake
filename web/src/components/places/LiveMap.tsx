@@ -1,13 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import L from "leaflet";
-import { networkServices } from "../store/network";
-import { safeAttribution } from "../lib/places/attribution";
-import { t as translate } from "../i18n";
+import { networkServices } from "../../store/network";
+import { safeAttribution } from "../../lib/places/attribution";
+import { t as translate } from "../../i18n";
 import "leaflet/dist/leaflet.css";
-import { PresenceDot } from "./ui";
-import type { ActionHash, GeoPoint } from "../holochain/types";
-import { bytesEqual } from "../holochain/decode";
-import { useLiveSignal } from "../lib/hooks/useResource";
+import { PresenceDot } from "../ui";
+import type { ActionHash, GeoPoint } from "../../holochain/types";
+import { bytesEqual } from "../../holochain/decode";
+import { useLiveSignal } from "../../lib/hooks/useResource";
 
 // Vanilla Leaflet, not react-leaflet -- this app already writes small,
 // self-contained components (StarRating, AddressSearch, ChatPanel) rather

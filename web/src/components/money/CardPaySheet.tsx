@@ -6,18 +6,19 @@
 import { useCallback, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { CreditCard, Loader2 } from "lucide-react";
-import { getBalance } from "../holochain/zomes/ledger";
-import type { AgentPubKey } from "../holochain/types";
-import { bytesToHex } from "../holochain/decode";
-import { Button, Skeleton } from "./ui";
-import { Sheet } from "./Sheet";
-import { describeError } from "../lib/ui/errors";
-import { formatCents } from "../lib/ui/format";
-import { cardFormSecret, payWithSavedCard, publishableKey, savedCard, type PayableIssuer } from "../lib/money/issuerService";
-import { POLL } from "../lib/network/poll";
-import { usePolling, useResource } from "../lib/hooks/useResource";
-import { collectIncoming } from "../lib/money/wallet";
-import { t as translate, useT } from "../i18n";
+import { getBalance } from "../../holochain/zomes/ledger";
+import type { AgentPubKey } from "../../holochain/types";
+import { bytesToHex } from "../../holochain/decode";
+import { Button, Skeleton } from "../ui";
+import { Sheet } from "../Sheet";
+import { describeError } from "../../lib/ui/errors";
+import { formatCents } from "../../lib/ui/format";
+import { cardFormSecret, payWithSavedCard, publishableKey, savedCard, type PayableIssuer } from "../../lib/money/issuerService";
+import { POLL } from "../../lib/network/poll";
+import { usePolling, useResource } from "../../lib/hooks/useResource";
+import { collectIncoming } from "../../lib/money/wallet";
+import { t as translate, useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 /// How long to wait on the funds before saying they'll come shortly.
 const LANDING_PATIENCE_MS = 60_000;
@@ -62,8 +63,10 @@ export function CardPaySheet({
   }));
   const { data: card, error: cardError } = useResource(`saved-card:${bytesToHex(issuerKey)}:${bytesToHex(agent)}`, () => savedCard(serviceUrl, issuerKey, agent));
   const [step, setStep] = useState<Step>({ kind: "choose" });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
+  // React's own setter: the same every render, so the card form below
+  // isn't rebuilt for it.
+  const { setError } = action;
 
   /// Waits for the payment's funds, from a balance of `from` -- read before
   /// any money moves, so the grant can't come first.
@@ -80,20 +83,12 @@ export function CardPaySheet({
     step.kind === "landing",
   );
 
-  async function payWithCard() {
-    setBusy(true);
-    setError(null);
-    try {
-      const from = await getBalance(agent);
-      // Or their bank wants them to confirm it: the card form does that.
-      if (await payWithSavedCard(serviceUrl, issuerKey, agent, amount)) awaitFunds(from);
-      else setStep({ kind: "form" });
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const payWithCard = () => action.run(async () => {
+    const from = await getBalance(agent);
+    // Or their bank wants them to confirm it: the card form does that.
+    if (await payWithSavedCard(serviceUrl, issuerKey, agent, amount)) awaitFunds(from);
+    else setStep({ kind: "form" });
+  });
 
   // The card form, mounted into its node and destroyed with it. Stripe
   // allows one at a time, so it's torn down the moment the node goes.
@@ -120,7 +115,7 @@ export function CardPaySheet({
         destroy();
       };
     },
-    [serviceUrl, issuerKey, agent, amount, awaitFunds],
+    [serviceUrl, issuerKey, agent, amount, awaitFunds, setError],
   );
 
   const waiting = step.kind === "landing" || step.kind === "slow";
@@ -136,8 +131,8 @@ export function CardPaySheet({
       footer={
         step.kind === "choose" && card ? (
           <>
-            {error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
-            <Button className="w-full" loading={busy} onClick={payWithCard}>
+            {action.error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
+            <Button className="w-full" loading={action.busy} onClick={payWithCard}>
               {t("card.payWith", { amount: formatCents(amount), card: `${cardName(card.brand)} •••• ${card.last4}` })}
             </Button>
             <button type="button" onClick={() => setStep({ kind: "form" })} className="mt-3 w-full text-center text-xs font-semibold text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">
@@ -161,7 +156,7 @@ export function CardPaySheet({
         </div>
       ) : step.kind === "form" || noSavedCard ? (
         <>
-          {error && <p className="mb-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          {action.error && <p className="mb-3 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
           <div ref={mountForm} className="min-h-[24rem]" />
         </>
       ) : card ? (

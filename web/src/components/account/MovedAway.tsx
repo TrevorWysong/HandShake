@@ -4,11 +4,11 @@
 // hand-over; everyone's app refuses a recovered one), so the app stops
 // here rather than letting anything fail half-way.
 import { Smartphone } from "lucide-react";
-import { HOST } from "../holochain/host";
-import { keyFingerprint } from "../lib/account/accountMove";
-import { useSession } from "../store/session";
-import { Button } from "./ui";
-import { useT } from "../i18n";
+import { HOST } from "../../holochain/host";
+import { keyFingerprint } from "../../lib/account/accountMove";
+import { useSession } from "../../store/session";
+import { Button } from "../ui";
+import { useT } from "../../i18n";
 
 /// `to`: the key it moved to -- `null` when it moved to the new version of
 /// HandShake (docs/MIGRATION.md).

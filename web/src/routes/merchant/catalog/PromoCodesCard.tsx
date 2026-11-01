@@ -4,16 +4,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createPromoCode, listPromoCodesForCatalog, setPromoCodeActive } from "../../../holochain/zomes/catalog";
 import { bytesToHex, decodeEntry } from "../../../holochain/decode";
 import { useResource } from "../../../lib/hooks/useResource";
-import { describeRequirement, describeReward } from "../../../lib/menu/promotions";
-import { itemNamesByHex, type ItemRow } from "../../../lib/menu/menu";
-import { Button, Card, Checkbox, Input, SegmentedTabs, Select, Switch } from "../../../components/ui";
+import { describeRequirement, describeReward } from "../../../lib/storefront/promotions";
+import { itemNamer, type ItemRow } from "../../../lib/storefront/menu";
+import { Button, Card, Checkbox, Input, Notice, SectionLabel, SegmentedTabs, Select, Switch } from "../../../components/ui";
 import { buildLimits, buildRequirement, buildReward, EMPTY_PROMO_FORM, type PromoForm, type RequirementKind, type RewardKind } from "./promoForm";
-import { describeLimits } from "../../../lib/menu/promotions";
+import { describeLimits } from "../../../lib/storefront/promotions";
 import { myPromoUses } from "../../../holochain/zomes/dispatch";
-import type { PromoCode, Timestamp } from "../../../holochain/types";
+import type { PromoCode, PromoRequirement, PromoReward, Timestamp } from "../../../holochain/types";
 import { MAX_PROMO_CODE_CHARS } from "../../../holochain/types";
 import { currencySymbol } from "../../../lib/ui/format";
 import { useT } from "../../../i18n";
+import { useAction } from "../../../lib/hooks/useAction";
 
 interface PromoRow {
   /// The code's identity (its original action) -- what orders reference.
@@ -40,44 +41,30 @@ async function fetchPromoPage(catalogRef: Uint8Array, before: Timestamp | null):
 export function PromoCodesCard({ storeHex, catalogRef, items }: { storeHex: string; catalogRef: Uint8Array; items: ItemRow[] }) {
   const t = useT();
   const [showForm, setShowForm] = useState(false);
-  const [toggling, setToggling] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  // Each code's toggle, and loading more, one at a time.
+  const action = useAction();
   const { data, reload, mutate } = useResource(`store-promos:${storeHex}`, () => fetchPromoPage(catalogRef, null));
-  const names = itemNamesByHex(items);
-  const itemName = (hex: string) => names[hex];
+  const itemName = itemNamer(items);
 
-  async function toggle(row: PromoRow) {
-    setToggling(row.hex);
-    try {
-      await setPromoCodeActive(row.hash, !row.promo.active);
-      // Update in place: reloading would collapse any "load more" pages.
-      mutate((prev) => ({ nextBefore: prev?.nextBefore ?? null, rows: (prev?.rows ?? []).map((r) => (r.hex === row.hex ? { ...r, promo: { ...r.promo, active: !r.promo.active } } : r)) }));
-    } finally {
-      setToggling(null);
-    }
-  }
+  const toggle = (row: PromoRow) => action.run(async () => {
+    await setPromoCodeActive(row.hash, !row.promo.active);
+    // Update in place: reloading would collapse any "load more" pages.
+    mutate((prev) => ({ nextBefore: prev?.nextBefore ?? null, rows: (prev?.rows ?? []).map((r) => (r.hex === row.hex ? { ...r, promo: { ...r.promo, active: !r.promo.active } } : r)) }));
+  }, { as: row.hex });
 
-  async function loadMore() {
-    if (!data?.nextBefore) return;
-    setLoadingMore(true);
-    try {
-      const next = await fetchPromoPage(catalogRef, data.nextBefore);
-      mutate((prev) => {
-        const seen = new Set((prev?.rows ?? []).map((r) => r.hex));
-        return { rows: [...(prev?.rows ?? []), ...next.rows.filter((r) => !seen.has(r.hex))], nextBefore: next.nextBefore };
-      });
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const loadMore = (before: Timestamp) => action.run(async () => {
+    const next = await fetchPromoPage(catalogRef, before);
+    mutate((prev) => {
+      const seen = new Set((prev?.rows ?? []).map((r) => r.hex));
+      return { rows: [...(prev?.rows ?? []), ...next.rows.filter((r) => !seen.has(r.hex))], nextBefore: next.nextBefore };
+    });
+  }, { as: "more" });
 
   const rows = data?.rows ?? [];
   return (
     <Card className="mb-4 p-4">
       <div className="mb-2 flex items-center justify-between">
-        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-          <Tag size={13} /> {t("promoEditor.title")}
-        </p>
+        <SectionLabel icon={<Tag size={13} />}>{t("promoEditor.title")}</SectionLabel>
         <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setShowForm((v) => !v)}>
           <Plus size={14} /> {showForm ? t("common.cancel") : t("promoEditor.new")}
         </Button>
@@ -111,16 +98,17 @@ export function PromoCodesCard({ storeHex, catalogRef, items }: { storeHex: stri
                 </p>
                 <PromoTerms row={row} />
               </div>
-              <Button variant={row.promo.active ? "secondary" : "ghost"} className="px-3 py-1.5 text-xs" loading={toggling === row.hex} onClick={() => toggle(row)}>
+              <Button variant={row.promo.active ? "secondary" : "ghost"} className="px-3 py-1.5 text-xs" loading={action.doing === row.hex} disabled={action.busy} onClick={() => toggle(row)}>
                 {row.promo.active ? t("orders.active") : t("promoEditor.inactive")}
               </Button>
             </div>
           ))}
           {data?.nextBefore && (
-            <Button variant="ghost" loading={loadingMore} onClick={loadMore} className="w-full py-2 text-xs">
+            <Button variant="ghost" loading={action.doing === "more"} onClick={() => data?.nextBefore && loadMore(data.nextBefore)} className="w-full py-2 text-xs">
               {t("promoEditor.older")}
             </Button>
           )}
+          {action.error && <Notice className="mt-2">{action.error}</Notice>}
         </div>
       )}
     </Card>
@@ -132,22 +120,16 @@ export function PromoCodesCard({ storeHex, catalogRef, items }: { storeHex: stri
 function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: Uint8Array; items: ItemRow[]; itemName: (hex: string) => string | undefined; onCreated: () => Promise<void> }) {
   const t = useT();
   const [form, setForm] = useState<PromoForm>(EMPTY_PROMO_FORM);
-  const [saving, setSaving] = useState(false);
+  const save = useAction();
   const set = (patch: Partial<PromoForm>) => setForm((f) => ({ ...f, ...patch }));
   const requirement = buildRequirement(form);
   const reward = buildReward(form);
   const ready = !!form.code.trim() && !!requirement && !!reward;
 
-  async function save() {
-    if (!ready) return;
-    setSaving(true);
-    try {
-      await createPromoCode({ catalog_ref: catalogRef, code: form.code.trim().toUpperCase(), requirement: requirement!, reward: reward!, auto_apply: form.autoApply, limits: buildLimits(form) });
-      await onCreated();
-    } finally {
-      setSaving(false);
-    }
-  }
+  const create = (requirementNow: PromoRequirement, rewardNow: PromoReward) => save.run(async () => {
+    await createPromoCode({ catalog_ref: catalogRef, code: form.code.trim().toUpperCase(), requirement: requirementNow, reward: rewardNow, auto_apply: form.autoApply, limits: buildLimits(form) });
+    await onCreated();
+  });
 
   const itemSelect = (value: string, onChange: (hex: string) => void) => (
     <Select value={value} onChange={(e) => onChange(e.target.value)} className="flex-1">
@@ -301,7 +283,8 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
         </div>
       )}
 
-      <Button loading={saving} disabled={!ready} onClick={save} className="py-2.5 text-xs">
+      {save.error && <Notice>{save.error}</Notice>}
+      <Button loading={save.busy} disabled={!ready} onClick={() => requirement && reward && create(requirement, reward)} className="py-2.5 text-xs">
         {t("promoEditor.create")}
       </Button>
     </motion.div>

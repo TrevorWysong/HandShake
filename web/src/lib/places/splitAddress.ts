@@ -1,5 +1,5 @@
 // An address as its split form keeps it: the street line, and its own
-// city, state and postal code fields (`components/SplitAddressFields`).
+// city, state and postal code fields (`components/places/SplitAddressFields`).
 
 export interface SplitAddress {
   street: string;

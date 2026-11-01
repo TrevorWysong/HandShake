@@ -5,16 +5,16 @@ import { useState } from "react";
 import { BadgeCheck } from "lucide-react";
 import type { AgentPubKey, VerificationCheck } from "../holochain/types";
 import { driverVerification, getVerificationTerms, revokeVerification, verifyDriver } from "../holochain/zomes/dispatch";
-import { AccountCodeReader } from "../components/AccountCode";
+import { AccountCodeReader } from "../components/account/AccountCode";
 import { Button, Card, Checkbox, Field, Input } from "../components/ui";
 import { keyFingerprint } from "../lib/account/accountMove";
-import { describeError } from "../lib/ui/errors";
 import { formatDate } from "../lib/ui/format";
 import { useResource } from "../lib/hooks/useResource";
 import { ALL_CHECKS, checkLabel } from "../lib/driving/verification";
-import { bytesToHex } from "../holochain/decode";
+import { bytesEqual, bytesToHex } from "../holochain/decode";
 import { useSession } from "../store/session";
 import { useT } from "../i18n";
+import { useAction } from "../lib/hooks/useAction";
 
 export default function VerifyPage() {
   const me = useSession((s) => s.agentPubKey);
@@ -22,7 +22,7 @@ export default function VerifyPage() {
   const { data: terms } = useResource("verification-terms", getVerificationTerms);
   const [driver, setDriver] = useState<AgentPubKey | null>(null);
   if (!terms || !me) return null;
-  if (!terms.verifiers.some((v) => bytesToHex(v) === bytesToHex(me))) {
+  if (!terms.verifiers.some((v) => bytesEqual(v, me))) {
     return <p className="p-6 text-sm text-ink-500">{t("verify.onlyVerifiers")}</p>;
   }
   return (
@@ -39,23 +39,14 @@ function DriverForm({ driver, onDone }: { driver: AgentPubKey; onDone: () => voi
   const { data: current, reload } = useResource(`verification:${bytesToHex(driver)}`, () => driverVerification(driver));
   const [checks, setChecks] = useState<VerificationCheck[]>(["Identity", "DrivingLicence", "Insurance"]);
   const [days, setDays] = useState<number | "">("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
   const [done, setDone] = useState(false);
 
-  async function run(action: () => Promise<unknown>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-      await reload();
-      setDone(true);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const run = (step: () => Promise<unknown>) => action.run(async () => {
+    await step();
+    await reload();
+    setDone(true);
+  });
 
   return (
     <Card className="flex flex-col gap-4 p-4">
@@ -80,13 +71,13 @@ function DriverForm({ driver, onDone }: { driver: AgentPubKey; onDone: () => voi
       <Field label={t("verify.days")}>
         <Input type="number" min={1} value={days} onChange={(e) => setDays(e.target.value === "" ? "" : Math.max(1, Number(e.target.value)))} />
       </Field>
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {action.error && <p className="text-xs text-red-600 dark:text-red-400">{action.error}</p>}
       {done && <p className="text-xs text-emerald-600">{t("verify.done")}</p>}
-      <Button loading={busy} disabled={checks.length === 0} onClick={() => run(() => verifyDriver(driver, checks, days === "" ? null : days))}>
+      <Button loading={action.busy} disabled={checks.length === 0} onClick={() => run(() => verifyDriver(driver, checks, days === "" ? null : days))}>
         {current ? t("verify.renew") : t("verify.verify")}
       </Button>
       {current && (
-        <Button variant="secondary" loading={busy} onClick={() => run(() => revokeVerification(current.action))}>
+        <Button variant="secondary" loading={action.busy} onClick={() => run(() => revokeVerification(current.action))}>
           {t("verify.withdraw")}
         </Button>
       )}

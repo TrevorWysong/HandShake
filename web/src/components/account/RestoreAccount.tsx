@@ -15,24 +15,25 @@
 // pushed: nothing tells a new device it's been vouched for.
 import { useState } from "react";
 import { ArrowLeft, HeartHandshake, History, KeyRound, Smartphone } from "lucide-react";
-import type { AgentPubKey, PlanView, VouchView } from "../holochain/types";
-import { bytesToHex } from "../holochain/decode";
-import { accountsForPhraseKey, arrive, arrivedFrom, latestActionOf, migrationsToMeOnPrevious, mySuccession, recoveryPlanOf, requestReissue, takeOver, vouchesForMe } from "../holochain/zomes/account";
-import { hasPreviousNetwork } from "../holochain/client";
-import { listIssuers } from "../holochain/zomes/ledger";
-import { canReceiveAccount, deviceRuntime } from "../holochain/device";
-import { invitationFingerprint, sealedAccount } from "../lib/account/deviceMove";
-import { catalogsOf, importStore, moveStore, previousStores } from "../holochain/zomes/catalog";
+import type { AgentPubKey, PlanView, VouchView } from "../../holochain/types";
+import { bytesEqual, bytesToHex } from "../../holochain/decode";
+import { accountsForPhraseKey, arrive, arrivedFrom, latestActionOf, migrationsToMeOnPrevious, mySuccession, recoveryPlanOf, requestReissue, takeOver, vouchesForMe } from "../../holochain/zomes/account";
+import { hasPreviousNetwork } from "../../holochain/client";
+import { listIssuers } from "../../holochain/zomes/ledger";
+import { canReceiveAccount, deviceRuntime } from "../../holochain/device";
+import { invitationFingerprint, sealedAccount } from "../../lib/account/deviceMove";
+import { catalogsOf, importStore, moveStore, previousStores } from "../../holochain/zomes/catalog";
 import { AccountCode, CodeCard, CodeReader } from "./AccountCode";
-import { Button, Field, Input, Skeleton, Spinner, Textarea } from "./ui";
-import { adoptPredecessor, keyFingerprint, readPredecessor, type AccountPlace } from "../lib/account/accountMove";
-import { describeError } from "../lib/ui/errors";
-import { phraseKey, phraseMessage, readPhrase } from "../lib/account/recoveryPhrase";
-import { POLL } from "../lib/network/poll";
-import { usePolling, useResource } from "../lib/hooks/useResource";
-import { useSession } from "../store/session";
-import { remember, rememberedMethod, type Method } from "../lib/account/restoring";
-import { t as translate, useT } from "../i18n";
+import { Button, Field, Input, Notice, Skeleton, Spinner, Textarea } from "../ui";
+import { adoptPredecessor, keyFingerprint, readPredecessor, type AccountPlace } from "../../lib/account/accountMove";
+import { describeError } from "../../lib/ui/errors";
+import { phraseKey, phraseMessage, readPhrase } from "../../lib/account/recoveryPhrase";
+import { POLL } from "../../lib/network/poll";
+import { usePolling, useResource } from "../../lib/hooks/useResource";
+import { useSession } from "../../store/session";
+import { remember, rememberedMethod, type Method } from "../../lib/account/restoring";
+import { t as translate, useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 
 export function RestoreAccount({ devAdminUrl, onBack, onDone }: { devAdminUrl: string; onBack: () => void; onDone: () => void }) {
@@ -43,8 +44,7 @@ export function RestoreAccount({ devAdminUrl, onBack, onDone }: { devAdminUrl: s
     return remembered === "device" || agentPubKey ? remembered : null;
   });
   const { data: canReceive } = useResource("can-receive-account", canReceiveAccount);
-  const [preparing, setPreparing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const preparing = useAction();
   // A key that already took an account over (a reload mid-way) goes
   // straight to confirming the details.
   const { data: taken } = useResource(agentPubKey && `succession:${bytesToHex(agentPubKey)}`, mySuccession);
@@ -57,24 +57,19 @@ export function RestoreAccount({ devAdminUrl, onBack, onDone }: { devAdminUrl: s
   const takenOver = predecessor ?? taken?.predecessor ?? arrived ?? null;
   const place: AccountPlace = method === "previous" || (!!arrived && !taken) ? "previous" : "here";
 
-  async function choose(next: Method) {
-    setError(null);
+  function choose(next: Method) {
+    preparing.setError(null);
     // The account comes with its own key: this device needs none of its own.
     if (next === "device") {
       remember(next);
       setMethod(next);
       return;
     }
-    setPreparing(true);
-    try {
+    return preparing.run(async () => {
       await prepareNewDevice(devAdminUrl);
       remember(next);
       setMethod(next);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setPreparing(false);
-    }
+    });
   }
 
   if (takenOver && agentPubKey) {
@@ -111,18 +106,18 @@ export function RestoreAccount({ devAdminUrl, onBack, onDone }: { devAdminUrl: s
           <p className="mb-4 text-sm text-ink-500">{t("restore.subtitle")}</p>
           <div className="flex flex-col gap-2">
             {hasPrevious && (
-              <MethodCard icon={<History size={18} />} title={t("restore.previous")} blurb={t("restore.previousBlurb")} onClick={() => choose("previous")} disabled={preparing} />
+              <MethodCard icon={<History size={18} />} title={t("restore.previous")} blurb={t("restore.previousBlurb")} onClick={() => choose("previous")} disabled={preparing.busy} />
             )}
-            {canReceive && <MethodCard icon={<Smartphone size={18} />} title={t("restore.device")} blurb={t("restore.deviceBlurb")} onClick={() => choose("device")} disabled={preparing} />}
-            <MethodCard icon={<KeyRound size={18} />} title={t("restore.phrase")} blurb={t("restore.phraseBlurb")} onClick={() => choose("phrase")} disabled={preparing} />
-            <MethodCard icon={<HeartHandshake size={18} />} title={t("restore.guardians")} blurb={t("restore.guardiansBlurb")} onClick={() => choose("guardians")} disabled={preparing} />
+            {canReceive && <MethodCard icon={<Smartphone size={18} />} title={t("restore.device")} blurb={t("restore.deviceBlurb")} onClick={() => choose("device")} disabled={preparing.busy} />}
+            <MethodCard icon={<KeyRound size={18} />} title={t("restore.phrase")} blurb={t("restore.phraseBlurb")} onClick={() => choose("phrase")} disabled={preparing.busy} />
+            <MethodCard icon={<HeartHandshake size={18} />} title={t("restore.guardians")} blurb={t("restore.guardiansBlurb")} onClick={() => choose("guardians")} disabled={preparing.busy} />
           </div>
-          {preparing && (
+          {preparing.busy && (
             <p className="mt-3 flex items-center justify-center gap-2 text-xs text-ink-500">
               <Spinner className="h-3 w-3" /> {t("restore.settingUp")}
             </p>
           )}
-          {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+          {preparing.error && <Notice className="mt-3">{preparing.error}</Notice>}
         </>
       ) : method === "previous" ? (
         <FromPreviousVersion me={agentPubKey} onTaken={setPredecessor} />
@@ -161,18 +156,16 @@ function FromDevice() {
   });
   const [scanning, setScanning] = useState(false);
   const [sealed, setSealed] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // The app starts again with the account: it stays busy as it does.
+  const receiving = useAction();
 
-  async function receive(code: string) {
+  function receive(code: string) {
     setSealed(code);
-    setError(null);
-    try {
+    return receiving.run(async () => {
       await (await deviceRuntime())!.receive(code);
       remember(null);
       window.location.reload();
-    } catch (err) {
-      setError(describeError(err));
-    }
+    }, { stayBusy: true });
   }
 
   if (sealed) {
@@ -180,10 +173,10 @@ function FromDevice() {
       <>
         <h2 className="mb-1 text-lg font-bold">{t("receive.bringingTitle")}</h2>
         <p className="mb-4 text-sm text-ink-500">{t("receive.bringing")}</p>
-        {error ? (
+        {receiving.error ? (
           <>
-            <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
-            <Button className="w-full" onClick={() => receive(sealed)}>
+            <Notice className="mb-3">{receiving.error}</Notice>
+            <Button className="w-full" loading={receiving.busy} onClick={() => receive(sealed)}>
               {t("receive.tryAgain")}
             </Button>
           </>
@@ -209,7 +202,7 @@ function FromDevice() {
           </Button>
         </>
       ) : inviteError ? (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{describeError(inviteError)}</p>
+        <Notice>{describeError(inviteError)}</Notice>
       ) : (
         <Skeleton className="mx-auto h-56 w-56" />
       )}
@@ -246,7 +239,7 @@ function FromPreviousVersion({ me, onTaken }: { me: AgentPubKey; onTaken: (prede
       <p className="mt-4 flex items-center justify-center gap-2 text-xs text-ink-400">
         <Spinner className="h-3 w-3" /> {t("restore.waitingPrevious")}
       </p>
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+      {error && <Notice className="mt-3">{error}</Notice>}
     </>
   );
 }
@@ -256,18 +249,13 @@ function FromPreviousVersion({ me, onTaken }: { me: AgentPubKey; onTaken: (prede
 function FromPhrase({ me, onTaken }: { me: AgentPubKey; onTaken: (predecessor: AgentPubKey) => void }) {
   const t = useT();
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const recovering = useAction();
 
-  async function recover() {
+  // Taking the account over moves on from here: it stays busy until it does.
+  function recover() {
     const phrase = readPhrase(text);
-    if (!phrase) {
-      setError(t("restore.notPhrase"));
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
+    if (!phrase) return recovering.setError(t("restore.notPhrase"));
+    return recovering.run(async () => {
       const key = phraseKey(phrase);
       const [account]: PlanView[] = await accountsForPhraseKey(key.publicKey);
       if (!account) throw new Error(t("restore.noAccount"));
@@ -275,10 +263,7 @@ function FromPhrase({ me, onTaken }: { me: AgentPubKey; onTaken: (predecessor: A
       await takeOver({ predecessor: account.account, authority: { Phrase: { plan: account.plan, head, signature: key.sign(phraseMessage(account.account, me, head)) } } });
       await askForReissue();
       onTaken(account.account);
-    } catch (err) {
-      setError(describeError(err));
-      setBusy(false);
-    }
+    }, { stayBusy: true });
   }
 
   return (
@@ -286,8 +271,8 @@ function FromPhrase({ me, onTaken }: { me: AgentPubKey; onTaken: (predecessor: A
       <h2 className="mb-1 text-lg font-bold">{t("restore.phraseTitle")}</h2>
       <p className="mb-4 text-sm text-ink-500">{t("restore.phraseDetail")}</p>
       <Textarea rows={4} autoCapitalize="none" autoComplete="off" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} placeholder={t("restore.phrasePlaceholder")} className="font-mono" />
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
-      <Button className="mt-4 w-full" loading={busy} disabled={!text.trim()} onClick={recover}>
+      {recovering.error && <Notice className="mt-3">{recovering.error}</Notice>}
+      <Button className="mt-4 w-full" loading={recovering.busy} disabled={!text.trim()} onClick={recover}>
         {t("restore.recover")}
       </Button>
     </>
@@ -335,7 +320,7 @@ function FromGuardians({ me, onTaken }: { me: AgentPubKey; onTaken: (predecessor
         <Spinner className="h-3 w-3" />
         {progress ? t("restore.vouchedCount", { n: progress.vouched, count: progress.needed }) : t("restore.waitingGuardians")}
       </p>
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+      {error && <Notice className="mt-3">{error}</Notice>}
     </>
   );
 }
@@ -349,8 +334,8 @@ async function readiest(vouches: VouchView[]): Promise<{ plan: PlanView; vouches
     const account = vouches.find((v) => bytesToHex(v.account) === hex)!.account;
     const plan = await recoveryPlanOf(account);
     if (!plan || plan.threshold === 0) continue;
-    const current = vouches.filter((v) => bytesToHex(v.account) === hex && bytesToHex(v.plan) === bytesToHex(plan.plan));
-    const oneEach = current.filter((v, i) => current.findIndex((w) => bytesToHex(w.guardian) === bytesToHex(v.guardian)) === i);
+    const current = vouches.filter((v) => bytesToHex(v.account) === hex && bytesEqual(v.plan, plan.plan));
+    const oneEach = current.filter((v, i) => current.findIndex((w) => bytesEqual(w.guardian, v.guardian)) === i);
     if (!best || oneEach.length > best.vouches.length) best = { plan, vouches: oneEach };
   }
   return best;
@@ -386,19 +371,16 @@ function ConfirmDetails({ predecessor, place, recovered, onDone }: { predecessor
   const { data: issuers } = useResource("issuers", listIssuers);
   const [name, setName] = useState<string | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
   if (!known) return <Skeleton className="h-48 w-full" />;
   const shownName = name ?? known.name;
   const shownPhone = phone ?? known.phone;
   const wait = issuers?.find((i) => i.profile)?.profile?.recovery_wait_days;
 
-  async function finish() {
+  function finish() {
     if (!known) return;
-    setBusy(true);
-    setError(null);
-    try {
+    return action.run(async () => {
       // Their stores first -- safe to repeat -- then their profile, so a
       // failure here can simply be tried again.
       if (place === "previous") {
@@ -409,10 +391,7 @@ function ConfirmDetails({ predecessor, place, recovered, onDone }: { predecessor
       await adoptPredecessor(known, shownName, shownPhone);
       await reconnect();
       onDone();
-    } catch (err) {
-      setError(describeError(err));
-      setBusy(false);
-    }
+    }, { stayBusy: true });
   }
 
   return (
@@ -438,8 +417,8 @@ function ConfirmDetails({ predecessor, place, recovered, onDone }: { predecessor
       {known.profile?.roles.includes("Merchant") && (
         <p className="mb-3 text-xs text-ink-500">{t("restore.stores")}</p>
       )}
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
-      <Button className="w-full" loading={busy} disabled={!shownName.trim()} onClick={finish}>
+      {action.error && <Notice className="mb-3">{action.error}</Notice>}
+      <Button className="w-full" loading={action.busy} disabled={!shownName.trim()} onClick={finish}>
         {t("onboarding.enter")}
       </Button>
     </>

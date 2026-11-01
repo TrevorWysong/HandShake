@@ -1,4 +1,4 @@
-import { bytesToHex, decodeEntry } from "../../holochain/decode";
+import { bytesEqual, bytesToHex, decodeEntry } from "../../holochain/decode";
 import { getBagClaim, getGoodieBag, getModifierGroups, listMenuItems, type MenuItemsPage } from "../../holochain/zomes/catalog";
 import type { ActionHash, BagClaim, GoodieBag, ModifierGroup, OrderLine, Selection, SelectionInput } from "../../holochain/types";
 import type { MenuItem } from "../../holochain/types";
@@ -39,6 +39,13 @@ export async function fetchMenu(catalogRef: ActionHash): Promise<ItemRow[]> {
 /// Item names by identity hex, for labelling an order's or promo's item refs.
 export function itemNamesByHex(rows: ItemRow[]): Record<string, string> {
   return Object.fromEntries(rows.map((row) => [bytesToHex(row.hash), row.item.name]));
+}
+
+/// A lookup of a menu's item names by each item's hash, as hex --
+/// `undefined` for one not on it.
+export function itemNamer(rows: ItemRow[]): (hex: string) => string | undefined {
+  const names = itemNamesByHex(rows);
+  return (hex) => names[hex];
 }
 
 export function groupByCategory(rows: ItemRow[]): Map<string, ItemRow[]> {
@@ -85,7 +92,7 @@ export async function cartLinesFromOrder(catalogRef: ActionHash, lines: OrderLin
     for (const view of await getModifierGroups(catalogRef, [...refs.values()])) groups.set(bytesToHex(view.original_action), decodeEntry<ModifierGroup>(view.record));
   }
   return lines.flatMap((line) => {
-    const row = menu.find((m) => bytesToHex(m.hash) === bytesToHex(line.item_ref));
+    const row = menu.find((m) => bytesEqual(m.hash, line.item_ref));
     if (!row || !row.item.available) return [];
     const selections = selectionInputs(line.selections);
     const priced = linePrice(row.item, selections, groups);

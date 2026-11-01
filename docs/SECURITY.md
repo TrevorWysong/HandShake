@@ -197,7 +197,7 @@ Cancelling is free until the customer's app has seen the store start, and the ap
 
 ## Store contact details and pickup chat
 
-- **Contact links can only be what they say.** A store's email must be a plain address (letters, digits and `._+-'`, so a `mailto:` link can't carry `?cc=` or anything else), and its website an `http(s)://` address with a real host. No `user@` before the host, which could dress one site up as another. No characters that could break out of a link. Validation holds every peer to this (`handshake_integrity_support::contact`). The app builds every link only from details that pass (`web/src/lib/menu/contact.ts`), a phone link from its digits alone, and directions from the store's coordinates.
+- **Contact links can only be what they say.** A store's email must be a plain address (letters, digits and `._+-'`, so a `mailto:` link can't carry `?cc=` or anything else), and its website an `http(s)://` address with a real host. No `user@` before the host, which could dress one site up as another. No characters that could break out of a link. Validation holds every peer to this (`handshake_integrity_support::contact`). The app builds every link only from details that pass (`web/src/lib/storefront/contact.ts`), a phone link from its digits alone, and directions from the store's coordinates.
 - **Pickup chat is between the order's customer and its store**, as delivery chat is between the customer and the driver (`live_counterpart`). A location is accepted only from a delivery's driver. Chat is never stored. A panel keeps at most 200 lines, and it hears only while that order's screen is open, so nobody can push messages to a closed app.
 
 ## What remains

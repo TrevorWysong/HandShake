@@ -4,15 +4,14 @@ import { useSession } from "./store/session";
 import { HOST } from "./holochain/host";
 import { Spinner } from "./components/ui";
 import { Fingerprint } from "lucide-react";
-import { describeError } from "./lib/ui/errors";
-import { AppShell } from "./components/AppShell";
+import { AppShell } from "./components/shell/AppShell";
 import { Onboarding } from "./routes/Onboarding";
 import { Browse } from "./routes/customer/Browse";
 import { MerchantDetail } from "./routes/customer/MerchantDetail";
-import { Cart } from "./routes/customer/Cart";
+import { Cart } from "./routes/customer/cart/Cart";
 import { Orders } from "./routes/customer/Orders";
-import { OrderDetail } from "./routes/customer/OrderDetail";
-import { PickupOrderDetail } from "./routes/customer/PickupOrderDetail";
+import { OrderDetail } from "./routes/customer/order/OrderDetail";
+import { PickupOrderDetail } from "./routes/customer/order/PickupOrderDetail";
 import { DriverDashboard } from "./routes/driver/Dashboard";
 import { Earnings } from "./routes/driver/Earnings";
 import { Wallet } from "./routes/Wallet";
@@ -25,13 +24,14 @@ import { NewStore } from "./routes/merchant/NewStore";
 import { ProfilePage } from "./routes/Profile";
 import { Transparency } from "./routes/Transparency";
 import { Policies } from "./routes/Policies";
-import { AccountPage } from "./routes/Account";
+import { AccountPage } from "./routes/account/AccountPage";
 import VerifyPage from "./routes/Verify";
 import ArbitratePage from "./routes/Arbitrate";
 import { useLocale, useT } from "./i18n";
-import { MovedAway } from "./components/MovedAway";
-import { Departure } from "./components/Departure";
+import { MovedAway } from "./components/account/MovedAway";
+import { Departure } from "./components/account/Departure";
 import { useDeparture } from "./store/departure";
+import { useAction } from "./lib/hooks/useAction";
 
 
 
@@ -70,31 +70,27 @@ function SessionBootstrap({ children }: { children: React.ReactNode }) {
 function UnlockScreen({ onDone }: { onDone: () => void }) {
   const t = useT();
   const reconnect = useSession((s) => s.reconnect);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function unlock() {
-    setBusy(true);
-    setError(null);
+  // Unlocked, the app moves on: it stays busy until it does.
+  const unlocking = useAction();
+  const unlock = () => unlocking.run(async () => {
     try {
       await reconnect();
-      onDone();
     } catch (err) {
       // Gone for good (a dev reset): nothing to unlock -- on to sign-in.
       if (err instanceof Error && err.name === "IdentityGone") onDone();
-      setError(describeError(err));
-      setBusy(false);
+      throw err;
     }
-  }
+    onDone();
+  }, { stayBusy: true });
 
   return (
     <div className="mesh-hero flex min-h-svh flex-col items-center justify-center gap-4 px-6 text-white">
       <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-3xl font-black text-handshake-600 shadow-xl">R</div>
       <p className="text-lg font-bold">{t("app.welcomeBack")}</p>
-      <button onClick={unlock} disabled={busy} className="flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-handshake-600 shadow-lg disabled:opacity-60">
-        {busy ? <Spinner className="h-4 w-4" /> : <Fingerprint size={18} />} {t("app.unlock")}
+      <button onClick={unlock} disabled={unlocking.busy} className="flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-handshake-600 shadow-lg disabled:opacity-60">
+        {unlocking.busy ? <Spinner className="h-4 w-4" /> : <Fingerprint size={18} />} {t("app.unlock")}
       </button>
-      {error && <p className="max-w-xs text-center text-xs text-white/80">{error}</p>}
+      {unlocking.error && <p className="max-w-xs text-center text-xs text-white/80">{unlocking.error}</p>}
       <button onClick={onDone} className="text-xs text-white/70 underline underline-offset-2">
         {t("app.anotherWay")}
       </button>

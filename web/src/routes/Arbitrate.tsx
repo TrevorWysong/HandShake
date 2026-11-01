@@ -5,37 +5,31 @@
 import { useState } from "react";
 import { TimeAgo } from "../components/TimeAgo";
 import { Gavel } from "lucide-react";
-import type { AppealsPage, AppealView } from "../holochain/types";
+import type { AppealsPage, AppealView, Timestamp } from "../holochain/types";
 import { getMyDocket, ruleOnAppeal } from "../holochain/zomes/dispatch";
 import { bytesToHex } from "../holochain/decode";
-import { Button, Card, Input, Textarea } from "../components/ui";
-import { describeError } from "../lib/ui/errors";
+import { Button, Card, Input, Notice, Textarea } from "../components/ui";
 import { currencySymbol, formatCents, fromMinorUnits, toMinorUnits } from "../lib/ui/format";
 import { POLL } from "../lib/network/poll";
 import { useResource } from "../lib/hooks/useResource";
 import { MAX_NOTE_CHARS } from "../holochain/types";
 import { useT } from "../i18n";
+import { useAction } from "../lib/hooks/useAction";
 
 export default function ArbitratePage() {
   const t = useT();
   const { data: first, reload } = useResource("docket", () => getMyDocket(), { pollMs: POLL.slow });
   // Pages past the first, loaded on request; the first keeps refreshing.
   const [older, setOlder] = useState<AppealsPage | null>(null);
-  const [loading, setLoading] = useState(false);
+  const loading = useAction();
   const cursor = older ? older.next_before : (first?.next_before ?? null);
   const seen = new Set((first?.appeals ?? []).map((a) => bytesToHex(a.appeal)));
   const docket = first && [...first.appeals, ...(older?.appeals ?? []).filter((a) => !seen.has(bytesToHex(a.appeal)))];
 
-  async function loadOlder() {
-    if (cursor === null) return;
-    setLoading(true);
-    try {
-      const page = await getMyDocket(cursor);
-      setOlder((prev) => ({ appeals: [...(prev?.appeals ?? []), ...page.appeals], next_before: page.next_before }));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const loadOlder = (before: Timestamp) => loading.run(async () => {
+    const page = await getMyDocket(before);
+    setOlder((prev) => ({ appeals: [...(prev?.appeals ?? []), ...page.appeals], next_before: page.next_before }));
+  });
   return (
     <div className="mx-auto max-w-md px-4 py-6">
       <h1 className="mb-1 flex items-center gap-2 text-xl font-black text-ink-900 dark:text-ink-50">
@@ -47,10 +41,11 @@ export default function ArbitratePage() {
         {docket?.map((appeal) => <Case key={bytesToHex(appeal.appeal)} appeal={appeal} onRuled={reload} />)}
       </div>
       {cursor !== null && (
-        <Button variant="ghost" loading={loading} onClick={loadOlder} className="mt-4 w-full py-2 text-xs">
+        <Button variant="ghost" loading={loading.busy} onClick={() => cursor !== null && loadOlder(cursor)} className="mt-4 w-full py-2 text-xs">
           {t("common.loadMore")}
         </Button>
       )}
+      {loading.error && <Notice className="mt-2">{loading.error}</Notice>}
     </div>
   );
 }
@@ -70,21 +65,12 @@ function Case({ appeal, onRuled }: { appeal: AppealView; onRuled: () => Promise<
   const t = useT();
   const [award, setAward] = useState(fromMinorUnits(appeal.amount));
   const [reasons, setReasons] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
-  async function rule(amount: number) {
-    setBusy(true);
-    setError(null);
-    try {
-      await ruleOnAppeal({ appeal: appeal.appeal, award: amount, reasons: reasons.trim() });
-      await onRuled();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const rule = (amount: number) => action.run(async () => {
+    await ruleOnAppeal({ appeal: appeal.appeal, award: amount, reasons: reasons.trim() });
+    await onRuled();
+  });
 
   return (
     <Card className="flex flex-col gap-3 p-4">
@@ -105,12 +91,12 @@ function Case({ appeal, onRuled }: { appeal: AppealView; onRuled: () => Promise<
         <>
           <Input type="number" min={0} step={0.5} value={award} onChange={(e) => setAward(Number(e.target.value))} prefix={currencySymbol()} />
           <Textarea maxLength={MAX_NOTE_CHARS} rows={2} value={reasons} onChange={(e) => setReasons(e.target.value)} placeholder={t("arbitrate.why")} />
-          {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+          {action.error && <p className="text-xs text-red-600 dark:text-red-400">{action.error}</p>}
           <div className="flex gap-2">
-            <Button className="flex-1" loading={busy} disabled={!reasons.trim() || award <= 0 || toMinorUnits(award) > appeal.amount} onClick={() => rule(toMinorUnits(award))}>
+            <Button className="flex-1" loading={action.busy} disabled={!reasons.trim() || award <= 0 || toMinorUnits(award) > appeal.amount} onClick={() => rule(toMinorUnits(award))}>
               {t("arbitrate.award")}
             </Button>
-            <Button className="flex-1" variant="secondary" loading={busy} disabled={!reasons.trim()} onClick={() => rule(0)}>
+            <Button className="flex-1" variant="secondary" loading={action.busy} disabled={!reasons.trim()} onClick={() => rule(0)}>
               {t("arbitrate.dismiss")}
             </Button>
           </div>

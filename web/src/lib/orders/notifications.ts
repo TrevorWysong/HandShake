@@ -1,7 +1,7 @@
 // What to tell someone when something happens on one of their orders, from
 // the signal alone -- `post_commit` sends each party what changed and which
 // side of the order they're on. Pure, so it's tested on its own; showing it
-// is `components/Notifier.tsx`'s job.
+// is `components/shell/Notifier.tsx`'s job.
 import { bytesToHex } from "../../holochain/decode";
 import type { DeliveryStatus, LocalSignal, OrderChange, OrderRole, PickupStatus } from "../../holochain/types";
 import type { LiveSignal } from "../../holochain/live";

@@ -4,16 +4,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { confirmClaim, createGoodieBag, listGoodieBagsForCatalog, listPendingClaimsForMerchant, updateGoodieBag } from "../../../holochain/zomes/catalog";
 import { actionHash, bytesToHex, decodeEntry, hexToBytes } from "../../../holochain/decode";
 import { useResource } from "../../../lib/hooks/useResource";
-import { describeError } from "../../../lib/ui/errors";
 import { formatCents, formatClockTime, toMinorUnits, currencySymbol } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
-import { Button, Card, Checkbox, Field, Input, StatNumber, Textarea } from "../../../components/ui";
+import { Button, Card, Checkbox, Field, Input, Notice, SectionLabel, StatNumber, Textarea } from "../../../components/ui";
 import { PhotoInput } from "../../../components/PhotoInput";
 import type { BagClaim, GoodieBag } from "../../../holochain/types";
 import { POLL } from "../../../lib/network/poll";
 import { useTerms } from "../../../store/network";
 import { MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS } from "../../../holochain/types";
 import { appLocale, useT } from "../../../i18n";
+import { useAction } from "../../../lib/hooks/useAction";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -35,27 +35,22 @@ async function fetchBags(catalogRef: Uint8Array): Promise<BagsData> {
 export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; catalogRef: Uint8Array }) {
   const t = useT();
   const [showForm, setShowForm] = useState(false);
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const confirming = useAction();
   const [editing, setEditing] = useState<string | null>(null);
   const { data, reload } = useResource(`store-bags:${storeHex}`, () => fetchBags(catalogRef), { pollMs: POLL.signalled, refreshOn: () => true });
   const bags = data?.bags ?? [];
   const claims = data?.claims ?? [];
   const bagTitle = new Map(bags.map((b) => [b.hex, b.bag.title]));
 
-  async function confirm(hash: Uint8Array, hex: string) {
-    setConfirming(hex);
-    try {
-      await confirmClaim(hash);
-      await reload();
-    } finally {
-      setConfirming(null);
-    }
-  }
+  const confirm = (hash: Uint8Array, hex: string) => confirming.run(async () => {
+    await confirmClaim(hash);
+    await reload();
+  }, { as: hex });
 
   return (
     <>
       <motion.div variants={fadeSlideUp} className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-bold uppercase tracking-wide text-ink-400">{t("bags.title")}</p>
+        <SectionLabel>{t("bags.title")}</SectionLabel>
         <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setShowForm((v) => !v)}>
           <PackageOpen size={14} /> {showForm ? t("common.cancel") : t("bags.add")}
         </Button>
@@ -115,7 +110,7 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
 
       {claims.length > 0 && (
         <motion.div variants={fadeSlideUp} className="mb-6">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">{t("bags.pending")}</p>
+          <SectionLabel className="mb-2">{t("bags.pending")}</SectionLabel>
           <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
             {claims.map(({ hash, hex, claim }) => (
               <div key={hex} className="flex items-center justify-between gap-3 p-4">
@@ -123,7 +118,7 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
                   <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{bagTitle.get(bytesToHex(claim.bag_ref)) ?? t("orders.goodieBag")}</p>
                   <p className="text-xs text-ink-400">{claim.fulfillment === "Pickup" ? t("bags.willPickUp") : t("bags.wantsDelivery")}</p>
                 </div>
-                <Button loading={confirming === hex} className="px-3 py-1.5 text-xs" onClick={() => confirm(hash, hex)}>
+                <Button loading={confirming.doing === hex} disabled={confirming.busy} className="px-3 py-1.5 text-xs" onClick={() => confirm(hash, hex)}>
                   {t("bags.confirm")}
                 </Button>
               </div>
@@ -141,20 +136,13 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
 function EditBagForm({ original, bag, onDone }: { original: Uint8Array; bag: GoodieBag; onDone: (saved: boolean) => Promise<void> }) {
   const t = useT();
   const [form, setForm] = useState({ title: bag.title, description: bag.description, photo_data_uri: bag.photo_data_uri });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const save = useAction();
 
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await updateGoodieBag(original, { ...bag, title: form.title.trim(), description: form.description, photo_data_uri: form.photo_data_uri });
-      await onDone(true);
-    } catch (err) {
-      setError(describeError(err));
-      setSaving(false);
-    }
-  }
+  // Done moves on from the form: it stays busy until it does.
+  const update = () => save.run(async () => {
+    await updateGoodieBag(original, { ...bag, title: form.title.trim(), description: form.description, photo_data_uri: form.photo_data_uri });
+    await onDone(true);
+  }, { stayBusy: true });
 
   return (
     <div className="flex flex-col gap-2 p-4">
@@ -168,12 +156,12 @@ function EditBagForm({ original, bag, onDone }: { original: Uint8Array; bag: Goo
         <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} />
       </Field>
       <p className="text-[11px] text-ink-400">{t("bags.fixed")}</p>
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {save.error && <p className="text-xs text-red-600 dark:text-red-400">{save.error}</p>}
       <div className="flex gap-2">
-        <Button variant="ghost" className="flex-1 py-2 text-xs" disabled={saving} onClick={() => onDone(false)}>
+        <Button variant="ghost" className="flex-1 py-2 text-xs" disabled={save.busy} onClick={() => onDone(false)}>
           {t("common.cancel")}
         </Button>
-        <Button className="flex-1 py-2 text-xs" loading={saving} disabled={!form.title.trim()} onClick={save}>
+        <Button className="flex-1 py-2 text-xs" loading={save.busy} disabled={!form.title.trim()} onClick={update}>
           {t("common.save")}
         </Button>
       </div>
@@ -207,7 +195,7 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       holdMinutes: defaultHold,
     };
   });
-  const [saving, setSaving] = useState(false);
+  const save = useAction();
   // When the form opened -- close enough to "when it's listed" for the
   // 7-day check, and read once rather than on every render.
   const [openedAt] = useState(() => Date.now());
@@ -231,29 +219,23 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
                 ? t("bags.problem.hold")
                 : null;
 
-  async function save() {
-    if (problem) return;
-    setSaving(true);
-    try {
-      await createGoodieBag({
-        catalog_ref: catalogRef,
-        title: form.title.trim(),
-        description: form.description,
-        photo_data_uri: form.photo_data_uri,
-        original_value_cents: toMinorUnits(form.originalValue),
-        price_cents: toMinorUnits(form.price),
-        quantity_total: form.quantity_total,
-        pickup_window_start: startMs * 1000,
-        pickup_window_end: endMs * 1000,
-        supports_pickup: form.supports_pickup,
-        supports_delivery: form.supports_delivery,
-        hold_minutes: form.holdMinutes,
-      });
-      await onCreated();
-    } finally {
-      setSaving(false);
-    }
-  }
+  const list = () => save.run(async () => {
+    await createGoodieBag({
+      catalog_ref: catalogRef,
+      title: form.title.trim(),
+      description: form.description,
+      photo_data_uri: form.photo_data_uri,
+      original_value_cents: toMinorUnits(form.originalValue),
+      price_cents: toMinorUnits(form.price),
+      quantity_total: form.quantity_total,
+      pickup_window_start: startMs * 1000,
+      pickup_window_end: endMs * 1000,
+      supports_pickup: form.supports_pickup,
+      supports_delivery: form.supports_delivery,
+      hold_minutes: form.holdMinutes,
+    });
+    await onCreated();
+  });
 
   return (
     <Card className="mb-4 flex flex-col gap-2 p-4">
@@ -305,7 +287,8 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
         </label>
       </div>
       {problem && form.title.trim() && <p className="text-xs text-amber-600">{problem}</p>}
-      <Button loading={saving} disabled={!!problem} onClick={save} className="py-2.5 text-xs">
+      {save.error && <Notice>{save.error}</Notice>}
+      <Button loading={save.busy} disabled={!!problem} onClick={list} className="py-2.5 text-xs">
         {t("bags.list")}
       </Button>
     </Card>

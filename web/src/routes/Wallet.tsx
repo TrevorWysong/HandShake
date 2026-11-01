@@ -8,19 +8,19 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowDownToLine, ArrowUpRight, Banknote, ChevronRight, Clock3, Landmark, Plus, RefreshCw, Wallet as WalletIcon } from "lucide-react";
 import { cashOut, getBalance, listIssuers, listMyCashOuts } from "../holochain/zomes/ledger";
-import { bytesToHex } from "../holochain/decode";
+import { bytesEqual, bytesToHex } from "../holochain/decode";
 import type { CashOutView, IssuerView } from "../holochain/types";
 import { MAX_NOTE_CHARS } from "../holochain/types";
-import { Badge, Button, Card, Field, Input, Select, Skeleton, StatNumber, Switch, Textarea } from "../components/ui";
-import { CardPaySheet } from "../components/CardPaySheet";
+import { Badge, Button, Card, CardSection, Field, Input, Select, Skeleton, StatNumber, Switch, Textarea } from "../components/ui";
+import { CardPaySheet } from "../components/money/CardPaySheet";
 import { InfoTip } from "../components/InfoTip";
 import { Sheet } from "../components/Sheet";
-import { describeError } from "../lib/ui/errors";
+import { useAction } from "../lib/hooks/useAction";
 import { currencySymbol, formatCents, fromMinorUnits, toMinorUnits } from "../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
 import { POLL } from "../lib/network/poll";
 import { useResource } from "../lib/hooks/useResource";
-import { RecoveryNudge } from "../components/RecoveryNudge";
+import { RecoveryNudge } from "../components/account/RecoveryNudge";
 import { cashOutStatusLabel, collectIncoming, feeLabel, payoutAfterFees } from "../lib/money/wallet";
 import { isPayable, MAX_CARD_PAYMENT_CENTS, MIN_CARD_PAYMENT_CENTS, payoutSetupUrl, savedCard, type PayableIssuer } from "../lib/money/issuerService";
 import { useSession } from "../store/session";
@@ -62,7 +62,7 @@ export function Wallet() {
       </div>
     );
   }
-  const issuerName = (issuer: Uint8Array) => data.issuers.find((i) => bytesToHex(i.issuer) === bytesToHex(issuer))?.profile?.name ?? t("wallet.anIssuer");
+  const issuerName = (issuer: Uint8Array) => data.issuers.find((i) => bytesEqual(i.issuer, issuer))?.profile?.name ?? t("wallet.anIssuer");
   const available = Math.max(0, data.balance);
   const canCashOut = data.issuers.length > 0 && available >= terms.min_redemption_cents;
   const payable = data.issuers.filter(isPayable);
@@ -103,7 +103,7 @@ export function Wallet() {
       </motion.div>
 
       <motion.div variants={fadeSlideUp}>
-        <Section title={t("wallet.cashOuts")}>
+        <CardSection title={t("wallet.cashOuts")}>
           {data.cashOuts.length === 0 ? (
             <p className="p-4 text-sm text-ink-400">{t("wallet.noCashOuts")}</p>
           ) : (
@@ -113,11 +113,11 @@ export function Wallet() {
               ))}
             </ul>
           )}
-        </Section>
+        </CardSection>
       </motion.div>
 
       <motion.div variants={fadeSlideUp}>
-        <Section title={t("wallet.issuers")}>
+        <CardSection title={t("wallet.issuers")}>
           {data.issuers.length === 0 ? (
             <p className="p-4 text-sm text-ink-400">{t("wallet.noIssuer")}</p>
           ) : (
@@ -127,14 +127,14 @@ export function Wallet() {
               ))}
             </ul>
           )}
-        </Section>
+        </CardSection>
       </motion.div>
 
       {payable.length > 0 && (
         <motion.div variants={fadeSlideUp}>
-          <Section title={t("wallet.autoTopUp")}>
+          <CardSection title={t("wallet.autoTopUp")}>
             <AutoTopUpRow issuer={payable[0]} agent={agentPubKey!} />
-          </Section>
+          </CardSection>
         </motion.div>
       )}
 
@@ -178,23 +178,15 @@ export function Wallet() {
 /// An issuer: who it is, and -- when the app can reach its service -- adding
 /// funds through it and setting up a payout account with it.
 function IssuerRow({ issuer, agent, onAddFunds }: { issuer: IssuerView; agent: Uint8Array; onAddFunds: (() => void) | null }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const opening = useAction();
   const profile = issuer.profile;
   const t = useT();
 
-  async function setUpPayouts() {
-    if (!profile?.service_url) return;
-    setBusy(true);
-    setError(null);
-    try {
-      // To the processor's own page: bank details never touch HandShake.
-      window.location.assign(await payoutSetupUrl(profile.service_url, issuer.issuer, agent));
-    } catch (err) {
-      setError(describeError(err));
-      setBusy(false);
-    }
-  }
+  // To the processor's own page: bank details never touch HandShake. It
+  // stays busy as the page goes.
+  const setUpPayouts = (serviceUrl: string) => opening.run(async () => {
+    window.location.assign(await payoutSetupUrl(serviceUrl, issuer.issuer, agent));
+  }, { stayBusy: true });
 
   return (
     <li className="p-4">
@@ -211,12 +203,12 @@ function IssuerRow({ issuer, agent, onAddFunds }: { issuer: IssuerView; agent: U
           <Button className="flex-1 py-2 text-xs" onClick={onAddFunds}>
             <Plus size={14} /> {t("wallet.addFunds")}
           </Button>
-          <Button variant="ghost" className="flex-1 py-2 text-xs" loading={busy} onClick={setUpPayouts}>
+          <Button variant="ghost" className="flex-1 py-2 text-xs" loading={opening.busy} onClick={() => profile?.service_url && setUpPayouts(profile.service_url)}>
             <Landmark size={14} /> {t("wallet.payoutAccount")}
           </Button>
         </div>
       )}
-      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {opening.error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{opening.error}</p>}
     </li>
   );
 }
@@ -282,25 +274,16 @@ function AutoTopUpRow({ issuer, agent }: { issuer: PayableIssuer; agent: Uint8Ar
   const setting = useCustomerSettings((s) => s.autoTopUps[hex]);
   const t = useT();
   const setAutoTopUp = useCustomerSettings((s) => s.setAutoTopUp);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const turning = useAction();
 
-  async function turn(on: boolean) {
-    setError(null);
+  function turn(on: boolean) {
+    turning.setError(null);
     if (!on) return setAutoTopUp(hex, null);
-    setBusy(true);
-    try {
+    void turning.run(async () => {
       // It charges the card saved last time: there has to be one.
-      if (!(await savedCard(issuer.profile.service_url, issuer.issuer, agent))) {
-        setError(t("wallet.needCard"));
-        return;
-      }
+      if (!(await savedCard(issuer.profile.service_url, issuer.issuer, agent))) throw new Error(t("wallet.needCard"));
       setAutoTopUp(hex, { issuer: bytesToHex(issuer.issuer), belowCents: AUTO_TOP_UP_BELOW[0], amountCents: AUTO_TOP_UP_AMOUNTS[0] });
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -311,7 +294,7 @@ function AutoTopUpRow({ issuer, agent }: { issuer: PayableIssuer; agent: Uint8Ar
           <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("wallet.autoTitle")}</p>
           <p className="mt-0.5 text-xs leading-relaxed text-ink-500">{t("wallet.autoDetail", { issuer: issuer.profile.name })}</p>
         </div>
-        <Switch checked={!!setting} disabled={busy} onChange={turn} label={t("wallet.autoTitle")} />
+        <Switch checked={!!setting} disabled={turning.busy} onChange={turn} label={t("wallet.autoTitle")} />
       </div>
       {setting && (
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -335,16 +318,7 @@ function AutoTopUpRow({ issuer, agent }: { issuer: PayableIssuer; agent: Uint8Ar
           </Field>
         </div>
       )}
-      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-4">
-      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">{title}</p>
-      <Card className="overflow-hidden">{children}</Card>
+      {turning.error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{turning.error}</p>}
     </div>
   );
 }
@@ -390,8 +364,7 @@ function CashOutSheet({
   const t = useT();
   const [amount, setAmount] = useState(fromMinorUnits(available).toFixed(2));
   const [instructions, setInstructions] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const sending = useAction();
 
   const chosen = issuers.find((i) => bytesToHex(i.issuer) === issuerHex) ?? issuers[0];
   const profile = chosen.profile;
@@ -400,19 +373,11 @@ function CashOutSheet({
   const problem = cents < least ? t("wallet.cashOutAtLeast", { amount: formatCents(least) }) : cents > available ? t("wallet.cashOutAtMost", { amount: formatCents(available) }) : null;
   const net = profile ? payoutAfterFees(profile, cents) : cents;
 
-  async function submit() {
-    if (problem) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await cashOut(chosen.issuer, cents, instructions.trim());
-      await onDone();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  // Money leaves once: it stays busy as the sheet closes.
+  const submit = () => sending.run(async () => {
+    await cashOut(chosen.issuer, cents, instructions.trim());
+    await onDone();
+  }, { stayBusy: true });
 
   return (
     <Sheet
@@ -422,8 +387,8 @@ function CashOutSheet({
       subtitle={t("wallet.cashOutSubtitle")}
       footer={
         <>
-          {(error || problem) && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{error ?? problem}</p>}
-          <Button className="w-full" disabled={!!problem} loading={busy} onClick={submit}>
+          {(sending.error || problem) && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{sending.error ?? problem}</p>}
+          <Button className="w-full" disabled={!!problem} loading={sending.busy} onClick={submit}>
             {t("wallet.cashOutAmount", { amount: formatCents(cents) })}
           </Button>
         </>

@@ -2,16 +2,16 @@
 // however old -- at the top of its orders.
 import { useState } from "react";
 import { Gavel } from "lucide-react";
-import { answerAppeal, getAppealsAgainstMe } from "../holochain/zomes/dispatch";
-import { bytesToHex } from "../holochain/decode";
-import type { AppealView } from "../holochain/types";
-import { formatCents } from "../lib/ui/format";
-import { POLL } from "../lib/network/poll";
-import { useResource } from "../lib/hooks/useResource";
-import { useTerms } from "../store/network";
+import { answerAppeal, getAppealsAgainstMe } from "../../holochain/zomes/dispatch";
+import { bytesToHex } from "../../holochain/decode";
+import type { AppealView } from "../../holochain/types";
+import { formatCents } from "../../lib/ui/format";
+import { POLL } from "../../lib/network/poll";
+import { useResource } from "../../lib/hooks/useResource";
+import { useTerms } from "../../store/network";
 import { EvidenceSheet } from "./OrderAppeal";
-import { Button, Card } from "./ui";
-import { useT } from "../i18n";
+import { Button, Card } from "../ui";
+import { useT } from "../../i18n";
 
 export function StoreAppeals() {
   const appeals = useTerms().appeals;

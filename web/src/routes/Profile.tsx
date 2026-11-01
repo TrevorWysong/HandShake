@@ -10,20 +10,20 @@ import { getBalance } from "../holochain/zomes/ledger";
 import { averageRating, getRatingSummary, getReputationSummary, getReviewsFor } from "../holochain/zomes/reputation";
 import { updateProfile, getMyName, getMyPhone, getProviderCredentialForProfile, registerProviderCredential } from "../holochain/zomes/profiles";
 import { bytesToHex, decodeEntry } from "../holochain/decode";
-import { Button, Card, Input, Skeleton, StatNumber, Textarea } from "../components/ui";
+import { Button, Card, Input, Notice, SectionLabel, Skeleton, StatNumber, Textarea } from "../components/ui";
 import { PhotoInput } from "../components/PhotoInput";
 import { StarRating } from "../components/StarRating";
 import { formatCents } from "../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
-import { describeError } from "../lib/ui/errors";
 import type { ProviderCredential, RatingSummary, Review } from "../holochain/types";
 import { HOST } from "../holochain/host";
-import { NotificationSettings } from "../components/NotificationSettings";
-import { LanguagePicker } from "../components/LanguagePicker";
-import { DevIdentityPicker } from "../components/DevIdentityPicker";
+import { NotificationSettings } from "../components/account/NotificationSettings";
+import { LanguagePicker } from "../components/shell/LanguagePicker";
+import { DevIdentityPicker } from "../components/account/DevIdentityPicker";
 import { DEV_ADMIN_URL } from "../lib/network/devNode";
 import { MAX_LABEL_CHARS, MAX_LICENSE_PLATE_CHARS, MAX_NOTE_CHARS, MAX_PHONE_CHARS, MAX_VEHICLE_CHARS } from "../holochain/types";
 import { useT } from "../i18n";
+import { useAction } from "../lib/hooks/useAction";
 
 /// One identity, several hats: ratings and stats are shown per role (your
 /// driving) and per store (each restaurant you run), never blended into
@@ -66,8 +66,7 @@ export function ProfilePage() {
   const [editingVehicle, setEditingVehicle] = useState(false);
   const [draft, setDraft] = useState({ name: "", bio: "", phone: "", avatar_data_uri: "" });
   const [vehicleDraft, setVehicleDraft] = useState({ vehicle_description: "", license_plate: "", photo_data_uri: "" });
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const action = useAction();
 
   function openStore(hex: string) {
     setActiveStore(hex);
@@ -94,28 +93,20 @@ export function ProfilePage() {
     setEditingVehicle((v) => !v);
   }
 
-  async function saveProfile() {
+  function saveProfile() {
     if (!profile || !profileActionHash) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
+    return action.run(async () => {
       const { roles, created_at } = profile;
       const { name, ...rest } = draft;
       await updateProfile(profileActionHash, { display_name: name.trim(), roles, created_at, ...rest });
       await Promise.all([refreshProfile(), reloadPhone(), reloadName()]);
       setEditing(false);
-    } catch (err) {
-      setSaveError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
+    });
   }
 
-  async function saveVehicle() {
+  function saveVehicle() {
     if (!profileActionHash) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
+    return action.run(async () => {
       await registerProviderCredential({
         profile_action: profileActionHash,
         vehicle_description: vehicleDraft.vehicle_description,
@@ -126,11 +117,7 @@ export function ProfilePage() {
       });
       setCredential(() => ({ ...vehicleDraft, profile_action: profileActionHash, capabilities: ["Food"], verified: false }));
       setEditingVehicle(false);
-    } catch (err) {
-      setSaveError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
+    });
   }
 
   const avgDriverRating = driverRating ? averageRating(driverRating) : null;
@@ -167,7 +154,7 @@ export function ProfilePage() {
       <motion.div variants={fadeSlideUp}>
       <Card className="mb-4 p-4">
         <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-bold uppercase tracking-wide text-ink-400">{t("profile.about")}</p>
+          <SectionLabel>{t("profile.about")}</SectionLabel>
           <button onClick={toggleEditing} className="text-ink-400 hover:text-handshake-600">
             <Pencil size={14} />
           </button>
@@ -181,8 +168,8 @@ export function ProfilePage() {
             </p>
             <Textarea maxLength={MAX_NOTE_CHARS} value={draft.bio} onChange={(e) => setDraft((d) => ({ ...d, bio: e.target.value }))} rows={2} placeholder={t("profile.bio")} />
             <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder={t("profile.phone")} type="tel" />
-            {saveError && <p className="rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">{saveError}</p>}
-            <Button loading={saving} onClick={saveProfile} className="py-2 text-xs">
+            {action.error && <Notice>{action.error}</Notice>}
+            <Button loading={action.busy} onClick={saveProfile} className="py-2 text-xs">
               {t("common.save")}
             </Button>
           </motion.div>
@@ -200,9 +187,7 @@ export function ProfilePage() {
         <motion.div variants={fadeSlideUp}>
         <Card className="mb-4 p-4">
           <div className="mb-2 flex items-center justify-between">
-            <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-              <Truck size={13} /> {t("profile.vehicle")}
-            </p>
+            <SectionLabel icon={<Truck size={13} />}>{t("profile.vehicle")}</SectionLabel>
             <button onClick={toggleEditingVehicle} className="text-ink-400 hover:text-handshake-600">
               <Pencil size={14} />
             </button>
@@ -224,8 +209,8 @@ export function ProfilePage() {
                 placeholder={t("profile.plate")}
                 className="font-mono"
               />
-              {saveError && <p className="rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">{saveError}</p>}
-              <Button loading={saving} onClick={saveVehicle} className="py-2 text-xs">
+              {action.error && <Notice>{action.error}</Notice>}
+              <Button loading={action.busy} onClick={saveVehicle} className="py-2 text-xs">
                 {t("common.save")}
               </Button>
             </motion.div>
@@ -249,7 +234,7 @@ export function ProfilePage() {
       <LanguagePicker />
       <NotificationSettings runsStore={!!profile?.roles.includes("Merchant")} />
       <Card className="mb-4 p-4">
-        <p className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-400">{t("profile.identity")}</p>
+        <SectionLabel className="mb-1">{t("profile.identity")}</SectionLabel>
         <p className="break-all font-mono text-xs text-ink-500">{agentPubKey ? encodeHashToBase64(agentPubKey) : "–"}</p>
         <p className="mt-2 text-xs text-ink-400">
           {t("profile.identityDetail")}
@@ -297,9 +282,7 @@ export function ProfilePage() {
       {isMerchant && stores && stores.length > 0 && (
         <motion.div variants={fadeSlideUp}>
         <Card className="mb-4 p-4">
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-            <Store size={13} /> {t("profile.stores", { count: stores.length })}
-          </p>
+          <SectionLabel icon={<Store size={13} />} className="mb-2">{t("profile.stores", { count: stores.length })}</SectionLabel>
           <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800">
             {stores.map((store) => {
               const summary = storeRatings[store.hex];
@@ -336,7 +319,7 @@ export function ProfilePage() {
       {reviews.length > 0 && (
         <motion.div variants={fadeSlideUp}>
         <Card className="mb-4 p-4">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">{t("profile.driverReviews")}</p>
+          <SectionLabel className="mb-2">{t("profile.driverReviews")}</SectionLabel>
           <div className="flex flex-col gap-3">
             {reviews.map((r, i) => (
               <div key={i} className="border-b border-ink-100 dark:border-ink-800 pb-2 last:border-0 last:pb-0">

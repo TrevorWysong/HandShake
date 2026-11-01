@@ -1,15 +1,16 @@
 import { motion } from "framer-motion";
 import { Check, Percent, Sparkles, Tag } from "lucide-react";
 import clsx from "clsx";
-import { listLivePromoCodes } from "../holochain/zomes/catalog";
-import { myPromoStanding } from "../holochain/zomes/dispatch";
-import { bytesToHex, decodeEntry, hexToBytes } from "../holochain/decode";
-import { useResource } from "../lib/hooks/useResource";
-import { describeBlock, describeLimits, describeRequirement, describeReward } from "../lib/menu/promotions";
-import type { ItemRow } from "../lib/menu/menu";
-import { useCart } from "../store/cart";
-import type { PromoCode, PromoStanding } from "../holochain/types";
-import { useT } from "../i18n";
+import { listLivePromoCodes } from "../../holochain/zomes/catalog";
+import { myPromoStanding } from "../../holochain/zomes/dispatch";
+import { bytesToHex, decodeEntry, hexToBytes } from "../../holochain/decode";
+import { useResource } from "../../lib/hooks/useResource";
+import { describeBlock, describeLimits, describeRequirement, describeReward } from "../../lib/storefront/promotions";
+import { itemNamer, type ItemRow } from "../../lib/storefront/menu";
+import { useCart } from "../../store/cart";
+import type { PromoCode, PromoStanding } from "../../holochain/types";
+import { useT } from "../../i18n";
+import { SectionLabel } from "../ui";
 
 interface Deal {
   hex: string;
@@ -36,14 +37,12 @@ export function StoreDeals({ catalogHex, menu }: { catalogHex: string; menu: Ite
   const chosen = useCart((s) => s.promoHex);
   const choose = useCart((s) => s.choosePromo);
   if (!deals || deals.length === 0) return null;
-  const itemName = (hex: string) => menu.find((m) => bytesToHex(m.hash) === hex)?.item.name;
+  const itemName = itemNamer(menu);
   // The ones they can use first.
   const sorted = [...deals].sort((a, b) => Number(!!a.standing?.blocked) - Number(!!b.standing?.blocked));
   return (
     <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mt-6">
-      <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-        <Tag size={13} className="text-handshake-500" /> {t("deals.title")}
-      </p>
+      <SectionLabel icon={<Tag size={13} className="text-handshake-500" />} className="mb-2">{t("deals.title")}</SectionLabel>
       <div className="no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
         {sorted.map(({ hex, promo, standing }) => {
           const blocked = standing?.blocked ?? null;

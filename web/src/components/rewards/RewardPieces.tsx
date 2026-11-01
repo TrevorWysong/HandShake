@@ -2,10 +2,10 @@ import { motion } from "framer-motion";
 import { Cake, Check, Clock, Crown, Flame, Gift, Hourglass, Lock, Percent, Sparkles, Star, Ticket } from "lucide-react";
 import clsx from "clsx";
 import type { PointsState, PromoReward, Reward, RewardsProgram } from "../../holochain/types";
-import type { ItemRow } from "../../lib/menu/menu";
+import { itemNamer, type ItemRow } from "../../lib/storefront/menu";
 import { ACCENTS, describeHappyHour, nextTier, redeemable, tierOf } from "../../lib/rewards/rewards";
-import { describeReward } from "../../lib/menu/promotions";
-import { bytesToHex } from "../../holochain/decode";
+import { describeReward } from "../../lib/storefront/promotions";
+import { bytesEqual, bytesToHex } from "../../holochain/decode";
 import { formatCents } from "../../lib/ui/format";
 import { useT } from "../../i18n";
 
@@ -19,7 +19,7 @@ function rewardItem(benefit: PromoReward): Uint8Array | null {
 /// A reward's look: the item's photo when it's for an item, else a symbol.
 export function RewardArt({ benefit, menu, accent }: { benefit: PromoReward; menu: ItemRow[]; accent: RewardsProgram["accent"] }) {
   const item = rewardItem(benefit);
-  const photo = item ? menu.find((m) => bytesToHex(m.hash) === bytesToHex(item))?.item.photo_data_uri : undefined;
+  const photo = item ? menu.find((m) => bytesEqual(m.hash, item))?.item.photo_data_uri : undefined;
   if (photo) return <img src={photo} alt="" className="h-full w-full object-cover" />;
   const Icon = "FreeItem" in benefit ? Gift : "FlatOffSubtotal" in benefit ? Ticket : Percent;
   const colors = ACCENTS[accent];
@@ -35,7 +35,7 @@ export function RewardArt({ benefit, menu, accent }: { benefit: PromoReward; men
 export function RewardTile({ program, reward, balance, tier, menu, selected, onSelect }: { program: RewardsProgram; reward: Reward; balance: number; tier: number; menu: ItemRow[]; selected?: boolean; onSelect?: () => void }) {
   const t = useT();
   const state = redeemable(program, balance, tier, reward);
-  const itemName = (hex: string) => menu.find((m) => bytesToHex(m.hash) === hex)?.item.name;
+  const itemName = itemNamer(menu);
   const progress = Math.min(1, balance / reward.cost);
   const colors = ACCENTS[program.accent];
   return (
@@ -145,7 +145,8 @@ export function TierLadder({ program, state }: { program: RewardsProgram; state:
 export function HowYouEarn({ program, menu }: { program: RewardsProgram; menu: ItemRow[] }) {
   const t = useT();
   const colors = ACCENTS[program.accent];
-  const itemName = (ref: Uint8Array) => menu.find((m) => bytesToHex(m.hash) === bytesToHex(ref))?.item.name ?? t("promo.item");
+  const nameOf = itemNamer(menu);
+  const itemName = (ref: Uint8Array) => nameOf(bytesToHex(ref)) ?? t("promo.item");
   const rows: { icon: typeof Star; text: string }[] = [{ icon: Sparkles, text: t("rewards.earnRate", { points: program.earn.points_per_dollar, name: program.points_name }) }];
   if (program.earn.welcome_bonus > 0) rows.push({ icon: Gift, text: t("rewards.welcomeLine", { points: program.earn.welcome_bonus.toLocaleString(), name: program.points_name }) });
   for (const bonus of program.earn.item_bonuses) rows.push({ icon: Flame, text: t("rewards.itemBonusLine", { item: itemName(bonus.item_ref), rate: (bonus.percent / 100).toString() }) });

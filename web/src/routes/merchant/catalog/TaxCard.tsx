@@ -8,14 +8,15 @@ import { Download, Plus, Trash2 } from "lucide-react";
 import type { MerchantCatalog, TaxRate } from "../../../holochain/types";
 import { MAX_LABEL_CHARS } from "../../../holochain/types";
 import { setTaxSettings } from "../../../holochain/zomes/catalog";
-import { Button, Card, Checkbox, Input, Skeleton } from "../../../components/ui";
+import { Button, Card, Checkbox, Input, SectionLabel, Skeleton } from "../../../components/ui";
 import { bytesToHex } from "../../../holochain/decode";
 import { formatCents, fromMinorUnits } from "../../../lib/ui/format";
 import { storeTaxReport, taxReportCsv } from "../../../lib/money/taxReport";
 import { useResource } from "../../../lib/hooks/useResource";
 import { describeError } from "../../../lib/ui/errors";
-import { percentLabel } from "../../../lib/menu/tax";
+import { percentLabel } from "../../../lib/storefront/tax";
 import { useT, type MessageKey } from "../../../i18n";
+import { useAction } from "../../../lib/hooks/useAction";
 
 /// The network's own bounds (`catalog_types::MAX_TAX_RATES`, `MAX_TAX_BASIS_POINTS`).
 const MAX_RATES = 8;
@@ -32,8 +33,7 @@ export function TaxCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCat
   const [rates, setRates] = useState<DraftRate[]>(() => saved.map((r) => ({ name: r.category, percent: String(r.basis_points / 100) })));
   const [included, setIncluded] = useState(catalog.prices_include_tax ?? false);
   const [registration, setRegistration] = useState(catalog.tax_registration ?? "");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
   const parsed: TaxRate[] = rates.map((r) => ({ category: r.name.trim(), label: r.name.trim(), basis_points: Math.round(Number(r.percent) * 100) }));
   const problem =
@@ -42,25 +42,19 @@ export function TaxCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCat
     new Set(parsed.map((r) => r.category)).size !== parsed.length ? t("taxEditor.problem.unique") :
     null;
 
-  async function save() {
+  function save() {
     if (problem) return;
-    setSaving(true);
-    setError(null);
-    try {
+    return action.run(async () => {
       await setTaxSettings(catalogRef, { tax_rates: parsed, prices_include_tax: included, tax_registration: registration });
       await onSaved();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
+    });
   }
 
   const set = (i: number, patch: Partial<DraftRate>) => setRates((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   return (
     <Card className="mb-4 p-4">
-      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-400">{t("cart.tax")}</p>
+      <SectionLabel className="mb-1">{t("cart.tax")}</SectionLabel>
       <p className="mb-3 text-xs leading-relaxed text-ink-400">
         {saved.length === 0
           ? t("taxEditor.intro")
@@ -91,8 +85,8 @@ export function TaxCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCat
           <Input className="mt-3" maxLength={MAX_LABEL_CHARS} value={registration} onChange={(e) => setRegistration(e.target.value)} placeholder={t("taxEditor.registration")} />
         </>
       )}
-      {(problem || error) && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error ?? problem}</p>}
-      <Button className="mt-3 w-full py-2 text-xs" loading={saving} disabled={!!problem} onClick={save}>
+      {(problem || action.error) && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{action.error ?? problem}</p>}
+      <Button className="mt-3 w-full py-2 text-xs" loading={action.busy} disabled={!!problem} onClick={save}>
         {t("taxEditor.save")}
       </Button>
       <p className="mt-2 text-[11px] leading-relaxed text-ink-400">{t("taxEditor.advice")}</p>
@@ -149,7 +143,7 @@ export function TaxReportCard({ catalogRef }: { catalogRef: Uint8Array }) {
 
   return (
     <Card className="mb-4 p-4">
-      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-400">{t("taxReport.title")}</p>
+      <SectionLabel className="mb-1">{t("taxReport.title")}</SectionLabel>
       <p className="mb-3 text-xs leading-relaxed text-ink-400">{t("taxReport.detail")}</p>
       <div className="mb-3 flex flex-wrap gap-1.5">
         {PERIODS.map((p) => (

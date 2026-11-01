@@ -141,11 +141,11 @@ Moving to a new phone keeps the key, so everything stays. On a recovery:
 - `issuer/src/recovery.ts`: the reissue sweep, the balance then what was owed; `payouts.ts` declines recovered keys' cash-outs.
 - `dnas/handshake/zomes/dispatch/coordinator/src/settlement.rs`: `uncollected_by`, `unreturned_by`; `ledger`'s `decisions_of`.
 - `dnas/handshake/zomes/ledger/integrity`: a grant in place of a part (`validate_in_place_of`), and its payer taking it (`validate_returned`).
-- `web/src/routes/Account.tsx`: Account & recovery.
-- `web/src/components/RestoreAccount.tsx`: "I already have an account".
+- `web/src/routes/account/`: Account & recovery -- the page, and a sheet for each of the phrase, guardians, moving to a new phone, vouching and moving to a new version.
+- `web/src/components/account/RestoreAccount.tsx`: "I already have an account".
 - `web/src/lib/account/recoveryPhrase.ts`: BIP-39 words in ten languages, and HKDF under HandShake's own label to Ed25519.
 - `web/src/holochain/device.ts`: the runtime's commands to the UI; `devDevice.ts`, development's stand-in.
-- `web/src/components/Departure.tsx`: the old phone, once it has sent its key.
+- `web/src/components/account/Departure.tsx`: the old phone, once it has sent its key.
 - Tests:
   - `tests/tryorama/src/device-move.test.ts`: moving to a new phone: ready only once published, the restore, the device set up, the same account carrying on;
   - `runtime/device`: the key moving between real keystores (unit), and between real conductors (`tests/move.rs`, with `--ignored`);

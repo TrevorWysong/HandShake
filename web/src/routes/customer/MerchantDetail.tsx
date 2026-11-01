@@ -9,25 +9,25 @@ import { decodeEntry, hexToBytes, bytesToHex } from "../../holochain/decode";
 import { useSession } from "../../store/session";
 import { useCart } from "../../store/cart";
 import { currencySymbol, formatCents, nowMicros, toMinorUnits } from "../../lib/ui/format";
-import { describeError } from "../../lib/ui/errors";
-import { Button, Chip, ChipRow, Input, Skeleton, StatNumber } from "../../components/ui";
+import { Button, Chip, ChipRow, Input, SectionLabel, Skeleton, StatNumber } from "../../components/ui";
 import { useTerms } from "../../store/network";
 import { useT } from "../../i18n";
-import { AddressSearch } from "../../components/AddressSearch";
-import { StoreContact } from "../../components/StoreContact";
+import { AddressSearch } from "../../components/places/AddressSearch";
+import { StoreContact } from "../../components/store/StoreContact";
 import { StarRating } from "../../components/StarRating";
 import { StoreRewardsStrip } from "./Rewards";
-import { StoreDeals } from "../../components/Deals";
-import { ItemSheet } from "../../components/ItemSheet";
+import { StoreDeals } from "../../components/store/Deals";
+import { ItemSheet } from "../../components/store/ItemSheet";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import { fetchMenu, groupByCategory } from "../../lib/menu/menu";
+import { fetchMenu, groupByCategory } from "../../lib/storefront/menu";
 import { useFavorites } from "../../lib/hooks/useFavorites";
-import type { ItemRow } from "../../lib/menu/menu";
+import type { ItemRow } from "../../lib/storefront/menu";
 import type { GeoPoint, MerchantCatalog, GoodieBag } from "../../holochain/types";
 import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
-import { storeStatus } from "../../lib/menu/storeHours";
-import { ReviewList } from "../../components/ReviewList";
+import { storeStatus } from "../../lib/storefront/storeHours";
+import { ReviewList } from "../../components/store/ReviewList";
+import { useAction } from "../../lib/hooks/useAction";
 
 interface BagRow {
   hash: Uint8Array;
@@ -109,8 +109,7 @@ function StorePage({ hash }: { hash: string }) {
   const [claimFulfillment, setClaimFulfillment] = useState<"Pickup" | "Delivery">("Pickup");
   const [claimDropoff, setClaimDropoff] = useState<GeoPoint>(location);
   const [claimFee, setClaimFee] = useState(5);
-  const [submittingClaim, setSubmittingClaim] = useState(false);
-  const [claimError, setClaimError] = useState<string | null>(null);
+  const action = useAction();
   const [claimedBagHexes, setClaimedBagHexes] = useState<Set<string>>(new Set());
   const [dietaryFilter, setDietaryFilter] = useState<string[]>([]);
   /// The item whose choices are open, if any.
@@ -122,24 +121,16 @@ function StorePage({ hash }: { hash: string }) {
     setClaimFulfillment(row.bag.supports_pickup ? "Pickup" : "Delivery");
     setClaimDropoff(location);
     setClaimFee(5);
-    setClaimError(null);
+    action.setError(null);
   }
 
-  async function submitClaim(row: BagRow) {
-    setSubmittingClaim(true);
-    setClaimError(null);
-    try {
-      const fulfillment: FulfillmentInput =
-        claimFulfillment === "Pickup" ? "Pickup" : { Delivery: { dropoff: claimDropoff, max_delivery_fee: toMinorUnits(claimFee) } };
-      await claimGoodieBag(row.hash, fulfillment);
-      setClaimedBagHexes((prev) => new Set(prev).add(bytesToHex(row.hash)));
-      setClaimingBagHex(null);
-    } catch (err) {
-      setClaimError(describeError(err));
-    } finally {
-      setSubmittingClaim(false);
-    }
-  }
+  const submitClaim = (row: BagRow) => action.run(async () => {
+    const fulfillment: FulfillmentInput =
+      claimFulfillment === "Pickup" ? "Pickup" : { Delivery: { dropoff: claimDropoff, max_delivery_fee: toMinorUnits(claimFee) } };
+    await claimGoodieBag(row.hash, fulfillment);
+    setClaimedBagHexes((prev) => new Set(prev).add(bytesToHex(row.hash)));
+    setClaimingBagHex(null);
+  });
 
   // Scoped to this one restaurant's own menu, not a union across every
   // nearby restaurant -- a per-merchant menu is naturally small and bounded,
@@ -236,9 +227,7 @@ function StorePage({ hash }: { hash: string }) {
 
         {bags.length > 0 && (
           <motion.div variants={fadeSlideUp} className="mt-6">
-            <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-              <PackageOpen size={13} className="text-handshake-500" /> {t("store.bags")}
-            </p>
+            <SectionLabel icon={<PackageOpen size={13} className="text-handshake-500" />} className="mb-2">{t("store.bags")}</SectionLabel>
             <div className="flex flex-col gap-2">
               {bags.map((row) => {
                 const hex = bytesToHex(row.hash);
@@ -295,8 +284,8 @@ function StorePage({ hash }: { hash: string }) {
                                 <Input type="number" min={0} step={0.5} value={claimFee} onChange={(e) => setClaimFee(Number(e.target.value))} placeholder={t("store.maxFee")} prefix={currencySymbol()} />
                               </>
                             )}
-                            {claimError && <p className="text-xs text-red-500">{claimError}</p>}
-                            <Button loading={submittingClaim} onClick={() => submitClaim(row)} className="py-2 text-xs">
+                            {action.error && <p className="text-xs text-red-500">{action.error}</p>}
+                            <Button loading={action.busy} onClick={() => submitClaim(row)} className="py-2 text-xs">
                               {t("store.confirmClaim")}
                             </Button>
                           </div>
@@ -325,7 +314,7 @@ function StorePage({ hash }: { hash: string }) {
 
         {[...grouped.entries()].map(([category, rows]) => (
           <motion.div variants={fadeSlideUp} key={category} className="mt-6">
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">{category}</p>
+            <SectionLabel className="mb-2">{category}</SectionLabel>
             <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
               {rows.map((row) => {
                 const { hash: itemHash, item } = row;

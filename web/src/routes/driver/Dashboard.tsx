@@ -11,19 +11,18 @@ import { itemCount } from "../../lib/orders/orderEntries";
 import { myAgentPubKey } from "../../holochain/client";
 import { encodeGeohash, distanceKm, geohashCenter } from "../../lib/places/geohash";
 import { useSession } from "../../store/session";
-import { Button, Card, EmptyState, Input, PresenceDot, Skeleton, StatNumber } from "../../components/ui";
-import { OrderStatusTimeline } from "../../components/OrderStatus";
+import { Button, Card, EmptyState, Input, Notice, PresenceDot, SectionLabel, Skeleton, StatNumber } from "../../components/ui";
+import { OrderStatusTimeline } from "../../components/orders/OrderStatus";
 import { StarRating } from "../../components/StarRating";
-import { ChatPanel } from "../../components/ChatPanel";
+import { ChatPanel } from "../../components/orders/ChatPanel";
 import { HandoffStep } from "./HandoffStep";
 import { StoreCheckIn, StorePickup } from "./AtTheStore";
 import { averageRating, getRatingSummary, getReputationSummary } from "../../holochain/zomes/reputation";
 import { formatCents, formatDistance, formatEta, formatClockTime, toMinorUnits, fromMinorUnits, currencySymbol } from "../../lib/ui/format";
 import { useT, type MessageKey } from "../../i18n";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import { describeError } from "../../lib/ui/errors";
 import { useLocalSignal, useResource } from "../../lib/hooks/useResource";
-import { CustomerHistory } from "../../components/CustomerHistory";
+import { CustomerHistory } from "../../components/orders/CustomerHistory";
 import type { Bid, DeliveryOrder, DeliveryStatus, DropoffDetails, GeoPoint, MerchantCatalog } from "../../holochain/types";
 import { POLL, isOrderSignal } from "../../lib/network/poll";
 import { offerable, offerRefusal, offerRules, type Commitment } from "../../lib/driving/addOns";
@@ -36,6 +35,7 @@ import { DriverSettingsCard } from "./DriverSettingsCard";
 import { VerificationCard } from "./VerificationCard";
 import { useTerms } from "../../store/network";
 import { useSentBids, type SentBid } from "../../store/sentBids";
+import { useAction } from "../../lib/hooks/useAction";
 
 const DROPOFF_PREFERENCE_LABEL: Record<DeliveryOrder["dropoff_preference"], MessageKey> = {
   LeaveAtDoor: "cart.drop.leaveAtDoor",
@@ -83,8 +83,8 @@ export function DriverDashboard() {
     if ("BidReleased" in signal) useSentBids.getState().forgetBid(bytesToHex(signal.BidReleased));
   });
   const [online, setOnline] = useState(false);
-  const [bidding, setBidding] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // One offer at a time, sent or taken back, named by its order.
+  const bidding = useAction();
   // Driver ratings only -- if this agent also runs a store, that store's
   // reviews live on the store, never here.
   const { data: rating } = useResource(`driver-rating:${driverHex}`, () => getRatingSummary({ Driver: driverKey }));
@@ -157,33 +157,18 @@ export function DriverDashboard() {
     setOnline(!online);
   }
 
-  async function placeBid(orderRef: Uint8Array, trip: { etaMinutes: number; toStoreMinutes: number }, feeCents: number) {
-    setBidding(bytesToHex(orderRef));
-    setError(null);
-    try {
-      await sendBid(driverHex, orderRef, trip, feeCents);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBidding(null);
-    }
-  }
+  const placeBid = (orderRef: Uint8Array, trip: { etaMinutes: number; toStoreMinutes: number }, feeCents: number) =>
+    bidding.run(() => sendBid(driverHex, orderRef, trip, feeCents), { as: bytesToHex(orderRef) });
 
   /// Takes back the offer this device sent on an order.
-  async function withdraw(orderRef: Uint8Array) {
+  function withdraw(orderRef: Uint8Array) {
     const orderHex = bytesToHex(orderRef);
     const offer = sentBids[`${driverHex}:${orderHex}`];
     if (!offer) return;
-    setBidding(orderHex);
-    setError(null);
-    try {
+    return bidding.run(async () => {
       await withdrawBid(hexToBytes(offer.bid));
       useSentBids.getState().forget(driverHex, orderHex);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBidding(null);
-    }
+    }, { as: orderHex });
   }
 
   // Order batching -- a client-side
@@ -292,7 +277,7 @@ export function DriverDashboard() {
               <motion.div key={bytesToHex(hash)} variants={fadeSlideUp} layout>
                 <BidCard
                   order={order}
-                  loading={bidding === bytesToHex(hash)}
+                  loading={bidding.doing === bytesToHex(hash)}
                   sent={sentBids[`${driverHex}:${bytesToHex(hash)}`]}
                   onBid={(trip, fee) => placeBid(hash, trip, fee)}
                   onWithdraw={() => withdraw(hash)}
@@ -313,7 +298,7 @@ export function DriverDashboard() {
         </p>
       )}
 
-      {error && <p className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>}
+      {bidding.error && <Notice className="mt-4">{bidding.error}</Notice>}
     </div>
   );
 }
@@ -345,9 +330,7 @@ function SuggestedRoute({ orders, location }: { orders: OrderRow[]; location: Ge
   );
   return (
     <Card className="p-4">
-      <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-        <Route size={13} /> {t("drive.route")}
-      </p>
+      <SectionLabel icon={<Route size={13} />} className="mb-2">{t("drive.route")}</SectionLabel>
       <ol className="flex flex-col gap-1.5">
         {stops.map((stop, i) => {
           const order = byHex.get(stop.id)!.order;
@@ -369,26 +352,17 @@ function SuggestedRoute({ orders, location }: { orders: OrderRow[]; location: Ge
 function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; location: { lat: number; lon: number }; onAdvanced: () => Promise<void> }) {
   const terms = useTerms();
   const t = useT();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
   const [dropping, setDropping] = useState(false);
   useLocationSharing(TRACKED_STATUSES.includes(row.order.status) ? bytesToHex(row.hash) : null);
   // A driver leaving an order the store has started cooking answers for the
   // food until another driver takes it on.
   const cooking = row.order.ready_by !== null;
 
-  async function run(step: () => Promise<unknown>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await step();
-      await onAdvanced();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const run = (step: () => Promise<unknown>) => action.run(async () => {
+    await step();
+    await onAdvanced();
+  });
 
   const drop = () =>
     run(async () => {
@@ -428,7 +402,7 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
         {row.order.status === "BidAccepted" && (
           <div className="flex flex-col gap-2">
             <p className="text-center text-xs text-ink-400">{t("drive.committing", { amount: formatCents(row.order.order_total) })}</p>
-            <Button variant="secondary" className="w-full" loading={busy} onClick={commit}>
+            <Button variant="secondary" className="w-full" loading={action.busy} onClick={commit}>
               {t("drive.commitNow")}
             </Button>
           </div>
@@ -443,14 +417,14 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
           {t("drive.cantMakeIt")}
         </button>
       )}
-      {error && <p className="mt-3 rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>}
+      {action.error && <Notice className="mt-3">{action.error}</Notice>}
       <Sheet
         open={dropping}
         onClose={() => setDropping(false)}
         title={t("drive.dropTitle")}
         subtitle={t("drive.dropSubtitle")}
         footer={
-          <Button variant="danger" loading={busy} onClick={drop} className="w-full">
+          <Button variant="danger" loading={action.busy} onClick={drop} className="w-full">
             {t("drive.dropIt")}
           </Button>
         }

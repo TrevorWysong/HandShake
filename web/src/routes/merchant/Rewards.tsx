@@ -4,20 +4,20 @@ import { Cake, Clock, Crown, Flame, Gift, Hourglass, Palette, Plus, Sparkles, Tr
 import clsx from "clsx";
 import { programOf, programStats, saveProgram } from "../../holochain/zomes/rewards";
 import { getCatalog } from "../../holochain/zomes/catalog";
-import { decodeEntry, hexToBytes, bytesToHex } from "../../holochain/decode";
+import { bytesEqual, bytesToHex, decodeEntry, hexToBytes } from "../../holochain/decode";
 import { useMerchantStores, useMyStores } from "../../store/merchantStores";
 import { useResource } from "../../lib/hooks/useResource";
-import { fetchMenu, type ItemRow } from "../../lib/menu/menu";
+import { fetchMenu, type ItemRow } from "../../lib/storefront/menu";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { fromMinorUnits, toMinorUnits, currencySymbol } from "../../lib/ui/format";
 import { ACCENT_NAMES, ACCENTS, describeHappyHour, starterProgram } from "../../lib/rewards/rewards";
-import { describeError } from "../../lib/ui/errors";
 import { RewardsCard } from "../../components/rewards/RewardsCard";
 import { HowYouEarn, RewardRail, RewardTile } from "../../components/rewards/RewardPieces";
-import { StoreSwitcher } from "../../components/StoreSwitcher";
-import { Button, Card, Field, Input, Select, Skeleton, Switch } from "../../components/ui";
+import { StoreSwitcher } from "../../components/store/StoreSwitcher";
+import { Button, Card, Field, Input, SectionLabel, Select, Skeleton, Switch } from "../../components/ui";
 import { MAX_HAPPY_HOURS, MAX_ITEM_BONUSES, MAX_REWARDS, MAX_TIERS, type MerchantCatalog, type PromoReward, type Reward, type RewardsProgram } from "../../holochain/types";
 import { useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 type Translate = ReturnType<typeof useT>;
 
@@ -73,9 +73,8 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
   // The program as edited -- `null` until changed, the saved one till then.
   const [edited, setDraft] = useState<RewardsProgram | null>(null);
   const [previewPoints, setPreviewPoints] = useState(240);
-  const [saving, setSaving] = useState(false);
+  const action = useAction();
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const draft = edited ?? (data ? (data.view?.program ?? starterProgram(catalogRef, data.store.business_name)) : null);
 
@@ -97,19 +96,13 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
   const dirty = JSON.stringify(draft) !== JSON.stringify(data.view?.program ?? null);
   const previewTier = draft.tiers.filter((tier) => previewPoints >= tier.threshold).length;
 
-  async function save() {
+  function save() {
     if (!draft || problem) return;
-    setSaving(true);
-    setError(null);
-    try {
+    return action.run(async () => {
       await saveProgram(draft);
       await reload();
       setSaved(true);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
+    });
   }
 
   return (
@@ -200,7 +193,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
       </Section>
 
       <Section icon={Flame} title={t("rewardsAdmin.boosts")} hint={t("rewardsAdmin.boostsHint")}>
-        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">{t("rewardsAdmin.itemBoosts")}</p>
+        <SectionLabel className="mb-2">{t("rewardsAdmin.itemBoosts")}</SectionLabel>
         <div className="flex flex-col gap-2">
           {draft.earn.item_bonuses.map((bonus, i) => (
             <Row key={i} onRemove={() => update((p) => ({ ...p, earn: { ...p.earn, item_bonuses: p.earn.item_bonuses.filter((_, j) => j !== i) } }))}>
@@ -213,7 +206,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
           <AddButton onClick={() => update((p) => ({ ...p, earn: { ...p.earn, item_bonuses: [...p.earn.item_bonuses, { item_ref: unusedItem(menu, p.earn.item_bonuses.map((b) => b.item_ref)), percent: 200 }] } }))}>{t("rewardsAdmin.addItemBoost")}</AddButton>
         )}
 
-        <p className="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-ink-400">{t("rewardsAdmin.happyHours")}</p>
+        <SectionLabel className="mb-2 mt-5">{t("rewardsAdmin.happyHours")}</SectionLabel>
         <div className="flex flex-col gap-3">
           {draft.earn.happy_hours.map((hour, i) => (
             <div key={i} className="rounded-2xl bg-ink-50 p-3 dark:bg-ink-800/60">
@@ -330,13 +323,13 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
       <div className="fixed inset-x-0 bottom-20 z-30 px-4">
         <div className="mx-auto max-w-lg rounded-2xl bg-white/90 p-3 shadow-[var(--shadow-float)] backdrop-blur-md dark:bg-ink-900/90">
           <AnimatePresence>
-            {(problem || error) && (
+            {(problem || action.error) && (
               <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mb-2 text-xs font-semibold text-red-600">
-                {problem ?? error}
+                {problem ?? action.error}
               </motion.p>
             )}
           </AnimatePresence>
-          <Button className="w-full" onClick={save} loading={saving} disabled={!!problem || (!dirty && !!data.view)}>
+          <Button className="w-full" onClick={save} loading={action.busy} disabled={!!problem || (!dirty && !!data.view)}>
             {saved && !dirty ? t("rewardsAdmin.saved") : data.view ? t("rewardsAdmin.save") : t("rewardsAdmin.launch")}
           </Button>
         </div>
@@ -354,7 +347,7 @@ const minutes = (value: string) => {
 const withBonus = (p: RewardsProgram, i: number, bonus: RewardsProgram["earn"]["item_bonuses"][number]) => ({ ...p, earn: { ...p.earn, item_bonuses: p.earn.item_bonuses.map((b, j) => (j === i ? bonus : b)) } });
 const withHour = (p: RewardsProgram, i: number, hour: RewardsProgram["earn"]["happy_hours"][number]) => ({ ...p, earn: { ...p.earn, happy_hours: p.earn.happy_hours.map((h, j) => (j === i ? hour : h)) } });
 const withTier = (p: RewardsProgram, i: number, tier: RewardsProgram["tiers"][number]) => ({ ...p, tiers: p.tiers.map((x, j) => (j === i ? tier : x)) });
-const unusedItem = (menu: ItemRow[], used: Uint8Array[]) => (menu.find((m) => !used.some((u) => bytesToHex(u) === bytesToHex(m.hash))) ?? menu[0]).hash;
+const unusedItem = (menu: ItemRow[], used: Uint8Array[]) => (menu.find((m) => !used.some((u) => bytesEqual(u, m.hash))) ?? menu[0]).hash;
 
 function Section({ icon: Icon, title, hint, children }: { icon: typeof Sparkles; title: string; hint?: string; children: React.ReactNode }) {
   return (

@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Bell } from "lucide-react";
-import { Card, Switch } from "./ui";
-import { unlockChime } from "../lib/ui/chime";
-import { usePreferences } from "../store/preferences";
-import { canWakeWhileClosed, startWakingWhileClosed, stopWakingWhileClosed, wakesWhileClosed } from "../lib/network/push";
-import { describeError } from "../lib/ui/errors";
-import { useT } from "../i18n";
+import { Card, SectionLabel, Switch } from "../ui";
+import { unlockChime } from "../../lib/ui/chime";
+import { usePreferences } from "../../store/preferences";
+import { canWakeWhileClosed, startWakingWhileClosed, stopWakingWhileClosed, wakesWhileClosed } from "../../lib/network/push";
+import { useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 const supported = typeof Notification !== "undefined";
 
@@ -19,22 +19,17 @@ export function NotificationSettings({ runsStore }: { runsStore: boolean }) {
   const [permission, setPermission] = useState(() => (supported ? Notification.permission : "denied"));
 
   const [wakes, setWakes] = useState(wakesWhileClosed);
-  const [wakeError, setWakeError] = useState<string | null>(null);
-  const [switching, setSwitching] = useState(false);
+  const switching = useAction();
 
-  async function toggleWakes(on: boolean) {
-    setSwitching(true);
-    setWakeError(null);
+  // Whatever happened, the switch shows how it's set now.
+  const toggleWakes = (on: boolean) => switching.run(async () => {
     try {
       if (on) await startWakingWhileClosed();
       else await stopWakingWhileClosed();
-    } catch (err) {
-      setWakeError(describeError(err));
     } finally {
       setWakes(wakesWhileClosed());
-      setSwitching(false);
     }
-  }
+  });
 
   async function toggleNotifications(on: boolean) {
     if (!on) return setNotifications(false);
@@ -45,9 +40,7 @@ export function NotificationSettings({ runsStore }: { runsStore: boolean }) {
 
   return (
     <Card className="mb-4 flex flex-col gap-3 p-4">
-      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-        <Bell size={12} /> {t("notifications.title")}
-      </p>
+      <SectionLabel icon={<Bell size={12} />}>{t("notifications.title")}</SectionLabel>
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("notifications.orders")}</p>
@@ -61,9 +54,9 @@ export function NotificationSettings({ runsStore }: { runsStore: boolean }) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("notifications.closed")}</p>
-            <p className={wakeError ? "text-xs text-red-600 dark:text-red-400" : "text-xs text-ink-400"}>{wakeError ?? t("notifications.closedDetail")}</p>
+            <p className={switching.error ? "text-xs text-red-600 dark:text-red-400" : "text-xs text-ink-400"}>{switching.error ?? t("notifications.closedDetail")}</p>
           </div>
-          <Switch checked={wakes} onChange={toggleWakes} disabled={switching} label={t("notifications.closedLabel")} />
+          <Switch checked={wakes} onChange={toggleWakes} disabled={switching.busy} label={t("notifications.closedLabel")} />
         </div>
       )}
       {runsStore && (

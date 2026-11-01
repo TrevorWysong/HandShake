@@ -1,0 +1,12 @@
+// Editing a recovery plan: each change replaces one part of it.
+import type { AgentPubKey, PlanView } from "../../holochain/types";
+
+/// A plan with one part replaced, the rest as it was.
+export function planWith(plan: PlanView | null, change: { phrase_key?: AgentPubKey | null; guardians?: AgentPubKey[]; threshold?: number }) {
+  const guardians = change.guardians ?? plan?.guardians ?? [];
+  return {
+    phrase_key: change.phrase_key === undefined ? (plan?.phrase_key ?? null) : change.phrase_key,
+    guardians,
+    threshold: guardians.length === 0 ? 0 : Math.min(change.threshold ?? plan?.threshold ?? 1, guardians.length),
+  };
+}

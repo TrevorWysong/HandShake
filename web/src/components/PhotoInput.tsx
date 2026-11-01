@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import clsx from "clsx";
 import { fileToResizedDataUri } from "../lib/ui/image";
-import { describeError } from "../lib/ui/errors";
 import { useT } from "../i18n";
+import { useAction } from "../lib/hooks/useAction";
 
 interface Props {
   value: string;
@@ -15,20 +15,13 @@ interface Props {
 export function PhotoInput({ value, onChange, shape = "circle", className }: Props) {
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
-  async function handleFile(file: File | undefined) {
+  function handleFile(file: File | undefined) {
     if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
+    return action.run(async () => {
       onChange(await fileToResizedDataUri(file));
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   const isBanner = shape === "banner";
@@ -61,19 +54,19 @@ export function PhotoInput({ value, onChange, shape = "circle", className }: Pro
         ) : (
           <Camera size={22} className="text-ink-400" />
         )}
-        {busy && (
+        {action.busy && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
             <Loader2 size={20} className="animate-spin text-white" />
           </div>
         )}
-        {!busy && value && (
+        {!action.busy && value && (
           <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-sm transition group-hover:bg-black/75">
             <Camera size={11} /> {t("photo.change")}
           </span>
         )}
       </button>
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
-      {error && <p className="mt-1 text-[11px] text-red-600">{error}</p>}
+      {action.error && <p className="mt-1 text-[11px] text-red-600">{action.error}</p>}
     </div>
   );
 }

@@ -2,8 +2,8 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { base64ToBytes, bytesToBase64 } from "../lib/util/base64";
 import type { ActionHash, OrderItem, SelectionInput } from "../holochain/types";
-import { bytesToHex } from "../holochain/decode";
-import { selectionsKey } from "../lib/menu/choices";
+import { bytesEqual, bytesToHex } from "../holochain/decode";
+import { selectionsKey } from "../lib/storefront/choices";
 
 export interface CartLine {
   itemRef: ActionHash;
@@ -113,7 +113,7 @@ export const useCart = create<CartState>()(
 
       redeem: (catalogRef, merchant, merchantName, reward, line) => {
         const state = get();
-        const sameCatalog = state.catalogRef && bytesToHex(state.catalogRef) === bytesToHex(catalogRef);
+        const sameCatalog = state.catalogRef && bytesEqual(state.catalogRef, catalogRef);
         const kept = (sameCatalog ? state.lines : []).filter((l) => l.rewardId == null);
         set({ catalogRef, merchant, merchantName, reward, promoHex: null, lines: line ? [...kept, { ...line, rewardId: reward.id }] : kept });
       },
@@ -125,7 +125,7 @@ export const useCart = create<CartState>()(
         // Switching restaurants clears the cart -- same rule every real
         // delivery app enforces, since one order can only reference one
         // catalog_ref/merchant on the backend.
-        const sameCatalog = state.catalogRef && bytesToHex(state.catalogRef) === bytesToHex(catalogRef);
+        const sameCatalog = state.catalogRef && bytesEqual(state.catalogRef, catalogRef);
         set({ catalogRef, merchant, merchantName, lines: merged(sameCatalog ? state.lines : [], line), ...(sameCatalog ? {} : { reward: null }) });
       },
 

@@ -2,17 +2,18 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, MapPin, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useSession } from "../store/session";
-import { saveAddress, deleteSavedAddress, listMyAddresses, updateSavedAddress } from "../holochain/zomes/profiles";
-import { bytesToHex } from "../holochain/decode";
-import { reverseGeocode } from "../lib/places/geocoding";
+import { useSession } from "../../store/session";
+import { saveAddress, deleteSavedAddress, listMyAddresses, updateSavedAddress } from "../../holochain/zomes/profiles";
+import { bytesToHex } from "../../holochain/decode";
+import { reverseGeocode } from "../../lib/places/geocoding";
 import { AddressSearch } from "./AddressSearch";
-import { Button, Input } from "./ui";
-import type { AddressComponents } from "../lib/places/geocoding";
-import type { GeoPoint, AddressDetails } from "../holochain/types";
-import { MAX_LABEL_CHARS } from "../holochain/types";
-import { useT } from "../i18n";
-import { useResource } from "../lib/hooks/useResource";
+import { Button, Input, SectionLabel } from "../ui";
+import type { AddressComponents } from "../../lib/places/geocoding";
+import type { GeoPoint, AddressDetails } from "../../holochain/types";
+import { MAX_LABEL_CHARS } from "../../holochain/types";
+import { useT } from "../../i18n";
+import { useResource } from "../../lib/hooks/useResource";
+import { useAction } from "../../lib/hooks/useAction";
 
 interface AddressRow {
   hash: Uint8Array;
@@ -70,8 +71,8 @@ export function AddressSwitcher({
   const [addresses, setAddresses] = useState<AddressRow[] | null>(null);
   const [picked, setPicked] = useState<{ point: GeoPoint; components: AddressComponents } | null>(null);
   const [newLabel, setNewLabel] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [deletingHex, setDeletingHex] = useState<string | null>(null);
+  // Saving, renaming or deleting an address -- one at a time.
+  const action = useAction();
   /// The saved address being renamed, and its new name.
   const [renaming, setRenaming] = useState<{ hex: string; label: string } | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -111,47 +112,30 @@ export function AddressSwitcher({
     setNewLabel("");
   }
 
-  async function saveCurrentPick() {
+  function saveCurrentPick() {
     if (!picked || !newLabel.trim()) return;
-    setSaving(true);
-    try {
-      await saveAddress({
-        label: newLabel.trim(),
-        location: picked.point,
-        street: picked.components.street,
-        city: picked.components.city,
-        state: picked.components.state,
-        zip: picked.components.zip,
-      });
+    const [{ point, components }, label] = [picked, newLabel.trim()];
+    return action.run(async () => {
+      await saveAddress({ label, location: point, street: components.street, city: components.city, state: components.state, zip: components.zip });
       loadAddresses();
-      pickAddress(picked.point);
-    } finally {
-      setSaving(false);
-    }
+      pickAddress(point);
+    }, { as: "save" });
   }
 
-  async function renameAddress(row: AddressRow) {
+  function renameAddress(row: AddressRow) {
     const label = renaming?.label.trim();
     if (!label) return;
-    setSaving(true);
-    try {
+    return action.run(async () => {
       await updateSavedAddress(row.hash, { ...row.address, label });
       setRenaming(null);
       loadAddresses();
-    } finally {
-      setSaving(false);
-    }
+    }, { as: "rename" });
   }
 
-  async function removeAddress(row: AddressRow) {
-    setDeletingHex(bytesToHex(row.hash));
-    try {
-      await deleteSavedAddress(row.hash);
-      loadAddresses();
-    } finally {
-      setDeletingHex(null);
-    }
-  }
+  const removeAddress = (row: AddressRow) => action.run(async () => {
+    await deleteSavedAddress(row.hash);
+    loadAddresses();
+  }, { as: `delete:${bytesToHex(row.hash)}` });
 
   // DoorDash shows just the street line in its collapsed address pill --
   // city/state/zip only shows up once you open the switcher. Falls back
@@ -216,7 +200,7 @@ export function AddressSwitcher({
                   {picked && (
                     <div className="mt-3 flex items-center gap-2 rounded-xl bg-ink-50 dark:bg-ink-800/50 p-3">
                       <Input maxLength={MAX_LABEL_CHARS} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={t("address.labelPlaceholder")} className="flex-1" />
-                      <Button loading={saving} disabled={!newLabel.trim()} onClick={saveCurrentPick} className="px-3 py-2.5 text-xs">
+                      <Button loading={action.doing === "save"} disabled={action.busy || !newLabel.trim()} onClick={saveCurrentPick} className="px-3 py-2.5 text-xs">
                         <Plus size={14} /> {t("common.save")}
                       </Button>
                     </div>
@@ -226,10 +210,10 @@ export function AddressSwitcher({
                       {t("address.useOnce")}
                     </button>
                   )}
-                  {validationError && <p className="mt-2 text-xs font-semibold text-red-500">{validationError}</p>}
+                  {(validationError ?? action.error) && <p className="mt-2 text-xs font-semibold text-red-500">{validationError ?? action.error}</p>}
 
                   <div className="mt-5">
-                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">{t("address.saved")}</p>
+                    <SectionLabel className="mb-2">{t("address.saved")}</SectionLabel>
                     {addresses === null && <p className="text-xs text-ink-400">{t("common.loading")}</p>}
                     {addresses?.length === 0 && <p className="text-xs text-ink-400">{t("address.noneSaved")}</p>}
                     <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800">
@@ -240,7 +224,7 @@ export function AddressSwitcher({
                           return (
                             <div key={hex} className="flex items-center gap-2 py-3">
                               <Input autoFocus maxLength={MAX_LABEL_CHARS} value={renaming.label} onChange={(e) => setRenaming({ hex, label: e.target.value })} className="flex-1" />
-                              <Button loading={saving} disabled={!renaming.label.trim()} onClick={() => renameAddress(row)} className="px-3 py-2.5 text-xs" aria-label={t("common.save")}>
+                              <Button loading={action.doing === "rename"} disabled={action.busy || !renaming.label.trim()} onClick={() => renameAddress(row)} className="px-3 py-2.5 text-xs" aria-label={t("common.save")}>
                                 <Check size={14} />
                               </Button>
                               <button onClick={() => setRenaming(null)} aria-label={t("common.cancel")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-800">
@@ -273,7 +257,7 @@ export function AddressSwitcher({
                             </button>
                             <button
                               onClick={() => removeAddress(row)}
-                              disabled={deletingHex === hex}
+                              disabled={action.busy}
                               className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-300 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
                             >
                               <Trash2 size={15} />

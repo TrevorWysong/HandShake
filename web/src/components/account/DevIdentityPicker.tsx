@@ -2,10 +2,10 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, UserRound } from "lucide-react";
 import { encodeHashToBase64 } from "@holochain/client";
-import { identityLabel } from "../lib/network/devNode";
-import { useResource } from "../lib/hooks/useResource";
-import { describeError } from "../lib/ui/errors";
-import { Spinner } from "./ui";
+import { identityLabel } from "../../lib/network/devNode";
+import { useResource } from "../../lib/hooks/useResource";
+import { describeError } from "../../lib/ui/errors";
+import { Spinner } from "../ui";
 
 /// Dev-only: sign in as any identity already on the node -- most usefully
 /// the people `npm run seed` creates (a merchant with two stores, a
@@ -28,7 +28,7 @@ export function DevIdentityPicker({
   // in dev builds -- see holochain/host.ts).
   const { data: identities, error } = useResource(open && adminUrl ? `node-identities:${adminUrl}` : null, async () => {
     if (!__DEV_HOST__) return [];
-    return (await import("../holochain/admin")).listNodeIdentities(adminUrl);
+    return (await import("../../holochain/admin")).listNodeIdentities(adminUrl);
   });
 
   return (

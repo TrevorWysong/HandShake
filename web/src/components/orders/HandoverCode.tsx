@@ -6,10 +6,10 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Lock, QrCode } from "lucide-react";
 import QRCode from "qrcode";
-import { bytesToHex } from "../holochain/decode";
-import type { ActionHash, PinSecret } from "../holochain/types";
-import { encodeHandoverCode } from "../lib/orders/handoverCode";
-import { t as translate, useT, type MessageKey } from "../i18n";
+import { bytesToHex } from "../../holochain/decode";
+import type { ActionHash, PinSecret } from "../../holochain/types";
+import { encodeHandoverCode } from "../../lib/orders/handoverCode";
+import { t as translate, useT, type MessageKey } from "../../i18n";
 
 const FOR = {
   customer: { title: "code.handover.title", note: "code.handover.note", reveal: "code.handover.reveal", scanNote: "code.handover.scanNote" },

@@ -6,7 +6,7 @@
 // tested on the same cases (web/test/choices.test.ts).
 import type { ActionHash, ChosenInput, MenuItem, ModifierGroup, SelectionInput } from "../../holochain/types";
 import { MAX_CHOICE_DEPTH, MAX_LINE_CHOICES } from "../../holochain/types";
-import { bytesToHex } from "../../holochain/decode";
+import { bytesEqual, bytesToHex } from "../../holochain/decode";
 import { t } from "../../i18n";
 
 /// A store's choice groups at their latest, by original action (hex).
@@ -25,7 +25,7 @@ export function linePrice(item: MenuItem, selections: SelectionInput[], groups: 
 }
 
 function priceSelections(refs: ActionHash[], selections: SelectionInput[], groups: Groups, depth: number, budget: { left: number }): Priced {
-  if (selections.length !== refs.length || selections.some((s, i) => bytesToHex(s.group) !== bytesToHex(refs[i]))) {
+  if (selections.length !== refs.length || selections.some((s, i) => !bytesEqual(s.group, refs[i]))) {
     return { ok: false, reason: t("choices.chooseEach") };
   }
   let total = 0;

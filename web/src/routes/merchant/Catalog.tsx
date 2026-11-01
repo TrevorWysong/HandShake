@@ -5,11 +5,11 @@ import { averageRating, getRatingSummary } from "../../holochain/zomes/reputatio
 import { decodeEntry, hexToBytes } from "../../holochain/decode";
 import { useMerchantStores, useMyStores } from "../../store/merchantStores";
 import { useResource } from "../../lib/hooks/useResource";
-import { fetchMenu } from "../../lib/menu/menu";
+import { fetchMenu } from "../../lib/storefront/menu";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { Skeleton } from "../../components/ui";
 import { StarRating } from "../../components/StarRating";
-import { StoreSwitcher } from "../../components/StoreSwitcher";
+import { StoreSwitcher } from "../../components/store/StoreSwitcher";
 import { NewStoreForm } from "./NewStore";
 import { InsightsCard } from "./catalog/InsightsCard";
 import { TaxCard, TaxReportCard } from "./catalog/TaxCard";

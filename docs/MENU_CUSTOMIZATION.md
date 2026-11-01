@@ -15,10 +15,10 @@ Built as designed below, with these decisions on the open questions:
 - **Reorder:** reprices choices at the store's current groups, and leaves out a line whose choices are no longer on offer.
 
 Where it lives:
-- `catalog_types::modifiers`: types and `line_price`, the one pricing rule. `web/src/lib/menu/choices.ts` mirrors it, with tests on the same cases.
+- `catalog_types::modifiers`: types and `line_price`, the one pricing rule. `web/src/lib/storefront/choices.ts` mirrors it, with tests on the same cases.
 - `catalog_integrity`: groups and items' group lists.
 - `dispatch_integrity::checks`: order lines.
-- Store screens: `routes/merchant/catalog/ChoicesSection.tsx`. Customer screens: `components/ItemSheet.tsx`.
+- Store screens: `routes/merchant/catalog/ChoicesSection.tsx`. Customer screens: `components/store/ItemSheet.tsx`.
 - Integration test: `tests/tryorama/src/menu-choices.test.ts`.
 
 Not built yet: per-item special instructions (the order-level kitchen note covers it), choice photos, and a separate "default option" setting.
