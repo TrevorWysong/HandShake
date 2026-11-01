@@ -181,9 +181,9 @@ async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartStoreInfo
   };
 }
 
-/// The best currently-eligible auto-apply promo for this cart, or `null`.
-function bestAutoApplyPromo(promoCodes: PromoRow[], lines: CartLine[], total: number, completedOrderCount: number): PromoRow | null {
-  const now = nowMicros();
+/// The best auto-apply promo eligible for this cart at `now` (microseconds),
+/// or `null`.
+function bestAutoApplyPromo(promoCodes: PromoRow[], lines: CartLine[], total: number, completedOrderCount: number, now: number): PromoRow | null {
   const eligible = promoCodes.filter(
     (p) =>
       p.promo.auto_apply &&
@@ -280,9 +280,12 @@ export function Cart() {
   const [autoPromoDismissed, setAutoPromoDismissed] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
   const cartTotal = cart.total();
+  // Re-chosen as the clock moves, too: a promo expiring while the cart is
+  // open stops applying then, not whenever something else changes.
+  const nowUs = now.getTime() * 1000;
   const autoPromo = useMemo(
-    () => (autoPromoDismissed ? null : bestAutoApplyPromo(promoCodes, cart.lines, cartTotal, completedOrderCount)),
-    [autoPromoDismissed, promoCodes, cart.lines, cartTotal, completedOrderCount],
+    () => (autoPromoDismissed ? null : bestAutoApplyPromo(promoCodes, cart.lines, cartTotal, completedOrderCount, nowUs)),
+    [autoPromoDismissed, promoCodes, cart.lines, cartTotal, completedOrderCount, nowUs],
   );
   // The store's rewards program: a reward chosen takes the place of any
   // promo (the network allows one discount an order).

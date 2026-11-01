@@ -77,7 +77,7 @@ export interface GeocodeResult {
   components: AddressComponents;
 }
 
-export async function searchAddress(query: string, signal: AbortSignal): Promise<GeocodeResult[]> {
+export async function searchAddress(query: string, signal?: AbortSignal): Promise<GeocodeResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
   const url = `${baseUrl()}/search?format=jsonv2&addressdetails=1&limit=5&q=${encodeURIComponent(trimmed)}`;

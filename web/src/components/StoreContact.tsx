@@ -81,7 +81,6 @@ function CopyRow({ icon, text }: { icon: ReactNode; text: string }) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
     } catch {
       // No clipboard here; the text is on screen to select.
     }
@@ -90,7 +89,15 @@ function CopyRow({ icon, text }: { icon: ReactNode; text: string }) {
     <button type="button" onClick={copy} className={rowClass}>
       <RowIcon>{icon}</RowIcon>
       <RowText primary={text} secondary={copied ? t("storeContact.copied") : t("storeContact.copy")} />
-      {copied ? <Check size={16} className="text-presence-600" /> : <Copy size={15} className="text-ink-300" />}
+      {copied ? (
+        // Shown for a moment, then back to "Tap to copy" -- the moment
+        // ends with the row, if it goes first.
+        <motion.span initial={{ scale: 0.6 }} animate={{ scale: [0.6, 1, 1] }} transition={{ duration: 1.5, times: [0, 0.15, 1] }} onAnimationComplete={() => setCopied(false)}>
+          <Check size={16} className="text-presence-600" />
+        </motion.span>
+      ) : (
+        <Copy size={15} className="text-ink-300" />
+      )}
     </button>
   );
 }

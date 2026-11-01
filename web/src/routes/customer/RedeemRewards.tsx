@@ -67,8 +67,6 @@ export function RedeemRewards() {
     if (!store) return;
     cart.redeem(catalogRef, store.owner, store.business_name, { id: reward.id, name: reward.name, cost: reward.cost }, rewardLine(reward, menu));
     setAdded(true);
-    // A moment to see it land, then the bag.
-    setTimeout(() => navigate("/customer/cart"), 900);
   };
 
   return (
@@ -197,7 +195,15 @@ export function RedeemRewards() {
               <RewardArt benefit={opening.benefit} menu={menu} accent={program.accent} />
               <AnimatePresence>
                 {added && (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 grid place-items-center bg-black/35 backdrop-blur-[1px]">
+                  // A moment to see it land, then the bag -- when the moment's
+                  // over, so closing the sheet first stays here.
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: [0, 1, 1] }}
+                    transition={{ duration: 0.9, times: [0, 0.25, 1] }}
+                    onAnimationComplete={() => navigate("/customer/cart")}
+                    className="absolute inset-0 grid place-items-center bg-black/35 backdrop-blur-[1px]"
+                  >
                     <motion.span initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", damping: 12, stiffness: 260 }} className="grid h-16 w-16 place-items-center rounded-full bg-white" style={{ color: colors.to }}>
                       <Check size={32} strokeWidth={3} />
                     </motion.span>

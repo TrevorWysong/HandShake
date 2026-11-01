@@ -67,9 +67,11 @@ export function nowMicros(): number {
   return Date.now() * 1000;
 }
 
-export function timeAgo(microseconds: number): string {
+/// How long before `now` a Holochain timestamp was: "just now", "5 min ago".
+/// Screens show it with `<TimeAgo>`, which keeps it current.
+export function timeAgo(microseconds: number, now: Date): string {
   const ms = microseconds / 1000;
-  const deltaS = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  const deltaS = Math.max(0, Math.round((now.getTime() - ms) / 1000));
   if (deltaS < 60) return t("time.justNow");
   const relative = new Intl.RelativeTimeFormat(appLocale(), { style: "narrow" });
   if (deltaS < 3600) return relative.format(-Math.round(deltaS / 60), "minute");

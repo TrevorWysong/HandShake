@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { MapPin, Search } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, MapPin, Search } from "lucide-react";
 import clsx from "clsx";
 import { Input, Spinner } from "./ui";
 import { searchAddress, reverseGeocode } from "../lib/places/geocoding";
@@ -8,7 +8,12 @@ import type { AddressComponents, GeocodeResult } from "../lib/places/geocoding";
 import { useT } from "../i18n";
 import { useResource } from "../lib/hooks/useResource";
 
-const DEBOUNCE_MS = 500;
+// A search runs when the person asks for one -- Enter, or the button --
+// never as they type: the geocoder's usage policy forbids search-as-you-type
+// (Nominatim's allows one request a second for the whole app), and each
+// search tells it roughly where someone is. It's a `useResource` keyed by
+// what was searched for, so a slow reply for an earlier search never
+// replaces a later one, and nothing lands after the box is gone.
 
 export function AddressSearch({
   value,
@@ -65,10 +70,11 @@ export function AddressSearch({
   /// What the person typed (or picked), once they have: until then the box
   /// shows `initialQuery`, or the address looked up for `value`.
   const [typed, setTyped] = useState<string | null>(initialQuery || null);
-  const [results, setResults] = useState<GeocodeResult[]>([]);
+  /// The search asked for -- `null` before one, and again once the person
+  /// types on from it. Numbered, so asking again (after a failure) searches
+  /// again.
+  const [searched, setSearched] = useState<{ text: string; attempt: number } | null>(null);
   const [open, setOpen] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState(false);
   const [manual, setManual] = useState(false);
   // Tracks whether `query` (what's visibly typed) actually corresponds to
   // `value` (what gets submitted) -- typing without ever picking a result
@@ -76,8 +82,6 @@ export function AddressSearch({
   // but silently: the box can show garbage text while the real location
   // underneath is still the old, valid one. Surfaced so that's not hidden.
   const [confirmed, setConfirmed] = useState(true);
-  const abortRef = useRef<AbortController | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // If we already have coordinates (editing an existing address) but no
   // label yet, look one up so the field doesn't just show blank next to a
@@ -90,32 +94,21 @@ export function AddressSearch({
   const lookUp = displayAfterSelect === "label" && !initialQuery && typed === null;
   const { data: lookedUp } = useResource(lookUp ? `reverse:${value.lat},${value.lon}` : null, () => reverseGeocode(value));
   const query = typed ?? lookedUp?.label ?? "";
+  const { data: results, error: searchError } = useResource(searched && `address-search:${searched.attempt}:${searched.text}`, () => searchAddress(searched!.text));
+  const searching = searched !== null && results === undefined && !searchError;
 
-  function handleInput(text: string) {
+  function type(text: string) {
     setTyped(text);
     setConfirmed(false);
-    setSearchError(false);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    abortRef.current?.abort();
-    if (!text.trim()) {
-      setResults([]);
-      setOpen(false);
-      return;
-    }
-    debounceRef.current = setTimeout(() => {
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setSearching(true);
-      searchAddress(text, controller.signal)
-        .then((rows) => {
-          setResults(rows);
-          setOpen(true);
-        })
-        .catch((err) => {
-          if (err?.name !== "AbortError") setSearchError(true);
-        })
-        .finally(() => setSearching(false));
-    }, DEBOUNCE_MS);
+    setSearched(null);
+    setOpen(false);
+  }
+
+  function search() {
+    const text = query.trim();
+    if (!text) return;
+    setSearched((prev) => ({ text, attempt: (prev?.attempt ?? 0) + 1 }));
+    setOpen(true);
   }
 
   function selectResult(result: GeocodeResult) {
@@ -123,8 +116,8 @@ export function AddressSearch({
     onSelectComponents?.(result.components);
     setTyped(displayAfterSelect === "street" ? result.components.street || result.label : result.label);
     setConfirmed(true);
+    setSearched(null);
     setOpen(false);
-    setResults([]);
   }
 
   return (
@@ -136,25 +129,41 @@ export function AddressSearch({
             <Search size={15} className="pointer-events-none absolute left-3.5 text-ink-400" />
             <Input
               value={query}
-              onChange={(e) => handleInput(e.target.value)}
-              onFocus={() => results.length > 0 && setOpen(true)}
-              onBlur={() => setTimeout(() => setOpen(false), 150)}
+              onChange={(e) => type(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                // A search, not the form around the box.
+                e.preventDefault();
+                search();
+              }}
+              onFocus={() => results && setOpen(true)}
+              // A result keeps the focus as it's pressed (below), so a blur
+              // is always leaving the box.
+              onBlur={() => setOpen(false)}
               placeholder={placeholder}
-              className="pl-9 pr-9"
+              enterKeyHint="search"
+              className="pl-9 pr-11"
             />
-            {searching && <Spinner className="pointer-events-none absolute right-3 h-4 w-4 text-ink-400" />}
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={search}
+              disabled={!query.trim() || searching}
+              aria-label={t("address.searchButton")}
+              className="absolute right-1.5 grid h-8 w-8 place-items-center rounded-lg text-handshake-600 transition-colors hover:bg-handshake-50 disabled:text-ink-300 disabled:hover:bg-transparent dark:hover:bg-handshake-900/30"
+            >
+              {searching ? <Spinner className="h-4 w-4" /> : <ArrowRight size={16} />}
+            </button>
           </div>
           {showLocationWarning && !confirmed && !open && query.trim() && (
             <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">{t("address.pickBelow")}</p>
           )}
-          {open && (
+          {open && searched !== null && !searching && (
             <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-xl border border-ink-200/70 dark:border-ink-700/70 bg-white dark:bg-ink-900 shadow-lg">
-              {results.length === 0 && !searching && (
-                <p className="px-3.5 py-2.5 text-xs text-ink-400">{searchError ? t("address.searchError") : t("address.noMatches")}</p>
-              )}
-              {results.map((result, i) => (
+              {(results ?? []).length === 0 && <p className="px-3.5 py-2.5 text-xs text-ink-400">{searchError ? t("address.searchError") : t("address.noMatches")}</p>}
+              {(results ?? []).map((result, i) => (
                 <button
-                  key={i}
+                  key={`${result.point.lat},${result.point.lon}:${result.label}`}
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => selectResult(result)}
