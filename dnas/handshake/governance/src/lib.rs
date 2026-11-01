@@ -169,7 +169,9 @@ pub struct HandShakeDnaProperties {
 pub struct Services {
     /// Map tiles: an `{z}/{x}/{y}` template (and `{s}` for subdomains).
     pub map_tiles_url: String,
-    /// The credit the tiles' licence requires (HTML).
+    /// The credit the tiles' licence requires: text, with `<a href>` links.
+    /// Apps keep only those -- the text and http(s) links -- and escape the
+    /// rest, since they show it as HTML.
     pub map_attribution: String,
     /// Address search: the base of a Nominatim-compatible API (`/search`,
     /// `/reverse`) -- one's own Nominatim, or Photon's compatible endpoint.

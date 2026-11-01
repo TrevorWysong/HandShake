@@ -78,15 +78,24 @@ await runScenario(async (scenario) => {
 
   // ===== Calling off order after order before the store answers =====
   await call(fresh, "dispatch")("cancel_pickup_order", raw);
-  for (let i = 0; i < 2; i++) {
-    const o = actionHash(await retryUntilOk(() => order(fresh)));
-    await call(fresh, "dispatch")("cancel_pickup_order", o);
-  }
+  // One kept out of the store's history, as a modified app hiding what it
+  // means to call off: the store still counts it, from its active queue.
+  const unlisted = actionHash(
+    await call(fresh, "dispatch")<HcRecord>("create_unlisted_pickup_order_for_testing", {
+      requester: fresh.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
+      lines: [{ item_ref: stew, priced_version: stew, quantity: 1, selections: [] }],
+      order_total: PRICE, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null, bag_claim_ref: null,
+      loyalty_proof: [], rewards: null, cancellation: null, ready_by: null, food_hold: null, sealed_customer_name: null,
+    }),
+  );
+  await call(fresh, "dispatch")("cancel_pickup_order", unlisted);
+  const o = actionHash(await retryUntilOk(() => order(fresh)));
+  await call(fresh, "dispatch")("cancel_pickup_order", o);
   const next = actionHash(await retryUntilOk(() => order(fresh)));
   await sync();
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: next }), /called off several orders/);
   await retryUntilOk(() => call(merchant, "dispatch")("decline_pickup_order", { order_original_action: next, reason: "TooManyCancellations" }));
-  console.log("[PASS] a customer who keeps calling off orders before the store answers has the next one declined");
+  console.log("[PASS] a customer who keeps calling off orders before the store answers has the next one declined, even those kept out of its history");
 
   // ===== And across every store, a daily allowance =====
   // Three called off so far; one more reaches the network's allowance here.
