@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Clock, Heart, MapPin, PackageOpen, Phone, Plus, ShoppingBag, Star } from "lucide-react";
+import { ArrowLeft, Clock, Heart, Info, PackageOpen, Plus, ShoppingBag, Star } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getCatalog, listGoodieBagsForCatalog, claimGoodieBag, storeSuccessor, type FulfillmentInput } from "../../holochain/zomes/catalog";
 import { averageRating, getRatingSummary, getReputationSummary, getReviewsFor, getItemRatingSummary, type ItemRatingSummary } from "../../holochain/zomes/reputation";
@@ -8,12 +8,13 @@ import { useResource } from "../../lib/hooks/useResource";
 import { decodeEntry, hexToBytes, bytesToHex } from "../../holochain/decode";
 import { useSession } from "../../store/session";
 import { useCart } from "../../store/cart";
-import { currencySymbol, formatCatalogAddress, formatCents, nowMicros, toMinorUnits } from "../../lib/ui/format";
+import { currencySymbol, formatCents, nowMicros, toMinorUnits } from "../../lib/ui/format";
 import { describeError } from "../../lib/ui/errors";
 import { Button, Chip, ChipRow, Input, Skeleton, StatNumber } from "../../components/ui";
 import { useTerms } from "../../store/network";
 import { useT } from "../../i18n";
 import { AddressSearch } from "../../components/AddressSearch";
+import { StoreContact } from "../../components/StoreContact";
 import { StarRating } from "../../components/StarRating";
 import { StoreRewardsStrip } from "./Rewards";
 import { StoreDeals } from "../../components/Deals";
@@ -221,16 +222,13 @@ function StorePage({ hash }: { hash: string }) {
           {record && record.late_count > 0 && <span className="font-semibold text-amber-600">{t("store.late", { count: record.late_count })}</span>}
           {record && record.check_in_refused_count > 0 && <span className="font-semibold text-amber-600">{t("store.reports", { count: record.check_in_refused_count })}</span>}
           {catalog.min_order_cents !== null && <span>{t("store.minimum", { amount: formatCents(catalog.min_order_cents) })}</span>}
-          {formatCatalogAddress(catalog) && (
-            <span className="flex items-center gap-1">
-              <MapPin size={12} /> {formatCatalogAddress(catalog)}
-            </span>
-          )}
-          {catalog.phone && (
-            <span className="flex items-center gap-1">
-              <Phone size={12} /> {catalog.phone}
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={() => document.getElementById("store-contact")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            className="flex items-center gap-1 font-semibold text-handshake-600 hover:text-handshake-700 dark:text-handshake-400"
+          >
+            <Info size={12} /> {t("storeContact.jump")}
+          </button>
         </div>
 
         {hash && <StoreRewardsStrip catalogHex={hash} />}
@@ -382,6 +380,10 @@ function StorePage({ hash }: { hash: string }) {
         ))}
 
         {items.length === 0 && <p className="mt-6 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-6 text-center text-sm text-ink-400">{t("store.noMenu")}</p>}
+
+        <motion.div variants={fadeSlideUp}>
+          <StoreContact catalog={catalog} />
+        </motion.div>
 
         <motion.div variants={fadeSlideUp}>
           <ReviewList className="mt-6" feedKey={`store:${hash}`} fetchPage={(before) => getReviewsFor({ Store: catalogHash }, before)} />

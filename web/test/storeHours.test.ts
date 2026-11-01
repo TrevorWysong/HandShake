@@ -66,8 +66,8 @@ test("a store's status is worded for the customer", () => {
 test("a week reads with matching days run together", () => {
   const weekdays = [1, 2, 3, 4, 5].map((day) => period(day, 8 * H, 22 * H));
   assert.deepEqual(plain(describeWeek([...weekdays, period(6, 18 * H, 2 * H)])), [
-    { days: "Mon–Fri", hours: "8:00 AM – 10:00 PM" },
-    { days: "Sat", hours: "6:00 PM – 2:00 AM" },
-    { days: "Sun", hours: "Closed" },
+    { days: "Mon–Fri", hours: "8:00 AM – 10:00 PM", weekdays: [1, 2, 3, 4, 5] },
+    { days: "Sat", hours: "6:00 PM – 2:00 AM", weekdays: [6] },
+    { days: "Sun", hours: "Closed", weekdays: [0] },
   ]);
 });

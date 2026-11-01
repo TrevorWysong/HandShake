@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, handOff, retryUntil, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, handOff, retryUntil, ST_PETE, testApp, retryingCaller, useTestCoordinators } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, driver] = await scenario.addPlayersWithApps([
@@ -131,6 +131,22 @@ await runScenario(async (scenario) => {
     prep_minutes: 25,
     max_delivery_radius_km: 8,
   });
+
+  // --- Contact details: an email and a website, only ever those ---
+  const storeDetails = { original_action: catalogRef, description: "Updated Cuban food", cuisine_type: "Cuban", banner_data_uri: "", phone: "555-0200", address_street: "123 Main St", address_city: "St. Petersburg", address_state: "FL", address_zip: "33710", weekly_hours: [], time_zone: "America/New_York", prep_minutes: 25, max_delivery_radius_km: 8 };
+  const withContact = decodeEntry<{ email: string; website: string }>(await catalogOf(customer)<HcRecord>("update_catalog_details", { ...storeDetails, email: "hola@caras.com", website: "https://caras.com/menu" }));
+  assert.equal(withContact.email, "hola@caras.com");
+  assert.equal(withContact.website, "https://caras.com/menu");
+  await assert.rejects(catalogOf(customer)("update_catalog_details", { ...storeDetails, email: "hola?cc=them@caras.com", website: "" }), /email address doesn't look right/);
+  for (const website of ["javascript:alert(1)", "caras.com", "https://good.com@evil.com", 'https://caras.com/"onclick="x']) {
+    await assert.rejects(catalogOf(customer)("update_catalog_details", { ...storeDetails, email: "", website }), /website address doesn't look right/, website);
+  }
+  // Past the app: a modified one writing the entry itself.
+  await useTestCoordinators(customer, ["catalog"]);
+  const latest = decodeEntry<Record<string, unknown>>(await catalogOf(customer)<HcRecord>("get_catalog", catalogRef));
+  await assert.rejects(catalogOf(customer)("update_raw_catalog_for_testing", { original_action: catalogRef, catalog: { ...latest, website: "javascript:alert(1)" } }), /website must be a web address/);
+  await assert.rejects(catalogOf(customer)("update_raw_catalog_for_testing", { original_action: catalogRef, catalog: { ...latest, email: "a?cc=b@c.com" } }), /email must be an address/);
+  console.log("[PASS] a store's email and website are an address and a web page, by validation too");
 
   // --- Non-owner cannot update catalog details or add menu items ---
   await assert.rejects(

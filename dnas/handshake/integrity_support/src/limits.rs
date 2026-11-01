@@ -17,6 +17,10 @@ pub const MAX_DESCRIPTION_CHARS: usize = 2_000;
 /// kitchen or drop-off note.
 pub const MAX_NOTE_CHARS: usize = 1_000;
 pub const MAX_PHONE_CHARS: usize = 30;
+/// An email address (RFC 5321's limit).
+pub const MAX_EMAIL_CHARS: usize = 254;
+/// A website's address.
+pub const MAX_WEBSITE_CHARS: usize = 200;
 pub const MAX_STREET_CHARS: usize = 200;
 /// A city or a state.
 pub const MAX_PLACE_CHARS: usize = 100;

@@ -64,16 +64,33 @@ await runScenario(async (scenario) => {
   await dispatchOf(customer)("accept_bid", { order_original_action: orderRef, bid_action: actionHash(bidRecord) });
   await dhtSync(all, customer.cells[0].cell_id[0]);
 
-  const forCustomer = await dispatchOf(customer)<{ counterpart: Uint8Array; role: string }>("live_counterpart", orderRef);
+  type Counterpart = { counterpart: Uint8Array; role: string; counterpart_role: string };
+  const forCustomer = await dispatchOf(customer)<Counterpart>("live_counterpart", orderRef);
   assert.deepEqual([...forCustomer.counterpart], [...driver.agentPubKey], "the customer's counterpart is the driver");
-  assert.equal(forCustomer.role, "Customer");
-  const forDriver = await dispatchOf(driver)<{ counterpart: Uint8Array; role: string }>("live_counterpart", orderRef);
+  assert.deepEqual([forCustomer.role, forCustomer.counterpart_role], ["Customer", "Driver"]);
+  const forDriver = await dispatchOf(driver)<Counterpart>("live_counterpart", orderRef);
   assert.deepEqual([...forDriver.counterpart], [...customer.agentPubKey], "the driver's counterpart is the customer");
-  assert.equal(forDriver.role, "Driver");
+  assert.deepEqual([forDriver.role, forDriver.counterpart_role], ["Driver", "Customer"]);
   console.log("[PASS] customer and driver each learn the other, and their side");
 
   await assert.rejects(dispatchOf(stranger)("live_counterpart", orderRef), /Only this order's customer and its driver can chat about it/, "someone not on the order has no counterpart on it");
   console.log("[PASS] someone not on the order has no counterpart on it");
+
+  // A pickup's customer and its store talk to each other -- and on a pickup
+  // nobody is a driver, so neither side's location is ever heard.
+  const shop = actionHash(await catalogOf(driver)<HcRecord>("publish_catalog", { business_name: "Dana's Deli", location: ST_PETE }));
+  const sandwich = actionHash(await catalogOf(driver)<HcRecord>("add_menu_item", { catalog_ref: shop, name: "Cubano", price_cents: 900, available: true }));
+  await dhtSync(all, customer.cells[0].cell_id[0]);
+  const pickupRef = actionHash(await dispatchOf(customer)<HcRecord>("request_pickup_order", { merchant: driver.agentPubKey, catalog_ref: shop, items: [{ item_ref: sandwich, quantity: 1 }], order_total: 900, promo_code_ref: null }));
+  await dhtSync(all, customer.cells[0].cell_id[0]);
+  const customerSide = await dispatchOf(customer)<Counterpart>("live_counterpart", pickupRef);
+  assert.deepEqual([...customerSide.counterpart], [...driver.agentPubKey], "the customer's counterpart is the store");
+  assert.deepEqual([customerSide.role, customerSide.counterpart_role], ["Customer", "Store"]);
+  const storeSide = await dispatchOf(driver)<Counterpart>("live_counterpart", pickupRef);
+  assert.deepEqual([...storeSide.counterpart], [...customer.agentPubKey], "the store's counterpart is the customer");
+  assert.deepEqual([storeSide.role, storeSide.counterpart_role], ["Store", "Customer"]);
+  await assert.rejects(dispatchOf(stranger)("live_counterpart", pickupRef), /Only this order's customer and its store can chat about it/);
+  console.log("[PASS] a pickup's customer and store learn each other, and nobody else is on it");
 
   // Each device granted direct signals as it started (prepare_device), so
   // both directions arrive, with the sender as the network saw it.

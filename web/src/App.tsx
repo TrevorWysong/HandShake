@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useSession } from "./store/session";
 import { HOST } from "./holochain/host";
@@ -33,58 +33,22 @@ import { MovedAway } from "./components/MovedAway";
 import { Departure } from "./components/Departure";
 import { useDeparture } from "./store/departure";
 
-/// Every fresh page load starts `status: "disconnected"`, regardless of
-/// whether a real identity is already provisioned on the conductor and
-/// sitting in localStorage -- without this, `RequireSession` below would
-/// bounce straight to the full onboarding screen on every browser refresh
-/// (or PWA relaunch), forcing a manual "Continue as your existing
-/// identity" click every single time. Attempting a silent reconnect once,
-/// before the route tree ever renders Onboarding, is what makes "closing
-/// and reopening the app" actually feel like a persistent session instead
-/// of a repeated login prompt. A failed/absent reconnect still falls
-/// through to the normal onboarding flow, unchanged.
-///
-/// Retries a few times with a short backoff: under load a reconnect can
-/// fail transiently (the conductor's "database is locked" contention clears
-/// within a second or two), and giving up at once would bounce a returning
-/// user to onboarding -- which reads as a lost account.
-const RECONNECT_RETRIES = 3;
-const RECONNECT_RETRY_DELAY_MS = 1200;
 
-/// Failures not worth retrying: a passkey ceremony (user-interactive --
-/// retrying re-prompts Touch ID back to back), and an identity the node no
-/// longer has (a dev reset wiped it).
-const FINAL_FAILURES = new Set(["PasskeyError", "IdentityGone"]);
 
 function SessionBootstrap({ children }: { children: React.ReactNode }) {
   const t = useT();
-  const { status, hasStoredIdentity, needsUnlock } = useSession();
-  // Whether there's nothing to reconnect as now (or it's waiting on a tap):
-  // decided once, so the reconnect below is all the effect does.
-  const [attempted, setAttempted] = useState(() => !(hasStoredIdentity() && status === "disconnected" && !needsUnlock()));
+  // Started before the first render (`resumeSession`, main.tsx): the
+  // remembered identity, reconnecting.
+  const resuming = useSession((s) => s.resuming);
   // A passkey-locked identity waits for a tap: a prompt on page load is
   // one Safari refuses or stalls on.
-  const [locked, setLocked] = useState(() => status === "disconnected" && hasStoredIdentity() && needsUnlock());
-
-  // Once, on load -- reading the session as it stands then.
-  useEffect(() => {
-    const { status, hasStoredIdentity, needsUnlock, reconnect } = useSession.getState();
-    if (!(hasStoredIdentity() && status === "disconnected" && !needsUnlock())) return;
-    void (async () => {
-      for (let i = 0; i < RECONNECT_RETRIES; i++) {
-        try {
-          await reconnect();
-          return;
-        } catch (err) {
-          if (err instanceof Error && FINAL_FAILURES.has(err.name)) return;
-          if (i < RECONNECT_RETRIES - 1) await new Promise((r) => setTimeout(r, RECONNECT_RETRY_DELAY_MS));
-        }
-      }
-    })().finally(() => setAttempted(true));
-  }, []);
+  const [locked, setLocked] = useState(() => {
+    const { status, hasStoredIdentity, needsUnlock } = useSession.getState();
+    return status === "disconnected" && hasStoredIdentity() && needsUnlock();
+  });
 
   if (locked) return <UnlockScreen onDone={() => setLocked(false)} />;
-  if (!attempted) {
+  if (resuming) {
     return (
       <div className="mesh-hero flex min-h-svh flex-col items-center justify-center gap-3 text-white">
         <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-handshake-600 font-black text-3xl shadow-xl">R</div>

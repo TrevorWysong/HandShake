@@ -87,6 +87,9 @@ interface SessionState {
   /// Whether there's an identity to reconnect as: always, in a launcher
   /// (it's the launcher's agent); in development, one this browser
   /// remembers.
+  /// Whether the app is reconnecting as the remembered identity, as it
+  /// starts (`resumeSession`).
+  resuming: boolean;
   hasStoredIdentity: () => boolean;
   /// Whether reconnecting asks for the device passkey -- which must wait
   /// for the person to tap, not fire on page load.
@@ -117,6 +120,29 @@ interface SessionState {
   signOut: () => void;
 }
 
+/// Every fresh page load starts `status: "disconnected"`, regardless of
+/// whether a real identity is already provisioned on the conductor and
+/// sitting in localStorage -- without this, `RequireSession` below would
+/// bounce straight to the full onboarding screen on every browser refresh
+/// (or PWA relaunch), forcing a manual "Continue as your existing
+/// identity" click every single time. Attempting a silent reconnect once,
+/// before the route tree ever renders Onboarding (`resumeSession`), is what makes "closing
+/// and reopening the app" actually feel like a persistent session instead
+/// of a repeated login prompt. A failed/absent reconnect still falls
+/// through to the normal onboarding flow, unchanged.
+///
+/// Retries a few times with a short backoff: under load a reconnect can
+/// fail transiently (the conductor's "database is locked" contention clears
+/// within a second or two), and giving up at once would bounce a returning
+/// user to onboarding -- which reads as a lost account.
+const RECONNECT_RETRIES = 3;
+const RECONNECT_RETRY_DELAY_MS = 1200;
+
+/// Failures not worth retrying: a passkey ceremony (user-interactive --
+/// retrying re-prompts Touch ID back to back), and an identity the node no
+/// longer has (a dev reset wiped it).
+const FINAL_FAILURES = new Set(["PasskeyError", "IdentityGone"]);
+
 export const useSession = create<SessionState>((set, get) => ({
   status: "disconnected",
   error: null,
@@ -126,6 +152,7 @@ export const useSession = create<SessionState>((set, get) => ({
   movedTo: null,
   movedToNewVersion: false,
   hasDeviceLock: false,
+  resuming: false,
   mode: "customer",
   location: loadStoredLocation() ?? DEFAULT_LOCATION,
 
@@ -255,3 +282,26 @@ export const useSession = create<SessionState>((set, get) => ({
     window.location.reload();
   },
 }));
+
+/// Reconnects as the identity this device remembers, once, as the app starts
+/// -- before the first render, so it runs once however the tree mounts.
+/// `resuming` holds while it tries; one behind a passkey waits for a tap
+/// instead (`needsUnlock`).
+export async function resumeSession(): Promise<void> {
+  const { status, hasStoredIdentity, needsUnlock, reconnect } = useSession.getState();
+  if (!(hasStoredIdentity() && status === "disconnected" && !needsUnlock())) return;
+  useSession.setState({ resuming: true });
+  try {
+    for (let i = 0; i < RECONNECT_RETRIES; i++) {
+      try {
+        await reconnect();
+        return;
+      } catch (err) {
+        if (err instanceof Error && FINAL_FAILURES.has(err.name)) return;
+        if (i < RECONNECT_RETRIES - 1) await new Promise((r) => setTimeout(r, RECONNECT_RETRY_DELAY_MS));
+      }
+    }
+  } finally {
+    useSession.setState({ resuming: false });
+  }
+}
