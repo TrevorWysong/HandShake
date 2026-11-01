@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { Globe, Mail, MapPin, Pencil, Phone } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { closeListing, detailsOf, isStoreListed, reopenListing, setAutoAcceptOrders, setBusy, setDeliverySubsidyPercent, setLeaveAtDoorLimit, setMinimumOrder, updateCatalogDetails, setStoreWait } from "../../../holochain/zomes/catalog";
 import { formatCatalogAddress, formatCents, formatDistance, toMinorUnits, fromMinorUnits, currencySymbol } from "../../../lib/ui/format";
@@ -11,7 +11,8 @@ import { Button, Card, Field, Input, Switch, Textarea } from "../../../component
 import { PhotoInput } from "../../../components/PhotoInput";
 import { SplitAddressFields } from "../../../components/SplitAddressFields";
 import type { MerchantCatalog } from "../../../holochain/types";
-import { MAX_DESCRIPTION_CHARS, MAX_LABEL_CHARS, MAX_PHONE_CHARS } from "../../../holochain/types";
+import { MAX_DESCRIPTION_CHARS, MAX_EMAIL_CHARS, MAX_LABEL_CHARS, MAX_PHONE_CHARS, MAX_WEBSITE_CHARS } from "../../../holochain/types";
+import { isStoreEmail, isStoreWebsite, normalizeWebsite, websiteLabel } from "../../../lib/menu/contact";
 import { useTerms } from "../../../store/network";
 
 /// The storefront's details: a read-only summary, or the editor.
@@ -43,14 +44,28 @@ export function StoreDetailsCard({ catalog, catalogRef, startEditing, onSaved }:
             <p>{catalog.description || t("storeSettings.noDescription")}</p>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-400">
               {catalog.cuisine_type && <span>{catalog.cuisine_type}</span>}
-              {formatCatalogAddress(catalog) && <span>{formatCatalogAddress(catalog)}</span>}
-              {catalog.phone && <span>{catalog.phone}</span>}
               <span>{t("storeSettings.deliversWithin", { distance: formatDistance(catalog.max_delivery_radius_km) })}</span>
+            </div>
+            <div className="mt-3 flex flex-col gap-1.5 text-xs text-ink-500 dark:text-ink-400">
+              {formatCatalogAddress(catalog) && <ContactLine icon={<MapPin size={13} />}>{formatCatalogAddress(catalog)}</ContactLine>}
+              {catalog.phone && <ContactLine icon={<Phone size={13} />}>{catalog.phone}</ContactLine>}
+              {catalog.email && <ContactLine icon={<Mail size={13} />}>{catalog.email}</ContactLine>}
+              {catalog.website && <ContactLine icon={<Globe size={13} />}>{websiteLabel(catalog.website)}</ContactLine>}
+              {!catalog.phone && !catalog.email && !catalog.website && <p className="text-ink-400">{t("storeSettings.noContact")}</p>}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </Card>
+  );
+}
+
+function ContactLine({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="shrink-0 text-ink-300">{icon}</span>
+      <span className="truncate">{children}</span>
+    </span>
   );
 }
 
@@ -62,6 +77,8 @@ function detailsDraftFrom(catalog: MerchantCatalog) {
     cuisine_type: catalog.cuisine_type,
     banner_data_uri: catalog.banner_data_uri,
     phone: catalog.phone,
+    email: catalog.email,
+    website: catalog.website,
     address_street: catalog.address_street,
     address_city: catalog.address_city,
     address_state: catalog.address_state,
@@ -76,12 +93,20 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
   const [draft, setDraft] = useState(() => detailsDraftFrom(catalog));
   const t = useT();
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const set = (patch: Partial<DetailsDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const email = draft.email.trim();
+  const website = normalizeWebsite(draft.website);
+  const emailOk = isStoreEmail(email);
+  const websiteOk = isStoreWebsite(website);
 
   async function save() {
     setSaving(true);
+    setError(null);
     try {
-      await onSave(draft);
+      await onSave({ ...draft, email, website });
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setSaving(false);
     }
@@ -105,15 +130,26 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
         address={{ street: draft.address_street, city: draft.address_city, state: draft.address_state, zip: draft.address_zip }}
         onAddressChange={(a) => set({ address_street: a.street, address_city: a.city, address_state: a.state, address_zip: a.zip })}
       />
+      <p className="mt-2 text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.contact")}</p>
+      <p className="-mt-1 text-xs text-ink-400">{t("storeSettings.contactDetail")}</p>
       <Field label={t("profile.phone")}>
-        <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => set({ phone: e.target.value })} type="tel" />
+        <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => set({ phone: e.target.value })} type="tel" autoComplete="tel" />
+      </Field>
+      <Field label={t("storeSettings.email")}>
+        <Input maxLength={MAX_EMAIL_CHARS} value={draft.email} onChange={(e) => set({ email: e.target.value })} type="email" inputMode="email" autoComplete="email" placeholder="hello@yourstore.com" aria-invalid={!emailOk} />
+        {!emailOk && <p className="mt-1 text-xs text-amber-600">{t("storeSettings.emailInvalid")}</p>}
+      </Field>
+      <Field label={t("storeSettings.website")}>
+        <Input maxLength={MAX_WEBSITE_CHARS} value={draft.website} onChange={(e) => set({ website: e.target.value })} type="url" inputMode="url" autoComplete="url" placeholder="yourstore.com" aria-invalid={!websiteOk} />
+        {!websiteOk && <p className="mt-1 text-xs text-amber-600">{t("storeSettings.websiteInvalid")}</p>}
       </Field>
       <Field label={t("storeSettings.radius")}>
         <Input type="number" min={0} step="any" value={draft.max_delivery_radius_km} onChange={(e) => set({ max_delivery_radius_km: Number(e.target.value) })} placeholder="8" />
       </Field>
-      <Button loading={saving} onClick={save} className="py-2 text-xs">
+      <Button loading={saving} disabled={!emailOk || !websiteOk} onClick={save} className="py-2 text-xs">
         {t("common.save")}
       </Button>
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 }

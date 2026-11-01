@@ -38,6 +38,14 @@ pub struct MerchantCatalog {
     pub banner_data_uri: String,
     #[serde(default)]
     pub phone: String,
+    /// Where customers can write to the store -- an address
+    /// (`handshake_integrity_support::contact::email_problem`), or empty.
+    #[serde(default)]
+    pub email: String,
+    /// The store's own website -- an `http(s)://` address
+    /// (`contact::website_problem`), or empty.
+    #[serde(default)]
+    pub website: String,
     /// Split into one field per address component (street/city/state/zip)
     /// rather than one flat string -- lets `publish_catalog`'s own address
     /// search (`AddressSearch`'s `onSelectComponents`) prefill every field

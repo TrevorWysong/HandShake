@@ -34,6 +34,8 @@ import { currentBeacon } from "../../lib/network/timeSource";
 import { ResponseCountdown } from "../../components/ResponseCountdown";
 import { Button, Card, Chip, ChipRow, EmptyState, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
 import { StatusBadge, PickupStatusBadge } from "../../components/OrderStatus";
+import { ChatPanel } from "../../components/ChatPanel";
+import { bytesEqual } from "../../holochain/decode";
 import { formatCents, formatClockTime, formatDeadline, formatEta, nowMicros, timeAgo } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import type { DeclineReason, Timestamp } from "../../holochain/types";
@@ -200,6 +202,9 @@ function ActiveQueue({ stores, storeLabel, scope }: ListProps) {
                 />
               ) : (
                 <ActiveActions row={row} busy={busyHex === row.hex} onAdvance={(action) => advance(row, action)} />
+              )}
+              {row.kind === "Pickup" && !bytesEqual(row.order.requester, row.order.merchant) && (
+                <ChatPanel orderRef={row.ref} title={t("merchantOrders.chat")} counterpart={t("chat.customer")} collapsible />
               )}
             </OrderCard>
           </motion.div>

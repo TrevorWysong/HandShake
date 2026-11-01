@@ -31,6 +31,10 @@ export interface CatalogDetails {
   cuisine_type?: string;
   banner_data_uri?: string;
   phone?: string;
+  /// An address customers can write to, or empty (`lib/menu/contact.ts`).
+  email?: string;
+  /// The store's own `http(s)://` website, or empty.
+  website?: string;
   address_street?: string;
   address_city?: string;
   address_state?: string;
@@ -52,6 +56,8 @@ const EMPTY_DETAILS: Required<CatalogDetails> = {
   cuisine_type: "",
   banner_data_uri: "",
   phone: "",
+  email: "",
+  website: "",
   address_street: "",
   address_city: "",
   address_state: "",
@@ -70,6 +76,8 @@ export function detailsOf(catalog: MerchantCatalog): Required<CatalogDetails> {
     cuisine_type: catalog.cuisine_type,
     banner_data_uri: catalog.banner_data_uri,
     phone: catalog.phone,
+    email: catalog.email,
+    website: catalog.website,
     address_street: catalog.address_street,
     address_city: catalog.address_city,
     address_state: catalog.address_state,

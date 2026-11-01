@@ -23,8 +23,8 @@ import { received } from "../../lib/orders/orderEntries";
 import { LateOrder } from "../../components/LateOrder";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { describeError } from "../../lib/ui/errors";
-import { useLiveSignal, useResource } from "../../lib/hooks/useResource";
-import type { Bid, DeliveryOrder, DeliveryStatus, GeoPoint, InHand, Leg, LocalSignal, MerchantCatalog, Profile, Review, WarrantSummary } from "../../holochain/types";
+import { useResource } from "../../lib/hooks/useResource";
+import type { Bid, DeliveryOrder, DeliveryStatus, InHand, Leg, LocalSignal, MerchantCatalog, Profile, Review, WarrantSummary } from "../../holochain/types";
 import { carryRefusal, customerRefusal, describeLoad } from "../../lib/driving/driverLoad";
 import { useTerms } from "../../store/network";
 import { POLL, isOrderSignal } from "../../lib/network/poll";
@@ -118,7 +118,6 @@ export function OrderDetail() {
   const [driverComment, setDriverComment] = useState("");
   const [itemsRated, setItemsRated] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
-  const [driverLocation, setDriverLocation] = useState<GeoPoint | null>(null);
   const [itemRatings, setItemRatings] = useState<Record<string, number>>({});
 
   // Each read below is keyed by exactly what it depends on, so it's fetched
@@ -239,14 +238,6 @@ export function OrderDetail() {
       setSubmittingReview(false);
     }
   }
-
-  // The driver's live position is pushed (signal-only, never stored), not
-  // read -- a genuine subscription, so it stays an effect.
-  useLiveSignal((signal) => {
-    if (hash && "LocationUpdate" in signal && bytesEqual(signal.LocationUpdate.order_ref, hexToBytes(hash))) {
-      setDriverLocation({ lat: signal.LocationUpdate.lat, lon: signal.LocationUpdate.lon });
-    }
-  });
 
   if (!order) {
     return (
@@ -569,14 +560,13 @@ export function OrderDetail() {
 
       {ACTIVE_DELIVERY_STATUSES.includes(order.status) && pickup && details?.dropoff && (
         <motion.div variants={fadeSlideUp} className="mt-4">
-          <LiveMap pickup={pickup} dropoff={details.dropoff.point} driver={driverLocation} />
-          {!driverLocation && <p className="mt-1 text-center text-xs text-ink-400">{t("order.waitingLocation")}</p>}
+          <LiveMap orderRef={orderRef} pickup={pickup} dropoff={details.dropoff.point} />
         </motion.div>
       )}
 
       {ACTIVE_DELIVERY_STATUSES.includes(order.status) && (
-        <motion.div variants={fadeSlideUp} className="mt-4">
-          <ChatPanel orderRef={orderRef} title={t("order.chat")} />
+        <motion.div variants={fadeSlideUp} className="mt-1">
+          <ChatPanel orderRef={orderRef} title={t("order.chat")} counterpart={t("chat.driver")} />
         </motion.div>
       )}
 

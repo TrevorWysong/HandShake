@@ -1,11 +1,9 @@
-import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { notificationFor } from "../lib/orders/notifications";
 import { playChime } from "../lib/ui/chime";
 import { useLiveSignal, useLocalSignal } from "../lib/hooks/useResource";
 import { usePreferences } from "../store/preferences";
-import { teachServiceWorker, wakeCustomer } from "../lib/network/push";
-import { useT } from "../i18n";
+import { wakeCustomer } from "../lib/network/push";
 import type { LocalSignal } from "../holochain/types";
 import type { LiveSignal } from "../holochain/live";
 
@@ -19,9 +17,6 @@ import type { LiveSignal } from "../holochain/live";
 export function Notifier() {
   const navigate = useNavigate();
   const { notifications, newOrderChime } = usePreferences();
-  const t = useT();
-  // What a wake shows while the app is closed, in this person's language.
-  useEffect(() => teachServiceWorker({ title: t("wake.title"), body: t("wake.body") }), [t]);
   const notify = (signal: LocalSignal | LiveSignal) => {
     // An order this store or driver changed: wake its customer's app too.
     if ("Wake" in signal) return wakeCustomer(signal.Wake);

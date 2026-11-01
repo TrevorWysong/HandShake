@@ -1,13 +1,14 @@
-// Chat and live driver location between an order's customer and its
-// driver -- sent app to app as Holochain direct signals, never stored and
-// never run through zome code (why: dispatch_coordinator::live).
+// Chat between an order's two active parties -- a delivery's customer and
+// driver, a pickup's customer and store -- and a driver's live location,
+// sent app to app as Holochain direct signals, never stored and never run
+// through zome code (why: dispatch_coordinator::live).
 //
 // The network vouches for who sent a direct signal (`from_agent`), and
 // nothing else: anyone can send this app any bytes. So each end asks its
 // node once who its counterpart on an order is (`live_counterpart`), and
 // checks every signal against that -- a chat line is passed on only from
-// the order's other party, a location only from its driver to its
-// customer. A signal that doesn't check out is dropped, quietly: screens
+// the order's other party, a location only from a delivery's driver to
+// its customer. A signal that doesn't check out is dropped, quietly: screens
 // poll, and chat was always best effort.
 import { decode, encode } from "@msgpack/msgpack";
 import type { DirectSignal } from "@holochain/client";
@@ -53,7 +54,8 @@ function counterpart(orderRef: ActionHash, maxAgeMs = COUNTERPART_FRESH_MS): Pro
 }
 
 /// Sends a chat line to the order's other party. Refused, with the
-/// network's reason, if the sender isn't on the order or it has no driver.
+/// network's reason, if the sender isn't on the order or a delivery has no
+/// driver yet.
 export async function sendChatMessage(orderRef: ActionHash, text: string): Promise<void> {
   const { counterpart: to } = await counterpart(orderRef);
   await sendDirectSignal([to], encode({ Chat: { order_ref: orderRef, text } } satisfies Wire));
@@ -94,7 +96,7 @@ function parse(bytes: Uint8Array): Wire | null {
 /// Whether `from` may say `wire`, by this node's reading of the order.
 async function allowed(wire: Wire, from: AgentPubKey): Promise<boolean> {
   const orderRef = "Chat" in wire ? wire.Chat.order_ref : wire.Location.order_ref;
-  const fits = (on: LiveCounterpart) => bytesEqual(on.counterpart, from) && ("Chat" in wire || on.role === "Customer");
+  const fits = (on: LiveCounterpart) => bytesEqual(on.counterpart, from) && ("Chat" in wire || (on.role === "Customer" && on.counterpart_role === "Driver"));
   try {
     if (fits(await counterpart(orderRef))) return true;
     // The driver may have changed since: look again, at most so often.

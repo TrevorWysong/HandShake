@@ -25,6 +25,7 @@ use hdi::prelude::*;
 
 pub mod beacon;
 pub mod chain;
+pub mod contact;
 pub mod limits;
 pub mod versions;
 mod sealed;

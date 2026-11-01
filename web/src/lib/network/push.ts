@@ -9,6 +9,7 @@
 // over its APNs or FCM token as `window.__HANDSHAKE_PUSH__`; in a browser it's
 // a Web Push subscription, through the service worker (src/sw.ts).
 import { useNetwork } from "../../store/network";
+import { t, useLocale } from "../../i18n";
 import { forget, readStoredJson, store } from "../util/storage";
 
 /// What a phone app's runtime provides: the platform's push token for this
@@ -135,12 +136,17 @@ export function wakeCustomer(token: string): void {
   void fetch(`${relay}/wake`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) }).catch(() => {});
 }
 
-/// What the service worker shows when a wake arrives, in this person's
-/// language: it has no way to read the order, so it says only that
-/// something changed.
-export function teachServiceWorker(words: { title: string; body: string }): void {
+/// Tells the service worker what to show when a wake arrives, in this
+/// person's language -- now, and again whenever they change it. It has no
+/// way to read the order, so it says only that something changed.
+export function teachServiceWorker(): void {
   if (!webPushSupported()) return;
-  void navigator.serviceWorker.ready.then((worker) => worker.active?.postMessage({ type: "wake-words", ...words })).catch(() => {});
+  const teach = () => {
+    const words = { title: t("wake.title"), body: t("wake.body") };
+    void navigator.serviceWorker.ready.then((worker) => worker.active?.postMessage({ type: "wake-words", ...words })).catch(() => {});
+  };
+  teach();
+  useLocale.subscribe((now, before) => now.locale !== before.locale && teach());
 }
 
 function bytesFromBase64Url(value: string): Uint8Array<ArrayBuffer> {

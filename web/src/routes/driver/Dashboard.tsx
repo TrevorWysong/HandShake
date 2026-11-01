@@ -462,9 +462,7 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
         {row.order.status === "DriverAtStore" && <StorePickup orderRef={row.hash} order={row.order} location={location} onDone={onAdvanced} />}
         {(row.order.status === "PickedUp" || row.order.status === "Disputed") && <HandoffStep orderRef={row.hash} order={row.order} location={location} onDone={onAdvanced} />}
       </div>
-      <div className="mt-4">
-        <ChatPanel orderRef={row.hash} title={t("drive.chat")} />
-      </div>
+      <ChatPanel orderRef={row.hash} title={t("drive.chat")} counterpart={t("chat.customer")} />
       {BEFORE_PICKUP.includes(row.order.status) && (
         <button onClick={() => setDropping(true)} className="mt-3 w-full text-center text-xs font-medium text-ink-400 hover:text-ink-600">
           {t("drive.cantMakeIt")}

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { animate, motion } from "framer-motion";
+import { useCallback } from "react";
+import { animate, motion, useMotionValue, useTransform } from "framer-motion";
 import { Crown, Sparkles } from "lucide-react";
 import clsx from "clsx";
 import type { RewardsProgram } from "../../holochain/types";
@@ -7,16 +7,25 @@ import { ACCENTS } from "../../lib/rewards/rewards";
 import { PendingChip } from "./PendingPoints";
 import { useT } from "../../i18n";
 
-/// A number that counts up to `value` when it changes.
+/// A number that counts up to `value` when it changes, from wherever it
+/// had got to. The count runs outside React (a motion value the span
+/// shows), started as the span mounts and again for each new value.
 export function CountUp({ value, className }: { value: number; className?: string }) {
-  const [shown, setShown] = useState(0);
-  useEffect(() => {
-    const controls = animate(shown, value, { duration: 0.9, ease: [0.22, 1, 0.36, 1], onUpdate: (v) => setShown(Math.round(v)) });
-    return () => controls.stop();
-    // Animates from wherever it is now; `shown` isn't a trigger.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-  return <span className={clsx("tabular-nums", className)}>{shown.toLocaleString()}</span>;
+  const count = useMotionValue(0);
+  const text = useTransform(count, (v) => Math.round(v).toLocaleString());
+  const countTo = useCallback(
+    (span: HTMLSpanElement | null) => {
+      if (!span) return;
+      const controls = animate(count, value, { duration: 0.9, ease: [0.22, 1, 0.36, 1] });
+      return () => controls.stop();
+    },
+    [count, value],
+  );
+  return (
+    <motion.span ref={countTo} className={clsx("tabular-nums", className)}>
+      {text}
+    </motion.span>
+  );
 }
 
 /// The rewards it shows on its track: the cheapest few the member could

@@ -1590,15 +1590,18 @@ export interface LineView {
 }
 
 /**
- * The other active party on an order, and which side the caller is on.
+ * The other active party on an order, and which side each is on.
  */
 export interface LiveCounterpart {
   counterpart: AgentPubKey;
   /**
-   * `Customer` or `Driver`: only the driver shares a location, and only
-   * the customer hears one.
+   * The caller's side: `Customer`, `Driver` or `Store`.
    */
   role: OrderRole;
+  /**
+   * The counterpart's side -- a location is heard only from a `Driver`.
+   */
+  counterpart_role: OrderRole;
 }
 
 /**
@@ -1625,6 +1628,11 @@ export const MAX_DESCRIPTION_CHARS = 2000;
  * Dietary tags a store's menu sums to.
  */
 export const MAX_DIETARY_TAGS = 32;
+
+/**
+ * An email address (RFC 5321's limit).
+ */
+export const MAX_EMAIL_CHARS = 254;
 
 export const MAX_EXPIRY_DAYS = 1095;
 
@@ -1820,6 +1828,11 @@ export const MAX_TIME_ZONE_CHARS = 64;
 export const MAX_VEHICLE_CHARS = 100;
 
 /**
+ * A website's address.
+ */
+export const MAX_WEBSITE_CHARS = 200;
+
+/**
  * The fewest and most days points last without an order.
  */
 export const MIN_EXPIRY_DAYS = 30;
@@ -1902,6 +1915,16 @@ export interface MerchantCatalog {
   cuisine_type: string;
   banner_data_uri: string;
   phone: string;
+  /**
+   * Where customers can write to the store -- an address
+   * (`handshake_integrity_support::contact::email_problem`), or empty.
+   */
+  email: string;
+  /**
+   * The store's own website -- an `http(s)://` address
+   * (`contact::website_problem`), or empty.
+   */
+  website: string;
   /**
    * Split into one field per address component (street/city/state/zip)
    * rather than one flat string -- lets `publish_catalog`'s own address

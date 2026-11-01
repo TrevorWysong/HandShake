@@ -100,20 +100,24 @@ export function storeStatus(catalog: Pick<MerchantCatalog, "is_open" | "weekly_h
 export const WEEK = [1, 2, 3, 4, 5, 6, 0] as const;
 
 /// A schedule as lines a person reads -- consecutive days with the same
-/// hours run together: "Mon–Fri" / "8:00 AM – 10:00 PM".
-export function describeWeek(schedule: OpeningPeriod[]): { days: string; hours: string }[] {
+/// hours run together: "Mon–Fri" / "8:00 AM – 10:00 PM" -- with the
+/// weekdays (0 = Sunday) each line covers.
+export function describeWeek(schedule: OpeningPeriod[]): { days: string; hours: string; weekdays: number[] }[] {
   const hoursOf = (day: number) =>
     schedule
       .filter((p) => p.weekday === day)
       .sort((a, b) => a.opens - b.opens)
       .map((p) => `${formatMinute(p.opens)} – ${formatMinute(p.closes)}`)
       .join(", ") || t("hours.closed");
-  const lines: { from: number; to: number; hours: string }[] = [];
+  const lines: { weekdays: number[]; hours: string }[] = [];
   for (const day of WEEK) {
     const hours = hoursOf(day);
     const last = lines[lines.length - 1];
-    if (last && last.hours === hours) last.to = day;
-    else lines.push({ from: day, to: day, hours });
+    if (last && last.hours === hours) last.weekdays.push(day);
+    else lines.push({ weekdays: [day], hours });
   }
-  return lines.map(({ from, to, hours }) => ({ days: from === to ? weekdayName(from, "short") : `${weekdayName(from, "short")}–${weekdayName(to, "short")}`, hours }));
+  return lines.map(({ weekdays, hours }) => {
+    const [from, to] = [weekdays[0], weekdays[weekdays.length - 1]];
+    return { days: from === to ? weekdayName(from, "short") : `${weekdayName(from, "short")}–${weekdayName(to, "short")}`, hours, weekdays };
+  });
 }

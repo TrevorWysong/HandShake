@@ -4,7 +4,7 @@
 
 use hdi::prelude::*;
 use handshake_integrity_support::limits::*;
-use handshake_integrity_support::{amount_problem, first_problem, image_problem, text_problem};
+use handshake_integrity_support::{amount_problem, contact, first_problem, image_problem, text_problem};
 use handshake_integrity_support::chain::wrote_since;
 use handshake_integrity_support::{classify, decode, invalid, require, Checked};
 
@@ -186,6 +186,8 @@ fn validate_catalog(catalog: &MerchantCatalog, author: &AgentPubKey) -> ExternRe
         text_problem("description", &catalog.description, MAX_DESCRIPTION_CHARS),
         text_problem("cuisine_type", &catalog.cuisine_type, MAX_LABEL_CHARS),
         text_problem("phone", &catalog.phone, MAX_PHONE_CHARS),
+        contact::email_problem(&catalog.email),
+        contact::website_problem(&catalog.website),
         text_problem("address_street", &catalog.address_street, MAX_STREET_CHARS),
         text_problem("address_city", &catalog.address_city, MAX_PLACE_CHARS),
         text_problem("address_state", &catalog.address_state, MAX_PLACE_CHARS),

@@ -21,6 +21,7 @@ import { OrderReceipt } from "../../components/OrderReceipt";
 import { OrderPointsBadge } from "../../components/rewards/PendingPoints";
 import { OrderSummary } from "../../components/OrderLines";
 import { OrderIssues } from "../../components/OrderIssues";
+import { ChatPanel } from "../../components/ChatPanel";
 import { MAX_DESCRIPTION_CHARS } from "../../holochain/types";
 import { useT } from "../../i18n";
 
@@ -167,6 +168,12 @@ export function PickupOrderDetail() {
           <PickupStatusTimeline status={order.status} cancellation={order.cancellation} />
         </Card>
       </motion.div>
+
+      {!selfOrder && order.status !== "PickedUp" && order.status !== "Cancelled" && (
+        <motion.div variants={fadeSlideUp}>
+          <ChatPanel orderRef={orderRef} title={t("pickup.chat")} counterpart={t("chat.store")} />
+        </motion.div>
+      )}
 
       {details?.kitchen_note && (
         <motion.div variants={fadeSlideUp}>

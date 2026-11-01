@@ -17,6 +17,7 @@ use hdi::hash_path::path::Path;
 use hdk::prelude::*;
 use handshake_coordinator_support::chain::{my_current_version, my_versions};
 use handshake_coordinator_support::{decode_or, guest, next_page_cursor, resolve_latest, resolve_latest_decoded, resolve_links_to_records_with_original, resolve_version, resolve_version_decoded, update_version, written};
+use handshake_integrity_support::contact::{email_problem, website_problem};
 use handshake_types::GeoPoint;
 
 fn geohash_anchor_path(geohash: &str) -> ExternResult<hdi::hash_path::path::TypedPath> {
@@ -45,6 +46,10 @@ pub struct PublishCatalogInput {
     pub banner_data_uri: String,
     #[serde(default)]
     pub phone: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub website: String,
     #[serde(default)]
     pub address_street: String,
     #[serde(default)]
@@ -111,10 +116,22 @@ pub fn list_my_catalogs(_: ()) -> ExternResult<Vec<CatalogView>> {
         .collect())
 }
 
+/// Refuses contact details validation would, saying how to fix them.
+fn ensure_contact(email: &str, website: &str) -> ExternResult<()> {
+    if email_problem(email).is_some() {
+        return Err(guest("That email address doesn't look right. It should look like name@example.com."));
+    }
+    if website_problem(website).is_some() {
+        return Err(guest("That website address doesn't look right. It should start with https://, like https://example.com."));
+    }
+    Ok(())
+}
+
 /// Publishes a new store. Deliberately no "you already have one" guard --
 /// an owner adds as many stores as they run (see `list_my_catalogs`).
 #[hdk_extern]
 pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
+    ensure_contact(&input.email, &input.website)?;
     let owner = agent_info()?.agent_initial_pubkey;
     let geohash = handshake_types::encode(input.location, CATALOG_GEOHASH_PRECISION);
     let catalog = MerchantCatalog {
@@ -127,6 +144,8 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
         cuisine_type: input.cuisine_type,
         banner_data_uri: input.banner_data_uri,
         phone: input.phone,
+        email: input.email,
+        website: input.website,
         address_street: input.address_street,
         address_city: input.address_city,
         address_state: input.address_state,
@@ -286,6 +305,10 @@ pub struct UpdateCatalogDetailsInput {
     pub cuisine_type: String,
     pub banner_data_uri: String,
     pub phone: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub website: String,
     pub address_street: String,
     pub address_city: String,
     pub address_state: String,
@@ -300,11 +323,14 @@ pub struct UpdateCatalogDetailsInput {
 
 #[hdk_extern]
 pub fn update_catalog_details(input: UpdateCatalogDetailsInput) -> ExternResult<Record> {
+    ensure_contact(&input.email, &input.website)?;
     let (current, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(input.original_action, "MerchantCatalog")?;
     catalog.description = input.description;
     catalog.cuisine_type = input.cuisine_type;
     catalog.banner_data_uri = input.banner_data_uri;
     catalog.phone = input.phone;
+    catalog.email = input.email;
+    catalog.website = input.website;
     catalog.address_street = input.address_street;
     catalog.address_city = input.address_city;
     catalog.address_state = input.address_state;
