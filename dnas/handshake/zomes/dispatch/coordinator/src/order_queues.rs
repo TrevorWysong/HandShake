@@ -229,11 +229,30 @@ pub fn get_active_orders_for_store(catalog_ref: ActionHash) -> ExternResult<Vec<
     active_orders(QueueOwner::Store(&catalog_ref))
 }
 
-/// A store's latest orders, newest first: one page of its own history --
-/// what it reads of its customers' recent behaviour (`acceptance`), with no
-/// need for them to be online.
-pub(crate) fn recent_store_orders(catalog_ref: &ActionHash) -> ExternResult<Vec<OrderEntry>> {
-    Ok(history_page(QueueOwner::Store(catalog_ref), None, Some(MAX_HISTORY_PAGE as u32))?.orders)
+/// Every order `customer` queued at the store since `since`, however busy
+/// the store -- what it reads of its customers' recent behaviour
+/// (`acceptance`), with no need for them to be online. Only an order's
+/// customer may queue it (`validate_queue_link_create`), so the read filters
+/// to their links before fetching any order. Both the store's active queue
+/// (with the links since retired, as a cancel retires them) and its history
+/// days are read: an order that skipped one still shows in the other, and
+/// one that skipped both never reached the store to flood it.
+pub(crate) fn orders_queued_by(catalog_ref: &ActionHash, customer: &AgentPubKey, since: Timestamp) -> ExternResult<Vec<ActionHash>> {
+    let store = QueueOwner::Store(catalog_ref);
+    let mut orders: Vec<ActionHash> = Vec::new();
+    let active = LinkQuery::try_new(store.active_base(), store.active_link_type())?.author(customer.clone()).after(since);
+    for (create, _) in get_links_details(active, GetStrategy::default())?.into_inner() {
+        if let ActionData::CreateLink(link) = &create.hashed.content.data {
+            orders.extend(link.target_address.clone().into_action_hash());
+        }
+    }
+    for day in history_day(since)..=history_day(sys_time()?) {
+        let query = LinkQuery::try_new(store.history_day(day)?, store.history_link_type())?.author(customer.clone()).after(since);
+        orders.extend(get_links(query, GetStrategy::default())?.into_iter().filter_map(|l| l.target.into_action_hash()));
+    }
+    orders.sort_unstable();
+    orders.dedup();
+    Ok(orders)
 }
 
 #[derive(Serialize, Deserialize, Debug)]

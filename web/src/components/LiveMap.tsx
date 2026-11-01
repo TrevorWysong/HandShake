@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { networkServices } from "../store/network";
+import { safeAttribution } from "../lib/places/attribution";
 import { t as translate } from "../i18n";
 import "leaflet/dist/leaflet.css";
 import { PresenceDot } from "./ui";
@@ -46,7 +47,7 @@ export function LiveMap({ pickup, dropoff, driver, className }: Props) {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, { zoomControl: false, attributionControl: true, scrollWheelZoom: false });
     const services = networkServices();
-    L.tileLayer(services.map_tiles_url, { maxZoom: 19, attribution: services.map_attribution }).addTo(map);
+    L.tileLayer(services.map_tiles_url, { maxZoom: 19, attribution: safeAttribution(services.map_attribution) }).addTo(map);
     L.marker([pickup.lat, pickup.lon], { icon: PICKUP_ICON }).addTo(map).bindPopup(translate("cart.pickup"));
     L.marker([dropoff.lat, dropoff.lon], { icon: DROPOFF_ICON }).addTo(map).bindPopup(translate("cart.dropoff"));
     // A themed, dashed connector rather than a bare pair of pins -- gives

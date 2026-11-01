@@ -58,17 +58,14 @@ const CANCEL_WINDOW_MICROS: i64 = 24 * 3_600_000_000;
 /// Whether `requester` has called off `MAX_EARLY_CANCELS` orders at
 /// `catalog_ref` lately without paying for them: before the store answered,
 /// or before they saw it start (the stale-branch race, which a modified app
-/// could otherwise play every time). Read from the store's own recent
-/// history, so it needs nothing from the customer.
+/// could otherwise play every time). Read from the store's own queues --
+/// every order the customer put there in the window, however many others
+/// the store took meanwhile -- so it needs nothing from the customer.
 pub(crate) fn serial_canceller(requester: &AgentPubKey, catalog_ref: &ActionHash) -> ExternResult<bool> {
-    let since = sys_time()?.as_micros() - CANCEL_WINDOW_MICROS;
+    let since = Timestamp::from_micros(sys_time()?.as_micros() - CANCEL_WINDOW_MICROS);
     let mut free = 0;
-    for entry in crate::order_queues::recent_store_orders(catalog_ref)? {
-        if entry.record.action().timestamp().as_micros() < since {
-            continue;
-        }
-        let theirs = decode_or::<DeliveryOrder>(&entry.record).map(|o| o.requester).or_else(|| decode_or::<PickupOrder>(&entry.record).map(|o| o.requester));
-        if theirs.as_ref() != Some(requester) || !crate::confirmations::cancelled_in_time(entry.original_action.clone())? {
+    for order in crate::order_queues::orders_queued_by(catalog_ref, requester, since)? {
+        if !crate::confirmations::cancelled_in_time(order)? {
             continue;
         }
         free += 1;

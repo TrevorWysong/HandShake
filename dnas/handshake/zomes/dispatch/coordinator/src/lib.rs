@@ -167,6 +167,20 @@ mod test_utils {
         written(action_hash)
     }
 
+    /// The same, queued only where the store works from (its active queue
+    /// and the customer's), left out of both histories -- a modified client
+    /// hiding the orders it means to call off from the store's record.
+    #[hdk_extern]
+    pub fn create_unlisted_pickup_order_for_testing(order: PickupOrder) -> ExternResult<Record> {
+        use dispatch_integrity::QueueOwner;
+        let (catalog_ref, requester) = (order.catalog_ref.clone(), order.requester.clone());
+        let action_hash = create_entry(&EntryTypes::PickupOrder(order))?;
+        for owner in [QueueOwner::Store(&catalog_ref), QueueOwner::Customer(&requester)] {
+            create_link(owner.active_base(), action_hash.clone(), owner.active_link_type(), ())?;
+        }
+        written(action_hash)
+    }
+
     #[derive(Serialize, Deserialize, Debug)]
     pub struct RawPickupUpdateInput {
         /// The version to update -- any, not just the current one: a

@@ -29,6 +29,7 @@ import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { REPO, DNA_PATH } from "./lib/devEnv.ts";
+import { attributionLosses } from "../src/lib/places/attribution.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -79,6 +80,14 @@ if (!Array.isArray(properties.issuers) || properties.issuers.some((key: unknown)
 // builder deliberately says otherwise.
 if (!properties.services) {
   console.warn("deploy/properties.json sets no `services`: apps will use OpenStreetMap's public tile and search servers, whose usage policies don't allow production traffic. Set your own (docs/DEPLOYMENT.md).");
+}
+// Apps show the map's credit as text and http(s) links only
+// (src/lib/places/attribution.ts); say what they'd leave out.
+if (properties.services) {
+  if (typeof properties.services.map_attribution !== "string") fail("services.map_attribution is the map's credit line: text, with <a href=\"https://...\"> links.");
+  const lost = attributionLosses(properties.services.map_attribution);
+  if (lost.tags.length) console.warn(`services.map_attribution: apps show only its text and http(s) links, so they'll leave out ${lost.tags.join(" ")}.`);
+  if (lost.cut) console.warn("services.map_attribution: apps show only its first 300 characters.");
 }
 if (properties.credit_limit_cents > 0 && process.env.HANDSHAKE_ALLOW_CREDIT !== "1") {
   fail("credit_limit_cents is above 0: drivers could post collateral on credit and walk away from it. Set it to 0, or build with HANDSHAKE_ALLOW_CREDIT=1 if you mean to extend credit.");
