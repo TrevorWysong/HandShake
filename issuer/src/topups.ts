@@ -26,7 +26,9 @@ export async function grantPayment(store: Store, ledger: IssuerLedger, payment: 
 /// account, gets no word -- the money still lands. Never fails the grant:
 /// reconciliation asks again.
 async function vouchForCard(store: Store, ledger: IssuerLedger, payment: CompletedPayment): Promise<void> {
-  if (!payment.card || !payment.cardVouches || !store.claimCard(payment.card, payment.agent)) return;
+  if (!payment.card) return;
+  store.recordPaymentCard(payment.payment, payment.card, !!payment.cardVouches);
+  if (!payment.cardVouches || !store.claimCard(payment.card, payment.agent)) return;
   await ledger.attestCard(agentKey(payment.agent)).catch(() => {});
 }
 

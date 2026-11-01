@@ -242,6 +242,11 @@ export interface BirthMonth {
 export interface BirthdayShare {
   catalog_ref: ActionHash;
   /**
+   * An order its author placed there (its original action): only a
+   * store's own customers tell it anything.
+   */
+  order: ActionHash;
+  /**
    * The month (1-12, one byte), sealed to the store's owner.
    */
   sealed_month: XSalsa20Poly1305EncryptedData;
@@ -295,6 +300,15 @@ export type Cancellation =
  * issuer keeps only a hash of it, to know it again.
  */
 export interface CardAttestation {
+  agent: AgentPubKey;
+}
+
+/**
+ * An issuer withdrawing its word on `agent`'s card: the payment that
+ * verified it was disputed, or found to be fraud. An issuer's latest word
+ * on an agent stands -- it can vouch again if the dispute goes its way.
+ */
+export interface CardRevocation {
   agent: AgentPubKey;
 }
 
@@ -987,18 +1001,6 @@ export interface GeoPoint {
 }
 
 /**
- * A grant from a store the caller hasn't ordered from.
- */
-export interface GiftOffer {
-  grant: ActionHash;
-  catalog_ref: ActionHash;
-  store_name: string;
-  points: number;
-  note: string;
-  at: Timestamp;
-}
-
-/**
  * A goodie bag: a quantity-limited, time-windowed, discounted mystery bag
  * of surplus food. Deliberately not itemized the
  * way a `MenuItem`-based order is -- the contents are the merchant's own
@@ -1035,13 +1037,17 @@ export interface GrantInput {
   catalog_ref: ActionHash;
   points: number;
   note: string;
+  /**
+   * An order of theirs at the store to cite -- by default, their latest
+   * one under its program.
+   */
+  order: ActionHash | null;
 }
 
 /**
  * What a `PointsGrant` says, sealed.
  */
 export interface GrantPayload {
-  catalog_ref: ActionHash;
   points: number;
   reason: GrantReason;
 }
@@ -2668,13 +2674,23 @@ export interface PlanView {
 
 /**
  * Points a store gives a member: a welcome back, a birthday, an apology.
- * Everything about it is sealed between the two (`GrantPayload`) -- only
- * whom it's to is public, so it reaches them. The store counts its own
- * grants when it works out a member's points; the member's app, opening
- * it, knows it's the store's (a sealed box names its sender).
+ * What it gives is sealed between the two (`GrantPayload`); whom it's to,
+ * from which store, and an order they placed there are public -- so only a
+ * store's own customers can be sent one, and nobody can fill a stranger's
+ * inbox with them. The store counts its own grants when it works out a
+ * member's points; the member's app, opening it, knows it's the store's
+ * (a sealed box names its sender).
  */
 export interface PointsGrant {
   to: AgentPubKey;
+  /**
+   * The store giving it, by its original action.
+   */
+  catalog_ref: ActionHash;
+  /**
+   * An order `to` placed there (its original action).
+   */
+  order: ActionHash;
   sealed: XSalsa20Poly1305EncryptedData;
 }
 

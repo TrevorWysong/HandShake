@@ -180,6 +180,17 @@ Follow-up review of the same day:
 | Order-and-cancel spam spread across many stores escaped each store's own limit | Low | A customer who calls off `max_daily_early_cancels` orders (10) before stores answered, anywhere, can't place another for a day -- checked on their own chain |
 | A workflow's third-party actions were referenced by movable tags, and `main`, tags and releases had no protection | Medium | Actions pinned to commits; only the owner can push to `main`, make or move tags, or publish; published releases are immutable; the release workflow writes only drafts, and its signing secrets need the owner's approval each run (`release` environment); outside pull requests run CI only once approved |
 
+Third review of the same day:
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| An issuer's word on a card couldn't be withdrawn: an account verified with a stolen card stayed verified after the chargeback | Medium | An issuer withdraws it when a payment is disputed (`CardRevocation`), and vouches again if it wins; its latest word stands |
+| Paying first with a stolen copy of someone's card claimed it, so its real owner could never verify | Low | A disputed payment frees its card for whoever really holds it |
+| Verification was lost when an account recovered or moved to a new key | Low | It's read through the account's keys (`lineage`), and the issuer carries it to the next network with the balance |
+| The desktop release installed Kangaroo's dependencies without holding to its lockfile, and ran a downloaded source unchecked | Medium | Kangaroo's files are checked against a reviewed hash before anything in them runs, and dependencies install from its lockfile exactly |
+| Anyone could write grants to anyone, and birthday shares under any store, storing spam at the network's expense | Low | A grant must cite an order its recipient placed at that store, by its owner; a birthday share, an order its author placed there. Gifts from stores someone has never ordered from are no longer possible |
+| A key with a very long day (a busy store's owner ordering as themselves) was refused every order by the network-wide cancel check | Low | Past its walk the network-wide check steps aside; each store's own limit still applies. A first-order or once-only code past its walk is still refused, since unchecked it would cost stores money |
+
 Cancelling is free until the customer's app has seen the store start, and the app says so by the cancel button. A store that starts cooking before the customer's app has heard back takes that risk itself. Its acceptance reaches the customer's app within seconds, by signal, and the app confirms by itself, so the window is small. Neither side's clock can settle which came first, so the customer's own chain decides.
 
 ## What remains
@@ -197,5 +208,6 @@ Cancelling is free until the customer's app has seen the store start, and the ap
 - **A store's own times are its word**: the ready time it starts and the check-in it records. A store dating its cooking early only brings its own late deadline nearer; a driver's due time always allows their own travel time from when the store confirmed them.
 - **Liveness rests on the store's app**: it confirms drivers, moves late ones on, records collect requests and ends orders no driver came for. A store that's offline stalls its own orders; a spiteful one can hold a driver's collateral it isn't owed (it gains nothing by it).
 - **An issuer's daily limit bounds a stolen key, but doesn't stop it.** Until the roster drops the key (a new DNA version), it can mint up to the limit each day. Keep issuer keys offline where possible, and the limit as low as the network's real top-ups allow.
-- **Card attestation trusts the issuer's processor** to fingerprint a card the same way every time. Someone with many real cards can still make many accounts; each costs a real card.
+- **Card attestation trusts the issuer's processor** to fingerprint a card the same way every time. Someone with many real credit or debit cards can still make many accounts; each costs a real card, and any of them disputed loses its word.
+- **Validation reads a customer's history by walking their whole chain** -- Holochain validation can't pick out one entry type -- so the checks that need it (a promo's limits, the daily cancel allowance) stop at a bound. A key past it can't use limited promos; the cancel allowance steps aside for it.
 - **Timestamps** still decide store response windows, scheduled orders and promo expiry. An author can backdate within their own chain's history. The store's acceptance check bounds the promo case.

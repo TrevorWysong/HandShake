@@ -153,25 +153,23 @@ await runScenario(async (scenario) => {
   await sync();
   console.log("[PASS] an order naming a reward its customer can't afford isn't accepted");
 
-  // ===== The store's grants: sealed, and only the store's count =====
+  // ===== The store's grants: sealed, to its own customers, and only its count =====
   await rewards(merchant)<ActionHash>("grant_points", { to: customer.agentPubKey, catalog_ref: store, points: 75, note: "Sorry about the wait" });
   await assert.rejects(rewards(stranger)("grant_points", { to: customer.agentPubKey, catalog_ref: store, points: 1000, note: "" }), /store's owner/);
-  // A stranger sealing a grant "from" the store: the customer's app knows who sealed it.
-  await rewards(stranger)("create_raw_points_grant_for_testing", { to: customer.agentPubKey, catalog_ref: store, points: 1000, note: "From Mo's, honest" });
+  // A stranger sealing a grant "from" the store, citing the customer's real order: refused.
+  await assert.rejects(rewards(stranger)("create_raw_points_grant_for_testing", { to: customer.agentPubKey, catalog_ref: store, order: firstRef, points: 1000, note: "From Mo's, honest" }), /only a store's owner/);
   await sync();
   const gifted = await retryUntil(() => card(), (c) => c.balance === 205, 30, 1000);
   assert.equal(gifted.history[0].note, "Sorry about the wait");
   await redeemable(customer.agentPubKey, 4).catch(() => assert.fail("the store counts its own grant: 205"));
-  console.log("[PASS] a store's grant counts on both sides; one sealed by anyone else counts on neither");
+  console.log("[PASS] a store's grant counts on both sides; nobody else can write one in its name");
 
-  // ===== A stranger's store can offer points; they're shown apart =====
+  // ===== A store can't send points to someone who's never ordered there =====
   await rewards(stranger)("save_program", { ...program, catalog_ref: elsewhere, name: "Free Points!", rewards: [], earn: { ...program.earn, item_bonuses: [] } });
-  await rewards(stranger)("grant_points", { to: customer.agentPubKey, catalog_ref: elsewhere, points: 500, note: "Claim your prize" });
-  await sync();
-  const offers = await retryUntil(() => rewards(customer)<{ store_name: string; points: number }[]>("gift_offers", null), (o) => o.length === 1);
-  assert.deepEqual([offers[0].store_name, offers[0].points], ["Elsewhere", 500]);
+  await assert.rejects(rewards(stranger)("grant_points", { to: customer.agentPubKey, catalog_ref: elsewhere, points: 500, note: "Claim your prize" }), /only to customers who've ordered here/);
+  await assert.rejects(rewards(stranger)("create_raw_points_grant_for_testing", { to: customer.agentPubKey, catalog_ref: elsewhere, order: firstRef, points: 500, note: "Claim your prize" }), /only to someone who's ordered there/, "nor by citing their order at another store");
   assert.equal((await rewards(customer)<unknown[]>("my_cards", null)).length, 1, "the wallet holds only stores they've ordered from");
-  console.log("[PASS] a store the customer never ordered from can only offer points");
+  console.log("[PASS] a store can give points only to its own customers -- nobody can fill a stranger's inbox");
 
   // ===== The store holds orders to its current program =====
   // (Another customer's orders: the network limits how fast one places them.)

@@ -68,6 +68,13 @@ function fakeLedger(requests: CashOutRequest[] = [], accounts: Accounts = { succ
     async attestCard(agent) {
       if (!attested.includes(agentId(agent))) attested.push(agentId(agent));
     },
+    async revokeCard(agent) {
+      const at = attested.indexOf(agentId(agent));
+      if (at >= 0) attested.splice(at, 1);
+    },
+    async cardVerified(agent) {
+      return attested.includes(agentId(agent));
+    },
     async issueGrant(to, amount, reference, inPlaceOf) {
       if (failNextGrant) {
         failNextGrant = false;
@@ -709,13 +716,17 @@ test("a disputed payment freezes its account -- nothing in, cash-outs held -- un
   const me = identity();
   const id = agentId(me.key);
   store.setPayoutAccount(id, "acct_ready");
-  const { ledger, decisions } = fakeLedger([request(1, 5000, me.key)]);
+  const { ledger, decisions, attested } = fakeLedger([request(1, 5000, me.key)]);
   const { rail, payments } = fakeRail({ ready: new Set(["acct_ready"]) });
   const service = running(store, ledger, rail);
   const event = (body: unknown) => service.post("/webhooks/stripe", JSON.stringify(body), { "stripe-signature": "good" });
   try {
-    await event({ kind: "paid", payment: { payment: "pi_d", agent: id, amount: 5000 } });
+    await event({ kind: "paid", payment: { payment: "pi_d", agent: id, amount: 5000, card: "fp_d", cardVouches: true } });
+    assert.deepEqual(attested, [id], "its card vouched for it");
     await event({ kind: "disputed", payment: "pi_d", amount: 5000 });
+    assert.deepEqual(attested, [], "a disputed payment's card vouches no more");
+    assert.equal(store.claimCard("fp_d", "someone-else"), true, "and the card is free for its real owner");
+    store.releasePaymentCard("pi_d", "someone-else");
     const refused = await service.post("/topups", await service.signed(me, "TopUp", { amount: 1000 }));
     assert.equal(refused.status, 429);
     assert.match(((await refused.json()) as { error: string }).error, /disputed/);
@@ -723,6 +734,7 @@ test("a disputed payment freezes its account -- nothing in, cash-outs held -- un
     assert.equal(decisions.length, 0);
 
     await event({ kind: "dispute closed", payment: "pi_d", won: true });
+    assert.deepEqual(attested, [id], "won: the card was theirs, and vouches again");
     assert.equal(await sweep(payoutDeps(store, ledger, rail), Date.now() + 2 * DAY_MS), 1, "won: the held cash-out is paid when it's looked at again");
     assert.equal(payments.length, 1);
   } finally {
@@ -792,16 +804,18 @@ test("a balance moving to the next network is credited there once, only after th
   previousAccounts.migrations = [request, { migration: new Uint8Array(39).fill(2), account: other, successor: otherNew, network: elsewhere, requested_at: 1_002, close: new Uint8Array(39).fill(3) }];
   previousAccounts.standing.set(agentId(mover), { balance: 4500 });
   previousAccounts.standing.set(agentId(other), { balance: 999 });
-  const { ledger: previous } = fakeLedger([], previousAccounts);
+  const { ledger: previous, attested: attestedThere } = fakeLedger([], previousAccounts);
+  attestedThere.push(agentId(mover));
   const currentAccounts = noAccounts();
   currentAccounts.network = next;
-  const { ledger: current, grants } = fakeLedger([], currentAccounts);
+  const { ledger: current, grants, attested: attestedHere } = fakeLedger([], currentAccounts);
 
   assert.equal(await migrationSweep(store, previous, current), 0, "not before the old chain closes");
   request.close = new Uint8Array(39).fill(4);
   assert.equal(await migrationSweep(store, previous, current), 1);
   assert.deepEqual(grants, [{ to: agentId(moverNew), amount: 4500, reference: `migration:${agentId(mover)}` }], "what the closed ledger held, to the new key; a move to another network isn't this issuer's");
   assert.equal(await migrationSweep(store, previous, current), 0, "once");
+  assert.deepEqual(attestedHere, [agentId(moverNew)], "a card vouched for there is vouched for here, on the new key");
 });
 
 test("an arbiter's award comes out of the store's cash-outs, oldest first, until it's paid -- once", async () => {

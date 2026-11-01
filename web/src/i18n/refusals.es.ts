@@ -189,6 +189,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.you-can-cash-out-or-more-at": "Puedes retirar {min_cents} o más de una vez.",
   "refusal.you-can-cash-out-up-to-your": "Puedes retirar como máximo tu saldo.",
   "refusal.you-can-give-between-1-and-points": "Puedes dar entre 1 y {MAX_GRANT_POINTS} puntos a la vez.",
+  "refusal.you-can-give-points-only-to-customers": "Solo puedes dar puntos a clientes que hayan pedido aquí.",
   "refusal.you-can-report-a-problem-once-the": "Puedes informar de un problema cuando la tienda diga que está listo.",
   "refusal.you-can-report-a-problem-once-you": "Puedes informar de un problema cuando tengas tu pedido.",
   "refusal.you-can-say-an-order-never-arrived": "Puedes decir que un pedido nunca llegó una vez que tu repartidor lo haya recogido y hasta que se entregue.",

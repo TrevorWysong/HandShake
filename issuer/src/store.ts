@@ -33,6 +33,12 @@ export interface Recovery {
 /// before it signs, so more than a few is never needed.
 const MAX_NONCES_PER_AGENT = 5;
 
+/// How a card is kept: a hash of its processor's fingerprint, never the
+/// fingerprint itself.
+function cardHash(card: string): string {
+  return createHash("sha256").update(`handshake-card:${card}`).digest("hex");
+}
+
 export class Store {
   private db: DatabaseSync;
 
@@ -40,6 +46,7 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS card_owners (card TEXT PRIMARY KEY, agent TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS payment_cards (payment TEXT PRIMARY KEY, card TEXT NOT NULL, vouches INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS granted_payments (payment TEXT PRIMARY KEY, agent TEXT NOT NULL, amount INTEGER NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS payout_accounts (agent TEXT PRIMARY KEY, account TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS customers (agent TEXT PRIMARY KEY, customer TEXT NOT NULL);
@@ -79,10 +86,35 @@ export class Store {
   /// account -- and `false` if it was first another's. Only a hash of the
   /// fingerprint is kept.
   claimCard(card: string, agent: string): boolean {
-    const hash = createHash("sha256").update(`handshake-card:${card}`).digest("hex");
+    return this.claimCardHash(cardHash(card), agent);
+  }
+
+  private claimCardHash(hash: string, agent: string): boolean {
     this.db.prepare("INSERT OR IGNORE INTO card_owners (card, agent, at) VALUES (?, ?, ?)").run(hash, agent, Date.now());
     const row = this.db.prepare("SELECT agent FROM card_owners WHERE card = ?").get(hash) as { agent: string };
     return row.agent === agent;
+  }
+
+  /// Remembers which card paid `payment` (its hash), and whether that card
+  /// could vouch -- so a dispute on it can free the card again.
+  recordPaymentCard(payment: string, card: string, vouches: boolean): void {
+    this.db.prepare("INSERT OR IGNORE INTO payment_cards (payment, card, vouches) VALUES (?, ?, ?)").run(payment, cardHash(card), vouches ? 1 : 0);
+  }
+
+  /// A disputed payment's card, freed from `agent` if it was theirs -- so
+  /// the card's real owner, if it was stolen, can verify their own account
+  /// with it. Returns whether it was theirs.
+  releasePaymentCard(payment: string, agent: string): boolean {
+    const row = this.db.prepare("SELECT card FROM payment_cards WHERE payment = ?").get(payment) as { card: string } | undefined;
+    if (!row) return false;
+    return this.db.prepare("DELETE FROM card_owners WHERE card = ? AND agent = ?").run(row.card, agent).changes === 1;
+  }
+
+  /// A dispute won: the payment's card is `agent`'s again, if nobody has
+  /// claimed it since and it could vouch. Returns whether it is.
+  reclaimPaymentCard(payment: string, agent: string): boolean {
+    const row = this.db.prepare("SELECT card, vouches FROM payment_cards WHERE payment = ?").get(payment) as { card: string; vouches: number } | undefined;
+    return !!row && row.vouches === 1 && this.claimCardHash(row.card, agent);
   }
 
   /// Forgets a claim whose grant didn't go through, so a retry can grant it.

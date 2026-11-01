@@ -187,6 +187,7 @@ export const REFUSALS = {
   "refusal.you-can-cash-out-up-to-your": "You can cash out up to your balance.",
   "refusal.you-can-cash-out-or-more-at": "You can cash out {min_cents} or more at once.",
   "refusal.you-can-give-between-1-and-points": "You can give between 1 and {MAX_GRANT_POINTS} points at a time.",
+  "refusal.you-can-give-points-only-to-customers": "You can give points only to customers who've ordered here.",
   "refusal.you-can-report-a-problem-once-the": "You can report a problem once the store says it's ready.",
   "refusal.you-can-report-a-problem-once-you": "You can report a problem once you have your order.",
   "refusal.you-can-say-an-order-never-arrived": "You can say an order never arrived once your driver has picked it up, and until it's delivered.",

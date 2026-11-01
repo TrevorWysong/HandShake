@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Cake, ChevronRight, Gift, Minus, Plus, ShoppingBag, Sparkles } from "lucide-react";
 import clsx from "clsx";
-import { giftOffers, myBirthMonth, myCard, myCards, setBirthMonth } from "../../holochain/zomes/rewards";
+import { myBirthMonth, myCard, myCards, setBirthMonth } from "../../holochain/zomes/rewards";
 import { PendingList } from "../../components/rewards/PendingPoints";
 import { bytesToHex, hexToBytes } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
@@ -62,76 +62,12 @@ export function RewardsPage() {
       </div>
 
       <motion.div variants={fadeSlideUp} className="mt-6">
-        <GiftOffers />
       </motion.div>
 
       <motion.div variants={fadeSlideUp} className="mt-6">
         <BirthdayCard />
       </motion.div>
     </motion.div>
-  );
-}
-
-const IGNORED_GIFTS = "rewards.ignoredGifts";
-
-function ignoredGifts(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(IGNORED_GIFTS) ?? "[]") as string[];
-  } catch {
-    return [];
-  }
-}
-
-/// Points from stores the customer doesn't belong to: theirs to take or
-/// leave -- never added by themselves, so a stranger can't fill a wallet.
-function GiftOffers() {
-  const t = useT();
-  const navigate = useNavigate();
-  const { data: offers } = useResource("rewards:gift-offers", giftOffers);
-  const [hidden, setHidden] = useState<string[]>(ignoredGifts);
-  const shown = (offers ?? []).filter((o) => !hidden.includes(bytesToHex(o.grant)));
-  if (shown.length === 0) return null;
-  const hide = (hex: string) => {
-    const next = [...hidden, hex];
-    setHidden(next);
-    try {
-      localStorage.setItem(IGNORED_GIFTS, JSON.stringify(next.slice(-200)));
-    } catch {
-      // Hidden for this visit only.
-    }
-  };
-  return (
-    <div>
-      <h2 className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-ink-400">{t("rewards.gifts.title")}</h2>
-      <div className="flex flex-col gap-3">
-        {shown.map((offer) => {
-          const hex = bytesToHex(offer.grant);
-          return (
-            <Card key={hex} className="p-4">
-              <div className="flex items-start gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-handshake-400 to-handshake-600 text-white">
-                  <Gift size={18} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("rewards.gifts.offer", { points: offer.points.toLocaleString(), store: offer.store_name || t("rewards.gifts.aStore") })}</p>
-                  {/* A store they don't know: its words, kept short and plainly its own. */}
-                  {offer.note && <p className="mt-0.5 line-clamp-1 text-xs italic text-ink-400">“{offer.note.slice(0, 80)}”</p>}
-                  <p className="mt-1 text-[11px] text-ink-400">{t("rewards.gifts.unknown")}</p>
-                </div>
-              </div>
-              <div className="mt-3 flex gap-2">
-                <Button variant="ghost" className="flex-1 py-2" onClick={() => hide(hex)}>
-                  {t("rewards.gifts.ignore")}
-                </Button>
-                <Button className="flex-1 py-2" onClick={() => navigate(`/customer/merchant/${bytesToHex(offer.catalog_ref)}`)}>
-                  {t("rewards.gifts.accept")}
-                </Button>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 

@@ -238,11 +238,18 @@ export function handler(deps: Deps) {
       if (!agent) return { ignored: true };
       if (event.kind === "disputed") {
         // Card money that may not have been theirs: nothing more in or out
-        // until it's settled.
+        // until it's settled -- and no more word on their card, which goes
+        // back to whoever really holds it.
         store.openDispute(event.payment, agent, event.amount);
+        store.releasePaymentCard(event.payment, agent);
+        await ledger.revokeCard(agentKey(agent)).catch((err) => log(`withdrawing ${agent}'s card failed, retried on the next event: ${err}`));
         log(`dispute on ${event.payment} (${event.amount}): froze ${agent}`);
       } else {
         store.closeDispute(event.payment, event.won);
+        // Won: the card was theirs after all, if nobody has claimed it since.
+        if (event.won && store.reclaimPaymentCard(event.payment, agent)) {
+          await ledger.attestCard(agentKey(agent)).catch((err) => log(`vouching again for ${agent} failed: ${err}`));
+        }
         log(`dispute on ${event.payment} ${event.won ? "won: unfroze" : "lost: stays frozen for review:"} ${agent}`);
       }
       return { result: event.kind };

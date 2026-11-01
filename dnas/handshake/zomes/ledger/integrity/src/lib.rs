@@ -63,6 +63,7 @@ pub enum EntryTypes {
     RedemptionOutcome(RedemptionOutcome),
     IssuerProfile(IssuerProfile),
     CardAttestation(CardAttestation),
+    CardRevocation(CardRevocation),
 }
 
 #[hdk_link_types]
@@ -90,6 +91,8 @@ pub enum LinkTypes {
     GrantToDeposit,
     /// An issuer's attestation of an agent's card, base = the agent.
     AgentToCardAttestation,
+    /// An issuer withdrawing it, base = the agent.
+    AgentToCardRevocation,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -103,6 +106,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::RedemptionOutcome(outcome) => validate_outcome(&outcome, action.author(), action.timestamp(), action.prev_action()),
             EntryTypes::IssuerProfile(profile) => validate_issuer_profile(&profile, action.author()),
             EntryTypes::CardAttestation(attestation) => validate_card_attestation(&attestation, action.author()),
+            EntryTypes::CardRevocation(_) => require(handshake_governance::is_issuer(action.author())?, "only an issuer on the network's roster withdraws its word on a card"),
         },
         // An issuer keeps its profile current; nothing else changes.
         Checked::Update { entry: EntryTypes::IssuerProfile(profile), action } => {
@@ -237,6 +241,7 @@ fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target: &A
         },
         LinkTypes::RedemptionToOutcome => decode::<RedemptionOutcome>(&record).map(|o| o.redemption.into()),
         LinkTypes::AgentToCardAttestation => decode::<CardAttestation>(&record).map(|a| a.agent.into()),
+        LinkTypes::AgentToCardRevocation => decode::<CardRevocation>(&record).map(|r| r.agent.into()),
         LinkTypes::IssuerToProfile => decode::<IssuerProfile>(&record).filter(|_| matches!(record.action().data, ActionData::Create(_))).map(|_| author.clone().into()),
     };
     match expected {

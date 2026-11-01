@@ -191,10 +191,12 @@ pub struct Reward {
 }
 
 /// Points a store gives a member: a welcome back, a birthday, an apology.
-/// Everything about it is sealed between the two (`GrantPayload`) -- only
-/// whom it's to is public, so it reaches them. The store counts its own
-/// grants when it works out a member's points; the member's app, opening
-/// it, knows it's the store's (a sealed box names its sender).
+/// What it gives is sealed between the two (`GrantPayload`); whom it's to,
+/// from which store, and an order they placed there are public -- so only a
+/// store's own customers can be sent one, and nobody can fill a stranger's
+/// inbox with them. The store counts its own grants when it works out a
+/// member's points; the member's app, opening it, knows it's the store's
+/// (a sealed box names its sender).
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq, Eq)]
 // Decodes only from its own fields: a record of another type that
@@ -202,13 +204,16 @@ pub struct Reward {
 #[serde(deny_unknown_fields)]
 pub struct PointsGrant {
     pub to: AgentPubKey,
+    /// The store giving it, by its original action.
+    pub catalog_ref: ActionHash,
+    /// An order `to` placed there (its original action).
+    pub order: ActionHash,
     pub sealed: XSalsa20Poly1305EncryptedData,
 }
 
 /// What a `PointsGrant` says, sealed.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GrantPayload {
-    pub catalog_ref: ActionHash,
     pub points: u32,
     pub reason: GrantReason,
 }
@@ -242,6 +247,9 @@ pub struct BirthMonth {
 #[serde(deny_unknown_fields)]
 pub struct BirthdayShare {
     pub catalog_ref: ActionHash,
+    /// An order its author placed there (its original action): only a
+    /// store's own customers tell it anything.
+    pub order: ActionHash,
     /// The month (1-12, one byte), sealed to the store's owner.
     pub sealed_month: XSalsa20Poly1305EncryptedData,
 }
