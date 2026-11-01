@@ -2,7 +2,7 @@
 // validation enforces (rewards_types::points) -- the same cases run there.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { earnedFor, localTime, nextTier, orderPoints, tierOf } from "../src/lib/rewards/rewards.ts";
+import { earnedFor, localTime, nextTier, pointsEarned, tierOf } from "../src/lib/rewards/rewards.ts";
 import type { PointsState, RewardsProgram } from "../src/holochain/types.ts";
 
 const hash = (n: number) => new Uint8Array(39).fill(n);
@@ -36,9 +36,9 @@ test("local time follows the program's zone", () => {
 test("an order earns its food at the rate", () => {
   const p = program();
   const soup = { itemRef: hash(9), totalCents: 1000 };
-  assert.equal(orderPoints(p, [soup], 1000, june(12)), 100);
-  assert.equal(orderPoints(p, [soup], 999, june(12)), 99, "rounded down");
-  assert.equal(orderPoints({ ...p, earn: { ...p.earn, min_order_cents: 1500 } }, [soup], 1000, june(12)), 0, "below the minimum");
+  assert.equal(pointsEarned(p, [soup], 1000, june(12)), 100);
+  assert.equal(pointsEarned(p, [soup], 999, june(12)), 99, "rounded down");
+  assert.equal(pointsEarned({ ...p, earn: { ...p.earn, min_order_cents: 1500 } }, [soup], 1000, june(12)), 0, "below the minimum");
 });
 
 test("bonus items and happy hours earn faster", () => {
@@ -48,14 +48,14 @@ test("bonus items and happy hours earn faster", () => {
     { itemRef: hash(9), totalCents: 500 },
     { itemRef: hash(8), totalCents: 500 },
   ];
-  assert.equal(orderPoints(p, lines, 800, june(12)), 40 * 3 + 40);
+  assert.equal(pointsEarned(p, lines, 800, june(12)), 40 * 3 + 40);
   p.earn.happy_hours = [
     { days: 1, start_minute: 11 * 60, end_minute: 14 * 60, percent: 200 },
     { days: 1, start_minute: 12 * 60, end_minute: 13 * 60, percent: 150 },
   ];
-  assert.equal(orderPoints(p, lines, 800, june(12)), (40 * 3 + 40) * 2, "the best hour that applies");
-  assert.equal(orderPoints(p, lines, 800, june(14)), 40 * 3 + 40, "an hour ends where it says");
-  assert.equal(orderPoints(p, lines, 800, june(12) + 86_400_000_000), 40 * 3 + 40, "only on its days");
+  assert.equal(pointsEarned(p, lines, 800, june(12)), (40 * 3 + 40) * 2, "the best hour that applies");
+  assert.equal(pointsEarned(p, lines, 800, june(14)), 40 * 3 + 40, "an hour ends where it says");
+  assert.equal(pointsEarned(p, lines, 800, june(12) + 86_400_000_000), 40 * 3 + 40, "only on its days");
 });
 
 test("the welcome, the cap and the tier", () => {

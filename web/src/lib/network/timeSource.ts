@@ -25,7 +25,7 @@ export async function currentBeacon(): Promise<Beacon> {
       const response = await withTimeout(fetch(`${relay}/${time_chain_hash}/public/latest`), RELAY_TIMEOUT_MS, "time source timed out");
       if (!response.ok) continue;
       const published = (await response.json()) as PublishedRound;
-      const signature = hexToBytes(published.signature);
+      const signature = parseHex(published.signature);
       if (Number.isSafeInteger(published.round) && published.round > 0 && signature) return { round: published.round, signature };
     } catch {
       // The next relay.
@@ -34,7 +34,7 @@ export async function currentBeacon(): Promise<Beacon> {
   throw new Error("Couldn't reach the network's time source. Check your connection and try again.");
 }
 
-function hexToBytes(hex: string): Uint8Array | null {
+function parseHex(hex: string): Uint8Array | null {
   if (hex.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(hex)) return null;
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);

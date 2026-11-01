@@ -5,18 +5,18 @@
 // order, on networks with arbiters.
 import { useState } from "react";
 import { Gavel } from "lucide-react";
-import { answerAppeal, fileAppeal, getAppealForOrder } from "../holochain/zomes/dispatch";
-import { bytesToHex } from "../holochain/decode";
-import { MAX_NOTE_CHARS, type AppealView } from "../holochain/types";
-import { describeError } from "../lib/ui/errors";
-import { formatCents, fromMinorUnits, toMinorUnits, currencySymbol } from "../lib/ui/format";
-import { POLL } from "../lib/network/poll";
-import { useResource } from "../lib/hooks/useResource";
-import { useTerms } from "../store/network";
-import { Button, Input, Textarea } from "./ui";
-import { PhotoInput } from "./PhotoInput";
-import { Sheet } from "./Sheet";
-import { useT } from "../i18n";
+import { answerAppeal, fileAppeal, getAppealForOrder } from "../../holochain/zomes/dispatch";
+import { bytesToHex } from "../../holochain/decode";
+import { MAX_NOTE_CHARS, type AppealView } from "../../holochain/types";
+import { formatCents, fromMinorUnits, toMinorUnits, currencySymbol } from "../../lib/ui/format";
+import { POLL } from "../../lib/network/poll";
+import { useResource } from "../../lib/hooks/useResource";
+import { useTerms } from "../../store/network";
+import { Button, Input, Textarea } from "../ui";
+import { PhotoInput } from "../PhotoInput";
+import { Sheet } from "../Sheet";
+import { useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 export function OrderAppeal({ orderRef, role, kept }: { orderRef: Uint8Array; role: "customer" | "store"; kept: number }) {
   const terms = useTerms();
@@ -106,19 +106,11 @@ export function EvidenceSheet({
   const [amount, setAmount] = useState(maxAmount === null ? 0 : fromMinorUnits(maxAmount));
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
-  async function send() {
-    setBusy(true);
-    setError(null);
-    try {
-      await onSend({ amount: toMinorUnits(amount), note: note.trim(), photo });
-    } catch (err) {
-      setError(describeError(err));
-      setBusy(false);
-    }
-  }
+  const send = () => action.run(async () => {
+    await onSend({ amount: toMinorUnits(amount), note: note.trim(), photo });
+  }, { stayBusy: true });
 
   return (
     <Sheet
@@ -128,8 +120,8 @@ export function EvidenceSheet({
       subtitle={subtitle}
       footer={
         <>
-          {error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
-          <Button className="w-full" loading={busy} disabled={!note.trim() || (maxAmount !== null && (amount <= 0 || toMinorUnits(amount) > maxAmount))} onClick={send}>
+          {action.error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
+          <Button className="w-full" loading={action.busy} disabled={!note.trim() || (maxAmount !== null && (amount <= 0 || toMinorUnits(amount) > maxAmount))} onClick={send}>
             {t("appeal.send")}
           </Button>
         </>

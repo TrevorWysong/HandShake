@@ -6,12 +6,12 @@
 // account to a new phone has codes of its own (`lib/account/deviceMove.ts`).
 import { useState } from "react";
 import { Camera, Check, Copy, Keyboard } from "lucide-react";
-import type { AgentPubKey } from "../holochain/types";
-import { accountCode, keyFingerprint, readAccountCode } from "../lib/account/accountMove";
-import { QrSvg } from "./HandoverCode";
-import { QrScanner } from "./QrScanner";
-import { Button, Input } from "./ui";
-import { useT } from "../i18n";
+import type { AgentPubKey } from "../../holochain/types";
+import { accountCode, keyFingerprint, readAccountCode } from "../../lib/account/accountMove";
+import { QrSvg } from "../orders/HandoverCode";
+import { QrScanner } from "../QrScanner";
+import { Button, Input } from "../ui";
+import { useT } from "../../i18n";
 
 /// `code`, to scan or copy, with its fingerprint.
 export function CodeCard({ code, fingerprint, note }: { code: string; fingerprint: string; note: string }) {

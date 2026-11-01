@@ -6,19 +6,19 @@ import clsx from "clsx";
 import { primaryModeForRoles, useSession } from "../store/session";
 import { Button, Card, Field, Input, Spinner, Textarea } from "../components/ui";
 import { PhotoInput } from "../components/PhotoInput";
-import { SplitAddressFields } from "../components/SplitAddressFields";
+import { SplitAddressFields } from "../components/places/SplitAddressFields";
 import { EMPTY_SPLIT_ADDRESS } from "../lib/places/splitAddress";
 import { registerProviderCredential } from "../holochain/zomes/profiles";
 import type { GeoPoint, RoleTag } from "../holochain/types";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
-import { describeError } from "../lib/ui/errors";
 import { DEV_ADMIN_URL } from "../lib/network/devNode";
 import { HOST } from "../holochain/host";
-import { DevIdentityPicker } from "../components/DevIdentityPicker";
-import { RestoreAccount } from "../components/RestoreAccount";
+import { DevIdentityPicker } from "../components/account/DevIdentityPicker";
+import { RestoreAccount } from "../components/account/RestoreAccount";
 import { isRestoring, rememberedMethod } from "../lib/account/restoring";
 import { MAX_LABEL_CHARS, MAX_LICENSE_PLATE_CHARS, MAX_NOTE_CHARS, MAX_PHONE_CHARS, MAX_VEHICLE_CHARS } from "../holochain/types";
 import { useT, type MessageKey } from "../i18n";
+import { useAction } from "../lib/hooks/useAction";
 
 const ROLE_CARDS: { role: RoleTag; label: MessageKey; blurb: MessageKey; icon: typeof Bike }[] = [
   { role: "Requester", label: "onboarding.role.order", icon: ShoppingBag, blurb: "onboarding.role.orderBlurb" },
@@ -59,7 +59,8 @@ export function Onboarding() {
   // Part-way through bringing an account here: back to it. Receiving one
   // from another phone needs no key of this device's own, so no connection.
   const [step, setStep] = useState<Step>(() => (isRestoring() && (status === "connected" || rememberedMethod() === "device") ? "restore" : "roles"));
-  const [localError, setLocalError] = useState<string | null>(null);
+  // Joining, or carrying on as an identity: once, as the app moves on.
+  const action = useAction();
 
   const [vehicleType, setVehicleType] = useState(VEHICLE_TYPES[0]);
   const [vehicleDetail, setVehicleDetail] = useState("");
@@ -70,29 +71,18 @@ export function Onboarding() {
     setRoles((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
   }
 
-  async function handleReconnect() {
-    setLocalError(null);
-    try {
-      await reconnect();
-      navigate("/");
-    } catch (err) {
-      // Most likely causes in dev: the conductor isn't running, or its
-      // data was wiped (`npm run dev:reset`) since this identity was
-      // created -- in which case this identity is gone for good and the
-      // only way forward is to forget it.
-      setLocalError(describeError(err));
-    }
-  }
+  // Failing, most likely in dev: the conductor isn't running, or its data
+  // was wiped (`npm run dev:reset`) since this identity was created -- in
+  // which case it's gone for good and the only way forward is to forget it.
+  const handleReconnect = () => action.run(async () => {
+    await reconnect();
+    navigate("/");
+  }, { stayBusy: true });
 
-  async function handleAdopt(installedAppId: string, agentPubKey: Uint8Array) {
-    setLocalError(null);
-    try {
-      await adoptIdentity(adminUrl, installedAppId, agentPubKey);
-      navigate("/");
-    } catch (err) {
-      setLocalError(describeError(err));
-    }
-  }
+  const handleAdopt = (installedAppId: string, agentPubKey: Uint8Array) => action.run(async () => {
+    await adoptIdentity(adminUrl, installedAppId, agentPubKey);
+    navigate("/");
+  }, { stayBusy: true });
 
   function goToDetailsNext() {
     if (!displayName.trim()) return;
@@ -103,29 +93,23 @@ export function Onboarding() {
     }
   }
 
-  async function finish() {
-    setLocalError(null);
-    try {
-      await createIdentity(displayName.trim(), roles, location, { bio, avatarDataUri, phone }, adminUrl);
-      if (roles.includes("Provider")) {
-        await registerProviderCredential({
-          profile_action: useSession.getState().profileActionHash!,
-          vehicle_description: `${t(vehicleType)}${vehicleDetail ? " · " + vehicleDetail : ""}`,
-          capabilities: ["Food"],
-          verified: false,
-          license_plate: licensePlate,
-          photo_data_uri: vehiclePhoto,
-        });
-      }
-      const primary = primaryModeForRoles(roles);
-      navigate(`/${primary}`);
-    } catch (err) {
-      setLocalError(describeError(err));
+  const finish = () => action.run(async () => {
+    await createIdentity(displayName.trim(), roles, location, { bio, avatarDataUri, phone }, adminUrl);
+    if (roles.includes("Provider")) {
+      await registerProviderCredential({
+        profile_action: useSession.getState().profileActionHash!,
+        vehicle_description: `${t(vehicleType)}${vehicleDetail ? " · " + vehicleDetail : ""}`,
+        capabilities: ["Food"],
+        verified: false,
+        license_plate: licensePlate,
+        photo_data_uri: vehiclePhoto,
+      });
     }
-  }
+    navigate(`/${primaryModeForRoles(roles)}`);
+  }, { stayBusy: true });
 
-  const connecting = status === "connecting";
-  const showError = error || localError;
+  const connecting = status === "connecting" || action.busy;
+  const showError = error || action.error;
   const stepIndex = STEP_ORDER.indexOf(step);
   const totalSteps = roles.includes("Provider") ? 3 : 2;
 

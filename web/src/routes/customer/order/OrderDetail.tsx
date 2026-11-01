@@ -1,40 +1,36 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { AlertTriangle, Bike, CheckCircle2, DoorOpen, ShieldCheck, Zap } from "lucide-react";
+import { AlertTriangle, Bike, DoorOpen, ShieldCheck, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { cancelOrder, claimNeverArrived, getMyHandoverCode, getOrder, getOrderDecisions, getOrderPrivateDetails, listBidsForOrder, acceptBid, checkWarrants, getDriverLoad, confirmCollected, rankBids } from "../../holochain/zomes/dispatch";
-import { confirmDeliveryReceived, HandoffNotYetHere } from "../../lib/orders/handoffs";
-import { getCatalog } from "../../holochain/zomes/catalog";
-import { fetchOrderItemNames } from "../../lib/menu/menu";
-import { getHandoffEvidence, getLegsForOrder } from "../../holochain/zomes/attestation";
-import { averageRating, getMyReviewsForOrder, getRatingSummary, getReputationSummary, submitItemReview, submitReview } from "../../holochain/zomes/reputation";
-import { getProfileForAgent } from "../../holochain/zomes/profiles";
-import { decodeEntry, actionHash, bytesEqual, bytesToHex, hexToBytes, timestampOf } from "../../holochain/decode";
-import { myAgentPubKey } from "../../holochain/client";
-import { OrderStatusTimeline, StatusBadge } from "../../components/OrderStatus";
-import { Button, Card, Skeleton, StatNumber, Textarea } from "../../components/ui";
-import { StarRating, StarRatingInput } from "../../components/StarRating";
-import { ChatPanel } from "../../components/ChatPanel";
-import { NetworkReach } from "../../components/NetworkReach";
-import { LiveMap } from "../../components/LiveMap";
-import { WaitingForStore } from "../../components/WaitingForStore";
-import { formatCatalogAddress, formatCents, formatEta, shortAgentId, formatClockTime, formatDeadline } from "../../lib/ui/format";
-import { received } from "../../lib/orders/orderEntries";
-import { LateOrder } from "../../components/LateOrder";
-import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import { describeError } from "../../lib/ui/errors";
-import { useResource } from "../../lib/hooks/useResource";
-import type { Bid, DeliveryOrder, DeliveryStatus, InHand, Leg, LocalSignal, MerchantCatalog, Profile, Review, WarrantSummary } from "../../holochain/types";
-import { carryRefusal, customerRefusal, describeLoad } from "../../lib/driving/driverLoad";
-import { useTerms } from "../../store/network";
-import { POLL, isOrderSignal } from "../../lib/network/poll";
-import { OrderReceipt } from "../../components/OrderReceipt";
-import { OrderPointsBadge } from "../../components/rewards/PendingPoints";
-import { OrderSummary } from "../../components/OrderLines";
-import { OrderIssues } from "../../components/OrderIssues";
-import { useT, type MessageKey } from "../../i18n";
-import { HandoverCode } from "../../components/HandoverCode";
-import { MAX_DESCRIPTION_CHARS } from "../../holochain/types";
+import { cancelOrder, claimNeverArrived, getMyHandoverCode, getOrder, getOrderDecisions, getOrderPrivateDetails, listBidsForOrder, acceptBid, confirmCollected } from "../../../holochain/zomes/dispatch";
+import { confirmDeliveryReceived, HandoffNotYetHere } from "../../../lib/orders/handoffs";
+import { getCatalog } from "../../../holochain/zomes/catalog";
+import { fetchOrderItemNames } from "../../../lib/storefront/menu";
+import { getHandoffEvidence, getLegsForOrder } from "../../../holochain/zomes/attestation";
+import { decodeEntry, actionHash, bytesEqual, bytesToHex, hexToBytes, timestampOf } from "../../../holochain/decode";
+import { myAgentPubKey } from "../../../holochain/client";
+import { OrderStatusTimeline, StatusBadge } from "../../../components/orders/OrderStatus";
+import { Button, Card, Notice, SectionLabel, Skeleton, StatNumber } from "../../../components/ui";
+import { ChatPanel } from "../../../components/orders/ChatPanel";
+import { NetworkReach } from "../../../components/orders/NetworkReach";
+import { LiveMap } from "../../../components/places/LiveMap";
+import { WaitingForStore } from "../../../components/orders/WaitingForStore";
+import { formatCatalogAddress, formatCents, formatClockTime, formatDeadline } from "../../../lib/ui/format";
+import { received } from "../../../lib/orders/orderEntries";
+import { LateOrder } from "../../../components/orders/LateOrder";
+import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
+import { useAction } from "../../../lib/hooks/useAction";
+import { useResource } from "../../../lib/hooks/useResource";
+import type { Bid, DeliveryOrder, DeliveryStatus, Leg, MerchantCatalog } from "../../../holochain/types";
+import { POLL, isOrderOrBidSignal, isOrderSignal } from "../../../lib/network/poll";
+import { OrderReceipt } from "../../../components/orders/OrderReceipt";
+import { OrderPointsBadge } from "../../../components/rewards/PendingPoints";
+import { RateOrder } from "../../../components/orders/RateOrder";
+import { OrderBids } from "./OrderBids";
+import { OrderSummary } from "../../../components/orders/OrderLines";
+import { OrderIssues } from "../../../components/orders/OrderIssues";
+import { useT, type MessageKey } from "../../../i18n";
+import { HandoverCode } from "../../../components/orders/HandoverCode";
 
 // Chat is only valid once a driver is assigned (live_counterpart needs
 // order.accepted_bid to exist) and before the delivery's own terminal state.
@@ -45,52 +41,6 @@ const DROPOFF_PREFERENCE_LABEL: Record<DeliveryOrder["dropoff_preference"], Mess
   HandToMe: "cart.drop.handToMe",
   MeetOutside: "cart.drop.meetOutside",
 };
-
-interface DriverStats {
-  completedCount: number;
-  /// Deliveries they left before picking them up.
-  droppedCount: number;
-  /// Offers they let lapse, or turned down, without committing.
-  lapsedCount: number;
-  avgRating: number;
-  reviewCount: number;
-  displayName: string | null;
-}
-
-
-/// The customer is the one who accepts a bid, so this is the one place
-/// that choice should actually be informed by the bidder's track record,
-/// not just price/ETA/warrants. The restaurant doesn't get a separate
-/// veto: shared visibility
-/// into the same trust signal covers that interest too. Driver-scoped
-/// only: a bidder who also runs a restaurant is judged on their deliveries
-/// here, never their store's food. Also resolves a real display name
-/// instead of showing the bidder's raw identity hash -- `null` (falling
-/// back to `shortAgentId`) just means they haven't set one.
-async function fetchDriverStats(agent: Uint8Array): Promise<DriverStats> {
-  const [summary, rating, profileRecord] = await Promise.all([
-    getReputationSummary({ Driver: agent }),
-    getRatingSummary({ Driver: agent }),
-    getProfileForAgent(agent),
-  ]);
-  const displayName = profileRecord ? decodeEntry<Profile>(profileRecord).display_name : null;
-  return { completedCount: summary.completed_count, droppedCount: summary.dropped_count, lapsedCount: summary.lapsed_count, avgRating: averageRating(rating) ?? 0, reviewCount: rating.count, displayName: displayName || null };
-}
-
-/// A bid's bidder, with their warrant count and driver track record.
-interface BidRow {
-  hash: Uint8Array;
-  bid: Bid;
-  /// When it was placed (microseconds).
-  placedAt: number;
-  warrants: WarrantSummary | null;
-  stats: DriverStats | null;
-  /// The orders the driver has taken on, if it could be read.
-  load: InHand | null;
-}
-
-/// Bids arriving or settling, or the order changing.
-const ORDER_SIGNALS = (signal: LocalSignal) => "BidPlaced" in signal || "BidAccepted" in signal || "BidReleased" in signal || isOrderSignal(signal);
 
 /// What the customer's told while a driver has their order.
 const DRIVER_PROGRESS: Partial<Record<DeliveryOrder["status"], MessageKey>> = {
@@ -103,22 +53,10 @@ const DRIVER_PROGRESS: Partial<Record<DeliveryOrder["status"], MessageKey>> = {
 export function OrderDetail() {
   const { hash = "" } = useParams<{ hash: string }>();
   const orderRef = hexToBytes(hash);
-  const terms = useTerms();
   const t = useT();
-  const [accepting, setAccepting] = useState<string | null>(null);
-  const [confirmingCollected, setConfirmingCollected] = useState(false);
-  const [disputing, setDisputing] = useState(false);
   const [confirmingClaim, setConfirmingClaim] = useState(false);
-  const [completing, setCompleting] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [merchantRating, setMerchantRating] = useState(0);
-  const [merchantComment, setMerchantComment] = useState("");
-  const [driverRating, setDriverRating] = useState(0);
-  const [driverComment, setDriverComment] = useState("");
-  const [itemsRated, setItemsRated] = useState(false);
-  const [submittingReview, setSubmittingReview] = useState(false);
-  const [itemRatings, setItemRatings] = useState<Record<string, number>>({});
+  // One step on the order at a time: no cancelling it while confirming it.
+  const action = useAction();
 
   // Each read below is keyed by exactly what it depends on, so it's fetched
   // once per value and re-read only when that changes (or while polled).
@@ -130,7 +68,7 @@ export function OrderDetail() {
       const record = await getOrder(orderRef);
       return { order: decodeEntry<DeliveryOrder>(record), writtenAt: timestampOf(record), now: Date.now() };
     },
-    { pollMs: POLL.signalled, refreshOn: ORDER_SIGNALS },
+    { pollMs: POLL.signalled, refreshOn: isOrderOrBidSignal },
   );
   const order = snapshot?.order;
   const storeHex = order ? bytesToHex(order.catalog_ref) : null;
@@ -160,7 +98,7 @@ export function OrderDetail() {
   );
   const dropoffPhoto = dropoff?.photo ?? null;
   // Where a claim that it never arrived stands with the store.
-  const { data: decisions } = useResource(order?.status === "Disputed" ? `order-decisions:${hash}` : null, () => getOrderDecisions(orderRef), { pollMs: POLL.signalled, refreshOn: ORDER_SIGNALS });
+  const { data: decisions } = useResource(order?.status === "Disputed" ? `order-decisions:${hash}` : null, () => getOrderDecisions(orderRef), { pollMs: POLL.signalled, refreshOn: isOrderOrBidSignal });
   // The customer's handover code, while a driver's on the way: shown at the
   // door. An order left at the door has no handover.
   const handedOver = order?.dropoff_preference !== "LeaveAtDoor";
@@ -168,40 +106,6 @@ export function OrderDetail() {
   // Shown to the driver at the door -- or to the store, collecting it.
   const collecting = order?.status === "Collecting";
   const { data: handoverCode = null } = useResource(awaitingDriver || collecting ? `handover-code:${hash}` : null, () => getMyHandoverCode(orderRef));
-  // What this customer already rated on this order, read back from the
-  // conductor rather than kept in memory -- otherwise a reload would offer
-  // the rating form again and invite a duplicate.
-  const { data: rated, mutate: mutateRated } = useResource(order && received(order.status) ? `order-rated:${hash}` : null, async () => {
-    const targets = (await getMyReviewsForOrder(orderRef)).map((r) => decodeEntry<Review>(r).target);
-    return { store: targets.some((t) => "Store" in t), driver: targets.some((t) => "Driver" in t) };
-  });
-  // Bids, while the order is open -- each with its bidder's track record,
-  // so accepting one is an informed choice, not just price and ETA.
-  const { data: bids = null } = useResource(
-    order?.status === "Open" ? `order-bids:${hash}` : null,
-    async (): Promise<BidRow[]> => {
-      const page = await listBidsForOrder(orderRef);
-      return Promise.all(
-        page.bids.map(async (record) => {
-          const bid = decodeEntry<Bid>(record);
-          const [warrants, stats, load] = await Promise.all([
-            checkWarrants(bid.bidder).catch(() => null),
-            fetchDriverStats(bid.bidder).catch(() => null),
-            getDriverLoad(bid.bidder).catch(() => null),
-          ]);
-          return { hash: actionHash(record), bid, placedAt: timestampOf(record), warrants, stats, load };
-        }),
-      );
-    },
-    { pollMs: POLL.signalled, refreshOn: ORDER_SIGNALS },
-  );
-  // The bids as the network's matching rule ranks them -- what an order set
-  // to match automatically accepts once the bid window has run.
-  const { data: ranking = [] } = useResource(order?.status === "Open" ? `order-ranking:${hash}:${bids?.length ?? 0}` : null, () => rankBids(orderRef));
-  const rankOf = new Map(ranking.map((r, i) => [bytesToHex(r.bid), i]));
-  const bestMatch = ranking.find((r) => r.unavailable === null);
-  const rankedBids = bids && [...bids].sort((a, b) => (rankOf.get(bytesToHex(a.hash)) ?? Infinity) - (rankOf.get(bytesToHex(b.hash)) ?? Infinity));
-  const firstBidAt = bids && bids.length > 0 ? Math.min(...bids.map((b) => b.placedAt)) : null;
   // The accepted bid's driver -- found among the order's bids, since bids
   // are only ever read through their order.
   const acceptedHex = order?.accepted_bid ? bytesToHex(order.accepted_bid) : null;
@@ -210,34 +114,6 @@ export function OrderDetail() {
     const won = page.bids.find((record) => bytesToHex(actionHash(record)) === acceptedHex);
     return won ? decodeEntry<Bid>(won).bidder : null;
   });
-
-  async function submitReviews() {
-    if (!order || !rated) return;
-    setSubmittingReview(true);
-    setError(null);
-    // Each piece that lands is recorded straight away, so a failure partway
-    // through never re-offers (and so never double-submits) what landed.
-    try {
-      if (merchantRating > 0 && canRateStore) {
-        await submitReview({ target: { Store: order.catalog_ref }, order_original_action: orderRef, rating: merchantRating, comment: merchantComment });
-        mutateRated((prev) => ({ driver: prev?.driver ?? false, store: true }));
-      }
-      if (driverRating > 0 && driver && canRateDriver) {
-        await submitReview({ target: { Driver: driver }, order_original_action: orderRef, rating: driverRating, comment: driverComment });
-        mutateRated((prev) => ({ store: prev?.store ?? false, driver: true }));
-      }
-      if (canRateItems) {
-        for (const [itemHex, rating] of Object.entries(itemRatings)) {
-          if (rating > 0) await submitItemReview({ item_ref: hexToBytes(itemHex), order_original_action: orderRef, rating, comment: "" });
-        }
-        if (Object.values(itemRatings).some((r) => r > 0)) setItemsRated(true);
-      }
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSubmittingReview(false);
-    }
-  }
 
   if (!order) {
     return (
@@ -255,93 +131,48 @@ export function OrderDetail() {
     );
   }
 
+  const confirmCollectedHere = () => action.run(async () => {
+    await confirmCollected(orderRef);
+    await reloadOrder();
+  }, { as: "collected" });
+
   /// Accepts a bid -- `overrideWarrants` once the customer has seen the
   /// driver's complaints and chosen them anyway.
-  async function confirmCollectedHere() {
-    setConfirmingCollected(true);
-    setError(null);
-    try {
-      await confirmCollected(orderRef);
-      await reloadOrder();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setConfirmingCollected(false);
-    }
-  }
+  const pickBid = (bidHash: Uint8Array, overrideWarrants: boolean) => action.run(async () => {
+    await acceptBid(orderRef, bidHash, overrideWarrants);
+    await reloadOrder();
+  }, { as: `bid:${bytesToHex(bidHash)}` });
 
-  async function pickBid(bidHash: Uint8Array, overrideWarrants: boolean) {
-    setAccepting(bytesToHex(bidHash));
-    setError(null);
-    try {
-      await acceptBid(orderRef, bidHash, overrideWarrants);
-      await reloadOrder();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setAccepting(null);
-    }
-  }
+  const claimItNeverArrived = () => action.run(async () => {
+    await claimNeverArrived(orderRef);
+    setConfirmingClaim(false);
+    await reloadOrder();
+  }, { as: "claim" });
 
-  async function claimItNeverArrived() {
-    setDisputing(true);
-    setError(null);
-    try {
-      await claimNeverArrived(orderRef);
-      setConfirmingClaim(false);
-      await reloadOrder();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setDisputing(false);
-    }
-  }
-
-  async function confirmReceipt() {
-    setCompleting(true);
-    setError(null);
-    // The driver's drop-off record is written on their chain and gossips
-    // here; right after the handoff it may not have arrived yet. Retry a
-    // few times before saying so.
+  // The driver's drop-off record is written on their chain and gossips
+  // here; right after the handoff it may not have arrived yet. Retry a few
+  // times before saying so.
+  const confirmReceipt = () => action.run(async () => {
     const RETRY_DELAYS_MS = [1500, 3000, 6000, 10000];
     for (let attempt = 0; ; attempt++) {
       try {
         await confirmDeliveryReceived(orderRef);
-        await reloadOrder();
         break;
       } catch (err) {
-        if (err instanceof HandoffNotYetHere && attempt < RETRY_DELAYS_MS.length) {
-          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
-          continue;
-        }
-        setError(describeError(err));
-        break;
+        if (!(err instanceof HandoffNotYetHere) || attempt >= RETRY_DELAYS_MS.length) throw err;
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
       }
     }
-    setCompleting(false);
-  }
+    await reloadOrder();
+  }, { as: "complete" });
 
+  const cancel = () => action.run(async () => {
+    await cancelOrder(orderRef);
+    await reloadOrder();
+  }, { as: "cancel" });
 
-  async function cancel() {
-    setCancelling(true);
-    setError(null);
-    try {
-      await cancelOrder(orderRef);
-      await reloadOrder();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setCancelling(false);
-    }
-  }
-  // DoorDash/Uber Eats-style: one rating per store and per driver per
-  // order. A merchant who ordered from their own store isn't offered the
-  // store rating at all (validate_review rejects it anyway).
+  // A merchant who ordered from their own store has no store to rate.
   const selfOrder = bytesEqual(order.merchant, myAgentPubKey());
-  const canRateStore = !!rated && !rated.store && !selfOrder;
-  const canRateDriver = !!rated && !rated.driver && !!driver;
-  const canRateItems = !itemsRated && !order.bag_claim_ref && order.lines.length > 0;
-  const ratingDone = !!rated && !canRateStore && !canRateDriver;
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-10 pt-4">
@@ -384,7 +215,7 @@ export function OrderDetail() {
 
       {order.status === "Placed" && snapshot && (
         <motion.div variants={fadeSlideUp}>
-          <WaitingForStore writtenAt={snapshot.writtenAt} now={snapshot.now} cancelling={cancelling} onCancel={cancel} />
+          <WaitingForStore writtenAt={snapshot.writtenAt} now={snapshot.now} cancelling={action.doing === "cancel"} onCancel={cancel} />
         </motion.div>
       )}
 
@@ -415,78 +246,7 @@ export function OrderDetail() {
         </Card>
       </motion.div>
 
-      {order.status === "Open" && (
-        <motion.div variants={fadeSlideUp} className="mt-5">
-          <h2 className="mb-2 text-sm font-bold text-ink-900 dark:text-ink-50">{t("order.bids")}</h2>
-          {bids === null && (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 2 }).map((_, i) => (
-                <Card key={i} className="p-3.5">
-                  <Skeleton className="h-4 w-1/2 mb-2" />
-                  <Skeleton className="h-3 w-1/3" />
-                </Card>
-              ))}
-            </div>
-          )}
-          {bids?.length === 0 && <p className="text-xs text-ink-400">{t("order.waitingBids")}</p>}
-          {order.auto_match && firstBidAt !== null && (
-            <p className="mb-2 text-xs leading-relaxed text-ink-500">
-              {t("order.autoMatchAt", { time: formatClockTime(firstBidAt + terms.bid_window_secs * 1_000_000), minuteValue: formatCents(terms.minute_value_cents) })}
-            </p>
-          )}
-          <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="flex flex-col gap-2">
-            <AnimatePresence initial={false}>
-              {rankedBids?.map(({ hash: bidHash, bid, warrants: w, stats, load }) => {
-                const complaints = w !== null && w.count > 0;
-                const refusal = load && carryRefusal(load, order.priority, terms.max_concurrent_deliveries);
-                return (
-                  <motion.div key={bytesToHex(bidHash)} layout variants={fadeSlideUp} initial="hidden" animate="visible" exit={{ opacity: 0, scale: 0.97 }}>
-                    <Card className="flex items-center justify-between p-3.5">
-                      <div>
-                        <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">
-                          {stats?.displayName || t("order.driverNamed", { id: shortAgentId(bid.bidder) })} · {formatEta(bid.eta_seconds)}
-                          {bestMatch && bytesEqual(bestMatch.bid, bidHash) && <span className="ml-2 rounded-full bg-handshake-100 px-2 py-0.5 text-[10px] font-bold text-handshake-700 dark:bg-handshake-900/30 dark:text-handshake-300">{t("order.bestMatch")}</span>}
-                        </p>
-                        <p className="text-xs text-ink-400">{t("order.bidFee", { amount: formatCents(bid.price_offer) })}</p>
-                        {stats && (
-                          <div className="mt-1 flex items-center gap-1.5">
-                            {stats.reviewCount > 0 ? (
-                              <StarRating value={stats.avgRating} count={stats.reviewCount} size={11} />
-                            ) : (
-                              <span className="text-xs text-ink-400">{t("order.noReviews")}</span>
-                            )}
-                            <span className="text-xs text-ink-400">· {t("order.completed", { count: stats.completedCount })}</span>
-                            {stats.droppedCount > 0 && <span className="text-xs text-amber-600">· {t("order.dropped", { count: stats.droppedCount })}</span>}
-                            {stats.lapsedCount > 0 && <span className="text-xs text-ink-400">· {t("order.lapsed", { count: stats.lapsedCount })}</span>}
-                          </div>
-                        )}
-                        {load && <p className="mt-1 text-xs text-ink-400">{describeLoad(load)}</p>}
-                        {complaints && (
-                          <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-600">
-                            <AlertTriangle size={12} /> {t("order.complaints", { count: w.count })}
-                          </p>
-                        )}
-                      </div>
-                      {refusal ? (
-                        <span className="max-w-[7.5rem] text-right text-[11px] font-medium leading-tight text-ink-400">{customerRefusal(refusal)}</span>
-                      ) : (
-                        <Button
-                          variant={complaints ? "danger" : "primary"}
-                          className="px-4 py-2 text-xs"
-                          loading={accepting === bytesToHex(bidHash)}
-                          onClick={() => pickBid(bidHash, complaints)}
-                        >
-                          {complaints ? t("order.acceptAnyway") : t("order.accept")}
-                        </Button>
-                      )}
-                    </Card>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </motion.div>
-        </motion.div>
-      )}
+      {order.status === "Open" && <OrderBids orderRef={orderRef} order={order} accepting={action.doing} onAccept={pickBid} />}
 
       {["BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed", "DriverAtStore"].includes(order.status) && (
         <motion.div variants={fadeSlideUp} className="mt-5 flex items-center gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
@@ -530,7 +290,7 @@ export function OrderDetail() {
             </p>
           ) : null}
           {handedOver && (
-            <Button loading={completing} onClick={confirmReceipt}>
+            <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmReceipt}>
               {t("order.haveIt")}
             </Button>
           )}
@@ -544,7 +304,7 @@ export function OrderDetail() {
                   <Button variant="ghost" className="flex-1 py-2" onClick={() => setConfirmingClaim(false)}>
                     {t("common.back")}
                   </Button>
-                  <Button variant="danger" className="flex-1 py-2" loading={disputing} onClick={claimItNeverArrived}>
+                  <Button variant="danger" className="flex-1 py-2" loading={action.doing === "claim"} disabled={action.busy} onClick={claimItNeverArrived}>
                     {t("order.claim.button")}
                   </Button>
                 </div>
@@ -573,7 +333,7 @@ export function OrderDetail() {
       {dropoffPhoto && (
         <motion.div variants={fadeSlideUp}>
           <Card className="mt-4 p-4">
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">{t("order.dropoffPhoto")}</p>
+            <SectionLabel className="mb-2">{t("order.dropoffPhoto")}</SectionLabel>
             <img src={dropoffPhoto} alt={t("order.dropoffPhoto")} className="w-full rounded-xl object-cover" />
           </Card>
         </motion.div>
@@ -591,7 +351,7 @@ export function OrderDetail() {
             <p className="mt-2 text-xs leading-relaxed text-ink-400">
               {t("order.collectHint")}
             </p>
-            <Button loading={confirmingCollected} onClick={confirmCollectedHere} className="mt-3 w-full">
+            <Button loading={action.doing === "collected"} disabled={action.busy} onClick={confirmCollectedHere} className="mt-3 w-full">
               {t("order.gotIt")}
             </Button>
           </Card>
@@ -600,7 +360,7 @@ export function OrderDetail() {
 
       {order.status === "Open" && (
         <motion.div variants={fadeSlideUp} className="mt-6">
-          <Button variant="ghost" loading={cancelling} onClick={cancel} className="w-full">
+          <Button variant="ghost" loading={action.doing === "cancel"} disabled={action.busy} onClick={cancel} className="w-full">
             {t("order.cancel")}
           </Button>
         </motion.div>
@@ -630,61 +390,9 @@ export function OrderDetail() {
         </motion.div>
       )}
 
-      {received(order.status) && rated && !ratingDone && (
-        <motion.div variants={fadeSlideUp}>
-        <Card className="mt-5 flex flex-col gap-4 p-4">
-          <p className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("order.rate.title")}</p>
-          {canRateStore && (
-            <div>
-              <p className="mb-1 text-xs font-semibold text-ink-500">{t("order.rate.store")}</p>
-              <StarRatingInput value={merchantRating} onChange={setMerchantRating} />
-              {merchantRating > 0 && <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={merchantComment} onChange={(e) => setMerchantComment(e.target.value)} rows={2} placeholder={t("order.rate.storePlaceholder")} className="mt-2" />}
-            </div>
-          )}
-          {canRateDriver && (
-            <div>
-              <p className="mb-1 text-xs font-semibold text-ink-500">{t("order.rate.driver")}</p>
-              <StarRatingInput value={driverRating} onChange={setDriverRating} />
-              {driverRating > 0 && <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={driverComment} onChange={(e) => setDriverComment(e.target.value)} rows={2} placeholder={t("order.rate.driverPlaceholder")} className="mt-2" />}
-            </div>
-          )}
-          {/* A goodie bag isn't itemized -- its one line is the bag, not a menu item -- so there's nothing per-item to rate. */}
-          {canRateItems && (
-            <div>
-              <p className="mb-1 text-xs font-semibold text-ink-500">{t("order.rate.items")}</p>
-              <div className="flex flex-col gap-2">
-                {[...new Set(order.lines.map((line) => bytesToHex(line.item_ref)))].map((hex) => (
-                  <div key={hex} className="flex items-center justify-between">
-                    <span className="text-sm text-ink-700 dark:text-ink-300">{itemNames[hex] ?? t("order.item")}</span>
-                    <StarRatingInput
-                      value={itemRatings[hex] ?? 0}
-                      onChange={(v) => setItemRatings((prev) => ({ ...prev, [hex]: v }))}
-                      size={16}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <Button
-            loading={submittingReview}
-            disabled={(canRateStore ? merchantRating : 0) === 0 && (canRateDriver ? driverRating : 0) === 0 && (!canRateItems || Object.values(itemRatings).every((r) => r === 0))}
-            onClick={submitReviews}
-          >
-            {t("order.rate.submit")}
-          </Button>
-        </Card>
-        </motion.div>
-      )}
+      {received(order.status) && <RateOrder orderRef={orderRef} order={order} itemNames={itemNames} driver={driver} selfOrder={selfOrder} />}
 
-      {received(order.status) && ratingDone && (
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mt-5 flex items-center gap-3 rounded-2xl bg-presence-500/10 p-4 text-presence-600 dark:text-presence-400">
-          <CheckCircle2 size={20} />
-          <p className="text-sm">{t("order.rate.thanks")}</p>
-        </motion.div>
-      )}
-
-      {error && <p className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>}
+      {action.error && <Notice className="mt-4">{action.error}</Notice>}
     </motion.div>
   );
 }

@@ -1,9 +1,9 @@
 import { Store } from "lucide-react";
-import { Button, Card } from "./ui";
+import { Button, Card } from "../ui";
 import { ResponseCountdown } from "./ResponseCountdown";
-import { responseDeadlineMs } from "../lib/orders/storeAnswers";
-import { useTerms } from "../store/network";
-import { useT } from "../i18n";
+import { responseDeadlineMs } from "../../lib/orders/storeAnswers";
+import { useTerms } from "../../store/network";
+import { useT } from "../../i18n";
 
 /// An order waiting on its store to accept it: how long the store has, and
 /// a way to withdraw it meanwhile. `writtenAt` is when the order reached

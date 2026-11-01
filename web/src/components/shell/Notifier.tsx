@@ -1,11 +1,11 @@
 import { useNavigate } from "react-router-dom";
-import { notificationFor } from "../lib/orders/notifications";
-import { playChime } from "../lib/ui/chime";
-import { useLiveSignal, useLocalSignal } from "../lib/hooks/useResource";
-import { usePreferences } from "../store/preferences";
-import { wakeCustomer } from "../lib/network/push";
-import type { LocalSignal } from "../holochain/types";
-import type { LiveSignal } from "../holochain/live";
+import { notificationFor } from "../../lib/orders/notifications";
+import { playChime } from "../../lib/ui/chime";
+import { useLiveSignal, useLocalSignal } from "../../lib/hooks/useResource";
+import { usePreferences } from "../../store/preferences";
+import { wakeCustomer } from "../../lib/network/push";
+import type { LocalSignal } from "../../holochain/types";
+import type { LiveSignal } from "../../holochain/live";
 
 /// Tells this person about their orders as they change: a system
 /// notification (when they've turned them on and allowed them), and a chime

@@ -30,3 +30,7 @@ export const POLL = {
 /// Whether a signal says an order changed -- what every order screen
 /// refreshes on.
 export const isOrderSignal = (signal: object) => "OrderUpdated" in signal || "OrderChanged" in signal || "OrderPlaced" in signal;
+
+/// ...or that a bid on one arrived or settled -- what a customer's open
+/// order refreshes on.
+export const isOrderOrBidSignal = (signal: object) => "BidPlaced" in signal || "BidAccepted" in signal || "BidReleased" in signal || isOrderSignal(signal);

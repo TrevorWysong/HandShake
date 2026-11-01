@@ -5,15 +5,15 @@
 // finished.
 import { useState } from "react";
 import { Smartphone } from "lucide-react";
-import { deviceRuntime } from "../holochain/device";
-import { HOST } from "../holochain/host";
-import { useDeparture } from "../store/departure";
-import { describeError } from "../lib/ui/errors";
-import { sealedAccount } from "../lib/account/deviceMove";
-import { keyFingerprint } from "../lib/account/accountMove";
+import { deviceRuntime } from "../../holochain/device";
+import { HOST } from "../../holochain/host";
+import { useDeparture } from "../../store/departure";
+import { sealedAccount } from "../../lib/account/deviceMove";
+import { keyFingerprint } from "../../lib/account/accountMove";
 import { CodeCard } from "./AccountCode";
-import { Button } from "./ui";
-import { useT } from "../i18n";
+import { Button } from "../ui";
+import { useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 type Step = "show" | "done" | "stay" | "removed";
 
@@ -21,28 +21,20 @@ export function Departure({ sealed }: { sealed: string }) {
   const t = useT();
   const clear = useDeparture((s) => s.clear);
   const [step, setStep] = useState<Step>("show");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
   const account = sealedAccount(sealed);
 
-  async function act(command: "retire" | "stay") {
-    setBusy(true);
-    setError(null);
-    try {
-      const runtime = await deviceRuntime();
-      if (!runtime) throw new Error(t("move.unsupported"));
-      await runtime[command]();
-      clear();
-      // Taken back: the app starts again as it was. Let go: in development
-      // this browser forgets the identity and signs in afresh; in a runtime
-      // there's nothing left here to open.
-      if (command === "stay" || HOST === "dev") window.location.reload();
-      else setStep("removed");
-    } catch (err) {
-      setError(describeError(err));
-      setBusy(false);
-    }
-  }
+  const act = (command: "retire" | "stay") => action.run(async () => {
+    const runtime = await deviceRuntime();
+    if (!runtime) throw new Error(t("move.unsupported"));
+    await runtime[command]();
+    clear();
+    // Taken back: the app starts again as it was. Let go: in development
+    // this browser forgets the identity and signs in afresh; in a runtime
+    // there's nothing left here to open.
+    if (command === "stay" || HOST === "dev") window.location.reload();
+    else setStep("removed");
+  }, { stayBusy: true });
 
   return (
     <div className="mesh-hero flex min-h-svh flex-col items-center justify-center gap-4 px-6 py-10 text-center text-white">
@@ -62,7 +54,7 @@ export function Departure({ sealed }: { sealed: string }) {
             {step === "show" && <CodeCard code={sealed} fingerprint={account ? keyFingerprint(account) : ""} note={t("departure.note")} />}
             {step === "done" && <p className="text-sm">{t("departure.doneConfirm")}</p>}
             {step === "stay" && <p className="text-sm text-amber-700 dark:text-amber-400">{t("departure.stayWarning")}</p>}
-            {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            {action.error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
           </div>
           {step === "show" ? (
             <div className="flex w-full max-w-sm flex-col gap-2">
@@ -75,10 +67,10 @@ export function Departure({ sealed }: { sealed: string }) {
             </div>
           ) : (
             <div className="flex w-full max-w-sm flex-col gap-2">
-              <Button className="w-full bg-white text-handshake-600" variant="ghost" loading={busy} onClick={() => act(step === "done" ? "retire" : "stay")}>
+              <Button className="w-full bg-white text-handshake-600" variant="ghost" loading={action.busy} onClick={() => act(step === "done" ? "retire" : "stay")}>
                 {step === "done" ? t("departure.remove") : t("departure.stayConfirm")}
               </Button>
-              <button type="button" disabled={busy} onClick={() => setStep("show")} className="text-xs text-white/70 underline underline-offset-2">
+              <button type="button" disabled={action.busy} onClick={() => setStep("show")} className="text-xs text-white/70 underline underline-offset-2">
                 {t("common.back")}
               </button>
             </div>

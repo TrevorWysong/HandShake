@@ -2,18 +2,19 @@ import { useState } from "react";
 import { Pencil, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { addMenuItem, updateMenuItem } from "../../../holochain/zomes/catalog";
-import { bytesToHex, hexToBytes } from "../../../holochain/decode";
-import { groupByCategory, type ItemRow } from "../../../lib/menu/menu";
+import { bytesEqual, bytesToHex, hexToBytes } from "../../../holochain/decode";
+import { groupByCategory, type ItemRow } from "../../../lib/storefront/menu";
 import { formatCents, toMinorUnits, fromMinorUnits, currencySymbol } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
-import { Button, Card, Checkbox, Field, Input, Select, StatNumber, Textarea } from "../../../components/ui";
+import { Button, Card, Checkbox, Field, Input, Notice, SectionLabel, Select, StatNumber, Textarea } from "../../../components/ui";
 import { useTerms } from "../../../store/network";
-import { percentLabel } from "../../../lib/menu/tax";
+import { percentLabel } from "../../../lib/storefront/tax";
 import { PhotoInput } from "../../../components/PhotoInput";
 import { MAX_DESCRIPTION_CHARS, MAX_ITEM_GROUPS, MAX_LABEL_CHARS, MAX_NAME_CHARS, type TaxRate } from "../../../holochain/types";
 import { Check } from "lucide-react";
 import type { GroupRow } from "./ChoicesSection";
 import { useT } from "../../../i18n";
+import { useAction } from "../../../lib/hooks/useAction";
 
 /// What the editor is open for: a new item, an existing one, or nothing.
 type Editing = { kind: "new" } | { kind: "edit"; row: ItemRow } | null;
@@ -33,7 +34,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
   return (
     <>
       <motion.div variants={fadeSlideUp} className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-bold uppercase tracking-wide text-ink-400">{t("nav.menu")}</p>
+        <SectionLabel>{t("nav.menu")}</SectionLabel>
         <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setEditing(editing ? null : { kind: "new" })}>
           <Plus size={14} /> {editing ? t("common.cancel") : t("menuEditor.add")}
         </Button>
@@ -65,7 +66,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
       <motion.div variants={staggerContainer} initial="hidden" animate="visible">
         {[...grouped.entries()].map(([category, rows]) => (
           <motion.div variants={fadeSlideUp} key={category} className="mb-4">
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">{category}</p>
+            <SectionLabel className="mb-2">{category}</SectionLabel>
             <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
               {rows.map((row) => (
                 <div key={bytesToHex(row.hash)} className="flex items-center gap-3 p-4">
@@ -75,7 +76,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
                     {row.item.description && <p className="truncate text-xs text-ink-400">{row.item.description}</p>}
                     {row.item.modifier_groups.length > 0 && (
                       <p className="truncate text-xs text-ink-400">
-                        Choices: {row.item.modifier_groups.map((ref) => groups.find((g) => bytesToHex(g.hash) === bytesToHex(ref))?.group.name ?? "…").join(", ")}
+                        Choices: {row.item.modifier_groups.map((ref) => groups.find((g) => bytesEqual(g.hash, ref))?.group.name ?? "…").join(", ")}
                       </p>
                     )}
                     <StatNumber className="text-sm">{formatCents(row.item.price_cents)}</StatNumber>
@@ -116,31 +117,26 @@ function ItemForm({ catalogRef, row, groups, taxRates, onSaved }: { catalogRef: 
   }));
   const minAge = useTerms().restricted_min_age;
   const t = useT();
-  const [saving, setSaving] = useState(false);
+  const saving = useAction();
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
-  async function save() {
+  const save = () => saving.run(async () => {
     if (!form.name.trim()) return;
-    setSaving(true);
-    try {
-      const fields = {
-        name: form.name.trim(),
-        price_cents: toMinorUnits(form.price),
-        description: form.description,
-        photo_data_uri: form.photo_data_uri,
-        category: form.category,
-        dietary_tags: form.dietary_tags.split(",").map((t) => t.trim()).filter(Boolean),
-        modifier_groups: form.groups.map(hexToBytes),
-        tax_category: form.tax_category,
-        age_restricted: form.age_restricted,
-      };
-      if (row) await updateMenuItem(row.hash, { ...row.item, ...fields });
-      else await addMenuItem({ catalog_ref: catalogRef, available: true, ...fields });
-      await onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
+    const fields = {
+      name: form.name.trim(),
+      price_cents: toMinorUnits(form.price),
+      description: form.description,
+      photo_data_uri: form.photo_data_uri,
+      category: form.category,
+      dietary_tags: form.dietary_tags.split(",").map((t) => t.trim()).filter(Boolean),
+      modifier_groups: form.groups.map(hexToBytes),
+      tax_category: form.tax_category,
+      age_restricted: form.age_restricted,
+    };
+    if (row) await updateMenuItem(row.hash, { ...row.item, ...fields });
+    else await addMenuItem({ catalog_ref: catalogRef, available: true, ...fields });
+    await onSaved();
+  });
 
   return (
     <Card className="mb-4 flex flex-col gap-2 p-4">
@@ -198,7 +194,8 @@ function ItemForm({ catalogRef, row, groups, taxRates, onSaved }: { catalogRef: 
           </div>
         </div>
       )}
-      <Button loading={saving} disabled={!form.name.trim()} onClick={save} className="py-2 text-xs">
+      {saving.error && <Notice>{saving.error}</Notice>}
+      <Button loading={saving.busy} disabled={!form.name.trim()} onClick={save} className="py-2 text-xs">
         {row ? t("menuEditor.save") : t("menuEditor.addToMenu")}
       </Button>
     </Card>

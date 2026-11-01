@@ -1,7 +1,7 @@
 // The same cases as catalog_types::pricing's tax tests -- keep them in step.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { orderTax, percentLabel, totalWithTax } from "../src/lib/menu/tax";
+import { orderTax, percentLabel, totalWithTax } from "../src/lib/storefront/tax";
 
 const rate = (category: string, basis_points: number) => ({ category, label: "", basis_points });
 const taxed = (category: string, total: number) => ({ category, total });

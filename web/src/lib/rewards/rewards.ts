@@ -2,10 +2,10 @@
 // `rewards_types::points`, which validation enforces. The same cases run in
 // web/test/rewards.test.ts and the Rust tests; keep them in step.
 import type { CartLine } from "../../store/cart";
-import type { ItemRow } from "../menu/menu";
+import type { ItemRow } from "../storefront/menu";
 import type { Accent, PointsState, PointsStatus, PromoReward, Reward, RewardsProgram } from "../../holochain/types";
-import { bytesToHex } from "../../holochain/decode";
-import { computePromoEffect } from "../menu/promotions";
+import { bytesEqual } from "../../holochain/decode";
+import { computePromoEffect } from "../storefront/promotions";
 import type { Translate } from "../../i18n";
 
 export type { Accent };
@@ -65,7 +65,7 @@ export function nextTier(program: RewardsProgram, state: PointsState | null): { 
 /// What an order earns before the member's tier (`points::order_points`):
 /// each line's share of the food paid, at the program's rate, faster for a
 /// bonus item, then for a happy hour it's placed in.
-export function orderPoints(program: RewardsProgram, lines: { itemRef: Uint8Array; totalCents: number }[], eligibleCents: number, placedAtMicros: number): number {
+export function pointsEarned(program: RewardsProgram, lines: { itemRef: Uint8Array; totalCents: number }[], eligibleCents: number, placedAtMicros: number): number {
   if (eligibleCents <= 0 || eligibleCents < program.earn.min_order_cents) return 0;
   const subtotal = lines.reduce((sum, l) => sum + l.totalCents, 0);
   if (subtotal === 0) return 0;
@@ -73,7 +73,7 @@ export function orderPoints(program: RewardsProgram, lines: { itemRef: Uint8Arra
   let scaled = 0n;
   for (const line of lines) {
     const share = (BigInt(line.totalCents) * BigInt(eligibleCents)) / BigInt(subtotal);
-    const bonus = program.earn.item_bonuses.find((b) => bytesToHex(b.item_ref) === bytesToHex(line.itemRef));
+    const bonus = program.earn.item_bonuses.find((b) => bytesEqual(b.item_ref, line.itemRef));
     scaled += (share * rate * BigInt(bonus?.percent ?? 100)) / 100n;
   }
   const local = localTime(placedAtMicros, program.time_zone);
@@ -118,7 +118,7 @@ export function rewardDiscount(benefit: PromoReward, lines: CartLine[]): number 
 export function rewardLine(reward: Reward, menu: ItemRow[]): CartLine | null {
   if (!("FreeItem" in reward.benefit)) return null;
   const { item_ref, quantity } = reward.benefit.FreeItem;
-  const row = menu.find((m) => bytesToHex(m.hash) === bytesToHex(item_ref));
+  const row = menu.find((m) => bytesEqual(m.hash, item_ref));
   if (!row) return null;
   return { itemRef: row.hash, name: row.item.name, basePriceCents: row.item.price_cents, priceCents: row.item.price_cents, quantity, selections: [], choiceLabels: [], rewardId: reward.id };
 }

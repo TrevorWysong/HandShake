@@ -4,23 +4,23 @@
 // refunding what it accepted or never answered (see the dispatch `issues`
 // module). Shown on both sides of the order.
 import { useState } from "react";
-import { TimeAgo } from "./TimeAgo";
+import { TimeAgo } from "../TimeAgo";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, CheckCircle2, Clock3, Minus, PackageX, Plus, Repeat2, ShieldCheck, XCircle } from "lucide-react";
-import { getIssueItems, getIssuesForOrder, getOrderDecisions, reportIssue, respondToIssue } from "../holochain/zomes/dispatch";
-import { bytesToHex } from "../holochain/decode";
-import { MAX_NOTE_CHARS, type IssueItems, type IssueKind, type IssueLine, type IssueView, type OrderDecisions } from "../holochain/types";
-import { claimedValue } from "../lib/orders/issues";
-import { describeError } from "../lib/ui/errors";
-import { formatCents, formatDeadline } from "../lib/ui/format";
-import { POLL } from "../lib/network/poll";
-import { useClock } from "../lib/hooks/useClock";
-import { useResource } from "../lib/hooks/useResource";
-import { Button, Card, Textarea } from "./ui";
-import { PhotoInput } from "./PhotoInput";
-import { Sheet } from "./Sheet";
+import { AlertCircle, CheckCircle2, Clock3, PackageX, Repeat2, ShieldCheck, XCircle } from "lucide-react";
+import { getIssueItems, getIssuesForOrder, getOrderDecisions, reportIssue, respondToIssue } from "../../holochain/zomes/dispatch";
+import { bytesToHex } from "../../holochain/decode";
+import { MAX_NOTE_CHARS, type IssueItems, type IssueKind, type IssueLine, type IssueView, type OrderDecisions } from "../../holochain/types";
+import { claimedValue } from "../../lib/orders/issues";
+import { formatCents, formatDeadline } from "../../lib/ui/format";
+import { POLL } from "../../lib/network/poll";
+import { useClock } from "../../lib/hooks/useClock";
+import { useResource } from "../../lib/hooks/useResource";
+import { Button, Card, Stepper, Textarea } from "../ui";
+import { PhotoInput } from "../PhotoInput";
+import { Sheet } from "../Sheet";
 import { OrderAppeal } from "./OrderAppeal";
-import { t as translate, useT, type MessageKey } from "../i18n";
+import { t as translate, useT, type MessageKey } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 type Role = "customer" | "store";
 
@@ -117,26 +117,17 @@ function StorePayoutNote({ decisions, orderTotal }: { decisions: OrderDecisions;
 
 function IssueRow({ issue, items, role, canAnswer, onAnswered }: { issue: IssueView; items: IssueItems; role: Role; canAnswer: boolean; onAnswered: () => Promise<void> }) {
   const t = useT();
-  const [busy, setBusy] = useState<"accept" | "decline" | null>(null);
+  const answering = useAction();
   const [confirmDecline, setConfirmDecline] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const nameOf = (line: number) => {
     const ordered = items.lines[line];
     return ordered ? [ordered.name, ...ordered.choices].join(", ") : translate("issues.anItem");
   };
 
-  async function answer(accept: boolean) {
-    setBusy(accept ? "accept" : "decline");
-    setError(null);
-    try {
-      await respondToIssue(issue.issue, accept);
-      await onAnswered();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(null);
-    }
-  }
+  const answer = (accept: boolean) => answering.run(async () => {
+    await respondToIssue(issue.issue, accept);
+    await onAnswered();
+  }, { as: accept ? "accept" : "decline" });
 
   return (
     <li className="p-4">
@@ -176,24 +167,24 @@ function IssueRow({ issue, items, role, canAnswer, onAnswered }: { issue: IssueV
                 <Button variant="ghost" className="flex-1 py-2" onClick={() => setConfirmDecline(false)}>
                   {t("common.back")}
                 </Button>
-                <Button variant="secondary" className="flex-1 py-2" loading={busy === "decline"} onClick={() => answer(false)}>
+                <Button variant="secondary" className="flex-1 py-2" loading={answering.doing === "decline"} onClick={() => answer(false)}>
                   {t("issues.declineReport")}
                 </Button>
               </div>
             </motion.div>
           ) : (
             <motion.div key="answer" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-3 flex gap-2">
-              <Button variant="ghost" className="flex-1 py-2" disabled={busy !== null} onClick={() => setConfirmDecline(true)}>
+              <Button variant="ghost" className="flex-1 py-2" disabled={answering.busy} onClick={() => setConfirmDecline(true)}>
                 {t("issues.decline")}
               </Button>
-              <Button className="flex-1 py-2" loading={busy === "accept"} disabled={busy !== null} onClick={() => answer(true)}>
+              <Button className="flex-1 py-2" loading={answering.doing === "accept"} disabled={answering.busy} onClick={() => answer(true)}>
                 {t("issues.acceptRefund", { amount: formatCents(issue.value) })}
               </Button>
             </motion.div>
           )}
         </AnimatePresence>
       )}
-      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {answering.error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{answering.error}</p>}
     </li>
   );
 }
@@ -236,8 +227,7 @@ function ReportIssueSheet({
   const t = useT();
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
   const orderTotal = items.order_total;
   const priced = items.lines.map((l) => ({ unitPrice: l.unit_price_cents, quantity: l.quantity }));
@@ -254,25 +244,17 @@ function ReportIssueSheet({
     setDraft((d) => ({ ...d, [line]: { kind: d[line]?.kind ?? "Missing", quantity } }));
   }
 
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    try {
-      const lines: IssueLine[] = items.lines.flatMap((_, line) => {
-        const d = draft[line];
-        return d && d.quantity > 0 ? [{ line, quantity: d.quantity, kind: d.kind }] : [];
-      });
-      await reportIssue({ order: orderRef, lines, note: note.trim(), photo_data_uri: photo });
-      setDraft({});
-      setNote("");
-      setPhoto("");
-      await onReported();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const submit = () => action.run(async () => {
+    const lines: IssueLine[] = items.lines.flatMap((_, line) => {
+      const d = draft[line];
+      return d && d.quantity > 0 ? [{ line, quantity: d.quantity, kind: d.kind }] : [];
+    });
+    await reportIssue({ order: orderRef, lines, note: note.trim(), photo_data_uri: photo });
+    setDraft({});
+    setNote("");
+    setPhoto("");
+    await onReported();
+  });
 
   return (
     <Sheet
@@ -282,8 +264,8 @@ function ReportIssueSheet({
       subtitle={t("issues.sheetSubtitle")}
       footer={
         <>
-          {error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
-          <Button className="w-full" disabled={claimed.length === 0} loading={busy} onClick={submit}>
+          {action.error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
+          <Button className="w-full" disabled={claimed.length === 0} loading={action.busy} onClick={submit}>
             {claimed.length ? t("issues.reportButton", { amount: formatCents(estimate) }) : t("issues.chooseItem")}
           </Button>
         </>
@@ -345,21 +327,5 @@ function ReportIssueSheet({
         {t("issues.privacy")}
       </p>
     </Sheet>
-  );
-}
-
-function Stepper({ value, max, onChange }: { value: number; max: number; onChange: (value: number) => void }) {
-  const t = useT();
-  const button = "grid h-8 w-8 place-items-center rounded-full transition disabled:opacity-30";
-  return (
-    <div className="flex shrink-0 items-center gap-2">
-      <button aria-label={t("item.fewer")} className={`${button} bg-ink-100 text-ink-700 hover:bg-ink-200 dark:bg-ink-800 dark:text-ink-200`} disabled={value === 0} onClick={() => onChange(value - 1)}>
-        <Minus size={15} />
-      </button>
-      <span className="w-5 text-center text-sm font-bold tabular-nums text-ink-900 dark:text-ink-50">{value}</span>
-      <button aria-label={t("item.more")} className={`${button} bg-handshake-500 text-white hover:bg-handshake-600`} disabled={value >= max} onClick={() => onChange(value + 1)}>
-        <Plus size={15} />
-      </button>
-    </div>
   );
 }

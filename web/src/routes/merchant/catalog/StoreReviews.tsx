@@ -1,5 +1,5 @@
 import { getReviewsFor } from "../../../holochain/zomes/reputation";
-import { ReviewList } from "../../../components/ReviewList";
+import { ReviewList } from "../../../components/store/ReviewList";
 
 /// This store's own reviews, newest first -- never the owner's other
 /// stores, and never their driving (see `reputation_integrity`).

@@ -14,16 +14,16 @@
 // Until any of that applies, it says when it would.
 import { useState } from "react";
 import { Clock3, ShoppingBag } from "lucide-react";
-import { cancelOrder, getOrderTiming, requestCollect } from "../holochain/zomes/dispatch";
-import type { DeliveryOrder } from "../holochain/types";
-import { bytesToHex } from "../holochain/decode";
-import { describeError } from "../lib/ui/errors";
-import { formatClockTime } from "../lib/ui/format";
-import { POLL } from "../lib/network/poll";
-import { useResource } from "../lib/hooks/useResource";
-import { Button, Card } from "./ui";
-import { Sheet } from "./Sheet";
-import { useT } from "../i18n";
+import { cancelOrder, getOrderTiming, requestCollect } from "../../holochain/zomes/dispatch";
+import type { DeliveryOrder } from "../../holochain/types";
+import { bytesToHex } from "../../holochain/decode";
+import { formatClockTime } from "../../lib/ui/format";
+import { POLL } from "../../lib/network/poll";
+import { useResource } from "../../lib/hooks/useResource";
+import { Button, Card, Notice } from "../ui";
+import { Sheet } from "../Sheet";
+import { useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 /// Waiting on a driver -- the statuses this applies to.
 const WAITING_ON_A_DRIVER: DeliveryOrder["status"][] = ["Open", "BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed"];
@@ -34,26 +34,17 @@ export function LateOrder({ orderRef, order, storeAddress, onChanged }: { orderR
   const { data: timing = null, reload } = useResource(waiting ? `order-timing:${bytesToHex(orderRef)}:${order.status}` : null, () => getOrderTiming(orderRef), { pollMs: POLL.signalled });
   const [confirming, setConfirming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
   if (!waiting || timing === null) return null;
 
-  async function act(change: () => Promise<unknown>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await change();
-      setConfirming(false);
-      setCancelling(false);
-      await reload();
-      await onChanged();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const act = (change: () => Promise<unknown>) => action.run(async () => {
+    await change();
+    setConfirming(false);
+    setCancelling(false);
+    await reload();
+    await onChanged();
+  });
   const collect = () => act(() => requestCollect(orderRef));
 
   if (timing.collect_requested) {
@@ -93,7 +84,7 @@ export function LateOrder({ orderRef, order, storeAddress, onChanged }: { orderR
           <Button variant="secondary" onClick={() => setConfirming(true)} className="mt-3 w-full justify-center py-2.5 text-sm">
             <ShoppingBag size={16} /> {t("late.collectMyself")}
           </Button>
-          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+          {action.error && <p className="mt-2 text-xs text-red-600">{action.error}</p>}
         </Card>
       )}
       <Sheet
@@ -102,9 +93,12 @@ export function LateOrder({ orderRef, order, storeAddress, onChanged }: { orderR
         title={t("late.cancelTitle")}
         subtitle={t("late.cancelSubtitle")}
         footer={
-          <Button variant="danger" loading={busy} onClick={() => act(() => cancelOrder(orderRef))} className="w-full">
-            {t("late.cancelButton")}
-          </Button>
+          <>
+            {action.error && <Notice className="mb-2">{action.error}</Notice>}
+            <Button variant="danger" loading={action.busy} onClick={() => act(() => cancelOrder(orderRef))} className="w-full">
+              {t("late.cancelButton")}
+            </Button>
+          </>
         }
       >
         <p className="text-sm text-ink-500">{t("late.onRecord")}</p>
@@ -115,9 +109,12 @@ export function LateOrder({ orderRef, order, storeAddress, onChanged }: { orderR
         title={t("late.collectTitle")}
         subtitle={storeAddress ? t("late.from", { place: storeAddress }) : t("late.fromStore")}
         footer={
-          <Button loading={busy} onClick={collect} className="w-full">
-            {t("late.collectButton")}
-          </Button>
+          <>
+            {action.error && <Notice className="mb-2">{action.error}</Notice>}
+            <Button loading={action.busy} onClick={collect} className="w-full">
+              {t("late.collectButton")}
+            </Button>
+          </>
         }
       >
         <p className="text-sm leading-relaxed text-ink-500">

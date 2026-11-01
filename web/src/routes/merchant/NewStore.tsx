@@ -6,13 +6,13 @@ import { publishCatalog } from "../../holochain/zomes/catalog";
 import { actionHash, bytesToHex } from "../../holochain/decode";
 import { useSession } from "../../store/session";
 import { useMerchantStores } from "../../store/merchantStores";
-import { Button, Card, Field, Input } from "../../components/ui";
-import { SplitAddressFields } from "../../components/SplitAddressFields";
-import { describeError } from "../../lib/ui/errors";
+import { Button, Card, Field, Input, Notice } from "../../components/ui";
+import { SplitAddressFields } from "../../components/places/SplitAddressFields";
 import { MAX_NAME_CHARS } from "../../holochain/types";
 import { formatCents } from "../../lib/ui/format";
 import { useTerms } from "../../store/network";
 import { useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 /// Publishing a storefront -- the same form whether it's a merchant's very
 /// first store (rendered inline by Catalog.tsx when they have none yet) or
@@ -34,14 +34,11 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
   // instead of leaving them blank until the merchant re-types the same
   // address in "Storefront details."
   const [addressDraft, setAddressDraft] = useState({ address_street: "", address_city: "", address_state: "", address_zip: "" });
-  const [publishing, setPublishing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
-  async function publish() {
+  function publish() {
     if (!businessName.trim()) return;
-    setPublishing(true);
-    setError(null);
-    try {
+    return action.run(async () => {
       const record = await publishCatalog({ business_name: businessName.trim(), location: pickupLocation, ...addressDraft });
       // Only a merchant's *first* store moves their browsing location --
       // that's "where I am" for someone just setting up. Adding a second
@@ -55,11 +52,7 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
       // and a pin, so this reads as one continuous setup flow. Names the
       // store so only *it* opens in edit mode (see Catalog.tsx).
       navigate("/merchant/catalog", { state: { editDetails: hex } });
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setPublishing(false);
-    }
+    });
   }
 
   return (
@@ -94,8 +87,8 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
             {t("newStore.stake", { amount: formatCents(stake) })}
           </p>
         )}
-        {error && <p className="rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>}
-        <Button loading={publishing} disabled={!businessName.trim()} onClick={publish}>
+        {action.error && <Notice>{action.error}</Notice>}
+        <Button loading={action.busy} disabled={!businessName.trim()} onClick={publish}>
           {firstStore ? t("newStore.publishFirst") : t("newStore.publish")}
         </Button>
       </Card>

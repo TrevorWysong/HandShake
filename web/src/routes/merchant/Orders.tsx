@@ -27,26 +27,27 @@ import { useMyStores, type StoreRow } from "../../store/merchantStores";
 import { fetchActiveQueue, storesKey, toRow, type QueueRow } from "../../store/merchantQueue";
 import { useResource } from "../../lib/hooks/useResource";
 import { describeError } from "../../lib/ui/errors";
+import { useAction } from "../../lib/hooks/useAction";
 import { useClock } from "../../lib/hooks/useClock";
 import { DECLINE_REASONS, declineLabel, responseDeadlineMs } from "../../lib/orders/storeAnswers";
 import { useTerms } from "../../store/network";
 import { useStoreSteps } from "../../lib/orders/storeSteps";
 import { currentBeacon } from "../../lib/network/timeSource";
-import { ResponseCountdown } from "../../components/ResponseCountdown";
-import { Button, Card, Chip, ChipRow, EmptyState, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
-import { StatusBadge, PickupStatusBadge } from "../../components/OrderStatus";
-import { ChatPanel } from "../../components/ChatPanel";
+import { ResponseCountdown } from "../../components/orders/ResponseCountdown";
+import { Button, Card, Chip, ChipRow, EmptyState, Notice, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
+import { StatusBadge, PickupStatusBadge } from "../../components/orders/OrderStatus";
+import { ChatPanel } from "../../components/orders/ChatPanel";
 import { bytesEqual } from "../../holochain/decode";
 import { formatCents, formatClockTime, formatDeadline, formatEta } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import type { DeclineReason, Timestamp } from "../../holochain/types";
 import { POLL, isOrderSignal } from "../../lib/network/poll";
 import { acknowledgeLeg } from "../../holochain/zomes/attestation";
-import { OrderLines } from "../../components/OrderLines";
-import { CustomerHistory } from "../../components/CustomerHistory";
-import { OrderIssues } from "../../components/OrderIssues";
-import { StoreAppeals } from "../../components/StoreAppeals";
-import { HandoverCode } from "../../components/HandoverCode";
+import { OrderLines } from "../../components/orders/OrderLines";
+import { CustomerHistory } from "../../components/orders/CustomerHistory";
+import { OrderIssues } from "../../components/orders/OrderIssues";
+import { StoreAppeals } from "../../components/orders/StoreAppeals";
+import { HandoverCode } from "../../components/orders/HandoverCode";
 import { unconfirmedPickup } from "../../lib/orders/handoffs";
 import { useT, type MessageKey } from "../../i18n";
 
@@ -190,7 +191,7 @@ function ActiveQueue({ stores, storeLabel, scope }: ListProps) {
           <motion.div key={row.hex} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <OrderCard row={row} storeLabel={storeLabel(row.storeHex)}>
               {errors[row.hex] && (
-                <p className="mt-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300">{errors[row.hex]}</p>
+                <Notice tone="warn" className="mt-2">{errors[row.hex]}</Notice>
               )}
               {row.order.status === "Placed" ? (
                 <AnswerOrder
@@ -358,24 +359,18 @@ interface HistoryState {
 function OrderHistory({ stores, storeLabel, scope }: ListProps) {
   const terms = useTerms();
   const now = useClock();
-  const [loadingMore, setLoadingMore] = useState(false);
+  const loading = useAction();
   const t = useT();
   const { data, mutate } = useResource<HistoryState>(`merchant-history:${storesKey(stores)}`, () => fetchHistoryPages(stores, null));
   const hasMore = !!data && Object.values(data.cursors).some((cursor) => cursor !== null);
 
-  async function loadMore() {
-    if (!data) return;
-    setLoadingMore(true);
-    try {
-      const next = await fetchHistoryPages(stores.filter((s) => data.cursors[s.hex] !== null), data.cursors);
-      mutate((prev) => ({
-        rows: mergeNewestFirst(prev?.rows ?? [], next.rows),
-        cursors: { ...(prev?.cursors ?? {}), ...next.cursors },
-      }));
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const loadMore = (from: HistoryState) => loading.run(async () => {
+    const next = await fetchHistoryPages(stores.filter((s) => from.cursors[s.hex] !== null), from.cursors);
+    mutate((prev) => ({
+      rows: mergeNewestFirst(prev?.rows ?? [], next.rows),
+      cursors: { ...(prev?.cursors ?? {}), ...next.cursors },
+    }));
+  });
 
   if (data === undefined) return <QueueSkeleton />;
   if (data.rows.length === 0) return <EmptyState icon={<ClipboardList size={32} />} title={t("merchantOrders.noOrders")} subtitle={t("merchantOrders.noOrdersDetail", { scope })} />;
@@ -387,10 +382,11 @@ function OrderHistory({ stores, storeLabel, scope }: ListProps) {
         </OrderCard>
       ))}
       {hasMore && (
-        <Button variant="ghost" loading={loadingMore} onClick={loadMore} className="w-full py-2 text-xs">
+        <Button variant="ghost" loading={loading.busy} onClick={() => loadMore(data)} className="w-full py-2 text-xs">
           {t("common.loadMore")}
         </Button>
       )}
+      {loading.error && <Notice>{loading.error}</Notice>}
     </div>
   );
 }
@@ -456,32 +452,21 @@ function PickupHandoff({ orderHex, orderRef, checkedIn }: { orderHex: string; or
   const terms = useTerms();
   const [scanning, setScanning] = useState(false);
   const t = useT();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A scanner reads a held-up code many times a second: one hand-over.
+  const handing = useAction();
   const { data: code } = useResource(checkedIn ? null : `pickup-code:${orderHex}`, () => getMyPickupCode(orderRef));
   const { data: pickup, reload } = useResource(`unconfirmed-pickup:${orderHex}`, () => unconfirmedPickup(orderRef), { pollMs: POLL.signalled });
   const { data: timing = null } = useResource(checkedIn ? `order-timing:${orderHex}:at-store` : null, () => getOrderTiming(orderRef));
 
-  async function handOver(leg: Uint8Array) {
-    setBusy(true);
-    setError(null);
-    try {
-      await acknowledgeLeg(leg);
-      setScanning(false);
-      await reload();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const handOver = (leg: Uint8Array) => handing.run(async () => {
+    await acknowledgeLeg(leg);
+    setScanning(false);
+    await reload();
+  });
 
   function scanned(text: string) {
     const parsed = decodePickupCode(text);
-    if (!parsed || parsed.orderHex !== orderHex) {
-      setError(t("merchantOrders.notDriverCode"));
-      return;
-    }
+    if (!parsed || parsed.orderHex !== orderHex) return handing.setError(t("merchantOrders.notDriverCode"));
     void handOver(parsed.leg);
   }
 
@@ -499,16 +484,16 @@ function PickupHandoff({ orderHex, orderRef, checkedIn }: { orderHex: string; or
       {scanning ? (
         <QrScanner onScan={scanned} />
       ) : (
-        <Button className="w-full py-2 text-xs" loading={busy} onClick={() => setScanning(true)}>
+        <Button className="w-full py-2 text-xs" loading={handing.busy} onClick={() => setScanning(true)}>
           {t("merchantOrders.handOver")}
         </Button>
       )}
       {pickup && (
-        <Button variant="ghost" className="w-full py-2 text-xs" loading={busy} onClick={() => handOver(pickup)}>
+        <Button variant="ghost" className="w-full py-2 text-xs" loading={handing.busy} onClick={() => handOver(pickup)}>
           {t("merchantOrders.confirmHanded")}
         </Button>
       )}
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {handing.error && <p className="text-xs text-red-600 dark:text-red-400">{handing.error}</p>}
       <p className="text-[11px] text-ink-400">{t("merchantOrders.waitNote", { minutes: Math.round(terms.store_wait_secs / 60) })}</p>
     </div>
   );
@@ -519,34 +504,25 @@ function PickupHandoff({ orderHex, orderRef, checkedIn }: { orderHex: string; or
 /// delivery, refunding the customer and taking the driver's collateral for
 /// the food -- or the store can decide now.
 function NeverArrivedClaim({ orderHex, orderRef }: { orderHex: string; orderRef: Uint8Array }) {
-  const [deciding, setDeciding] = useState(false);
   const t = useT();
-  const [error, setError] = useState<string | null>(null);
+  const deciding = useAction();
   const { data: decisions, reload } = useResource(`order-decisions:${orderHex}`, () => getOrderDecisions(orderRef), { pollMs: POLL.signalled });
   if (!decisions) return null;
   if (decisions.not_delivered) return <p className="mt-2 text-xs text-ink-400">{t("merchantOrders.neverArrived")}</p>;
-  async function decide() {
-    setDeciding(true);
-    setError(null);
-    try {
-      await decideNotDelivered(orderRef);
-      await reload();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setDeciding(false);
-    }
-  }
+  const decide = () => deciding.run(async () => {
+    await decideNotDelivered(orderRef);
+    await reload();
+  });
   return (
     <div className="mt-3 rounded-xl bg-amber-50 p-3 dark:bg-amber-900/20">
       <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">
         <span className="font-semibold">{t("merchantOrders.claimTitle")}</span>{" "}
         {decisions.claim_decided_after ? t("merchantOrders.claimAt", { time: formatDeadline(decisions.claim_decided_after) }) : t("merchantOrders.claim")}
       </p>
-      <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={deciding} onClick={decide}>
+      <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={deciding.busy} onClick={decide}>
         {t("merchantOrders.refundNow")}
       </Button>
-      {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {deciding.error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{deciding.error}</p>}
     </div>
   );
 }
@@ -574,29 +550,17 @@ function CollectionHandoff({ row }: { row: QueueRow }) {
   const t = useT();
   const now = useClock(30_000);
   const [scanning, setScanning] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  // A scanner reads a held-up code many times a second: one hand-over.
+  const handing = useAction();
   const overdue = now.getTime() * 1000 >= row.writtenAt + windowSecs * 1_000_000;
-
-  async function act(change: () => Promise<unknown>) {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await change();
-      setScanning(false);
-    } catch (err) {
-      setProblem(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const act = (change: () => Promise<unknown>) => handing.run(async () => {
+    await change();
+    setScanning(false);
+  });
 
   function scanned(text: string) {
     const code = decodeHandoverCode(text);
-    if (!code || code.orderHex !== row.hex) {
-      setProblem(t("merchantOrders.notOrderCode"));
-      return;
-    }
+    if (!code || code.orderHex !== row.hex) return handing.setError(t("merchantOrders.notOrderCode"));
     void act(() => handOverCollection(row.ref, code.secret));
   }
 
@@ -608,16 +572,16 @@ function CollectionHandoff({ row }: { row: QueueRow }) {
           <QrScanner onScan={scanned} />
         </div>
       ) : (
-        <Button className="mt-2 w-full py-2 text-xs" loading={busy} onClick={() => setScanning(true)}>
+        <Button className="mt-2 w-full py-2 text-xs" loading={handing.busy} onClick={() => setScanning(true)}>
           {t("handoff.scan")}
         </Button>
       )}
       {overdue && (
-        <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={busy} onClick={() => act(async () => markNotCollected(row.ref, await currentBeacon()))}>
+        <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={handing.busy} onClick={() => act(async () => markNotCollected(row.ref, await currentBeacon()))}>
           {t("merchantOrders.neverCame")}
         </Button>
       )}
-      {problem && <p className="mt-2 text-xs text-red-600">{problem}</p>}
+      {handing.error && <p className="mt-2 text-xs text-red-600">{handing.error}</p>}
     </div>
   );
 }

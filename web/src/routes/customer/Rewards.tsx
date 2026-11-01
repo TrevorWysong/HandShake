@@ -7,16 +7,16 @@ import { myBirthMonth, myCard, myCards, setBirthMonth } from "../../holochain/zo
 import { PendingList } from "../../components/rewards/PendingPoints";
 import { bytesToHex, hexToBytes } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
-import { fetchMenu } from "../../lib/menu/menu";
+import { fetchMenu } from "../../lib/storefront/menu";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { ACCENTS, expiresAt, tierOf } from "../../lib/rewards/rewards";
 import { RewardsCard } from "../../components/rewards/RewardsCard";
 import { HowYouEarn, RewardRail, RewardTile, TierLadder } from "../../components/rewards/RewardPieces";
 import { Button, Card, Skeleton } from "../../components/ui";
-import { describeError } from "../../lib/ui/errors";
 import type { CardView, PointsLine } from "../../holochain/types";
 import { useCart } from "../../store/cart";
 import { useT } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 /// Every rewards card the customer holds, most recently used first, and
 /// their birthday month.
@@ -79,8 +79,8 @@ function BirthdayCard() {
   const { data: month, reload } = useResource("rewards:birth-month", myBirthMonth);
   const [choice, setChoice] = useState(() => new Date().getMonth() + 1);
   const [confirming, setConfirming] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Set once, ever: it stays busy as the card shows it set.
+  const saving = useAction();
   if (month === undefined) return null;
   return (
     <Card className="p-5">
@@ -113,19 +113,13 @@ function BirthdayCard() {
                 </Button>
                 <Button
                   className="flex-1"
-                  loading={saving}
-                  onClick={async () => {
-                    setSaving(true);
-                    setError(null);
-                    try {
+                  loading={saving.busy}
+                  onClick={() =>
+                    saving.run(async () => {
                       await setBirthMonth(choice);
                       await reload();
-                    } catch (err) {
-                      setError(describeError(err));
-                    } finally {
-                      setSaving(false);
-                    }
-                  }}
+                    }, { stayBusy: true })
+                  }
                 >
                   {t("rewards.birthdayConfirm")}
                 </Button>
@@ -136,7 +130,7 @@ function BirthdayCard() {
               {t("rewards.birthdaySave")}
             </Button>
           )}
-          {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+          {saving.error && <p className="mt-2 text-xs text-red-500">{saving.error}</p>}
         </div>
       )}
     </Card>

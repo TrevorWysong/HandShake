@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, Plus, Store } from "lucide-react";
 import clsx from "clsx";
-import { useActiveStore, useMerchantStores } from "../store/merchantStores";
-import { formatCatalogAddress } from "../lib/ui/format";
-import { useT } from "../i18n";
+import { useActiveStore, useMerchantStores } from "../../store/merchantStores";
+import { formatCatalogAddress } from "../../lib/ui/format";
+import { useT } from "../../i18n";
 
 /// The Uber Eats Manager / DoorDash Merchant Portal-style store picker at
 /// the top of a merchant's per-store screens: shows which store you're

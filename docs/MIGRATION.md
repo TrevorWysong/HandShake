@@ -84,8 +84,8 @@ A release made while people move carries the previous network as a second app ro
 - `issuer/src/migrations.ts`: carries balances over.
 - `web/scripts/package.ts`: `--previous`.
 - Web:
-  - `routes/Account.tsx`, the move sheet in the old version;
-  - `components/RestoreAccount.tsx`, "From the previous version" in the new version;
+  - `routes/account/UpgradeSheet.tsx`, the move sheet in the old version;
+  - `components/account/RestoreAccount.tsx`, "From the previous version" in the new version;
   - `holochain/client.ts`, calls to the `previous` role.
 - Tests:
   - `tests/tryorama/src/migration.test.ts`, two real networks end to end;

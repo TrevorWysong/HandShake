@@ -9,16 +9,17 @@ import { getCatalog, getMyBagClaims, getGoodieBag } from "../../holochain/zomes/
 import { decodeEntry, actionHash, bytesToHex } from "../../holochain/decode";
 import { useCart } from "../../store/cart";
 import { useResource } from "../../lib/hooks/useResource";
-import { cartLinesFromOrder, fetchMenu } from "../../lib/menu/menu";
+import { cartLinesFromOrder, fetchMenu } from "../../lib/storefront/menu";
 import { customerOrderPath, isFinished, itemCount, mergeNewestFirst, toOrderRow, type OrderRow } from "../../lib/orders/orderEntries";
-import { Button, Card, EmptyState, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
-import { StatusBadge, PickupStatusBadge } from "../../components/OrderStatus";
+import { Button, Card, EmptyState, Notice, SectionLabel, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
+import { StatusBadge, PickupStatusBadge } from "../../components/orders/OrderStatus";
 import { formatCents } from "../../lib/ui/format";
 import { describeRecurrence } from "../../lib/orders/recurrence";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import type { BagClaim, GoodieBag, MerchantCatalog, RecurringOrderTemplate, Timestamp } from "../../holochain/types";
 import { POLL } from "../../lib/network/poll";
 import { t as translate, useT, type MessageKey } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 
 const TABS = [
@@ -84,19 +85,13 @@ interface PastState {
 /// back shorter than its limit, which "Load more" handles like any other.
 function PastOrders() {
   const t = useT();
-  const [loadingMore, setLoadingMore] = useState(false);
+  const loading = useAction();
   const { data, mutate } = useResource<PastState>("customer-order-history", () => fetchPast(null));
 
-  async function loadMore() {
-    if (!data?.nextBefore) return;
-    setLoadingMore(true);
-    try {
-      const next = await fetchPast(data.nextBefore);
-      mutate((prev) => ({ rows: mergeNewestFirst(prev?.rows ?? [], next.rows), nextBefore: next.nextBefore }));
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const loadMore = (before: Timestamp) => loading.run(async () => {
+    const next = await fetchPast(before);
+    mutate((prev) => ({ rows: mergeNewestFirst(prev?.rows ?? [], next.rows), nextBefore: next.nextBefore }));
+  });
 
   if (data === undefined) return <ListSkeleton />;
   if (data.rows.length === 0 && data.nextBefore === null) {
@@ -110,10 +105,11 @@ function PastOrders() {
         </OrderCard>
       ))}
       {data.nextBefore !== null && (
-        <Button variant="ghost" loading={loadingMore} onClick={loadMore} className="w-full py-2 text-xs">
+        <Button variant="ghost" loading={loading.busy} onClick={() => data.nextBefore && loadMore(data.nextBefore)} className="w-full py-2 text-xs">
           {t("common.loadMore")}
         </Button>
       )}
+      {loading.error && <Notice>{loading.error}</Notice>}
     </div>
   );
 }
@@ -154,24 +150,19 @@ function ReorderButton({ row }: { row: OrderRow }) {
   const t = useT();
   const cart = useCart();
   const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
+  const reordering = useAction();
 
-  async function reorder() {
+  const reorder = () => reordering.run(async () => {
     const { order } = row;
-    setBusy(true);
-    try {
-      const [catalogRecord, menuItems] = await Promise.all([getCatalog(order.catalog_ref), fetchMenu(order.catalog_ref)]);
-      const catalog = decodeEntry<MerchantCatalog>(catalogRecord);
-      const lines = await cartLinesFromOrder(order.catalog_ref, order.lines, menuItems);
-      cart.setCart(order.catalog_ref, order.merchant, catalog.business_name, lines);
-      navigate("/customer/cart");
-    } finally {
-      setBusy(false);
-    }
-  }
+    const [catalogRecord, menuItems] = await Promise.all([getCatalog(order.catalog_ref), fetchMenu(order.catalog_ref)]);
+    const catalog = decodeEntry<MerchantCatalog>(catalogRecord);
+    const lines = await cartLinesFromOrder(order.catalog_ref, order.lines, menuItems);
+    cart.setCart(order.catalog_ref, order.merchant, catalog.business_name, lines);
+    navigate("/customer/cart");
+  });
 
   return (
-    <Button variant="ghost" className="px-2.5 py-1.5 text-xs" loading={busy} onClick={reorder} aria-label={t("orders.reorder")}>
+    <Button variant="ghost" className="px-2.5 py-1.5 text-xs" loading={reordering.busy} onClick={reorder} aria-label={reordering.error ?? t("orders.reorder")} title={reordering.error ?? undefined}>
       <RotateCcw size={13} />
     </Button>
   );
@@ -200,9 +191,7 @@ function PendingClaims() {
   if (!claims?.length) return null;
   return (
     <div className="mb-5">
-      <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-        <PackageOpen size={13} className="text-handshake-500" /> {t("orders.pendingClaims")}
-      </p>
+      <SectionLabel icon={<PackageOpen size={13} className="text-handshake-500" />} className="mb-2">{t("orders.pendingClaims")}</SectionLabel>
       <div className="flex flex-col gap-2">
         {claims.map((claim) => (
           <Card key={claim.hex} className="p-3.5">
@@ -219,7 +208,7 @@ function PendingClaims() {
 /// (which reloads them), so they're read once, not polled.
 function RecurringOrders() {
   const t = useT();
-  const [toggling, setToggling] = useState<string | null>(null);
+  const toggling = useAction();
   const { data: templates, reload } = useResource("customer-recurring", async () =>
     Promise.all(
       (await listMyRecurringTemplates()).map(async (view) => {
@@ -232,22 +221,15 @@ function RecurringOrders() {
     ),
   );
 
-  async function toggle(hash: Uint8Array, hex: string, active: boolean) {
-    setToggling(hex);
-    try {
-      await setRecurringTemplateActive(hash, !active);
-      await reload();
-    } finally {
-      setToggling(null);
-    }
-  }
+  const toggle = (hash: Uint8Array, hex: string, active: boolean) => toggling.run(async () => {
+    await setRecurringTemplateActive(hash, !active);
+    await reload();
+  }, { as: hex });
 
   if (!templates?.length) return null;
   return (
     <div className="mb-5">
-      <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-        <Repeat size={13} /> {t("orders.recurring")}
-      </p>
+      <SectionLabel icon={<Repeat size={13} />} className="mb-2">{t("orders.recurring")}</SectionLabel>
       <div className="flex flex-col gap-2">
         {templates.map(({ hash, hex, template, storeName }) => (
           <Card key={hex} className="flex items-center justify-between p-3.5">
@@ -255,7 +237,7 @@ function RecurringOrders() {
               <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{storeName}</p>
               <p className="text-xs text-ink-400">{describeRecurrence(template.recurrence)}</p>
             </div>
-            <Button variant={template.active ? "secondary" : "ghost"} className="px-3 py-1.5 text-xs" loading={toggling === hex} onClick={() => toggle(hash, hex, template.active)}>
+            <Button variant={template.active ? "secondary" : "ghost"} className="px-3 py-1.5 text-xs" loading={toggling.doing === hex} disabled={toggling.busy} onClick={() => toggle(hash, hex, template.active)}>
               {template.active ? <Pause size={13} /> : <Play size={13} />} {template.active ? t("orders.active") : t("orders.paused")}
             </Button>
           </Card>

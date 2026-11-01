@@ -7,8 +7,8 @@ import { myCard } from "../../holochain/zomes/rewards";
 import { getCatalog } from "../../holochain/zomes/catalog";
 import { bytesToHex, decodeEntry, hexToBytes } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
-import { fetchMenu, type ItemRow } from "../../lib/menu/menu";
-import { describeReward } from "../../lib/menu/promotions";
+import { fetchMenu, itemNamer, type ItemRow } from "../../lib/storefront/menu";
+import { describeReward } from "../../lib/storefront/promotions";
 import { ACCENTS, redeemable, rewardLine, tierOf } from "../../lib/rewards/rewards";
 import { RewardArt } from "../../components/rewards/RewardPieces";
 import { Sheet } from "../../components/Sheet";
@@ -61,7 +61,7 @@ export function RedeemRewards() {
   const rewards = [...program.rewards].sort((a, b) => a.cost - b.cost);
   const buckets = [...new Set(rewards.map((r) => r.cost))];
   const shown = bucket === null ? rewards : rewards.filter((r) => r.cost === bucket);
-  const itemName = (hex: string) => menu.find((m) => bytesToHex(m.hash) === hex)?.item.name;
+  const itemName = itemNamer(menu);
 
   const redeem = (reward: Reward) => {
     if (!store) return;

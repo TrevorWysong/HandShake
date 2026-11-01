@@ -19,14 +19,14 @@ import { myAgentPubKey } from "../../holochain/client";
 import { actionHash, bytesEqual, bytesToHex, decodeEntry } from "../../holochain/decode";
 import { HANDOFF_CODE_DIGITS, type DeliveryOrder, type GeoPoint, type Leg } from "../../holochain/types";
 import { decodeHandoverCode, encodePickupCode } from "../../lib/orders/handoverCode";
-import { describeError } from "../../lib/ui/errors";
+import { useAction } from "../../lib/hooks/useAction";
 import { formatClockTime } from "../../lib/ui/format";
 import { POLL } from "../../lib/network/poll";
 import { currentBeacon } from "../../lib/network/timeSource";
 import { useClock } from "../../lib/hooks/useClock";
 import { useResource } from "../../lib/hooks/useResource";
-import { Button, Input } from "../../components/ui";
-import { QrSvg } from "../../components/HandoverCode";
+import { Button, Input, Notice } from "../../components/ui";
+import { QrSvg } from "../../components/orders/HandoverCode";
 import { QrScanner } from "../../components/QrScanner";
 import { Sheet } from "../../components/Sheet";
 import { t as translate, useT } from "../../i18n";
@@ -41,23 +41,14 @@ export function StoreCheckIn({ orderRef, onDone }: Props) {
   const [code, setCode] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [reporting, setReporting] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
   const orderHex = bytesToHex(orderRef);
 
-  async function checkIn(pin: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      await checkInAtStore(orderRef, pin);
-      setScanning(false);
-      await onDone();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const checkIn = (pin: string) => action.run(async () => {
+    await checkInAtStore(orderRef, pin);
+    setScanning(false);
+    await onDone();
+  });
 
   // A scan fills in the store's digits; checking in is the driver's tap.
   const onScan = useCallback(
@@ -73,18 +64,10 @@ export function StoreCheckIn({ orderRef, onDone }: Props) {
     [orderHex],
   );
 
-  async function report() {
-    setBusy(true);
-    setError(null);
-    try {
-      await reportCheckInRefused(orderRef);
-      setReporting(false);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const report = () => action.run(async () => {
+    await reportCheckInRefused(orderRef);
+    setReporting(false);
+  });
 
   return (
     <div className="flex flex-col gap-3">
@@ -99,7 +82,7 @@ export function StoreCheckIn({ orderRef, onDone }: Props) {
       </button>
       <div className="flex items-center gap-2">
         <Input inputMode="numeric" maxLength={HANDOFF_CODE_DIGITS} placeholder={t("store.checkIn.type")} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, HANDOFF_CODE_DIGITS))} className="py-2 text-sm" />
-        <Button variant="secondary" className="px-4 py-2 text-xs" loading={busy} disabled={code.length !== HANDOFF_CODE_DIGITS} onClick={() => checkIn(code)}>
+        <Button variant="secondary" className="px-4 py-2 text-xs" loading={action.busy} disabled={code.length !== HANDOFF_CODE_DIGITS} onClick={() => checkIn(code)}>
           {t("store.checkIn.button")}
         </Button>
       </div>
@@ -107,7 +90,7 @@ export function StoreCheckIn({ orderRef, onDone }: Props) {
       <button onClick={() => setReporting(true)} className="text-center text-xs font-medium text-ink-400 hover:text-ink-600">
         {t("store.checkIn.refused")}
       </button>
-      {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">{error}</p>}
+      {action.error && <Notice>{action.error}</Notice>}
 
       <Sheet open={scanning} onClose={() => setScanning(false)} title={t("store.checkIn.scanTitle")} subtitle={t("store.checkIn.scanSubtitle")}>
         <QrScanner onScan={onScan} />
@@ -126,7 +109,7 @@ export function StoreCheckIn({ orderRef, onDone }: Props) {
         title={t("store.report.title")}
         subtitle={t("store.report.subtitle")}
         footer={
-          <Button loading={busy} onClick={report} className="w-full">
+          <Button loading={action.busy} onClick={report} className="w-full">
             {t("store.report.button")}
           </Button>
         }
@@ -155,33 +138,20 @@ export function StorePickup({ orderRef, order, location, onDone }: Props) {
   });
   const { data: timing = null } = useResource(`order-timing:${orderHex}:${order.status}`, () => getOrderTiming(orderRef), { pollMs: POLL.signalled });
   const [confirmingLate, setConfirmingLate] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function run(step: () => Promise<unknown>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await step();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const action = useAction();
 
   const showCode = () =>
-    run(async () => {
+    action.run(async () => {
       await recordLeg({ order_ref: orderRef, sequence: 0, kind: "MerchantHandoff", to: order.merchant, geo_at_completion: location, photo_data_uri: "" });
       await reloadLeg();
     });
   const checkAgain = () =>
-    run(async () => {
+    action.run(async () => {
       await pickUpOrder(orderRef);
       await onDone();
     });
   const callLate = () =>
-    run(async () => {
+    action.run(async () => {
       await callStoreLate(orderRef, await currentBeacon());
       setConfirmingLate(false);
       await onDone();
@@ -200,12 +170,12 @@ export function StorePickup({ orderRef, order, location, onDone }: Props) {
         <div className="flex flex-col items-center rounded-2xl bg-white p-4 ring-1 ring-ink-100 dark:ring-ink-800">
           <QrSvg text={encodePickupCode(orderHex, leg)} size={196} />
           <p className="mt-2 text-center text-xs text-ink-500">{t("store.pickup.show")}</p>
-          <button onClick={checkAgain} disabled={busy} className="mt-2 text-xs font-semibold text-ink-500 underline-offset-4 hover:underline disabled:opacity-50">
+          <button onClick={checkAgain} disabled={action.busy} className="mt-2 text-xs font-semibold text-ink-500 underline-offset-4 hover:underline disabled:opacity-50">
             {t("store.pickup.checkAgain")}
           </button>
         </div>
       ) : (
-        <Button className="w-full" loading={busy} onClick={showCode}>
+        <Button className="w-full" loading={action.busy} onClick={showCode}>
           {t("store.pickup.showCode")}
         </Button>
       )}
@@ -220,14 +190,14 @@ export function StorePickup({ orderRef, order, location, onDone }: Props) {
           {t("store.pickup.late")}
         </Button>
       )}
-      {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">{error}</p>}
+      {action.error && <Notice>{action.error}</Notice>}
       <Sheet
         open={confirmingLate}
         onClose={() => setConfirmingLate(false)}
         title={t("store.pickup.lateTitle")}
         subtitle={t("store.pickup.lateSubtitle")}
         footer={
-          <Button loading={busy} onClick={callLate} className="w-full">
+          <Button loading={action.busy} onClick={callLate} className="w-full">
             {t("store.pickup.lateButton")}
           </Button>
         }

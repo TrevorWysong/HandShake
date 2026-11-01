@@ -1,17 +1,18 @@
 // A storefront's "About & contact": where the store is, when it's open, and
 // how to reach it -- each a row a customer taps. Rows a store hasn't
-// filled in aren't shown, and every link comes from `lib/menu/contact.ts`,
+// filled in aren't shown, and every link comes from `lib/storefront/contact.ts`,
 // which builds one only from details that pass validation's rules.
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, Clock, Copy, Globe, Mail, MapPin, Phone } from "lucide-react";
 import clsx from "clsx";
-import { directionsHref, mailtoHref, opensAppLinks, telHref, websiteHref, websiteLabel } from "../lib/menu/contact";
-import { describeWeek, localWeekdayMinute, storeStatus } from "../lib/menu/storeHours";
-import { formatCatalogAddress } from "../lib/ui/format";
-import { useClock } from "../lib/hooks/useClock";
-import type { MerchantCatalog } from "../holochain/types";
-import { useT } from "../i18n";
+import { directionsHref, mailtoHref, opensAppLinks, telHref, websiteHref, websiteLabel } from "../../lib/storefront/contact";
+import { describeWeek, localWeekdayMinute, storeStatus } from "../../lib/storefront/storeHours";
+import { formatCatalogAddress } from "../../lib/ui/format";
+import { useClock } from "../../lib/hooks/useClock";
+import type { MerchantCatalog } from "../../holochain/types";
+import { useT } from "../../i18n";
+import { SectionLabel } from "../ui";
 
 export function StoreContact({ catalog }: { catalog: MerchantCatalog }) {
   const t = useT();
@@ -24,9 +25,9 @@ export function StoreContact({ catalog }: { catalog: MerchantCatalog }) {
 
   return (
     <section aria-labelledby="store-contact" className="mt-6">
-      <h2 id="store-contact" className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">
+      <SectionLabel as="h2" id="store-contact" className="mb-2">
         {t("storeContact.title")}
-      </h2>
+      </SectionLabel>
       <div className="divide-y divide-ink-100 overflow-hidden rounded-2xl border border-ink-100 bg-white dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-900">
         <HoursRow catalog={catalog} />
         {address && <Row icon={<MapPin size={16} />} primary={address} secondary={t("storeContact.directions")} href={directions} external />}

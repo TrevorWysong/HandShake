@@ -1,7 +1,8 @@
 import type { HTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Minus, Plus } from "lucide-react";
 import clsx from "clsx";
+import { useT } from "../i18n";
 
 export function Card({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
@@ -235,6 +236,61 @@ export function Field({ label, children, className }: { label: string; children:
     <div className={className}>
       <label className="mb-1 block text-xs font-semibold text-ink-500">{label}</label>
       {children}
+    </div>
+  );
+}
+
+/// The small uppercase heading over a section of a screen -- with an icon
+/// before it, if given.
+export function SectionLabel({ icon, children, className, as: Tag = "p", id }: { icon?: ReactNode; children: ReactNode; className?: string; as?: "p" | "h2" | "h3"; id?: string }) {
+  return (
+    <Tag id={id} className={clsx("text-xs font-bold uppercase tracking-wide text-ink-400", icon && "flex items-center gap-1.5", className)}>
+      {icon}
+      {children}
+    </Tag>
+  );
+}
+
+const NOTICE_TONES = {
+  error: "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300",
+  warn: "bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200",
+} as const;
+
+/// A message in a box: why something failed (`error`, announced to screen
+/// readers as it appears), or what to watch out for (`warn`).
+export function Notice({ tone = "error", children, className }: { tone?: keyof typeof NOTICE_TONES; children: ReactNode; className?: string }) {
+  return (
+    <p role={tone === "error" ? "alert" : undefined} className={clsx("rounded-lg px-3 py-2 text-xs", NOTICE_TONES[tone], className)}>
+      {children}
+    </p>
+  );
+}
+
+/// A count to step up and down, from `min` to `max`.
+export function Stepper({ value, min = 0, max, onChange }: { value: number; min?: number; max: number; onChange: (value: number) => void }) {
+  const t = useT();
+  const step = (to: number) => onChange(Math.min(max, Math.max(min, to)));
+  const button = "grid h-9 w-9 place-items-center rounded-full transition disabled:opacity-30 text-ink-700 hover:bg-white dark:text-ink-200 dark:hover:bg-ink-700";
+  return (
+    <div className="flex shrink-0 items-center gap-1 rounded-full bg-ink-100 p-0.5 dark:bg-ink-800">
+      <button type="button" aria-label={t("item.fewer")} className={button} disabled={value <= min} onClick={() => step(value - 1)}>
+        <Minus size={16} />
+      </button>
+      <span className="w-6 text-center text-sm font-bold tabular-nums text-ink-900 dark:text-ink-50">{value}</span>
+      <button type="button" aria-label={t("item.more")} className={button} disabled={value >= max} onClick={() => step(value + 1)}>
+        <Plus size={16} />
+      </button>
+    </div>
+  );
+}
+
+/// A titled card of rows, on a screen of them (the wallet, the account) --
+/// `divided` puts a rule between its rows.
+export function CardSection({ title, divided = false, children }: { title: string; divided?: boolean; children: ReactNode }) {
+  return (
+    <div className="mb-4">
+      <SectionLabel className="mb-2">{title}</SectionLabel>
+      <Card className={clsx("overflow-hidden", divided && "divide-y divide-ink-100 dark:divide-ink-800")}>{children}</Card>
     </div>
   );
 }

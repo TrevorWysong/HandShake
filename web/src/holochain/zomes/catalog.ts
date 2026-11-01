@@ -31,7 +31,7 @@ export interface CatalogDetails {
   cuisine_type?: string;
   banner_data_uri?: string;
   phone?: string;
-  /// An address customers can write to, or empty (`lib/menu/contact.ts`).
+  /// An address customers can write to, or empty (`lib/storefront/contact.ts`).
   email?: string;
   /// The store's own `http(s)://` website, or empty.
   website?: string;

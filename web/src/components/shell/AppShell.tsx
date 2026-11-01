@@ -2,23 +2,23 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import { Home, ClipboardList, ShoppingCart, User, Car, DollarSign, Sparkles, Gift } from "lucide-react";
-import { useSession, type Mode } from "../store/session";
-import { useCart } from "../store/cart";
-import { pageVariants } from "../lib/ui/motion";
-import { PresenceDot } from "./ui";
+import { useSession, type Mode } from "../../store/session";
+import { useCart } from "../../store/cart";
+import { pageVariants } from "../../lib/ui/motion";
+import { PresenceDot } from "../ui";
 import { BottomNavLink } from "./BottomNavLink";
 import { MerchantNav } from "./MerchantNav";
 import { Notifier } from "./Notifier";
 import { ConnectionBanner } from "./ConnectionBanner";
-import { usePolling, useResource } from "../lib/hooks/useResource";
-import { nextNetwork } from "../lib/account/migration";
-import { POLL } from "../lib/network/poll";
-import { collectIncoming } from "../lib/money/wallet";
-import { topUpIfLow } from "../lib/money/autoTopUp";
-import { reaffirmRecoveryPlan } from "../holochain/zomes/account";
-import { bytesToHex } from "../holochain/decode";
-import { useCustomerSettings } from "../store/roleSettings";
-import { useT } from "../i18n";
+import { usePolling, useResource } from "../../lib/hooks/useResource";
+import { nextNetwork } from "../../lib/account/migration";
+import { POLL } from "../../lib/network/poll";
+import { collectIncoming } from "../../lib/money/wallet";
+import { topUpIfLow } from "../../lib/money/autoTopUp";
+import { reaffirmRecoveryPlan } from "../../holochain/zomes/account";
+import { bytesToHex } from "../../holochain/decode";
+import { useCustomerSettings } from "../../store/roleSettings";
+import { useT } from "../../i18n";
 
 /// Wraps whichever route is active in a short fade+rise so navigating
 /// between screens (Browse -> cart, an order's detail page, switching

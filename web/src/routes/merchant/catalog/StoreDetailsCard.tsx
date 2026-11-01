@@ -5,14 +5,14 @@ import { closeListing, detailsOf, isStoreListed, reopenListing, setAutoAcceptOrd
 import { formatCatalogAddress, formatCents, formatDistance, toMinorUnits, fromMinorUnits, currencySymbol } from "../../../lib/ui/format";
 import { useT } from "../../../i18n";
 import { useResource } from "../../../lib/hooks/useResource";
-import { describeError } from "../../../lib/ui/errors";
+import { useAction } from "../../../lib/hooks/useAction";
 import { bytesToHex } from "../../../holochain/decode";
-import { Button, Card, Field, Input, Switch, Textarea } from "../../../components/ui";
+import { Button, Card, Field, Input, Notice, SectionLabel, Switch, Textarea } from "../../../components/ui";
 import { PhotoInput } from "../../../components/PhotoInput";
-import { SplitAddressFields } from "../../../components/SplitAddressFields";
+import { SplitAddressFields } from "../../../components/places/SplitAddressFields";
 import type { MerchantCatalog } from "../../../holochain/types";
 import { MAX_DESCRIPTION_CHARS, MAX_EMAIL_CHARS, MAX_LABEL_CHARS, MAX_PHONE_CHARS, MAX_WEBSITE_CHARS } from "../../../holochain/types";
-import { isStoreEmail, isStoreWebsite, normalizeWebsite, websiteLabel } from "../../../lib/menu/contact";
+import { isStoreEmail, isStoreWebsite, normalizeWebsite, websiteLabel } from "../../../lib/storefront/contact";
 import { useTerms } from "../../../store/network";
 
 /// The storefront's details: a read-only summary, or the editor.
@@ -22,7 +22,7 @@ export function StoreDetailsCard({ catalog, catalogRef, startEditing, onSaved }:
   return (
     <Card className="my-4 p-4">
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.details")}</p>
+        <SectionLabel>{t("storeSettings.details")}</SectionLabel>
         <button onClick={() => setEditing((v) => !v)} className="text-ink-400 hover:text-handshake-600" aria-label={t("storeSettings.editDetails")}>
           <Pencil size={14} />
         </button>
@@ -92,25 +92,12 @@ function detailsDraftFrom(catalog: MerchantCatalog) {
 function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: (draft: DetailsDraft) => Promise<void> }) {
   const [draft, setDraft] = useState(() => detailsDraftFrom(catalog));
   const t = useT();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const save = useAction();
   const set = (patch: Partial<DetailsDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const email = draft.email.trim();
   const website = normalizeWebsite(draft.website);
   const emailOk = isStoreEmail(email);
   const websiteOk = isStoreWebsite(website);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await onSave({ ...draft, email, website });
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -130,7 +117,7 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
         address={{ street: draft.address_street, city: draft.address_city, state: draft.address_state, zip: draft.address_zip }}
         onAddressChange={(a) => set({ address_street: a.street, address_city: a.city, address_state: a.state, address_zip: a.zip })}
       />
-      <p className="mt-2 text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.contact")}</p>
+      <SectionLabel className="mt-2">{t("storeSettings.contact")}</SectionLabel>
       <p className="-mt-1 text-xs text-ink-400">{t("storeSettings.contactDetail")}</p>
       <Field label={t("profile.phone")}>
         <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => set({ phone: e.target.value })} type="tel" autoComplete="tel" />
@@ -146,10 +133,10 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
       <Field label={t("storeSettings.radius")}>
         <Input type="number" min={0} step="any" value={draft.max_delivery_radius_km} onChange={(e) => set({ max_delivery_radius_km: Number(e.target.value) })} placeholder="8" />
       </Field>
-      <Button loading={saving} disabled={!emailOk || !websiteOk} onClick={save} className="py-2 text-xs">
+      <Button loading={save.busy} disabled={!emailOk || !websiteOk} onClick={() => save.run(() => onSave({ ...draft, email, website }))} className="py-2 text-xs">
         {t("common.save")}
       </Button>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {save.error && <p className="text-xs text-red-600">{save.error}</p>}
     </div>
   );
 }
@@ -161,7 +148,7 @@ export function DeliverySubsidyCard({ catalog, catalogRef, onSaved }: { catalog:
   return (
     <Card className="mb-4 p-4">
       <div className="mb-1 flex items-center justify-between">
-        <p className="text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.sharing")}</p>
+        <SectionLabel>{t("storeSettings.sharing")}</SectionLabel>
         <button onClick={() => setEditing((v) => !v)} className="text-ink-400 hover:text-handshake-600" aria-label={t("storeSettings.editSharing")}>
           <Pencil size={14} />
         </button>
@@ -191,23 +178,21 @@ export function DeliverySubsidyCard({ catalog, catalogRef, onSaved }: { catalog:
 /// declines any priced from an outdated menu, and works with the app closed.
 export function AutoAcceptCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCatalog; catalogRef: Uint8Array; onSaved: () => Promise<void> }) {
   const t = useT();
-  const [saving, setSaving] = useState(false);
-  async function toggle(autoAccept: boolean) {
-    setSaving(true);
-    try {
-      await setAutoAcceptOrders(catalogRef, autoAccept);
-      await onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
+  const save = useAction();
+  const toggle = (autoAccept: boolean) => save.run(async () => {
+    await setAutoAcceptOrders(catalogRef, autoAccept);
+    await onSaved();
+  });
   return (
-    <Card className="mb-4 flex items-start justify-between gap-4 p-4">
-      <div>
-        <p className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.autoAccept")}</p>
-        <p className="text-xs text-ink-400">{t("storeSettings.autoAcceptDetail")}</p>
+    <Card className="mb-4 p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <SectionLabel className="mb-1">{t("storeSettings.autoAccept")}</SectionLabel>
+          <p className="text-xs text-ink-400">{t("storeSettings.autoAcceptDetail")}</p>
+        </div>
+        <Switch checked={catalog.auto_accept_orders} onChange={toggle} disabled={save.busy} label={t("storeSettings.autoAccept")} />
       </div>
-      <Switch checked={catalog.auto_accept_orders} onChange={toggle} disabled={saving} label={t("storeSettings.autoAccept")} />
+      {save.error && <Notice className="mt-3">{save.error}</Notice>}
     </Card>
   );
 }
@@ -220,7 +205,7 @@ export function LeaveAtDoorCard({ catalog, catalogRef, onSaved }: { catalog: Mer
   const limit = catalog.leave_at_door_max_cents;
   return (
     <Card className="mb-4 p-4">
-      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.door")}</p>
+      <SectionLabel className="mb-1">{t("storeSettings.door")}</SectionLabel>
       <p className="mb-3 text-xs leading-relaxed text-ink-400">{t("storeSettings.doorDetail")}</p>
       <LimitEditor key={limit ?? "none"} initialCents={limit} onSave={async (cents) => {
         await setLeaveAtDoorLimit(catalogRef, cents);
@@ -237,7 +222,7 @@ export function MinimumOrderCard({ catalog, catalogRef, onSaved }: { catalog: Me
   const minimum = catalog.min_order_cents;
   return (
     <Card className="mb-4 p-4">
-      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.minimum")}</p>
+      <SectionLabel className="mb-1">{t("storeSettings.minimum")}</SectionLabel>
       <p className="mb-3 text-xs leading-relaxed text-ink-400">{t("storeSettings.minimumDetail")}</p>
       <LimitEditor key={minimum ?? "none"} initialCents={minimum} placeholder={t("policies.terms.none")} onSave={async (cents) => {
         await setMinimumOrder(catalogRef, cents);
@@ -257,38 +242,33 @@ export function StoreWaitCard({ catalog, catalogRef, onSaved }: { catalog: Merch
   const [min, max, usual] = [terms.min_store_wait_secs, terms.max_store_wait_secs, terms.store_wait_secs].map((secs) => Math.round(secs / 60));
   const own = catalog.store_wait_minutes;
   const [draft, setDraft] = useState(String(own ?? usual));
-  const [saving, setSaving] = useState(false);
+  const save = useAction();
   const minutes = Math.round(Number(draft));
   const valid = Number.isFinite(minutes) && minutes >= min && minutes <= max;
-
-  async function save(value: number | null) {
-    setSaving(true);
-    try {
-      await setStoreWait(catalogRef, value);
-      await onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
+  const saveWait = (value: number | null) => save.run(async () => {
+    await setStoreWait(catalogRef, value);
+    await onSaved();
+  });
 
   return (
     <Card className="mb-4 p-4">
-      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.wait")}</p>
+      <SectionLabel className="mb-1">{t("storeSettings.wait")}</SectionLabel>
       <p className="mb-3 text-xs leading-relaxed text-ink-400">
         {t("storeSettings.waitDetail")} {own === null ? t("storeSettings.usingNetwork", { minutes: usual }) : ""}
       </p>
       <div className="flex items-center gap-2">
         <Input type="number" min={min} max={max} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} suffix={t("storeSettings.min")} className="w-28" />
-        <Button loading={saving} disabled={!valid || minutes === own} onClick={() => save(minutes)} className="px-4 py-2 text-xs">
+        <Button loading={save.busy} disabled={!valid || minutes === own} onClick={() => saveWait(minutes)} className="px-4 py-2 text-xs">
           {t("common.save")}
         </Button>
         {own !== null && (
-          <Button variant="ghost" loading={saving} onClick={() => save(null)} className="px-4 py-2 text-xs">
+          <Button variant="ghost" loading={save.busy} onClick={() => saveWait(null)} className="px-4 py-2 text-xs">
             {t("storeSettings.useNetwork")}
           </Button>
         )}
       </div>
       {!valid && <p className="mt-2 text-xs text-amber-600">{t("storeSettings.between", { min, max })}</p>}
+      {save.error && <Notice className="mt-3">{save.error}</Notice>}
     </Card>
   );
 }
@@ -300,38 +280,33 @@ export function BusyCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCa
   const room = useTerms().max_prep_minutes - catalog.prep_minutes;
   const busy = catalog.busy_extra_minutes > 0;
   const [draft, setDraft] = useState(String(busy ? catalog.busy_extra_minutes : Math.min(catalog.prep_minutes, room)));
-  const [saving, setSaving] = useState(false);
+  const save = useAction();
   const extra = Math.round(Number(draft));
   const valid = Number.isFinite(extra) && extra >= 1 && extra <= room;
-
-  async function save(minutes: number) {
-    setSaving(true);
-    try {
-      await setBusy(catalogRef, minutes);
-      await onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
+  const saveBusy = (minutes: number) => save.run(async () => {
+    await setBusy(catalogRef, minutes);
+    await onSaved();
+  });
 
   return (
     <Card className="mb-4 p-4">
-      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.busy")}</p>
+      <SectionLabel className="mb-1">{t("storeSettings.busy")}</SectionLabel>
       <p className="mb-3 text-xs leading-relaxed text-ink-400">
         {busy ? t("storeSettings.busyOn", { minutes: catalog.prep_minutes + catalog.busy_extra_minutes, usual: catalog.prep_minutes }) : t("storeSettings.busyOff")}
       </p>
       <div className="flex items-center gap-2">
         <Input type="number" min={1} max={room} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} suffix={t("storeSettings.min")} className="w-28" />
-        <Button loading={saving} disabled={!valid} onClick={() => save(extra)} className="px-4 py-2 text-xs">
+        <Button loading={save.busy} disabled={!valid} onClick={() => saveBusy(extra)} className="px-4 py-2 text-xs">
           {busy ? t("item.update") : t("storeSettings.imBusy")}
         </Button>
         {busy && (
-          <Button variant="ghost" loading={saving} onClick={() => save(0)} className="px-4 py-2 text-xs">
+          <Button variant="ghost" loading={save.busy} onClick={() => saveBusy(0)} className="px-4 py-2 text-xs">
             {t("storeSettings.notBusy")}
           </Button>
         )}
       </div>
       {!valid && <p className="mt-2 text-xs text-amber-600">{t("storeSettings.busyRange", { max: room })}</p>}
+      {save.error && <Notice className="mt-3">{save.error}</Notice>}
     </Card>
   );
 }
@@ -340,22 +315,18 @@ export function BusyCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCa
 function LimitEditor({ initialCents, placeholder, onSave }: { initialCents: number | null; placeholder?: string; onSave: (cents: number | null) => Promise<void> }) {
   const t = useT();
   const [draft, setDraft] = useState(initialCents === null ? "" : String(fromMinorUnits(initialCents)));
-  const [saving, setSaving] = useState(false);
-  async function save() {
-    setSaving(true);
-    try {
-      const dollars = Number(draft);
-      await onSave(draft.trim() === "" || !Number.isFinite(dollars) || dollars <= 0 ? null : toMinorUnits(dollars));
-    } finally {
-      setSaving(false);
-    }
-  }
+  const save = useAction();
+  const dollars = Number(draft);
+  const cents = draft.trim() === "" || !Number.isFinite(dollars) || dollars <= 0 ? null : toMinorUnits(dollars);
   return (
-    <div className="flex items-center gap-2">
-      <Input type="number" min={0} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder ?? t("storeSettings.noLimit")} prefix={currencySymbol()} className="w-32" />
-      <Button loading={saving} onClick={save} className="px-4 py-2 text-xs">
-        {t("common.save")}
-      </Button>
+    <div>
+      <div className="flex items-center gap-2">
+        <Input type="number" min={0} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder ?? t("storeSettings.noLimit")} prefix={currencySymbol()} className="w-32" />
+        <Button loading={save.busy} onClick={() => save.run(() => onSave(cents))} className="px-4 py-2 text-xs">
+          {t("common.save")}
+        </Button>
+      </div>
+      {save.error && <Notice className="mt-3">{save.error}</Notice>}
     </div>
   );
 }
@@ -364,23 +335,17 @@ function LimitEditor({ initialCents, placeholder, onSave }: { initialCents: numb
 function SubsidyEditor({ initial, onSave }: { initial: number; onSave: (percent: number) => Promise<void> }) {
   const t = useT();
   const [draft, setDraft] = useState(String(initial));
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    setSaving(true);
-    try {
-      await onSave(Math.min(100, Math.max(0, Math.round(Number(draft || 0)))));
-    } finally {
-      setSaving(false);
-    }
-  }
-
+  const save = useAction();
+  const percent = Math.min(100, Math.max(0, Math.round(Number(draft || 0))));
   return (
-    <div className="flex items-center gap-2">
-      <Input type="number" min={0} max={100} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="50" suffix="%" className="w-24" />
-      <Button loading={saving} onClick={save} className="px-4 py-2 text-xs">
-        {t("common.save")}
-      </Button>
+    <div>
+      <div className="flex items-center gap-2">
+        <Input type="number" min={0} max={100} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="50" suffix="%" className="w-24" />
+        <Button loading={save.busy} onClick={() => save.run(() => onSave(percent))} className="px-4 py-2 text-xs">
+          {t("common.save")}
+        </Button>
+      </div>
+      {save.error && <Notice className="mt-3">{save.error}</Notice>}
     </div>
   );
 }
@@ -393,37 +358,27 @@ export function ListingCard({ catalogRef }: { catalogRef: Uint8Array }) {
   const stake = useTerms().store_listing_stake;
   const { data: listed, reload } = useResource(`store-listed:${bytesToHex(catalogRef)}`, () => isStoreListed(catalogRef));
   const [confirming, setConfirming] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function act(change: () => Promise<void>) {
-    setSaving(true);
-    setError(null);
-    try {
-      await change();
-      setConfirming(false);
-      await reload();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
-  }
+  const save = useAction();
+  const act = (change: () => Promise<void>) => save.run(async () => {
+    await change();
+    setConfirming(false);
+    await reload();
+  });
 
   if (listed === undefined) return null;
   return (
     <Card className="mb-4 p-4">
-      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-ink-400">{t("storeSettings.listing")}</p>
+      <SectionLabel className="mb-1">{t("storeSettings.listing")}</SectionLabel>
       <p className="mb-3 text-xs leading-relaxed text-ink-400">
         {listed ? t("storeSettings.listed", { amount: formatCents(stake) }) : t("storeSettings.unlisted", { amount: formatCents(stake) })}
       </p>
       {listed ? (
         confirming ? (
           <div className="flex items-center gap-2">
-            <Button variant="danger" loading={saving} onClick={() => act(() => closeListing(catalogRef))} className="px-4 py-2 text-xs">
+            <Button variant="danger" loading={save.busy} onClick={() => act(() => closeListing(catalogRef))} className="px-4 py-2 text-xs">
               {t("storeSettings.close")}
             </Button>
-            <Button variant="ghost" disabled={saving} onClick={() => setConfirming(false)} className="px-4 py-2 text-xs">
+            <Button variant="ghost" disabled={save.busy} onClick={() => setConfirming(false)} className="px-4 py-2 text-xs">
               {t("storeSettings.keep")}
             </Button>
           </div>
@@ -433,11 +388,11 @@ export function ListingCard({ catalogRef }: { catalogRef: Uint8Array }) {
           </Button>
         )
       ) : (
-        <Button loading={saving} onClick={() => act(() => reopenListing(catalogRef))} className="px-4 py-2 text-xs">
+        <Button loading={save.busy} onClick={() => act(() => reopenListing(catalogRef))} className="px-4 py-2 text-xs">
           {t("storeSettings.listAgain")}
         </Button>
       )}
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {save.error && <p className="mt-2 text-xs text-red-600">{save.error}</p>}
     </Card>
   );
 }

@@ -12,12 +12,12 @@ import { completeDelivery } from "../../holochain/zomes/dispatch";
 import { actionHash, bytesToHex } from "../../holochain/decode";
 import { HANDOFF_CODE_DIGITS, type DeliveryOrder, type GeoPoint, type PinSecret } from "../../holochain/types";
 import { decodeHandoverCode, matchesCommitment } from "../../lib/orders/handoverCode";
-import { describeError } from "../../lib/ui/errors";
-import { Button } from "../../components/ui";
+import { Button, Notice } from "../../components/ui";
 import { PhotoInput } from "../../components/PhotoInput";
 import { QrScanner } from "../../components/QrScanner";
 import { Sheet } from "../../components/Sheet";
 import { t as translate, useT, type MessageKey } from "../../i18n";
+import { useAction } from "../../lib/hooks/useAction";
 
 const COPY = { scan: "handoff.scan", confirm: "handoff.complete", done: "handoff.waiting" } as const satisfies Record<string, MessageKey>;
 
@@ -36,8 +36,7 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
   // own confirmation.
   const [leg, setLeg] = useState<Uint8Array | null>(null);
   const [waitingForGiver, setWaitingForGiver] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
   const copy = COPY;
   const leftAtDoor = order.dropoff_preference === "LeaveAtDoor";
@@ -87,18 +86,10 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
     }
   }
 
-  async function run(step: () => Promise<void>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await step();
-      await onDone();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const run = (step: () => Promise<void>) => action.run(async () => {
+    await step();
+    await onDone();
+  });
 
   const finishWithScan = () =>
     run(async () => {
@@ -133,8 +124,8 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
           </p>
         </div>
         <PhotoInput value={photo} onChange={setPhoto} shape="banner" className="w-full" />
-        {error && <ErrorNote message={error} />}
-        <Button className="w-full" loading={busy} disabled={!photo} onClick={finishAtDoor}>
+        {action.error && <ErrorNote message={action.error} />}
+        <Button className="w-full" loading={action.busy} disabled={!photo} onClick={finishAtDoor}>
           {t("handoff.leftAtDoor")}
         </Button>
       </div>
@@ -182,21 +173,21 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
         </div>
       )}
 
-      {error && <ErrorNote message={error} />}
+      {action.error && <ErrorNote message={action.error} />}
       {scanned ? (
-        <Button className="w-full" loading={busy} onClick={finishWithScan}>
+        <Button className="w-full" loading={action.busy} onClick={finishWithScan}>
           {t(copy.confirm)}
         </Button>
       ) : waitingForGiver ? (
-        <Button variant="ghost" className="w-full" loading={busy} onClick={checkAgain}>
+        <Button variant="ghost" className="w-full" loading={action.busy} onClick={checkAgain}>
           {t("handoff.checkAgain")}
         </Button>
       ) : (
         <>
-          <Button className="w-full" loading={busy} disabled={code.length !== HANDOFF_CODE_DIGITS} onClick={finishWithCode}>
+          <Button className="w-full" loading={action.busy} disabled={code.length !== HANDOFF_CODE_DIGITS} onClick={finishWithCode}>
             {t(copy.confirm)}
           </Button>
-          <button onClick={askGiverToConfirm} disabled={busy} className="-mt-1 text-center text-xs font-semibold text-ink-500 underline-offset-4 hover:underline disabled:opacity-50">
+          <button onClick={askGiverToConfirm} disabled={action.busy} className="-mt-1 text-center text-xs font-semibold text-ink-500 underline-offset-4 hover:underline disabled:opacity-50">
             {t("handoff.theyConfirm")}
           </button>
         </>
@@ -220,7 +211,7 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
 }
 
 function ErrorNote({ message }: { message: string }) {
-  return <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">{message}</p>;
+  return <Notice>{message}</Notice>;
 }
 
 /// Six digit boxes over one real input: one keyboard, paste works, and

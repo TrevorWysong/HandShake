@@ -1,11 +1,11 @@
 import { Check, ChefHat, CircleDot, PackageCheck, Bike, ShoppingBag, Store, XCircle, AlertTriangle, Clock, MapPin } from "lucide-react";
 import { motion } from "framer-motion";
 import clsx from "clsx";
-import type { Cancellation, DeliveryStatus, PickupStatus } from "../holochain/types";
-import { cancellationText } from "../lib/orders/storeAnswers";
-import { Badge } from "./ui";
-import { fadeSlideUp } from "../lib/ui/motion";
-import { useT, type MessageKey } from "../i18n";
+import type { Cancellation, DeliveryStatus, PickupStatus } from "../../holochain/types";
+import { cancellationText } from "../../lib/orders/storeAnswers";
+import { Badge } from "../ui";
+import { fadeSlideUp } from "../../lib/ui/motion";
+import { useT, type MessageKey } from "../../i18n";
 
 /// The kitchen starts once a driver has committed, so an order no driver
 /// takes costs nobody anything.

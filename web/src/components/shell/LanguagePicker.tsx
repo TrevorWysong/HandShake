@@ -1,7 +1,7 @@
 // The app's language: the device's, or one the person picks.
 import { Languages } from "lucide-react";
-import { LOCALES, negotiate, useLocale, useT, type Locale } from "../i18n";
-import { Card, Select } from "./ui";
+import { LOCALES, negotiate, useLocale, useT, type Locale } from "../../i18n";
+import { Card, Select } from "../ui";
 
 export function LanguagePicker() {
   const t = useT();

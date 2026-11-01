@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 import { ChevronRight, ShieldAlert } from "lucide-react";
-import { bytesToHex } from "../holochain/decode";
-import { myRecoveryPlan } from "../holochain/zomes/account";
-import { useResource } from "../lib/hooks/useResource";
-import { useSession } from "../store/session";
-import { useT } from "../i18n";
+import { bytesToHex } from "../../holochain/decode";
+import { myRecoveryPlan } from "../../holochain/zomes/account";
+import { useResource } from "../../lib/hooks/useResource";
+import { useSession } from "../../store/session";
+import { useT } from "../../i18n";
 
 /// Whether the account has a way back in -- a recovery phrase or guardians
 /// -- once known. Shares the Account page's read of the plan.

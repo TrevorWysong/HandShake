@@ -5,24 +5,24 @@
 // "Required" on the groups that need an answer and nested groups opening
 // under the option that leads to them. Adding before every required group
 // is answered scrolls to the first one that isn't and marks it. The running
-// price is the network's own (`lib/menu/choices`), so it's what the order costs.
+// price is the network's own (`lib/storefront/choices`), so it's what the order costs.
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Minus, Plus } from "lucide-react";
-import { getModifierGroups } from "../holochain/zomes/catalog";
-import { bytesToHex, decodeEntry } from "../holochain/decode";
-import type { ActionHash, ModifierGroup, SelectionInput } from "../holochain/types";
-import { MAX_CHOICE_DEPTH } from "../holochain/types";
-import { choiceLabels, choose, emptySelections, isSingleChoice, linePrice, missingGroups, rangeLabel, withNested, type Groups } from "../lib/menu/choices";
-import { formatCents } from "../lib/ui/format";
-import type { ItemRow } from "../lib/menu/menu";
-import { useResource } from "../lib/hooks/useResource";
-import type { CartLine } from "../store/cart";
-import { Button, Skeleton } from "./ui";
-import { Sheet } from "./Sheet";
-import { useT } from "../i18n";
+import { getModifierGroups } from "../../holochain/zomes/catalog";
+import { bytesToHex, decodeEntry } from "../../holochain/decode";
+import type { ActionHash, ModifierGroup, SelectionInput } from "../../holochain/types";
+import { MAX_CHOICE_DEPTH } from "../../holochain/types";
+import { choiceLabels, choose, emptySelections, isSingleChoice, linePrice, missingGroups, rangeLabel, withNested, type Groups } from "../../lib/storefront/choices";
+import { formatCents } from "../../lib/ui/format";
+import type { ItemRow } from "../../lib/storefront/menu";
+import { useResource } from "../../lib/hooks/useResource";
+import type { CartLine } from "../../store/cart";
+import { Button, Skeleton, Stepper } from "../ui";
+import { Sheet } from "../Sheet";
+import { useT } from "../../i18n";
 import { ReviewList } from "./ReviewList";
-import { getItemReviews } from "../holochain/zomes/reputation";
+import { getItemReviews } from "../../holochain/zomes/reputation";
 
 /// An item's groups and every group they open, at their latest.
 async function fetchItemGroups(catalogRef: ActionHash, row: ItemRow): Promise<Groups> {
@@ -222,22 +222,6 @@ function CompactStepper({ value, max, label, onChange }: { value: number; max: n
       <span className="w-5 text-center text-sm font-bold tabular-nums text-ink-900 dark:text-ink-50">{value}</span>
       <button type="button" aria-label={t("item.moreOf", { item: label })} className={`${button} text-ink-700 hover:bg-white dark:text-ink-200 dark:hover:bg-ink-700`} disabled={value >= max} onClick={() => onChange(value + 1)}>
         <Plus size={15} />
-      </button>
-    </div>
-  );
-}
-
-function Stepper({ value, min, max, onChange }: { value: number; min: number; max: number; onChange: (value: number) => void }) {
-  const t = useT();
-  const button = "grid h-9 w-9 place-items-center rounded-full transition disabled:opacity-30 text-ink-700 hover:bg-white dark:text-ink-200 dark:hover:bg-ink-700";
-  return (
-    <div className="flex shrink-0 items-center gap-1 rounded-full bg-ink-100 p-0.5 dark:bg-ink-800">
-      <button type="button" aria-label={t("item.fewer")} className={button} disabled={value <= min} onClick={() => onChange(value - 1)}>
-        <Minus size={16} />
-      </button>
-      <span className="w-6 text-center text-sm font-bold tabular-nums text-ink-900 dark:text-ink-50">{value}</span>
-      <button type="button" aria-label={t("item.more")} className={button} disabled={value >= max} onClick={() => onChange(value + 1)}>
-        <Plus size={16} />
       </button>
     </div>
   );

@@ -1,9 +1,9 @@
 import { CloudCheck, CloudUpload } from "lucide-react";
-import { getNetworkReach } from "../holochain/zomes/dispatch";
-import { bytesToHex } from "../holochain/decode";
-import { useResource } from "../lib/hooks/useResource";
-import type { ActionHash } from "../holochain/types";
-import { useT } from "../i18n";
+import { getNetworkReach } from "../../holochain/zomes/dispatch";
+import { bytesToHex } from "../../holochain/decode";
+import { useResource } from "../../lib/hooks/useResource";
+import type { ActionHash } from "../../holochain/types";
+import { useT } from "../../i18n";
 
 /// How often to look again while peers are still confirming -- it's a read
 /// of this node's own receipts, so cheap.

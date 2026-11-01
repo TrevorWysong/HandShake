@@ -12,13 +12,13 @@ import { useFavorites } from "../../lib/hooks/useFavorites";
 import { useResource } from "../../lib/hooks/useResource";
 import { formatCents, nowMicros } from "../../lib/ui/format";
 import type { MerchantCatalog, GoodieBag } from "../../holochain/types";
-import { RestaurantCard } from "../../components/RestaurantCard";
-import { AddressSwitcher } from "../../components/AddressSwitcher";
-import { Chip, ChipRow, EmptyState, Skeleton } from "../../components/ui";
+import { RestaurantCard } from "../../components/store/RestaurantCard";
+import { AddressSwitcher } from "../../components/places/AddressSwitcher";
+import { Chip, ChipRow, EmptyState, SectionLabel, Skeleton } from "../../components/ui";
 import { staggerContainer } from "../../lib/ui/motion";
 import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
-import { storeStatus } from "../../lib/menu/storeHours";
+import { storeStatus } from "../../lib/storefront/storeHours";
 import { useT } from "../../i18n";
 
 interface Row {
@@ -153,9 +153,7 @@ export function Browse() {
 
       {bags.length > 0 && (
         <div className="mb-5">
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-            <PackageOpen size={13} className="text-handshake-500" /> {t("browse.bagsNearMe")}
-          </p>
+          <SectionLabel icon={<PackageOpen size={13} className="text-handshake-500" />} className="mb-2">{t("browse.bagsNearMe")}</SectionLabel>
           <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
             {bags.map((row) => (
               <button

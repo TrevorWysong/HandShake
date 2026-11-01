@@ -1,210 +1,50 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Minus, Plus, Trash2, ArrowLeft } from "lucide-react";
-import { InfoTip } from "../../components/InfoTip";
+import { InfoTip } from "../../../components/InfoTip";
 import { motion, AnimatePresence } from "framer-motion";
-import clsx from "clsx";
-import { Button, Card, Checkbox, Input, Select, StatNumber, Textarea } from "../../components/ui";
-import { AddressSwitcher } from "../../components/AddressSwitcher";
-import { distanceKm } from "../../lib/places/geohash";
-import { useCart, cartItems, lineKey, type CartLine } from "../../store/cart";
-import { ItemSheet } from "../../components/ItemSheet";
-import { useSession } from "../../store/session";
-import { requestDelivery, requestPickupOrder, createRecurringTemplate, countMyCompletedOrders, myPromoStanding } from "../../holochain/zomes/dispatch";
-import { myCard } from "../../holochain/zomes/rewards";
-import { ACCENTS, earnedFor, orderPoints, rewardDiscount, rewardLine } from "../../lib/rewards/rewards";
-import { RewardRail, RewardTile } from "../../components/rewards/RewardPieces";
+import { Button, Card, Checkbox, Input, Notice, SectionLabel, Select, StatNumber, Textarea } from "../../../components/ui";
+import { AddressSwitcher } from "../../../components/places/AddressSwitcher";
+import { useCart, cartItems, lineKey, type CartLine } from "../../../store/cart";
+import { ItemSheet } from "../../../components/store/ItemSheet";
+import { useSession } from "../../../store/session";
+import { requestDelivery, requestPickupOrder, createRecurringTemplate } from "../../../holochain/zomes/dispatch";
+import { myCard } from "../../../holochain/zomes/rewards";
+import { ACCENTS, earnedFor, pointsEarned, rewardDiscount, rewardLine } from "../../../lib/rewards/rewards";
+import { RewardRail, RewardTile } from "../../../components/rewards/RewardPieces";
 import { Sparkles as RewardsIcon } from "lucide-react";
-import { wakeTokensForOrder } from "../../lib/network/push";
-import { getCatalog, listLivePromoCodes } from "../../holochain/zomes/catalog";
-import { actionHash, bytesToHex, decodeEntry, hexToBytes } from "../../holochain/decode";
-import { currencySymbol, formatCents, formatDistance, fromMinorUnits, nowMicros, toMinorUnits } from "../../lib/ui/format";
-import { useCustomerSettings } from "../../store/roleSettings";
-import { useTerms } from "../../store/network";
-import { appLocale, t as translate, useT, type MessageKey } from "../../i18n";
-import { computePromoEffect, describeBlock, describeLimits, describeRequirement, describeReward, evaluatePromo, isPromoEligible } from "../../lib/menu/promotions";
-import { fetchMenu, type ItemRow } from "../../lib/menu/menu";
-import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import { describeError } from "../../lib/ui/errors";
-import { useResource } from "../../lib/hooks/useResource";
-import { POLL } from "../../lib/network/poll";
-import { orderTax, totalWithTax } from "../../lib/menu/tax";
-import { CardPaySheet } from "../../components/CardPaySheet";
-import { isPayable, MAX_CARD_PAYMENT_CENTS, MIN_CARD_PAYMENT_CENTS } from "../../lib/money/issuerService";
-import { getBalance, listIssuers } from "../../holochain/zomes/ledger";
-import type { ActionHash, DropoffPreference, GeoPoint, MerchantCatalog, PromoCode, RecurrenceRule, TaxRate, PromoStanding } from "../../holochain/types";
-import { useClock } from "../../lib/hooks/useClock";
-import { storeStatus } from "../../lib/menu/storeHours";
-import { MAX_NOTE_CHARS, MAX_PROMO_CODE_CHARS } from "../../holochain/types";
+import { wakeTokensForOrder } from "../../../lib/network/push";
+import { actionHash, bytesEqual, bytesToHex, hexToBytes } from "../../../holochain/decode";
+import { formatCents, fromMinorUnits, nowMicros, toMinorUnits } from "../../../lib/ui/format";
+import { useCustomerSettings } from "../../../store/roleSettings";
+import { useTerms } from "../../../store/network";
+import { appLocale, useT } from "../../../i18n";
+import { describeBlock, describeLimits, describeRequirement, describeReward, evaluatePromo, isPromoEligible } from "../../../lib/storefront/promotions";
+import { itemNamer, type ItemRow } from "../../../lib/storefront/menu";
+import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
+import { useResource } from "../../../lib/hooks/useResource";
+import { POLL } from "../../../lib/network/poll";
+import { orderTax, totalWithTax } from "../../../lib/storefront/tax";
+import { CardPaySheet } from "../../../components/money/CardPaySheet";
+import { isPayable, MAX_CARD_PAYMENT_CENTS, MIN_CARD_PAYMENT_CENTS } from "../../../lib/money/issuerService";
+import { getBalance, listIssuers } from "../../../holochain/zomes/ledger";
+import type { DropoffPreference, GeoPoint, RecurrenceRule } from "../../../holochain/types";
+import { useClock } from "../../../lib/hooks/useClock";
+import { storeStatus } from "../../../lib/storefront/storeHours";
+import { MAX_NOTE_CHARS, MAX_PROMO_CODE_CHARS } from "../../../holochain/types";
+import { useAction } from "../../../lib/hooks/useAction";
 
-const TIP_PRESETS_PERCENT = [0, 10, 15, 20];
-const DROPOFF_PREFERENCE_OPTIONS: readonly { value: DropoffPreference; label: MessageKey }[] = [
-  { value: "HandToMe", label: "cart.drop.handToMe" },
-  { value: "MeetOutside", label: "cart.drop.meetOutside" },
-  { value: "LeaveAtDoor", label: "cart.drop.leaveAtDoor" },
-] as const;
-// A driver's bid can be anywhere up to this cap (validate_new_bid rejects
-// anything higher) -- letting the customer set it, rather than hardcoding
-// `max_delivery_fee: null`, is what actually gives them cost certainty at
-// checkout instead of an unbounded "set by driver bid" placeholder.
-
-/// How a delivery is driven: standard, or priority -- a driver with no
-/// other orders (`DeliveryOrder::priority`).
-const DELIVERY_SPEEDS = [
-  { priority: false, label: "cart.speed.standard", detail: "cart.speed.standardDetail" },
-  { priority: true, label: "cart.speed.priority", detail: "cart.speed.priorityDetail" },
-] as const;
-
-/// Who picks the driver: the app, by the network's published rule, or the
-/// customer.
-const MATCHING = [
-  { autoMatch: true, label: "cart.match.auto", detail: "cart.match.autoDetail" },
-  { autoMatch: false, label: "cart.match.manual", detail: "cart.match.manualDetail" },
-] as const;
-
-function Section({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <motion.div variants={fadeSlideUp}>
-      <Card className="mt-4 p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-bold uppercase tracking-wide text-ink-400">{title}</p>
-          {right}
-        </div>
-        {children}
-      </Card>
-    </motion.div>
-  );
-}
-
-// A pre-check, so the customer hears it while choosing: the network refuses
-// an order outside the radius of the store version it cites. `null` for
-// `merchantLocation`/`merchantRadiusKm` (catalog still loading) means
-// nothing to check yet, so every pick is allowed rather than blocked on a
-// fetch that hasn't resolved.
-function validateDropoffRadius(point: GeoPoint, merchantLocation: GeoPoint | null, merchantRadiusKm: number | null): string | null {
-  if (!merchantLocation || merchantRadiusKm === null) return null;
-  const distance = distanceKm(merchantLocation, point);
-  if (distance > merchantRadiusKm) {
-    return translate("cart.outOfRange", { distance: formatDistance(distance), radius: formatDistance(merchantRadiusKm) });
-  }
-  return null;
-}
-
-function ToggleChip({ active, onClick, children, className }: { active: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
-  return (
-    <motion.button
-      whileTap={{ scale: 0.95 }}
-      onClick={onClick}
-      className={clsx(
-        "rounded-full px-3 py-1.5 text-xs font-semibold transition",
-        active ? "bg-handshake-500 text-white" : "bg-ink-100 dark:bg-ink-800 text-ink-500 hover:bg-ink-200 dark:hover:bg-ink-700",
-        className
-      )}
-    >
-      {children}
-    </motion.button>
-  );
-}
-
-type PromoRow = { hash: ActionHash; promo: PromoCode; standing?: PromoStanding };
-const NO_PROMOS: PromoRow[] = [];
-const NO_ITEMS: ItemRow[] = [];
-
-interface CartStoreInfo {
-  subsidyPercent: number;
-  // The store's delivery range -- lets `onValidate` below reject an
-  // out-of-range drop-off as it's picked (the network refuses one anyway).
-  // `null` until the catalog loads: nothing to check yet.
-  merchantLocation: GeoPoint | null;
-  merchantRadiusKm: number | null;
-  /// When the store takes orders -- checkout says so up front; the zome
-  /// refuses a closed store regardless. `null` until the catalog loads.
-  hours: Pick<MerchantCatalog, "is_open" | "weekly_hours" | "time_zone"> | null;
-  /// The most an order may cost to be left at the door, if the store sets
-  /// a limit -- above it, the option isn't offered.
-  leaveAtDoorMaxCents: number | null;
-  /// The smallest order the store takes, before promos -- the network
-  /// refuses a smaller one.
-  minOrderCents: number | null;
-  /// Minutes the store is adding to its prep time while it's busy.
-  busyExtraMinutes: number;
-  /// How long past the ready time the store may keep a driver waiting, if
-  /// it sets its own -- else the network's.
-  storeWaitMinutes: number | null;
-  /// The store's sales tax or VAT -- its own, on its own terms.
-  taxRates: TaxRate[];
-  pricesIncludeTax: boolean;
-  promoCodes: PromoRow[];
-  menuItems: ItemRow[];
-  completedOrderCount: number;
-}
-
-/// Everything the cart needs about the store it's ordering from, read
-/// once per store. Each part degrades independently on failure, same as
-/// before -- a missing promo list shouldn't block checkout.
-async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartStoreInfo> {
-  const [catalog, livePromos, menuItems, completedOrderCount, standings] = await Promise.all([
-    getCatalog(catalogRef)
-      .then((record) => decodeEntry<MerchantCatalog>(record))
-      .catch(() => null),
-    // Only codes usable right now -- the store's live index, not every
-    // code it ever ran.
-    listLivePromoCodes(catalogRef)
-      .then((views) => views.map((v) => ({ hash: v.original_action, promo: decodeEntry<PromoCode>(v.record) })))
-      .catch(() => []),
-    // Needed to describe/evaluate item-scoped requirements and rewards
-    // (BOGO, "spend $X get item Y free") even when the item they name isn't
-    // already sitting in the cart.
-    fetchMenu(catalogRef)
-      .catch(() => []),
-    // Loyalty rewards ("order 5 times, your 6th is discounted") count this
-    // customer's completed orders at *this* store, delivery and pickup.
-    countMyCompletedOrders(catalogRef).catch(() => 0),
-    // Where the customer stands with each code: used up, once a day...
-    myPromoStanding(catalogRef).catch(() => [] as PromoStanding[]),
-  ]);
-  const promoCodes = livePromos.map((row) => ({ ...row, standing: standings.find((s) => bytesToHex(s.promo) === bytesToHex(row.hash)) }));
-  return {
-    subsidyPercent: catalog?.delivery_subsidy_percent ?? 0,
-    merchantLocation: catalog?.location ?? null,
-    merchantRadiusKm: catalog?.max_delivery_radius_km ?? null,
-    hours: catalog,
-    leaveAtDoorMaxCents: catalog?.leave_at_door_max_cents ?? null,
-    minOrderCents: catalog?.min_order_cents ?? null,
-    busyExtraMinutes: catalog?.busy_extra_minutes ?? 0,
-    storeWaitMinutes: catalog?.store_wait_minutes ?? null,
-    taxRates: catalog?.tax_rates ?? [],
-    pricesIncludeTax: catalog?.prices_include_tax ?? false,
-    promoCodes,
-    menuItems,
-    completedOrderCount,
-  };
-}
-
-/// The best auto-apply promo eligible for this cart at `now` (microseconds),
-/// or `null`.
-function bestAutoApplyPromo(promoCodes: PromoRow[], lines: CartLine[], total: number, completedOrderCount: number, now: number): PromoRow | null {
-  const eligible = promoCodes.filter(
-    (p) =>
-      p.promo.auto_apply &&
-      p.promo.active &&
-      !p.standing?.blocked &&
-      (p.promo.expires_at === null || p.promo.expires_at > now) &&
-      isPromoEligible(p.promo.requirement, lines, total, completedOrderCount),
-  );
-  if (eligible.length === 0) return null;
-  return eligible.reduce((a, b) =>
-    computePromoEffect(b.promo.reward, lines, total).subtotalDiscountCents > computePromoEffect(a.promo.reward, lines, total).subtotalDiscountCents ? b : a,
-  );
-}
+import { DELIVERY_SPEEDS, DROPOFF_PREFERENCE_OPTIONS, MATCHING, TIP_PRESETS_PERCENT } from "./options";
+import { AmountChoice, Section, ToggleChip } from "./CartPieces";
+import { bestAutoApplyPromo, fetchCartStoreInfo, NO_ITEMS, NO_PROMOS, validateDropoffRadius, type PromoRow } from "./checkout";
 
 export function Cart() {
   const cart = useCart();
   const location = useSession((s) => s.location);
   const setSessionLocation = useSession((s) => s.setLocation);
   const navigate = useNavigate();
-  const [placing, setPlacing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Placing the order, or saving it as a recurring one -- one at a time.
+  const action = useAction();
   // Two notes, each readable only by who it's for: the store (sealed to
   // it) and, for a delivery, the driver (sealed with the address).
   const [kitchenNotes, setKitchenNotes] = useState("");
@@ -232,7 +72,6 @@ export function Cart() {
   const [recurrenceKind, setRecurrenceKind] = useState<"Daily" | "Weekly">("Weekly");
   const [recurrenceWeekday, setRecurrenceWeekday] = useState(1); // Monday
   const [recurrenceTime, setRecurrenceTime] = useState("09:00");
-  const [savingRecurring, setSavingRecurring] = useState(false);
   /// A line whose choices are being changed.
   const [editing, setEditing] = useState<{ key: string; line: CartLine; row: ItemRow } | null>(null);
   const [recurringSaved, setRecurringSaved] = useState(false);
@@ -304,7 +143,7 @@ export function Cart() {
   const dealPromo = promoCodes.find((p) => cart.promoHex === bytesToHex(p.hash) && !p.standing?.blocked) ?? null;
   const appliedPromo = chosenReward ? null : (manualPromo ?? dealPromo ?? autoPromo);
 
-  const itemName = (hex: string) => menuItems.find((m) => bytesToHex(m.hash) === hex)?.item.name;
+  const itemName = itemNamer(menuItems);
 
   function applyPromo() {
     setPromoError(null);
@@ -345,15 +184,15 @@ export function Cart() {
   const promoAwaitingRewardItem = !!appliedPromo && !!promoEvaluation?.eligible && promoRewardNeedsItem && promoEvaluation.effect.itemEffects.length === 0;
   const discountedSubtotalCents = cart.total() - promoDiscountCents;
   // The store's tax on the food after any promo, as validation computes it
-  // (`lib/menu/tax.ts`): added on top, or already in the prices.
+  // (`lib/storefront/tax.ts`): added on top, or already in the prices.
   // Age-restricted items (alcohol, tobacco) are collected in person, where
   // the store checks ID -- the network's rule.
-  const itemOf = (itemRef: Uint8Array) => storeInfo?.menuItems.find((row) => bytesToHex(row.hash) === bytesToHex(itemRef))?.item;
+  const itemOf = (itemRef: Uint8Array) => storeInfo?.menuItems.find((row) => bytesEqual(row.hash, itemRef))?.item;
   const ageRestricted = cart.lines.some((line) => itemOf(line.itemRef)?.age_restricted);
   const minAge = useTerms().restricted_min_age;
   const t = useT();
   const fulfillment: "Delivery" | "Pickup" = ageRestricted ? "Pickup" : chosenFulfillment;
-  const taxCategoryOf = (itemRef: Uint8Array) => storeInfo?.menuItems.find((row) => bytesToHex(row.hash) === bytesToHex(itemRef))?.item.tax_category ?? "";
+  const taxCategoryOf = (itemRef: Uint8Array) => storeInfo?.menuItems.find((row) => bytesEqual(row.hash, itemRef))?.item.tax_category ?? "";
   const taxRates = storeInfo?.taxRates ?? [];
   const taxIncluded = storeInfo?.pricesIncludeTax ?? false;
   const taxCents = orderTax(
@@ -367,7 +206,7 @@ export function Cart() {
   // What it earns, as the program will count it once the store settles:
   // the food paid, without tax.
   const pointsPreview = rewardsProgram
-    ? earnedFor(rewardsProgram, rewardsCard?.state ?? null, orderPoints(rewardsProgram, cart.lines.map((l) => ({ itemRef: l.itemRef, totalCents: l.priceCents * l.quantity })), discountedSubtotalCents - (taxIncluded ? taxCents : 0), now.getTime() * 1000))
+    ? earnedFor(rewardsProgram, rewardsCard?.state ?? null, pointsEarned(rewardsProgram, cart.lines.map((l) => ({ itemRef: l.itemRef, totalCents: l.priceCents * l.quantity })), discountedSubtotalCents - (taxIncluded ? taxCents : 0), now.getTime() * 1000))
     : 0;
   // The store's limit on what may be left at a door; above it, the order is
   // handed over whatever was chosen.
@@ -407,15 +246,15 @@ export function Cart() {
   const storeHours = storeInfo?.hours ? storeStatus(storeInfo.hours, orderFor) : null;
   const storeClosed = storeHours !== null && !storeHours.open;
 
-  async function placeOrder() {
+  // An order is placed once: it stays busy as the page moves on to it.
+  function placeOrder() {
     if (!cart.catalogRef || !cart.merchant) return;
-    setPlacing(true);
-    setError(null);
-    try {
+    const [catalogRef, merchant] = [cart.catalogRef, cart.merchant];
+    return action.run(async () => {
       if (fulfillment === "Pickup") {
         const record = await requestPickupOrder({
-          merchant: cart.merchant,
-          catalog_ref: cart.catalogRef,
+          merchant,
+          catalog_ref: catalogRef,
           items: cartItems(cart.lines),
           order_total: orderTotalCents,
           kitchen_notes: kitchenNotes.trim(),
@@ -424,14 +263,13 @@ export function Cart() {
           age_confirmed: ageRestricted && ageConfirmed,
           wake_for_store: wakeTokensForOrder().wake_for_store,
         });
-        const orderRef = actionHash(record);
         cart.clear();
-        navigate(`/customer/pickup-orders/${bytesToHex(orderRef)}`);
+        navigate(`/customer/pickup-orders/${bytesToHex(actionHash(record))}`);
         return;
       }
       const record = await requestDelivery({
-        merchant: cart.merchant,
-        catalog_ref: cart.catalogRef,
+        merchant,
+        catalog_ref: catalogRef,
         items: cartItems(cart.lines),
         order_total: orderTotalCents,
         dropoff,
@@ -448,30 +286,22 @@ export function Cart() {
         auto_match: autoMatch,
         ...wakeTokensForOrder(),
       });
-      const orderRef = actionHash(record);
       useCustomerSettings.getState().rememberCheckout({ tipPercent, feeCapCents: maxFeeCents, dropoffPreference, priority, autoMatch });
       if (saveAsDefault) setSessionLocation(dropoff);
       cart.clear();
-      navigate(`/customer/orders/${bytesToHex(orderRef)}`);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setPlacing(false);
-    }
+      navigate(`/customer/orders/${bytesToHex(actionHash(record))}`);
+    }, { as: "place", stayBusy: true });
   }
 
-  async function saveRecurring() {
+  function saveRecurring() {
     if (!cart.catalogRef || !cart.merchant) return;
-    setSavingRecurring(true);
-    setError(null);
-    try {
-      const recurrence: RecurrenceRule =
-        recurrenceKind === "Daily"
-          ? { Daily: { hour: Number(recurrenceTime.split(":")[0]), minute: Number(recurrenceTime.split(":")[1]) } }
-          : { Weekly: { weekday: recurrenceWeekday, hour: Number(recurrenceTime.split(":")[0]), minute: Number(recurrenceTime.split(":")[1]) } };
+    const [catalogRef, merchant] = [cart.catalogRef, cart.merchant];
+    const [hour, minute] = recurrenceTime.split(":").map(Number);
+    const recurrence: RecurrenceRule = recurrenceKind === "Daily" ? { Daily: { hour, minute } } : { Weekly: { weekday: recurrenceWeekday, hour, minute } };
+    return action.run(async () => {
       await createRecurringTemplate({
-        merchant: cart.merchant,
-        catalog_ref: cart.catalogRef,
+        merchant,
+        catalog_ref: catalogRef,
         items: cartItems(cart.lines),
         dropoff,
         max_delivery_fee: maxFeeCents,
@@ -487,11 +317,7 @@ export function Cart() {
       });
       setRecurringSaved(true);
       setShowRecurring(false);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSavingRecurring(false);
-    }
+    }, { as: "recurring" });
   }
 
   return (
@@ -527,7 +353,7 @@ export function Cart() {
         <Card className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800">
           {cart.lines.map((line) => {
             const key = lineKey(line);
-            const row = line.selections.length > 0 ? menuItems.find((m) => bytesToHex(m.hash) === bytesToHex(line.itemRef)) : undefined;
+            const row = line.selections.length > 0 ? menuItems.find((m) => bytesEqual(m.hash, line.itemRef)) : undefined;
             if (line.rewardId != null && rewardsProgram) {
               const colors = ACCENTS[rewardsProgram.accent];
               return (
@@ -603,7 +429,7 @@ export function Cart() {
             <Checkbox checked={saveAsDefault} onChange={(e) => setSaveAsDefault(e.target.checked)} />
             {t("cart.saveDefault")}
           </label>
-          <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wide text-ink-400">{t("cart.dropoff")}</p>
+          <SectionLabel className="mb-2 mt-3">{t("cart.dropoff")}</SectionLabel>
           <div className="flex gap-2">
             {DROPOFF_PREFERENCE_OPTIONS.filter(({ value }) => value !== "LeaveAtDoor" || doorAllowed).map(({ value, label }) => (
               <ToggleChip
@@ -721,7 +547,7 @@ export function Cart() {
                 )}
                 <Input type="time" value={recurrenceTime} onChange={(e) => setRecurrenceTime(e.target.value)} />
                 <p className="text-xs text-ink-400">{t("cart.repeat.detail")}</p>
-                <Button loading={savingRecurring} onClick={saveRecurring} className="py-2 text-xs">
+                <Button loading={action.doing === "recurring"} disabled={action.busy} onClick={saveRecurring} className="py-2 text-xs">
                   {t("cart.repeat.save")}
                 </Button>
               </motion.div>
@@ -741,68 +567,19 @@ export function Cart() {
         </Section>
       )}
 
+      {/* A driver's bid can be anywhere up to this cap (validate_new_bid
+          rejects anything higher): the customer sets it, so they know at
+          checkout the most delivery can cost. */}
       {fulfillment === "Delivery" && (
         <Section title={t("cart.feeCap")}>
           <p className="mb-2 text-xs text-ink-400">{t("cart.feeCapDetail")}</p>
-          <div className="flex flex-wrap gap-2">
-            {feePresets.map((cents) => (
-              <ToggleChip
-                key={cents}
-                active={feePreset === cents}
-                onClick={() => {
-                  setFeePreset(cents);
-                  setCustomFee("");
-                }}
-              >
-                {formatCents(cents)}
-              </ToggleChip>
-            ))}
-            <Input
-              type="number"
-              min={0}
-              step={0.5}
-              value={customFee}
-              onChange={(e) => {
-                setCustomFee(e.target.value);
-                setFeePreset(null);
-              }}
-              placeholder={t("cart.custom")}
-              prefix={currencySymbol()}
-              className="w-24 rounded-full py-1.5 text-xs"
-            />
-          </div>
+          <AmountChoice presets={feePresets} label={formatCents} preset={feePreset} custom={customFee} onPreset={setFeePreset} onCustom={setCustomFee} placeholder={t("cart.custom")} />
         </Section>
       )}
 
       {fulfillment === "Delivery" && (
         <Section title={t("cart.tipTitle")}>
-          <div className="flex flex-wrap gap-2">
-            {TIP_PRESETS_PERCENT.map((p) => (
-              <ToggleChip
-                key={p}
-                active={tipPercent === p}
-                onClick={() => {
-                  setTipPercent(p);
-                  setCustomTip("");
-                }}
-              >
-                {p === 0 ? t("cart.noTip") : `${p}%`}
-              </ToggleChip>
-            ))}
-            <Input
-              type="number"
-              min={0}
-              step={0.5}
-              value={customTip}
-              onChange={(e) => {
-                setCustomTip(e.target.value);
-                setTipPercent(null);
-              }}
-              placeholder={t("cart.custom")}
-              prefix={currencySymbol()}
-              className="w-24 rounded-full py-1.5 text-xs"
-            />
-          </div>
+          <AmountChoice presets={TIP_PRESETS_PERCENT} label={(p) => (p === 0 ? t("cart.noTip") : `${p}%`)} preset={tipPercent} custom={customTip} onPreset={setTipPercent} onCustom={setCustomTip} placeholder={t("cart.custom")} />
         </Section>
       )}
 
@@ -947,7 +724,7 @@ export function Cart() {
         {fulfillment === "Pickup" ? t("cart.pickupNote") : t("cart.deliveryNote")}
       </motion.div>
 
-      {error && <p className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>}
+      {action.error && <Notice className="mt-4">{action.error}</Notice>}
 
       <div className="fixed inset-x-0 bottom-20 z-20 mx-auto flex max-w-md flex-col items-center gap-2 px-4">
         {storeInfo && storeInfo.busyExtraMinutes > 0 && (
@@ -977,7 +754,7 @@ export function Cart() {
         )}
         <Button
           className="w-full"
-          loading={placing}
+          loading={action.doing === "place"}
           disabled={
             storeClosed ||
             shortOfMinimum > 0 ||

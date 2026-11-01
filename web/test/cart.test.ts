@@ -5,7 +5,7 @@ import test from "node:test";
 import { cartItems, lineKey, useCart, type CartLine } from "../src/store/cart.ts";
 import { rewardDiscount, rewardLine } from "../src/lib/rewards/rewards.ts";
 import type { Reward } from "../src/holochain/types.ts";
-import type { ItemRow } from "../src/lib/menu/menu.ts";
+import type { ItemRow } from "../src/lib/storefront/menu.ts";
 
 const store = new Uint8Array([1, 2, 3]);
 const owner = new Uint8Array([9]);

@@ -90,7 +90,7 @@
      base, used by components/ui.tsx's `Skeleton` instead of every screen
      showing a bare centered spinner while its first real content loads. */
   /* A store's window to accept an order, draining in real time -- see
-     components/ResponseCountdown.tsx. */
+     components/orders/ResponseCountdown.tsx. */
   @keyframes drain {
     to {
       width: 0%;
@@ -139,7 +139,7 @@
     }
   }
 
-  /* Leaflet theming (components/LiveMap.tsx) -- the library ships its own
+  /* Leaflet theming (components/places/LiveMap.tsx) -- the library ships its own
      gray chrome and a white popup by default, which clashes with this
      app's warm palette and breaks outright in dark mode. A CSS filter on
      the tile layer (rather than a second, paid dark-tile provider) is the
@@ -201,7 +201,7 @@
   }
 }
 
-/* Printing a receipt prints just the receipt (components/OrderReceipt.tsx). */
+/* Printing a receipt prints just the receipt (components/orders/OrderReceipt.tsx). */
 @media print {
   body * {
     visibility: hidden;

@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { bytesToHex } from "../../../holochain/decode";
-import { Card, Skeleton, StatNumber } from "../../../components/ui";
+import { Card, SectionLabel, Skeleton, StatNumber } from "../../../components/ui";
 import { storeInsights, storeOrdersSince } from "../../../lib/money/insights";
-import type { ItemRow } from "../../../lib/menu/menu";
+import type { ItemRow } from "../../../lib/storefront/menu";
 import { formatCents } from "../../../lib/ui/format";
 import { useResource } from "../../../lib/hooks/useResource";
 import { useT } from "../../../i18n";
@@ -22,9 +22,7 @@ export function InsightsCard({ catalogRef, items }: { catalogRef: Uint8Array; it
 
   return (
     <Card className="mb-4 p-4">
-      <p className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-400">
-        <TrendingUp size={13} /> {t("insights.title")}
-      </p>
+      <SectionLabel icon={<TrendingUp size={13} />} className="mb-1">{t("insights.title")}</SectionLabel>
       <div className="mb-3 flex gap-1.5">
         {PERIODS.map((p) => (
           <button key={p} type="button" onClick={() => setDays(p)} className={`rounded-full px-3 py-1 text-xs font-semibold ${days === p ? "bg-handshake-500 text-white" : "bg-ink-100 text-ink-600 dark:bg-ink-800 dark:text-ink-300"}`}>

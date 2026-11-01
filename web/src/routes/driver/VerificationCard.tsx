@@ -5,7 +5,7 @@ import { useState } from "react";
 import { BadgeCheck, ShieldQuestion } from "lucide-react";
 import type { AgentPubKey } from "../../holochain/types";
 import { driverVerification, getVerificationTerms } from "../../holochain/zomes/dispatch";
-import { AccountCode } from "../../components/AccountCode";
+import { AccountCode } from "../../components/account/AccountCode";
 import { Sheet } from "../../components/Sheet";
 import { Button, Card } from "../../components/ui";
 import { formatDate } from "../../lib/ui/format";
