@@ -1,10 +1,11 @@
-// The cart's building blocks: a titled section, a chip to choose with, and
-// an amount chosen from a few or typed in.
+// The cart's building blocks: a titled section, a note to someone, a chip
+// to choose with, and an amount chosen from a few or typed in.
 import { motion } from "framer-motion";
 import clsx from "clsx";
 import { currencySymbol } from "../../../lib/ui/format";
-import { Card, Input, SectionLabel } from "../../../components/ui";
+import { Card, Input, SectionLabel, Textarea } from "../../../components/ui";
 import { fadeSlideUp } from "../../../lib/ui/motion";
+import { MAX_NOTE_CHARS } from "../../../holochain/types";
 
 export function Section({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -17,6 +18,17 @@ export function Section({ title, right, children }: { title: string; right?: Rea
         {children}
       </Card>
     </motion.div>
+  );
+}
+
+/// A note for whoever it's for -- the store, or the driver -- and, if given,
+/// who can read it.
+export function NoteSection({ title, value, onChange, placeholder, privacy }: { title: string; value: string; onChange: (value: string) => void; placeholder: string; privacy?: string }) {
+  return (
+    <Section title={title}>
+      <Textarea maxLength={MAX_NOTE_CHARS} value={value} onChange={(e) => onChange(e.target.value)} rows={2} placeholder={placeholder} />
+      {privacy && <p className="mt-1.5 text-[11px] text-ink-400">{privacy}</p>}
+    </Section>
   );
 }
 
