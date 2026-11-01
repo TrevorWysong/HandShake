@@ -30,7 +30,7 @@ export type PromoRow = { hash: ActionHash; promo: PromoCode; standing?: PromoSta
 export const NO_PROMOS: PromoRow[] = [];
 export const NO_ITEMS: ItemRow[] = [];
 
-interface CartStoreInfo {
+export interface CartStoreInfo {
   subsidyPercent: number;
   // The store's delivery range -- lets `onValidate` below reject an
   // out-of-range drop-off as it's picked (the network refuses one anyway).
