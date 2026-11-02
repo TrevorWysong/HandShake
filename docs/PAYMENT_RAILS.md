@@ -62,13 +62,18 @@ The HoloFuel Network opened on 1 November 2026. **Decision unchanged: no HoloFue
 - **Earnings from services other than hosting:** the library has a rideshare "proof of service" agreement (December 2025) that prices a trip by distance, minutes, tolls and surge, pays the driver and splits a fee to the operating service -- the shape of a HandShake delivery. Which agreements let HoloFuel swap out is a configuration Net Zero chooses, so delivery earnings are a policy question rather than missing technology.
 - **Apps building on it:** today Unyt sits inside other software only as a Moss tool; its own server agents use `ham`. Planned: a public web gateway and "gateway marketplace auto-config". Nothing yet for a separate hApp.
 - **Identity:** "KYC/AML integrations & token gating" shipped in March 2026; "certifications, badges & token gating" and "redeemable token certificates" (portable, self-proving claims) are planned -- what an app could check to accept "a verified HoloFuel member".
+- **The way out follows commercial services, not hosting alone.** The launch guide: "Access to the Reserves comes from providing commercial services into the network"; the terms name hosting "for example". With the rideshare agreement, a delivery service qualifying looks possible -- Net Zero's call.
+- **Vouchers are a way in without HOT.** Members can receive HoloFuel by an emailed voucher (Holo Hosting issues them to its customers). A voucher issuer selling for dollars would be a top-up path that never touches Ethereum. Net Zero itself isn't selling HoloFuel and has no short-term plans to list it; HOT stays "the primary path to liquidity".
+- **Membership proves an ID check, enforced by the network.** The joining code's DNA properties name a `joining_server_signer`: a member joins only with a proof signed by Unyt's joining service, issued after the Didit check, and the operator can block an agent. So "a member of the HoloFuel network" means "verified", which HandShake could accept for drivers once their HandShake and HoloFuel keys are linked by a signed claim.
+- **Automated agents are the normal shape.** The swap is a "2-way Trade" with an automated "HOT Reserver"; bridging runs through a bridge agent. A HandShake issuer agent would be the same kind of participant. Payments are addressed to an Agent Key (a Holochain agent key, like HandShake's -- but a different one).
+- **Not yet:** mobile (desktop only), and credit limits ("not being activated in the near term"). Services that accept HoloFuel list themselves in the [Decent Directory](https://directory.holoventures.io/), where HandShake stores could appear.
 - **Price:** no sign of moving off HOT's market price.
 - **Timing:** items the roadmap put in Q2 2026 (the public gateway, mobile apps, stablecoins) are still "on the horizon" in November 2026.
 
 Questions this adds for Net Zero/Unyt:
-7. **Merchant earnings:** could a harvesting agreement, or another way out to HOT, cover HoloFuel earned by selling goods and services, not only hosting?
+7. **Merchant earnings:** does food delivery count as "providing commercial services into the network" -- could a harvesting agreement (like the rideshare one) let restaurants and drivers swap their earnings out?
 8. **Integration licence:** may a third-party issuer service use `ham` and the app's zome API, and will the API be documented and versioned?
-9. **Ways in:** is a stablecoin (or any non-HOT) unit and bridge planned, or a partner selling HoloFuel for dollars, and when?
+9. **Ways in:** is a stablecoin (or any non-HOT) unit and bridge planned, or a partner selling HoloFuel for dollars, and when? Could HandShake, or a partner, issue HoloFuel vouchers the way Holo Hosting does?
 10. **Value:** will HoloFuel's rate stay tied to HOT's market price, or move to a hosting-cost reference?
 11. **Identity:** can an app rely on "this agent is a verified HoloFuel member" as its own check -- verifying drivers and sellers, say -- instead of running its own?
 
