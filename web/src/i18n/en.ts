@@ -427,6 +427,7 @@ export const en = {
   "rewards.pending.why": "Points arrive once an order's refund period ends, so they always match what you paid.",
   "rewards.pending.earnedAt": "Earned at {program}",
   "rewards.arriveAfterRefunds": "They arrive once the refund period ends.",
+  "rewardsAdmin.noStoreDetail": "Publish a storefront, then give its regulars a rewards program here.",
   "rewardsAdmin.title": "Rewards",
   "rewardsAdmin.subtitleLive": "Your program, live for every customer.",
   "rewardsAdmin.subtitleNew": "Design a program that brings customers back.",
