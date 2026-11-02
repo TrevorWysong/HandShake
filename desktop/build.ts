@@ -48,6 +48,13 @@ const PATCHES = [
     to: "",
   },
   {
+    // ...which leaves its parameter unused, and Kangaroo's typecheck refuses
+    // an unused one unless it's marked so.
+    file: "src/main/holochainManager.ts",
+    from: "  async installHappIfNecessary(networkSeed: string) {",
+    to: "  async installHappIfNecessary(_networkSeed: string) {",
+  },
+  {
     // Its macOS update-manifest merge is hardcoded to Holochain's launcher.
     file: "scripts/merge-mac-yamls.mjs",
     from: "const OWNER = 'holochain';\nconst REPO = 'launcher';",
