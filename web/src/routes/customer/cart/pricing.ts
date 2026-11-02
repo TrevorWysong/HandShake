@@ -39,6 +39,9 @@ export interface PriceInput {
   /// The share of a delivery fee the store covers, 0-100.
   subsidyPercent: number;
   minOrderCents: number | null;
+  /// The menu items' part of the food -- what the minimum is measured
+  /// against; goodie bags are already discounted.
+  menuSubtotalCents: number;
   leaveAtDoorMaxCents: number | null;
   /// The customer's balance -- `undefined` until it's read.
   balanceCents: number | undefined;
@@ -95,7 +98,8 @@ export function priceCheckout(input: PriceInput): Price {
     customerFeeShareCents,
     estimatedTotalCents,
     holdCents,
-    shortOfMinimumCents: input.minOrderCents != null ? Math.max(0, input.minOrderCents - input.subtotalCents) : 0,
+    // Goodie bags alone aren't held to it.
+    shortOfMinimumCents: input.minOrderCents != null && input.menuSubtotalCents > 0 ? Math.max(0, input.minOrderCents - input.menuSubtotalCents) : 0,
     doorAllowed: input.leaveAtDoorMaxCents == null || orderTotalCents <= input.leaveAtDoorMaxCents,
     shortfallCents,
     cardChargeCents,

@@ -141,7 +141,7 @@ await runScenario(async (scenario) => {
     call(who, "dispatch")<HcRecord>("create_raw_pickup_order_for_testing", {
       requester: who.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
       lines: [{ item_ref: soup, priced_version: soup, quantity: 1, selections: [] }, { item_ref: bread, priced_version: bread, quantity: 1, selections: [] }],
-      order_total: total, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null, bag_claim_ref: null,
+      order_total: total, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null,
       loyalty_proof: [], rewards: rewardsField, cancellation: null, ready_by: null, food_hold: null, sealed_customer_name: null,
     });
   await assert.rejects(raw({ program: programVersion, reward: 9 }, 1400), /no such reward/, "a reward the program doesn't have");

@@ -78,12 +78,6 @@ pub fn ever_created(author: &AgentPubKey, chain_top: &ActionHash, types: &[Scope
     Ok(found)
 }
 
-/// The entries of the given types that `author` created within `filter`,
-/// newest first, as bytes to decode.
-pub fn entries_created(author: &AgentPubKey, filter: ChainFilter, types: &[ScopedEntryDefIndex]) -> ExternResult<Vec<SerializedBytes>> {
-    created_of(must_get_agent_activity(author.clone(), filter)?, types)
-}
-
 /// The entries of the given types created among `activity`, as bytes.
 fn created_of(activity: Vec<AgentActivity>, types: &[ScopedEntryDefIndex]) -> ExternResult<Vec<SerializedBytes>> {
     let mut entries = Vec::new();

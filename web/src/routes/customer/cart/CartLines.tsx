@@ -1,12 +1,13 @@
-// What's in the bag: each line with its choices and quantity, and a reward
-// redeemed into it shown as a reward -- its price struck through, free.
+// What's in the bag: each line with its choices and quantity, a reward
+// redeemed into it shown as a reward -- its price struck through, free --
+// and a goodie bag as one, with how long it's on offer.
 import { motion } from "framer-motion";
 import { Minus, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Card, StatNumber } from "../../../components/ui";
 import { lineKey, useCart, type CartLine } from "../../../store/cart";
 import { bytesEqual } from "../../../holochain/decode";
 import { ACCENTS } from "../../../lib/rewards/rewards";
-import { formatCents } from "../../../lib/ui/format";
+import { formatCents, formatClockTime } from "../../../lib/ui/format";
 import { fadeSlideUp } from "../../../lib/ui/motion";
 import type { ItemRow } from "../../../lib/storefront/menu";
 import type { RewardsProgram } from "../../../holochain/types";
@@ -28,6 +29,7 @@ export function CartLines({ menuItems, program, rewardCost, onEdit }: { menuItem
         {cart.lines.map((line) => {
           const key = lineKey(line);
           if (line.rewardId != null && program) return <RewardLine key={key} line={line} program={program} cost={rewardCost} onRemove={() => cart.removeLine(key)} />;
+          if (line.bag) return <BagLine key={key} line={line} onRemove={() => cart.removeLine(key)} />;
           // Only an item with choices has anything to edit.
           const row = line.selections.length > 0 ? menuItems.find((m) => bytesEqual(m.hash, line.itemRef)) : undefined;
           return (
@@ -59,6 +61,30 @@ export function CartLines({ menuItems, program, rewardCost, onEdit }: { menuItem
         })}
       </Card>
     </motion.div>
+  );
+}
+
+function BagLine({ line, onRemove }: { line: CartLine; onRemove: () => void }) {
+  const t = useT();
+  const bag = line.bag!;
+  const only = bag.pickup && bag.delivery ? null : bag.pickup ? t("cart.bag.pickupOnly") : t("cart.bag.deliveryOnly");
+  return (
+    <div className="flex items-center gap-3 p-4">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-amber-300 to-handshake-500 text-base" aria-hidden>
+        🎁
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{line.name}</p>
+        <p className="text-xs text-ink-400">
+          {t("cart.bag.until", { time: formatClockTime(bag.closes) })}
+          {only && ` · ${only}`}
+        </p>
+      </div>
+      <button type="button" onClick={onRemove} aria-label={t("cart.bag.remove")} className="grid h-8 w-8 place-items-center rounded-full text-ink-400 hover:bg-ink-100 hover:text-red-500 dark:hover:bg-ink-800">
+        <Trash2 size={15} />
+      </button>
+      <StatNumber className="w-16 text-right text-sm">{formatCents(line.priceCents)}</StatNumber>
+    </div>
   );
 }
 

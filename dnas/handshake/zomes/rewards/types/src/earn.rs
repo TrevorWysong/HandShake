@@ -22,17 +22,16 @@ pub struct OrderForRewards {
     pub tax_cents: u64,
     pub rewards: Option<OrderRewards>,
     pub promo_code_ref: Option<ActionHash>,
-    pub bag_claim_ref: Option<ActionHash>,
 }
 
 impl OrderForRewards {
     /// The order a record is, of either kind.
     pub fn of(record: &Record) -> Option<Self> {
         if let Some(o) = decode::<DeliveryOrder>(record) {
-            return Some(Self { requester: o.requester, merchant: o.merchant, catalog_ref: o.catalog_ref, lines: o.lines, order_total: o.order_total, tax_cents: o.tax_cents, rewards: o.rewards, promo_code_ref: o.promo_code_ref, bag_claim_ref: o.bag_claim_ref });
+            return Some(Self { requester: o.requester, merchant: o.merchant, catalog_ref: o.catalog_ref, lines: o.lines, order_total: o.order_total, tax_cents: o.tax_cents, rewards: o.rewards, promo_code_ref: o.promo_code_ref });
         }
         let o = decode::<PickupOrder>(record)?;
-        Some(Self { requester: o.requester, merchant: o.merchant, catalog_ref: o.catalog_ref, lines: o.lines, order_total: o.order_total, tax_cents: o.tax_cents, rewards: o.rewards, promo_code_ref: o.promo_code_ref, bag_claim_ref: o.bag_claim_ref })
+        Some(Self { requester: o.requester, merchant: o.merchant, catalog_ref: o.catalog_ref, lines: o.lines, order_total: o.order_total, tax_cents: o.tax_cents, rewards: o.rewards, promo_code_ref: o.promo_code_ref })
     }
 }
 

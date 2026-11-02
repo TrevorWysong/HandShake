@@ -7,7 +7,7 @@ import { t } from "../../i18n";
 
 /// The reasons a store can give for turning an order down, in the order
 /// its Decline menu lists them.
-export const DECLINE_REASONS: readonly DeclineReason[] = ["TooBusy", "ItemsUnavailable", "Closed", "OutdatedPrices", "BagHoldLapsed", "TermsChanged", "Other"];
+export const DECLINE_REASONS: readonly DeclineReason[] = ["TooBusy", "ItemsUnavailable", "Closed", "OutdatedPrices", "BagUnavailable", "TermsChanged", "Other"];
 
 /// A decline reason's short name, as the store picks it.
 export const declineLabel = (reason: DeclineReason): string => t(`decline.label.${reason}`);

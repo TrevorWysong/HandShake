@@ -1,15 +1,15 @@
-//! Checks both order verticals run on a new order: its price, and its
-//! optional references -- a promo code and a redeemed goodie-bag claim.
+//! Checks both order verticals run on a new order: its price, its goodie
+//! bags, and its promo code.
 //!
-//! Both referenced entries can be updated after creation (`PromoCode.active`,
-//! `BagClaim.status`), and `must_get_valid_record` only ever returns a
-//! record as created -- validation can't ask what another entry's *current*
-//! state is. So what's enforced here is everything fixed at creation;
-//! "is this code still active" and "is this claim confirmed yet" are
-//! coordinator pre-checks (`request_delivery`/`request_pickup_order`).
+//! A promo can be updated after creation (`PromoCode.active`), and
+//! `must_get_valid_record` only ever returns a record as created --
+//! validation can't ask what another entry's *current* state is. So what's
+//! enforced here is everything fixed at creation; "is this code still
+//! active" is a coordinator pre-check, and whether a bag is still left is
+//! the store's to count as it accepts the order.
 
 use super::*;
-use catalog_types::{order_tax, order_total, total_with_tax, BagClaimStatus, GoodieBag, MenuItem, PromoRequirement, PromoReward, TaxableLine};
+use catalog_types::{order_tax, order_total, total_with_tax, GoodieBag, MenuItem, PromoRequirement, PromoReward, TaxableLine};
 use dispatch_types::LinePricer;
 use handshake_integrity_support::limits::{MAX_LINE_QUANTITY, MAX_ORDER_CHOICES, MAX_ORDER_LINES};
 use handshake_integrity_support::{decode, original_creation};
@@ -22,7 +22,6 @@ pub(crate) struct OrderPricing<'a> {
     pub lines: &'a [OrderLine],
     pub order_total: u64,
     pub promo_code_ref: Option<&'a ActionHash>,
-    pub bag_claim_ref: Option<&'a ActionHash>,
     pub loyalty_proof: &'a [ActionHash],
     /// The rewards program it joins, and any reward it redeems.
     pub rewards: Option<&'a OrderRewards>,
@@ -84,24 +83,31 @@ pub(crate) fn check_pricing(order: OrderPricing<'_>) -> ExternResult<Option<Stri
         Ok(reward) => reward,
         Err(reason) => return Ok(Some(reason)),
     };
-    if reward.is_some() && (order.promo_code_ref.is_some() || order.bag_claim_ref.is_some()) {
-        return Ok(Some("a reward takes the place of any promo, and isn't spent on a goodie bag".into()));
+    if reward.is_some() && order.promo_code_ref.is_some() {
+        return Ok(Some("a reward takes the place of any promo".into()));
     }
 
-    if let Some(claim_ref) = order.bag_claim_ref {
-        return check_bag_order_price(&order, claim_ref);
-    }
-
+    // The menu's lines, priced with their choices; the goodie bags', at
+    // each bag's own price.
     let mut priced = Vec::with_capacity(order.lines.len());
     let mut categories = Vec::with_capacity(order.lines.len());
+    let mut bags: Vec<(&ActionHash, GoodieBag)> = Vec::new();
     let mut age_restricted = false;
     let mut pricer = LinePricer::default();
     for line in order.lines {
         if original_creation(line.priced_version.clone())? != line.item_ref {
             return Ok(Some("a line's priced version must be a version of its own item".into()));
         }
-        let Some(item) = decode::<MenuItem>(&must_get_valid_record(line.priced_version.clone())?) else {
-            return Ok(Some("a line must be priced from a MenuItem".into()));
+        let record = must_get_valid_record(line.priced_version.clone())?;
+        if let Some(bag) = decode::<GoodieBag>(&record) {
+            if let Some(reason) = bag_line_problem(&order, line, &bag) {
+                return Ok(Some(reason));
+            }
+            bags.push((&line.item_ref, bag));
+            continue;
+        }
+        let Some(item) = decode::<MenuItem>(&record) else {
+            return Ok(Some("a line must be priced from a MenuItem or a GoodieBag".into()));
         };
         if &item.catalog_ref != order.catalog_ref {
             return Ok(Some("every item must be on this store's menu".into()));
@@ -118,9 +124,18 @@ pub(crate) fn check_pricing(order: OrderPricing<'_>) -> ExternResult<Option<Stri
             return Ok(Some(problem));
         }
     }
-    if let Some(min) = order.store.min_order_cents {
-        let subtotal: u64 = priced.iter().map(|line| line.unit_price * u64::from(line.quantity)).sum();
-        if subtotal < min {
+    if !bags.is_empty() {
+        if let Some(reason) = check_bags_once(&order, &bags)? {
+            return Ok(Some(reason));
+        }
+    }
+    // The store's minimum, and any promo or reward, are the menu's: goodie
+    // bags are already discounted.
+    if priced.is_empty() && (order.promo_code_ref.is_some() || reward.is_some()) {
+        return Ok(Some("a promo or reward applies to menu items, not goodie bags".into()));
+    }
+    if let (Some(min), false) = (order.store.min_order_cents, priced.is_empty()) {
+        if catalog_types::subtotal(&priced) < min {
             return Ok(Some("the order is below the store's minimum".into()));
         }
     }
@@ -163,8 +178,47 @@ pub(crate) fn check_pricing(order: OrderPricing<'_>) -> ExternResult<Option<Stri
             None => return Ok(Some("the promo code's requirement isn't met by this order".into())),
         },
     };
-    let taxable: Vec<TaxableLine> = priced.iter().zip(&categories).map(|(line, category)| TaxableLine { category, total: line.total() }).collect();
-    Ok(check_taxed_total(&order, food, &taxable, "the lines at their priced versions, less any promo discount"))
+    // A bag is food at the store's default rate.
+    let bags_total: u64 = bags.iter().map(|(_, bag)| bag.price_cents).sum();
+    let mut taxable: Vec<TaxableLine> = priced.iter().zip(&categories).map(|(line, category)| TaxableLine { category, total: line.total() }).collect();
+    taxable.extend(bags.iter().map(|(_, bag)| TaxableLine { category: "", total: bag.price_cents }));
+    Ok(check_taxed_total(&order, food + bags_total, &taxable, "the lines at their priced versions, less any promo discount"))
+}
+
+/// Why a goodie bag can't be on this order, if it can't: it's one of the
+/// bag, with nothing to choose, from the order's own store -- never its
+/// owner's own -- placed before the bag's window closes, for now, and had
+/// the way the bag allows. (Whether one is left is the store's to count.)
+fn bag_line_problem(order: &OrderPricing<'_>, line: &OrderLine, bag: &GoodieBag) -> Option<String> {
+    let problem = if line.quantity != 1 || !line.selections.is_empty() {
+        "a goodie bag is one to a line, with nothing to choose"
+    } else if &bag.catalog_ref != order.catalog_ref {
+        "a goodie bag is ordered from its own store"
+    } else if order.requester == &order.store.owner {
+        "a store can't order its own goodie bag"
+    } else if order.scheduled || !bag.orderable_at(order.placed_at) {
+        "a goodie bag is ordered for now, before its window closes"
+    } else if !bag.supports(order.delivery) {
+        "this goodie bag isn't offered this way"
+    } else {
+        return None;
+    };
+    Some(problem.into())
+}
+
+/// A customer has each goodie bag once: no earlier order of theirs since
+/// the bag was listed has it -- unless it came to nothing before the store
+/// took it on (`earlier_orders`). So nobody holds more than one of a bag,
+/// and a declined order doesn't cost them it. The walk is the customer's
+/// own chain since the oldest bag's listing, at most a bag's lifetime.
+fn check_bags_once(order: &OrderPricing<'_>, bags: &[(&ActionHash, GoodieBag)]) -> ExternResult<Option<String>> {
+    let Some(prev) = order.prev_action else { return Ok(Some("an order can't open a chain".into())) };
+    let Some(since) = bags.iter().map(|(_, bag)| bag.created_at).min() else { return Ok(None) };
+    let Some(earlier) = earlier_orders(order.requester, prev, since)? else {
+        return Ok(Some("this account's history is too long to check its goodie bags".into()));
+    };
+    let again = bags.iter().any(|(bag, _)| earlier.iter().any(|o| o.items.contains(bag)));
+    Ok(again.then(|| "a customer has each goodie bag once".into()))
 }
 
 /// Why an order with age-restricted items (alcohol, tobacco) can't be
@@ -193,29 +247,6 @@ fn check_taxed_total(order: &OrderPricing<'_>, food: u64, lines: &[TaxableLine],
     (order.order_total != expected).then(|| format!("order_total must be {expected}: {what}, with the store's tax"))
 }
 
-/// A goodie-bag order is the bag itself, once, at the bag's price -- its
-/// terms can't change after listing, so the bag as created is the price.
-fn check_bag_order_price(order: &OrderPricing<'_>, claim_ref: &ActionHash) -> ExternResult<Option<String>> {
-    if order.promo_code_ref.is_some() {
-        return Ok(Some("a goodie-bag order can't also use a promo code".into()));
-    }
-    let Some(claim) = decode::<BagClaim>(&must_get_valid_record(claim_ref.clone())?) else {
-        return Ok(Some("bag_claim_ref does not point at a BagClaim entry".into()));
-    };
-    let expected_line = OrderLine { item_ref: claim.bag_ref.clone(), priced_version: claim.bag_ref.clone(), quantity: 1, selections: Vec::new() };
-    if order.lines != [expected_line] {
-        return Ok(Some("a goodie-bag order is exactly one of the claimed bag".into()));
-    }
-    let Some(bag) = decode::<GoodieBag>(&must_get_valid_record(claim.bag_ref)?) else {
-        return Ok(Some("the claimed bag is not a GoodieBag".into()));
-    };
-    if &bag.catalog_ref != order.catalog_ref {
-        return Ok(Some("a goodie-bag order is from the bag's own store".into()));
-    }
-    // A bag is food at the store's default rate.
-    Ok(check_taxed_total(order, bag.price_cents, &[TaxableLine { category: "", total: bag.price_cents }], "the bag's price"))
-}
-
 /// The rewards an order cites, checked: a version of its own store's
 /// program, running, and the reward it spends, if any -- what that takes
 /// off the order. Whether the customer's points cover it is the store's to
@@ -241,6 +272,8 @@ struct EarlierOrder {
     catalog_ref: ActionHash,
     promo_code_ref: Option<ActionHash>,
     placed_at: Timestamp,
+    /// What it ordered, by item (a goodie bag's line, by the bag).
+    items: Vec<ActionHash>,
 }
 
 /// The most of a customer's history a promo's limits read: enough for
@@ -285,10 +318,14 @@ fn earlier_orders(requester: &AgentPubKey, chain_top: &ActionHash, since: Timest
             declined.extend(DeclineNoted::try_from(bytes).ok().map(|d| d.order));
             continue;
         }
-        let order = DeliveryOrder::try_from(bytes.clone()).ok().map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some(), o.merchant)).or_else(|| PickupOrder::try_from(bytes).ok().map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some(), o.merchant)));
-        let Some((catalog_ref, promo_code_ref, has_cancellation, merchant)) = order else { continue };
+        let order = DeliveryOrder::try_from(bytes.clone())
+            .ok()
+            .map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some(), o.merchant, o.lines))
+            .or_else(|| PickupOrder::try_from(bytes).ok().map(|o| (o.catalog_ref, o.promo_code_ref, o.cancellation.is_some(), o.merchant, o.lines)));
+        let Some((catalog_ref, promo_code_ref, has_cancellation, merchant, lines)) = order else { continue };
         if is_order {
-            orders.push(EarlierOrder { order: item.action.hashed.hash.clone(), catalog_ref, promo_code_ref, placed_at: action.timestamp() });
+            let items = lines.into_iter().map(|line| line.item_ref).collect();
+            orders.push(EarlierOrder { order: item.action.hashed.hash.clone(), catalog_ref, promo_code_ref, placed_at: action.timestamp(), items });
         } else if has_cancellation {
             // The customer's own update cancelling it -- their only one
             // with a cancellation, since they write nothing after. Written
@@ -398,71 +435,6 @@ pub(crate) fn check_promo_code(promo_ref: &ActionHash, catalog_ref: &ActionHash,
         return Ok(Some("promo code has expired".into()));
     }
     Ok(None)
-}
-
-/// How a redeemed claim must have been claimed, for the order redeeming it.
-pub(crate) enum ClaimedFor {
-    Pickup,
-    Delivery,
-}
-
-/// The order must cite the store's confirmation of the claim (validation
-/// reads the record it cites literally, so citing the claim as first made
-/// would prove nothing); the claim must be this customer's own, claimed for
-/// this kind of order, and not already redeemed by an earlier order.
-///
-/// Single use is checkable deterministically because both the claim and
-/// every order redeeming it live on the customer's own source chain: walk
-/// back from just before this order to the claim (usually a handful of
-/// actions, since finalization follows confirmation), and reject if any
-/// order in between already redeems the same claim -- compared by the
-/// claim's identity, so citing a different version of it doesn't count as
-/// a different claim. Skipping that walk would need a forked chain, which
-/// Holochain detects and warrants.
-pub(crate) fn check_bag_claim(claim_ref: &ActionHash, requester: &AgentPubKey, claimed_for: ClaimedFor, prev_action: Option<&ActionHash>) -> ExternResult<Option<String>> {
-    let Some(claim) = decode::<BagClaim>(&must_get_valid_record(claim_ref.clone())?) else {
-        return Ok(Some("bag_claim_ref does not point at a BagClaim entry".into()));
-    };
-    if claim.status != BagClaimStatus::Confirmed {
-        return Ok(Some("bag_claim_ref must be the store's confirmation of the claim".into()));
-    }
-    if &claim.customer != requester {
-        return Ok(Some("bag_claim_ref's own customer must match this order's requester".into()));
-    }
-    let fulfillment_matches = match claimed_for {
-        ClaimedFor::Pickup => claim.fulfillment == BagClaimFulfillment::Pickup,
-        ClaimedFor::Delivery => matches!(claim.fulfillment, BagClaimFulfillment::Delivery { .. }),
-    };
-    if !fulfillment_matches {
-        return Ok(Some("bag_claim_ref was not claimed for this kind of order".into()));
-    }
-    let Some(prev_action) = prev_action else {
-        return Ok(Some("an order redeeming a claim can't be the first action on a chain".into()));
-    };
-    let claim_origin = original_creation(claim_ref.clone())?;
-    if already_redeemed(requester, prev_action, &claim_origin)? {
-        return Ok(Some("this goodie bag claim has already been redeemed".into()));
-    }
-    Ok(None)
-}
-
-/// Whether any order between the claim (`claim_origin`, its creation on
-/// the customer's chain) and `chain_top` (inclusive) on `requester`'s chain
-/// already redeems it, citing any version of it.
-fn already_redeemed(requester: &AgentPubKey, chain_top: &ActionHash, claim_origin: &ActionHash) -> ExternResult<bool> {
-    let orders = entries_created(requester, ChainFilter::until_hash(chain_top.clone(), claim_origin.clone()), &order_types()?)?;
-    for bytes in orders {
-        let cited = DeliveryOrder::try_from(bytes.clone())
-            .ok()
-            .and_then(|o| o.bag_claim_ref)
-            .or_else(|| PickupOrder::try_from(bytes).ok().and_then(|o| o.bag_claim_ref));
-        if let Some(cited) = cited {
-            if &original_creation(cited)? == claim_origin {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
 }
 
 /// Why a customer can't place another order now, if they can't: they've

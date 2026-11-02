@@ -112,7 +112,6 @@ await runScenario(async (scenario) => {
       requested_at: Date.now() * 1000,
       kitchen_note: null,
       promo_code_ref: null,
-      bag_claim_ref: null,
       loyalty_proof: [],
     }),
   );

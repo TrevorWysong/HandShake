@@ -215,7 +215,6 @@ fn fire(template: &RecurringOrderTemplate, details: &TemplateDetails) -> ExternR
         priority: details.priority,
         // A standing order runs unattended.
         auto_match: true,
-        bag_claim_ref: None,
         wake_for_store: None,
         reward: None,
         wake_for_driver: None,

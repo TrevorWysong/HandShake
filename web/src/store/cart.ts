@@ -23,7 +23,22 @@ export interface CartLine {
   /// Set on the line a reward put in the bag (`CartReward`): free, and kept
   /// apart from any units of the same item the customer pays for.
   rewardId?: number;
+  /// Set on a goodie bag's line: one of it, had the ways it allows, while
+  /// its window's open.
+  bag?: BagTerms;
 }
+
+/// A goodie bag's terms, as checkout needs them.
+export interface BagTerms {
+  pickup: boolean;
+  delivery: boolean;
+  /// When its window closes, in microseconds.
+  closes: number;
+}
+
+/// The cart's menu lines -- its goodie bags aside, which promos, rewards
+/// and a store's minimum don't count (the network's rule).
+export const menuLines = (lines: CartLine[]) => lines.filter((line) => !line.bag);
 
 /// A reward the customer redeemed into their bag: its points are held for
 /// it -- shown as spent -- until the order goes in, and come back if they
@@ -87,10 +102,11 @@ interface CartState {
 }
 
 /// `lines` with `line` merged in: its units added to the line with the same
-/// key, or appended.
+/// key, or appended. A goodie bag is one to an order.
 function merged(lines: CartLine[], line: CartLine): CartLine[] {
   const key = lineKey(line);
-  return lines.some((l) => lineKey(l) === key) ? lines.map((l) => (lineKey(l) === key ? { ...l, quantity: l.quantity + line.quantity } : l)) : [...lines, line];
+  if (!lines.some((l) => lineKey(l) === key)) return [...lines, line];
+  return line.bag ? lines : lines.map((l) => (lineKey(l) === key ? { ...l, quantity: l.quantity + line.quantity } : l));
 }
 
 /// Hashes and keys, through JSON and back.
@@ -143,8 +159,9 @@ export const useCart = create<CartState>()(
           get().removeLine(key);
           return;
         }
-        // A reward's line holds what the reward gives, no more.
-        set({ lines: get().lines.map((l) => (lineKey(l) === key && l.rewardId == null ? { ...l, quantity } : l)) });
+        // A reward's line holds what the reward gives, and a goodie bag's
+        // one bag, no more.
+        set({ lines: get().lines.map((l) => (lineKey(l) === key && l.rewardId == null && !l.bag ? { ...l, quantity } : l)) });
       },
 
       setCart: (catalogRef, merchant, merchantName, lines) => set({ catalogRef, merchant, merchantName, reward: null, lines: lines.reduce(merged, [] as CartLine[]) }),

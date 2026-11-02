@@ -2,7 +2,7 @@
 // area, never its exact drop-off or notes; their name goes only to each
 // order's store and driver. Those are sealed -- the drop-off to the
 // customer and, once a bid is accepted, to that driver alone; the kitchen
-// note to the store -- and so are standing orders and delivery claims.
+// note to the store -- and so are standing orders.
 // Every check that something is hidden looks at the raw published bytes,
 // not just at what the honest UI reads.
 import assert from "node:assert/strict";
@@ -75,7 +75,7 @@ await runScenario(async (scenario) => {
 
   const detailsFor = (p: typeof customer) => call(p, "dispatch")<Details>("get_order_private_details", order);
   const mine = await detailsFor(customer);
-  assert.deepEqual(mine.dropoff, { point: home, notes: "Gate code 4417", recipient: "Cara" }, "the customer reads their own drop-off");
+  assert.deepEqual(mine.dropoff, { point: home, line2: "", notes: "Gate code 4417", recipient: "Cara" }, "the customer reads their own drop-off");
   assert.equal(mine.kitchen_note, "Allergic to peanuts");
   const storeView = await detailsFor(merchant);
   assert.equal(storeView.kitchen_note, "Allergic to peanuts", "the store reads the kitchen note");
@@ -100,7 +100,7 @@ await runScenario(async (scenario) => {
   // customer's app shares it as soon as it sees that.
   await commitAndCook(driver, merchant, order, all);
   const driverView = await retryUntil(() => detailsFor(driver), (view) => view.dropoff !== null, 60, 1000);
-  assert.deepEqual(driverView.dropoff, { point: home, notes: "Gate code 4417", recipient: "Cara" }, "the committed driver gets the exact drop-off, and who it's for");
+  assert.deepEqual(driverView.dropoff, { point: home, line2: "", notes: "Gate code 4417", recipient: "Cara" }, "the committed driver gets the exact drop-off, and who it's for");
   assert.equal(driverView.customer_name, "Cara");
   assert.equal(driverView.kitchen_note, null, "but not the kitchen note");
   assert.equal((await detailsFor(stranger)).dropoff, null, "a stranger still reads nothing");
@@ -123,30 +123,4 @@ await runScenario(async (scenario) => {
   const [view] = await call(customer, "dispatch")<{ details: { dropoff: { lat: number } } | null }[]>("list_my_recurring_templates", null);
   assert.equal(view.details?.dropoff.lat, home.lat, "its owner reads the details back");
   console.log("[PASS] recurring orders store their address sealed");
-
-  // So does a goodie bag claimed for delivery: the store sees "delivery".
-  const bag = actionHash(
-    await call(merchant, "catalog")<HcRecord>("create_goodie_bag", {
-      catalog_ref: store,
-      title: "Surprise bag",
-      description: "",
-      photo_data_uri: "",
-      original_value_cents: 1500,
-      price_cents: 500,
-      quantity_total: 3,
-      pickup_window_start: Date.now() * 1000,
-      pickup_window_end: Date.now() * 1000 + 3_600_000_000,
-      supports_pickup: true,
-      supports_delivery: true,
-      created_at: Date.now() * 1000,
-    }),
-  );
-  await sync();
-  const claim = await call(customer, "catalog")<HcRecord>("claim_goodie_bag", { bag_ref: bag, fulfillment: { Delivery: { dropoff: home, max_delivery_fee: 300 } } });
-  const fulfillment = decodeEntry<{ fulfillment: { Delivery: Record<string, unknown> } }>(claim).fulfillment.Delivery;
-  assert.equal(fulfillment.dropoff, undefined, "the claim publishes no drop-off");
-  assert.ok(fulfillment.sealed_dropoff, "it's sealed to the customer");
-  const [myClaim] = await call(customer, "catalog")<{ dropoff: { lat: number } | null }[]>("get_my_bag_claims", null);
-  assert.equal(myClaim.dropoff?.lat, home.lat, "the customer reads it back");
-  console.log("[PASS] a delivery claim's drop-off is sealed to the customer");
 });

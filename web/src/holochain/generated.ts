@@ -131,61 +131,13 @@ export type Authority =
     };
 
 /**
- * A customer's claim against a `GoodieBag` -- the `Bid`-shaped half of
- * this feature's scarcity resolution (see the architecture doc's own
- * reasoning: a scarce resource on a DHT with no distributed locks is
- * resolved by a single authoritative party deciding, the same shape
- * `accept_bid` already uses, not a race on a shared counter).
- *
- * Confirming a claim (`catalog::confirm_claim`) is authored by the
- * merchant -- an agent authoring a record *about* someone else, the same
- * "agent A updates a record naming agent B" pattern
- * `dispute::submit_resolution`/`reputation::record_event` already use.
- * Holochain requires every entry to be authored on its own agent's chain,
- * so the merchant's confirmation can only flip *this* claim's own status;
- * it cannot also author the resulting `PickupOrder`/`DeliveryOrder` on the
- * customer's behalf. The customer's own client, seeing (via poll or
- * signal) that their claim is `Confirmed`, finalizes it themselves by
- * calling `dispatch::request_pickup_order`/`request_delivery` with this
- * same `fulfillment` data already in hand -- fully automatic from their
- * side, no extra tap needed.
+ * A goodie bag as a customer sees it on its store's page: how many are
+ * left, and whether they've ordered one already.
  */
-export interface BagClaim {
-  bag_ref: ActionHash;
-  customer: AgentPubKey;
-  fulfillment: BagClaimFulfillment;
-  status: BagClaimStatus;
-  claimed_at: Timestamp;
+export interface BagStanding {
+  left: number;
+  ordered: boolean;
 }
-
-/**
- * What a customer chose when claiming a bag -- captured once, up front, so
- * confirmation can automatically finalize into a real order with no
- * further input needed (see `BagClaim`'s own doc comment).
- */
-export type BagClaimFulfillment =
-  | "Pickup"
-  /**
-   * `sealed_dropoff` is the drop-off point, sealed to the customer: the
-   * store only needs to know it's a delivery, never where to.
-   */
-  | {
-      Delivery: {
-        sealed_dropoff: XSalsa20Poly1305EncryptedData;
-        max_delivery_fee: number | null;
-      };
-    };
-
-export type BagClaimStatus =
-  | "Pending"
-  /**
-   * The store set a bag aside for this customer, for its `hold_minutes`.
-   */
-  | "Confirmed"
-  /**
-   * The store accepted the customer's order for it: sold.
-   */
-  | "Redeemed";
 
 /**
  * A round of the network's public time source (`handshake_governance::TimeSource`):
@@ -428,16 +380,6 @@ export interface CashOutView {
 }
 
 /**
- * Local UI-facing signal, emitted from `recv_remote_signal` once a remote
- * signal has been handled.
- */
-export type CatalogLocalSignal =
-  /**
-   * See `bags::confirm_claim` -- merchant -> customer only.
-   */
-  | { ClaimConfirmed: ActionHash };
-
-/**
  * What an item reward says about one of the item's choice groups ("Size:
  * Medium", "Toppings: any two"): the options a line may have chosen in it
  * -- none listed, any -- and how many chosen units the reward pays for
@@ -519,10 +461,10 @@ export type DeclineReason =
   | "TooBusy"
   | "Closed"
   /**
-   * It redeems a goodie bag whose hold ran out before the order came in
-   * -- the bag went back on sale.
+   * A goodie bag on it was sold out, or its window long closed, by the
+   * time the store could take it on.
    */
-  | "BagHoldLapsed"
+  | "BagUnavailable"
   /**
    * Placed under the store's earlier terms -- its minimum order,
    * delivery area or fee share -- which had since changed.
@@ -685,17 +627,6 @@ export interface DeliveryOrder {
    * it (`ledger_types::InHand`). Fixed when the order is placed.
    */
   priority: boolean;
-  /**
-   * `None` for an ordinary menu order (the default, and every order
-   * written before this field existed). `Some` means this delivery
-   * originated from a confirmed `catalog::BagClaim` (a goodie bag
-   * claimed for delivery rather than pickup) -- `validate_new_order`
-   * independently checks the referenced claim is genuinely `Confirmed`
-   * and names this same `requester` as its customer, same trust tier
-   * and same cross-crate-without-cross-zome-wasm-link pattern already
-   * used for `promo_code_ref`/`PromoCode` above.
-   */
-  bag_claim_ref: ActionHash | null;
   /**
    * For a loyalty promo ("your 6th order here is 15% off"): the
    * customer's own completions of earlier orders at this store, which
@@ -1032,7 +963,9 @@ export interface GeoPoint {
  * of surplus food. Deliberately not itemized the
  * way a `MenuItem`-based order is -- the contents are the merchant's own
  * call at pickup/pack time, which is the entire point (the customer is
- * buying "today's surplus," not a specific dish). Lives in `catalog_types`
+ * buying "today's surplus," not a specific dish). It's ordered as a line
+ * of an ordinary order, once per customer; the store accepting that order
+ * is what sells one of its `quantity_total` (`dispatch`). Lives in `catalog_types`
  * (not a new zome) for the same reason `MenuItem`/`PromoCode` do: it's a
  * merchant-listing concept, sharing this crate's owner/catalog-ownership
  * discipline rather than duplicating cross-zome wiring a whole new zome
@@ -1051,12 +984,6 @@ export interface GoodieBag {
   supports_pickup: boolean;
   supports_delivery: boolean;
   created_at: Timestamp;
-  /**
-   * How long a confirmed claim is held for its customer to order it.
-   * Unordered by then, it lapses and the bag goes back on sale -- so
-   * nobody can hold a store's bags without buying them.
-   */
-  hold_minutes: number;
 }
 
 export interface GrantInput {
@@ -2288,10 +2215,6 @@ export interface NetworkTerms {
   max_image_bytes: number;
   goodie_bag_max_days: number;
   /**
-   * How long a new goodie bag holds a confirmed claim, by default.
-   */
-  default_bag_hold_minutes: number;
-  /**
    * What listing a store sets aside, in minor units -- returned when it
    * closes.
    */
@@ -2421,7 +2344,8 @@ export interface OrderItem {
  * One line of an order: an item, the exact version of it that was priced
  * (the item as the customer saw it -- validation reads its price from
  * there), what was chosen from its choice groups, and how many. The same
- * item may be on several lines, each with different choices.
+ * item may be on several lines, each with different choices. A goodie bag
+ * is a line too: one of it, at its own price, with nothing to choose.
  */
 export interface OrderLine {
   /**
@@ -2663,12 +2587,6 @@ export interface PickupOrder {
    * Same trust tier/validation as `DeliveryOrder.promo_code_ref`.
    */
   promo_code_ref: ActionHash | null;
-  /**
-   * Same meaning and same trust tier as `DeliveryOrder.bag_claim_ref` --
-   * `Some` when this pickup originated from a confirmed goodie-bag
-   * claim rather than an ordinary menu order.
-   */
-  bag_claim_ref: ActionHash | null;
   /**
    * For a loyalty promo ("your 6th order here is 15% off"): the
    * customer's own completions of earlier orders at this store, which

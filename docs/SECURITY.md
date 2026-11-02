@@ -64,10 +64,10 @@ Peers choose their own action timestamps. Holochain only requires each agent's t
 **Nobody crowds out anyone else.**
 - A customer may place at most `max_pending_orders` orders within one store response window; validation counts them on their own chain. An order costs nothing until a store accepts it, so without this one identity could bury a store's queue.
 - A driver bids on an order once; validation checks their own chain since the order opened. Otherwise one driver could fill an order's bids and push the others out of sight.
-- A goodie bag holds a confirmed claim for its `hold_minutes`. The store counts sold claims and those still on hold, and refuses an order for a claim whose hold ran out by its own clock (an order's timestamp is its customer's word), so nobody can hold a store's bags without buying them, and no bag sells twice.
+- A goodie bag is a line of an ordinary order, paid up front like the rest of it. Only the store's acceptance sells one: it counts the bags it has already sold (its own records, never behind) and declines an order for a sold-out bag, so no bag sells past its quantity, and nobody holds a store's bags without buying them. Validation holds each bag line to the bag's price, its store, its window, the ways it's offered, and never the store owner's own.
 - A store's minimum order is checked against the store version the order cites, like its radius and fee split.
 - A store's listing (what customers browse) is backed by a stake from its owner's ledger, of the network's `store_listing_stake`. Validation checks the stake is the owner's own, for that store and amount, and backs only that listing; the stake comes back only by citing the deletion of that exact listing, once. A listing tag can't be carried by any other link. So every listing a customer's browse reads costs money while it stands.
-- A customer claims a goodie bag once, reviews an order's store and driver once each, rates an item once per order, and reports each item on an order once, once they have it -- each checked on their own chain.
+- A customer orders each goodie bag once (unless the store declined that order before taking it on), reviews an order's store and driver once each, rates an item once per order, and reports each item on an order once, once they have it -- each checked on their own chain.
 - Every amount is at most `limits::MAX_AMOUNT` and every quantity at most `limits::MAX_LINE_QUANTITY`, so no total can overflow; the release build also fails on overflow rather than wrapping.
 
 **From commitment to pickup** (`dispatch::deliveries`, `dispatch_integrity::delivery`, `dispatch_types::lineage`).
@@ -125,9 +125,9 @@ Peers choose their own action timestamps. Holochain only requires each agent's t
 | A photo sealed in one box exceeded what the conductor can seal, so real handoff and issue photos failed | High (availability) | Photos are sealed in chunks (`SealedChunks`) |
 | A driver could bid any number of times on one order, pushing other drivers' bids out of sight | Medium | One bid per driver per order, checked on their chain |
 | One identity could place any number of orders, free until accepted, burying a store's queue | Medium | `max_pending_orders` per store response window, checked on the customer's chain |
-| A confirmed goodie-bag claim held its bag forever, even if never ordered | Medium | Claims lapse after the bag's hold; sold claims are recorded as redeemed |
+| A confirmed goodie-bag claim held its bag forever, even if never ordered | Medium | Claims are gone: a bag is sold only by the store accepting a paid order for it |
 | Anyone could call a giver's typed-code check, spending their tries and locking them out | Medium | The check answers only the handoff's own driver |
-| A customer could claim a goodie bag repeatedly, flooding a store's claims | Medium | One claim per customer per bag, checked on their chain |
+| A customer could claim a goodie bag repeatedly, flooding a store's claims | Medium | One of each bag per customer, checked on their chain; orders are rate-limited |
 | Unlimited reviews per order, and unlimited item reports (even before delivery), could bury a store's reviews or queue | Medium | Once per order and subject; each item reported once, only once the customer has the order |
 | Anyone could publish unlimited stores, slowing every customer's browse | Medium | A refundable listing stake backs every listing |
 | Amounts and quantities were unbounded, and release builds wrapped on overflow | Low | Protocol bounds, and overflow checks |

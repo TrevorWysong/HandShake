@@ -5,9 +5,9 @@
 //   them;
 // - a customer can't bury stores in orders: at most so many placed within
 //   one store response window;
-// - a driver bids on an order once, so nobody can crowd out other bids;
-// - a goodie bag that's been ordered stays sold -- and one held but never
-//   ordered goes back on sale (its hold lapses).
+// - a driver bids on an order once, so nobody can crowd out other bids.
+// (A goodie bag sells only as its store accepts a paid order for it:
+// goodie-bags.test.ts.)
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
@@ -49,7 +49,6 @@ await runScenario(async (scenario) => {
       requested_at: Date.now() * 1000,
       kitchen_note: null,
       promo_code_ref: null,
-      bag_claim_ref: null,
       loyalty_proof: [],
       cancellation: null,
       ready_by: null,
@@ -92,52 +91,4 @@ await runScenario(async (scenario) => {
   await assert.rejects(call(driver, "dispatch")("submit_bid", { order_ref: delivery, eta_seconds: 300, price_offer: 300 }), /already bid on this order/);
   await assert.rejects(call(driver, "dispatch")("create_raw_bid_for_testing", { ...decodeEntry<object>(bid), price_offer: 300 }), /bids on an order once/, "the network refuses a second bid");
   console.log("[PASS] a driver bids on an order once");
-
-  // ===== A goodie bag stays sold once ordered =====
-  const bag = actionHash(
-    await call(merchant, "catalog")<HcRecord>("create_goodie_bag", {
-      catalog_ref: store,
-      title: "End of day",
-      original_value_cents: 2000,
-      price_cents: 500,
-      quantity_total: 1,
-      pickup_window_start: Date.now() * 1000,
-      pickup_window_end: (Date.now() + 2 * 3_600_000) * 1000,
-      supports_pickup: true,
-      supports_delivery: false,
-      created_at: Date.now() * 1000,
-    }),
-  );
-  await sync();
-  const claimRecord = await call(neighbour, "catalog")<HcRecord>("claim_goodie_bag", { bag_ref: bag, fulfillment: "Pickup" });
-  const claim = actionHash(claimRecord);
-  await assert.rejects(call(neighbour, "catalog")("claim_goodie_bag", { bag_ref: bag, fulfillment: "Pickup" }), /already claimed this goodie bag/);
-  await assert.rejects(
-    call(neighbour, "catalog")("create_raw_bag_claim_for_testing", { ...decodeEntry<object>(claimRecord), claimed_at: Date.now() * 1000 }),
-    /claims a goodie bag once/,
-    "a customer claims a bag once, so nobody floods a store's claims",
-  );
-  await sync();
-  await retryUntilOk(() => call(merchant, "catalog")("confirm_claim", claim));
-  await sync();
-  // The neighbour's app orders it as soon as it's confirmed; the store accepts.
-  const bagOrder = await retryUntil(() => call(neighbour, "dispatch")<Uint8Array | null>("get_my_order_for_claim", claim), (order) => order !== null, 120, 1000);
-  assert.ok(bagOrder, "the customer's app ordered the confirmed bag");
-  await sync();
-  // The store's app may accept it first; either way, it ends up accepted.
-  await retryUntilOk(() =>
-    call(merchant, "dispatch")("accept_pickup_order", { order_original_action: bagOrder }).catch((e: Error) => {
-      if (!/already been accepted/.test(e.message)) throw e;
-    }),
-  );
-  await sync();
-  const status = await retryUntil(
-    async () => decodeEntry<{ status: string }>(await call(merchant, "catalog")<HcRecord>("get_bag_claim", claim)).status,
-    (s) => s === "Redeemed",
-  );
-  assert.equal(status, "Redeemed", "the store records the bag as sold when it accepts its order");
-  const second = actionHash(await call(customer, "catalog")<HcRecord>("claim_goodie_bag", { bag_ref: bag, fulfillment: "Pickup" }));
-  await sync();
-  await assert.rejects(call(merchant, "catalog")("confirm_claim", second), /sold out/, "a sold bag isn't confirmed again");
-  console.log("[PASS] a goodie bag that's been ordered stays sold");
 });

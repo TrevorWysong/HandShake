@@ -101,10 +101,10 @@ export function Browse() {
       return new Map(rows!.map((r, i) => [bytesToHex(r.hash), minutes[i]]));
     },
   );
-  // Expired bags are already filtered out server-side (and claims after the
+  // Expired bags are already filtered out server-side (and orders after the
   // window are rejected on-chain); filtering again here drops one that
   // closed since the last poll. `original_action` is the bag's identity --
-  // what a claim references.
+  // what an order's line names.
   const { data: bags = [] } = useResource<BagRow[]>(
     `browse-bags:${geohash}`,
     async () => {

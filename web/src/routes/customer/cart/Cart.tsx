@@ -12,7 +12,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button, Checkbox, Notice } from "../../../components/ui";
 import { CardPaySheet } from "../../../components/money/CardPaySheet";
 import { ItemSheet } from "../../../components/store/ItemSheet";
-import { cartItems, useCart } from "../../../store/cart";
+import { cartItems, menuLines, useCart } from "../../../store/cart";
 import { useSession } from "../../../store/session";
 import { useCustomerSettings } from "../../../store/roleSettings";
 import { useTerms } from "../../../store/network";
@@ -32,6 +32,8 @@ import { formatCents } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useT } from "../../../i18n";
 import { AmountChoice, NoteSection, Section, ToggleChip } from "./CartPieces";
+import { BagNotices } from "./BagNotices";
+import { bagProblems } from "../../../lib/storefront/bags";
 import { CartLines, type LineEdit } from "./CartLines";
 import { CartTotals } from "./CartTotals";
 import { CheckoutBar } from "./CheckoutBar";
@@ -81,6 +83,11 @@ export function Cart() {
   const ageRestricted = cart.lines.some((line) => itemOf(line.itemRef)?.age_restricted);
   const fulfillment = ageRestricted ? "Pickup" : chosenFulfillment;
   const delivery = fulfillment === "Delivery";
+  // Goodie bags run on their own windows: no store hours, no minimum, no
+  // promo, and nothing scheduled for later.
+  const menu = menuLines(cart.lines);
+  const hasBags = menu.length < cart.lines.length;
+  const bagIssues = bagProblems(cart.lines, delivery, now.getTime() * 1000);
 
   const subtotalCents = cart.total();
   const tipCents = tipFor(subtotalCents, options.tipPercent, options.customTip);
@@ -98,6 +105,7 @@ export function Cart() {
     maxFeeCents,
     subsidyPercent: storeInfo?.subsidyPercent ?? 0,
     minOrderCents: storeInfo?.minOrderCents ?? null,
+    menuSubtotalCents: menu.reduce((sum, line) => sum + line.priceCents * line.quantity, 0),
     leaveAtDoorMaxCents: storeInfo?.leaveAtDoorMaxCents ?? null,
     balanceCents: balance,
     creditLimitCents: terms.credit_limit_cents,
@@ -123,14 +131,15 @@ export function Cart() {
     );
   }
 
-  const requestedDeliveryTime = scheduledTime(options.scheduled, options.scheduledFor);
-  const scheduleInvalid = options.scheduled && (!options.scheduledFor || (requestedDeliveryTime !== null && requestedDeliveryTime <= now.getTime() * 1000));
+  const requestedDeliveryTime = hasBags ? null : scheduledTime(options.scheduled, options.scheduledFor);
+  const scheduleInvalid = !hasBags && options.scheduled && (!options.scheduledFor || (requestedDeliveryTime !== null && requestedDeliveryTime <= now.getTime() * 1000));
   // Open when the order's for: now, or a scheduled delivery's time.
   const orderFor = delivery && requestedDeliveryTime !== null ? new Date(requestedDeliveryTime / 1000) : now;
   const storeHours = storeInfo?.hours ? storeStatus(storeInfo.hours, orderFor) : null;
-  const storeClosed = storeHours !== null && !storeHours.open;
+  const storeClosed = menu.length > 0 && storeHours !== null && !storeHours.open;
   const shortUnpayable = price.shortfallCents > 0 && !price.payByCard;
   const notes = [
+    bagIssues.length > 0 && t("cart.bag.blocked"),
     storeInfo && storeInfo.busyExtraMinutes > 0 && t("cart.busy", { minutes: storeInfo.busyExtraMinutes }),
     price.shortOfMinimumCents > 0 && storeInfo?.minOrderCents != null && t("cart.minimum", { minimum: formatCents(storeInfo.minOrderCents), more: formatCents(price.shortOfMinimumCents) }),
     delivery && price.discountedSubtotalCents === 0 && t("cart.freeNoDelivery"),
@@ -138,6 +147,7 @@ export function Cart() {
     storeClosed && (orderFor === now ? storeHours.label : t("cart.closedThen")),
   ].filter((note): note is string => !!note);
   const blocked =
+    bagIssues.length > 0 ||
     storeClosed ||
     price.shortOfMinimumCents > 0 ||
     (ageRestricted && !ageConfirmed) ||
@@ -252,6 +262,8 @@ export function Cart() {
             </motion.label>
           )}
 
+          <BagNotices problems={bagIssues} delivery={delivery} onSwitch={ageRestricted && !delivery ? null : () => setFulfillment(delivery ? "Pickup" : "Delivery")} />
+
           <CartLines menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} onEdit={setEditing} />
 
           {delivery && (
@@ -259,8 +271,9 @@ export function Cart() {
               <DeliverToSection options={options} preference={dropoffPreference} doorAllowed={price.doorAllowed} store={{ location: storeInfo?.merchantLocation ?? null, radiusKm: storeInfo?.merchantRadiusKm ?? null }} />
               <SpeedSection priority={options.priority} onChange={options.setPriority} storeWaitMinutes={storeInfo?.storeWaitMinutes ?? Math.round(terms.store_wait_secs / 60)} />
               <MatchingSection autoMatch={options.autoMatch} onChange={options.setAutoMatch} />
-              <WhenSection options={options} />
-              <RepeatSection saving={action.doing === "recurring"} busy={action.busy} onSave={saveRecurring} />
+              {/* A goodie bag is for now, and once. */}
+              {!hasBags && <WhenSection options={options} />}
+              {!hasBags && <RepeatSection saving={action.doing === "recurring"} busy={action.busy} onSave={saveRecurring} />}
             </>
           )}
 

@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { PackageOpen, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { confirmClaim, createGoodieBag, listGoodieBagsForCatalog, listPendingClaimsForMerchant, updateGoodieBag } from "../../../holochain/zomes/catalog";
-import { actionHash, bytesToHex, decodeEntry, hexToBytes } from "../../../holochain/decode";
+import { createGoodieBag, listGoodieBagsForCatalog, updateGoodieBag } from "../../../holochain/zomes/catalog";
+import { bagStandings } from "../../../holochain/zomes/dispatch";
+import { bytesToHex, decodeEntry, hexToBytes } from "../../../holochain/decode";
 import { useResource } from "../../../lib/hooks/useResource";
 import { formatCents, formatClockTime, toMinorUnits, currencySymbol } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { Button, Card, Checkbox, Field, Input, Notice, SectionLabel, StatNumber, Textarea } from "../../../components/ui";
 import { PhotoInput } from "../../../components/PhotoInput";
-import type { BagClaim, GoodieBag } from "../../../holochain/types";
+import type { GoodieBag } from "../../../holochain/types";
 import { POLL } from "../../../lib/network/poll";
 import { useTerms } from "../../../store/network";
 import { MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS } from "../../../holochain/types";
@@ -17,35 +18,23 @@ import { useAction } from "../../../lib/hooks/useAction";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-interface BagsData {
-  bags: { hex: string; bag: GoodieBag }[];
-  claims: { hash: Uint8Array; hex: string; claim: BagClaim }[];
+/// The store's live bags, each with how many are left -- sold as the store
+/// accepts orders with them.
+async function fetchBags(catalogRef: Uint8Array): Promise<{ hex: string; bag: GoodieBag; left: number }[]> {
+  const views = await listGoodieBagsForCatalog(catalogRef);
+  const standings = await bagStandings(views.map((v) => v.original_action));
+  return views.map((v, i) => ({ hex: bytesToHex(v.original_action), bag: decodeEntry<GoodieBag>(v.record), left: standings[i]?.left ?? 0 }));
 }
 
-async function fetchBags(catalogRef: Uint8Array): Promise<BagsData> {
-  const [bagViews, claimRecords] = await Promise.all([listGoodieBagsForCatalog(catalogRef), listPendingClaimsForMerchant(catalogRef)]);
-  return {
-    bags: bagViews.map((v) => ({ hex: bytesToHex(v.original_action), bag: decodeEntry<GoodieBag>(v.record) })),
-    claims: claimRecords.map((r) => ({ hash: actionHash(r), hex: bytesToHex(actionHash(r)), claim: decodeEntry<BagClaim>(r) })),
-  };
-}
-
-/// The store's live goodie bags, a form to list a new one, and the claims
-/// waiting on the merchant -- polled, since claims arrive from customers.
+/// The store's live goodie bags and a form to list a new one. Orders with
+/// a bag come in with the store's other orders -- polled, since accepting
+/// them sells bags.
 export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; catalogRef: Uint8Array }) {
   const t = useT();
   const [showForm, setShowForm] = useState(false);
-  const confirming = useAction();
   const [editing, setEditing] = useState<string | null>(null);
   const { data, reload } = useResource(`store-bags:${storeHex}`, () => fetchBags(catalogRef), { pollMs: POLL.signalled, refreshOn: () => true });
-  const bags = data?.bags ?? [];
-  const claims = data?.claims ?? [];
-  const bagTitle = new Map(bags.map((b) => [b.hex, b.bag.title]));
-
-  const confirm = (hash: Uint8Array, hex: string) => confirming.run(async () => {
-    await confirmClaim(hash);
-    await reload();
-  }, { as: hex });
+  const bags = data ?? [];
 
   return (
     <section className="mb-6">
@@ -74,7 +63,7 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
         <p className="rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-6 text-center text-sm text-ink-400">{t("bags.none")}</p>
       ) : (
         <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
-          {bags.map(({ hex, bag }) =>
+          {bags.map(({ hex, bag, left }) =>
             editing === hex ? (
               <EditBagForm
                 key={hex}
@@ -92,7 +81,7 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
                 <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{bag.title}</p>
                 <p className="text-xs text-ink-400">
                   {new Date(bag.pickup_window_start / 1000).toLocaleString(appLocale(), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} –{" "}
-                  {formatClockTime(bag.pickup_window_end)} · {t("bags.available", { count: bag.quantity_total })}
+                  {formatClockTime(bag.pickup_window_end)} · {t("bags.left", { left, count: bag.quantity_total })}
                 </p>
                 <div className="flex items-center gap-2">
                   <StatNumber className="text-sm">{formatCents(bag.price_cents)}</StatNumber>
@@ -108,24 +97,6 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
         </motion.div>
       )}
 
-      {claims.length > 0 && (
-        <motion.div variants={fadeSlideUp} className="mt-6">
-          <SectionLabel className="mb-2">{t("bags.pending")}</SectionLabel>
-          <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
-            {claims.map(({ hash, hex, claim }) => (
-              <div key={hex} className="flex items-center justify-between gap-3 p-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{bagTitle.get(bytesToHex(claim.bag_ref)) ?? t("orders.goodieBag")}</p>
-                  <p className="text-xs text-ink-400">{claim.fulfillment === "Pickup" ? t("bags.willPickUp") : t("bags.wantsDelivery")}</p>
-                </div>
-                <Button loading={confirming.doing === hex} disabled={confirming.busy} className="px-3 py-1.5 text-xs" onClick={() => confirm(hash, hex)}>
-                  {t("bags.confirm")}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
     </section>
   );
 }
@@ -176,9 +147,8 @@ function toLocalInput(d: Date) {
 /// Seeded once on mount with a window starting in an hour and lasting two.
 function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreated: () => Promise<void> }) {
   const t = useT();
-  // The longest a bag may stay listed -- validation refuses longer -- and
-  // how long a confirmed claim is held, unless the store says otherwise.
-  const { goodie_bag_max_days: maxDays, default_bag_hold_minutes: defaultHold } = useTerms();
+  // The longest a bag may stay listed -- validation refuses longer.
+  const { goodie_bag_max_days: maxDays } = useTerms();
   const [form, setForm] = useState(() => {
     const start = new Date(Date.now() + 60 * 60 * 1000);
     return {
@@ -192,7 +162,6 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       end: toLocalInput(new Date(start.getTime() + 2 * 60 * 60 * 1000)),
       supports_pickup: true,
       supports_delivery: false,
-      holdMinutes: defaultHold,
     };
   });
   const save = useAction();
@@ -215,9 +184,7 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
             ? t("bags.problem.window")
             : endMs - openedAt > maxDays * DAY_MS
               ? t("bags.problem.tooLong", { count: maxDays })
-              : !(form.holdMinutes >= 1 && form.holdMinutes * 60_000 <= maxDays * DAY_MS)
-                ? t("bags.problem.hold")
-                : null;
+              : null;
 
   const list = () => save.run(async () => {
     await createGoodieBag({
@@ -232,7 +199,6 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       pickup_window_end: endMs * 1000,
       supports_pickup: form.supports_pickup,
       supports_delivery: form.supports_delivery,
-      hold_minutes: form.holdMinutes,
     });
     await onCreated();
   });
@@ -258,15 +224,9 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       <Field label={t("storeSettings.description")}>
         <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={form.description} onChange={(e) => set({ description: e.target.value })} rows={2} placeholder={t("bags.descriptionPlaceholder")} />
       </Field>
-      <div className="flex gap-2">
-        <Field label={t("bags.quantity")}>
-          <Input type="number" min={1} step={1} value={form.quantity_total} onChange={(e) => set({ quantity_total: Number(e.target.value) })} />
-        </Field>
-        <Field label={t("bags.hold")}>
-          <Input type="number" min={1} step={1} value={form.holdMinutes} onChange={(e) => set({ holdMinutes: Math.round(Number(e.target.value)) })} />
-        </Field>
-      </div>
-      <p className="text-[11px] text-ink-400">{t("bags.holdDetail")}</p>
+      <Field label={t("bags.quantity")}>
+        <Input type="number" min={1} step={1} value={form.quantity_total} onChange={(e) => set({ quantity_total: Number(e.target.value) })} className="w-32" />
+      </Field>
       <div className="flex gap-2">
         <Field label={t("bags.windowStart")}>
           <Input type="datetime-local" value={form.start} onChange={(e) => set({ start: e.target.value })} />

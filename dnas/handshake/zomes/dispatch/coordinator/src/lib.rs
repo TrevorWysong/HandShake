@@ -9,7 +9,7 @@
 //! - `pricing` -- pricing an order exactly as validation will check it.
 //! - `lines` -- an order's lines as people read them.
 //! - `recurring` -- standing orders ("same order every Monday").
-//! - `claims` -- goodie-bag claims turned into orders.
+//! - `bags` -- goodie bags on orders, sold as their stores accept them.
 //!
 //! Finding a driver
 //! - `matching` -- how drivers find open orders near them, and ranking bids.
@@ -39,8 +39,8 @@
 
 mod accounts;
 mod appeals;
+mod bags;
 mod bids;
-mod claims;
 mod acceptance;
 mod confirmations;
 mod deliveries;
@@ -103,7 +103,8 @@ mod test_utils {
         AppealToAnswer,
         AppealToRuling,
         StoreOwnerToRuling,
-        StoreOwnerToAppeal
+        StoreOwnerToAppeal,
+        BagToOrder
     );
 
     #[derive(Serialize, Deserialize, Debug)]

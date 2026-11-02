@@ -1,148 +1,149 @@
-// Proves the goodie-bag listing + claim + confirm lifecycle (catalog zome)
-// end to end -- the scarcity-resolution design documented on `GoodieBag`/
-// `BagClaim` themselves (catalog_types): a customer creates a `BagClaim`
-// (the `Bid`-shaped half), the merchant's own client (`confirm_claim`) is
-// the single authoritative party that decides who gets one of the limited
-// `quantity_total`, same shape `accept_bid` already uses.
+// Goodie bags, ordered as lines of ordinary orders (catalog_types::GoodieBag,
+// dispatch's `bags`). What no client can get around:
+//
+// - a bag line is one bag, at the bag's own price, taxed with the order,
+//   from its own store, placed before its window closes, had a way the bag
+//   is offered, and never by its own store;
+// - a customer has each bag once -- unless that order came to nothing
+//   before the store took it on;
+// - only the store's acceptance sells a bag, never past its quantity, and
+//   only the store records a sale;
+// - promo codes and rewards are the menu's, not a bag's.
+//
+// Orders written raw (create_raw_pickup_order_for_testing) are what a
+// modified client could do: every refusal of one comes from validation.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, decodeEntry, bytesEqual, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, decodeEntry, retryUntil, retryUntilOk, ST_PETE, testApp, retryingCaller, useTestCoordinators } from "./helpers.js";
+
+interface Standing {
+  left: number;
+  ordered: boolean;
+}
 
 await runScenario(async (scenario) => {
-  const [merchant, customerA, customerB] = await scenario.addPlayersWithApps([
-    testApp,
-    testApp,
-    testApp,
-  ]);
-  const all = [merchant, customerA, customerB];
+  const [merchant, cara, bo] = await scenario.addPlayersWithApps([testApp, testApp, testApp]);
+  const all = [merchant, cara, bo];
   await scenario.shareAllAgents();
-
-  const profilesOf = (p: typeof merchant) => retryingCaller(p.cells[0], "profiles");
-  const catalogOf = (p: typeof merchant) => retryingCaller(p.cells[0], "catalog");
+  for (const player of all) await useTestCoordinators(player, ["dispatch"]);
+  const sync = () => dhtSync(all, merchant.cells[0].cell_id[0]);
+  const call = (p: typeof merchant, zome: string) => retryingCaller(p.cells[0], zome);
 
   const now = Date.now() * 1000;
-  await profilesOf(merchant)("create_profile", { display_name: "Mo Merchant", roles: ["Merchant"], created_at: now });
-  await profilesOf(customerA)("create_profile", { display_name: "Cara Customer", roles: ["Requester"], created_at: now });
-  await profilesOf(customerB)("create_profile", { display_name: "Bo Customer", roles: ["Requester"], created_at: now });
-
-  const catalogRecord = await catalogOf(merchant)<HcRecord>("publish_catalog", { business_name: "Mo's Kitchen", location: ST_PETE });
-  const catalogRef = actionHash(catalogRecord);
-  await dhtSync(all, merchant.cells[0].cell_id[0]);
-
-  const windowStart = now + 1_000_000;
-  const windowEnd = now + 7_200_000_000;
-
-  const bagRecord = await catalogOf(merchant)<HcRecord>("create_goodie_bag", {
-    catalog_ref: catalogRef,
-    title: "End-of-day goodie bag",
-    description: "",
-    photo_data_uri: "",
-    original_value_cents: 1500,
-    price_cents: 500,
-    quantity_total: 1,
-    pickup_window_start: windowStart,
-    pickup_window_end: windowEnd,
-    supports_pickup: true,
-    supports_delivery: true,
-    created_at: now,
-  });
-  const bagRef = actionHash(bagRecord);
-  await dhtSync(all, customerA.cells[0].cell_id[0]);
-  console.log("[PASS] create_goodie_bag lists a bag with price below original_value");
-
-  const listed = await catalogOf(customerA)<{ original_action: Uint8Array; record: HcRecord }[]>("list_goodie_bags_for_catalog", catalogRef);
-  assert.equal(listed.length, 1);
-  console.log("[PASS] list_goodie_bags_for_catalog discovers the bag by catalog_ref");
-
-  // Avoid re-implementing geohash encoding in the test -- decode the
-  // catalog's own stored geohash field instead, same convention as every
-  // other geohash-anchor test in this suite (see e.g. scale-anchors.test.ts).
-  const geohash = decodeEntry<{ geohash: string }>(catalogRecord).geohash;
-  const nearby = await catalogOf(customerA)<{ original_action: Uint8Array; record: HcRecord }[]>("get_nearby_goodie_bags", { geohash, after: null });
-  assert.equal(nearby.length, 1, "get_nearby_goodie_bags should join through GeohashToCatalog and find this bag");
-  console.log("[PASS] get_nearby_goodie_bags discovers the bag via the catalog's own geohash anchor");
-
-  await assert.rejects(
-    catalogOf(merchant)("claim_goodie_bag", { bag_ref: bagRef, fulfillment: "Pickup" }),
-    "a merchant must not be able to claim their own goodie bag",
+  await call(merchant, "profiles")("create_profile", { display_name: "Mo", roles: ["Merchant"], created_at: now });
+  await call(cara, "profiles")("create_profile", { display_name: "Cara", roles: ["Requester"], created_at: now });
+  await call(bo, "profiles")("create_profile", { display_name: "Bo", roles: ["Requester", "Merchant"], created_at: now });
+  const published = await call(merchant, "catalog")<HcRecord>("publish_catalog", { business_name: "Mo's Kitchen", location: ST_PETE });
+  const store = actionHash(published);
+  await call(merchant, "catalog")("set_tax_settings", { original_action: store, tax_rates: [{ category: "", label: "Sales tax", basis_points: 1000 }], prices_include_tax: false, tax_registration: "" });
+  const soup = actionHash(
+    await call(merchant, "catalog")<HcRecord>("add_menu_item", { catalog_ref: store, name: "Soup", price_cents: 800, available: true, description: "", photo_data_uri: "", category: "", dietary_tags: [], modifier_groups: [] }),
   );
-  console.log("[PASS] validate() rejects a merchant claiming their own bag");
+  const listBag = async (title: string, quantity_total: number, ways: { pickup: boolean; delivery: boolean }, endsInSecs = 7200) =>
+    actionHash(
+      await call(merchant, "catalog")<HcRecord>("create_goodie_bag", {
+        catalog_ref: store,
+        title,
+        original_value_cents: 1800,
+        price_cents: 600,
+        quantity_total,
+        pickup_window_start: Date.now() * 1000,
+        pickup_window_end: Date.now() * 1000 + endsInSecs * 1_000_000,
+        supports_pickup: ways.pickup,
+        supports_delivery: ways.delivery,
+        created_at: Date.now() * 1000,
+      }),
+    );
+  const pastries = await listBag("Pastry bag", 1, { pickup: true, delivery: false });
+  const bread = await listBag("Bread bag", 2, { pickup: true, delivery: true });
+  await sync();
+  const geohash = decodeEntry<{ geohash: string }>(published).geohash;
+  const nearby = await call(cara, "catalog")<unknown[]>("get_nearby_goodie_bags", { geohash, after: null });
+  assert.equal(nearby.length, 2, "found through the store's own listing");
+  console.log("[PASS] a store's goodie bags are listed and found nearby");
 
-  const claimARecord = await catalogOf(customerA)<HcRecord>("claim_goodie_bag", { bag_ref: bagRef, fulfillment: "Pickup" });
-  const claimARef = actionHash(claimARecord);
-  await dhtSync(all, merchant.cells[0].cell_id[0]);
-  assert.equal(decodeEntry<{ status: string }>(claimARecord).status, "Pending");
-  console.log("[PASS] claim_goodie_bag creates a Pending claim");
+  // ===== Ordered with the rest of the cart =====
+  const pickup = (p: typeof merchant, items: unknown[], order_total: number, extra: Record<string, unknown> = {}) =>
+    call(p, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items, order_total, ...extra });
+  const one = (item_ref: Uint8Array) => ({ item_ref, quantity: 1, selections: [] });
+  await assert.rejects(pickup(cara, [one(soup), one(pastries)], 1400), /the total is now 1540 cents/, "soup and a bag, each at its price, taxed together");
+  const order = actionHash(await retryUntilOk(() => pickup(cara, [one(soup), one(pastries)], 1540)));
+  await sync();
+  console.log("[PASS] a goodie bag is a line of the order, at its own price, taxed with the rest");
 
-  const claimBRecord = await catalogOf(customerB)<HcRecord>("claim_goodie_bag", { bag_ref: bagRef, fulfillment: "Pickup" });
-  const claimBRef = actionHash(claimBRecord);
-  await dhtSync(all, merchant.cells[0].cell_id[0]);
-
-  const pendingForMerchant = await catalogOf(merchant)<HcRecord[]>("list_pending_claims_for_merchant", catalogRef);
-  assert.equal(pendingForMerchant.length, 2, "both pending claims should be discoverable by the merchant");
-  console.log("[PASS] list_pending_claims_for_merchant discovers every pending claim across this merchant's bags");
-
+  await assert.rejects(pickup(cara, [one(pastries)], 660), /already ordered Pastry bag/, "the customer's app says so first");
   await assert.rejects(
-    catalogOf(customerA)("confirm_claim", claimARef),
-    "only the bag's own catalog owner may confirm a claim",
+    call(cara, "dispatch")("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [one(pastries)], order_total: 660, dropoff: ST_PETE, max_delivery_fee: 500 }),
+    /pickup only/,
+    "a pickup-only bag isn't delivered",
   );
-  console.log("[PASS] validate() rejects a non-owner confirming a claim");
+  await assert.rejects(pickup(merchant, [one(bread)], 660), /your own goodie bag/, "a store doesn't order its own bag");
+  await assert.rejects(pickup(bo, [one(bread)], 600, { promo_code_ref: soup }), /apply to menu items/, "a promo is the menu's");
+  console.log("[PASS] the customer's app turns away what validation would");
 
-  const confirmedA = await catalogOf(merchant)<HcRecord>("confirm_claim", claimARef);
-  await dhtSync(all, customerA.cells[0].cell_id[0]);
-  assert.equal(decodeEntry<{ status: string }>(confirmedA).status, "Confirmed");
-  console.log("[PASS] confirm_claim flips a claim to Confirmed");
-
+  // ===== What a modified client can't do =====
+  // Cited at the store's current terms -- its tax rate.
+  const catalog_version = actionHash(await call(merchant, "catalog")<HcRecord>("get_catalog", store));
+  const raw = (p: typeof merchant, lines: unknown[], order_total: number, tax_cents: number, extra: Record<string, unknown> = {}) =>
+    call(p, "dispatch")<HcRecord>("create_raw_pickup_order_for_testing", {
+      requester: p.agentPubKey,
+      merchant: merchant.agentPubKey,
+      catalog_ref: store,
+      catalog_version,
+      lines,
+      order_total,
+      tax_cents,
+      age_confirmed: false,
+      status: "Placed",
+      requested_at: Date.now() * 1000,
+      kitchen_note: null,
+      promo_code_ref: null,
+      loyalty_proof: [],
+      ...extra,
+    });
+  const line = (item_ref: Uint8Array, quantity = 1) => ({ item_ref, priced_version: item_ref, quantity, selections: [] });
+  await assert.rejects(raw(cara, [line(pastries)], 660, 60), /each goodie bag once/, "a second of the same bag");
+  await assert.rejects(raw(bo, [line(bread, 2)], 1320, 120), /one to a line/, "two of a bag on a line");
+  await assert.rejects(raw(bo, [line(bread)], 300, 60), /order_total must be 660/, "a bag at less than its price");
+  await assert.rejects(raw(merchant, [line(bread)], 660, 60), /its own goodie bag/, "the store's own bag");
+  const otherStore = actionHash(await call(bo, "catalog")<HcRecord>("publish_catalog", { business_name: "Bo's", location: ST_PETE }));
+  await sync();
   await assert.rejects(
-    catalogOf(merchant)("confirm_claim", claimARef),
-    "confirming an already-Confirmed claim must fail",
+    raw(cara, [line(bread)], 600, 0, { catalog_ref: otherStore, catalog_version: otherStore, merchant: bo.agentPubKey }),
+    /ordered from its own store/,
+    "another store's bag",
   );
-  console.log("[PASS] validate() rejects re-confirming an already-Confirmed claim");
+  console.log("[PASS] validation holds a bag line to its bag: once, one, its price, its store, never the store's own");
 
+  // ===== Sold by the store's acceptance, never past its quantity =====
+  const boOrder = actionHash(await retryUntilOk(() => pickup(bo, [one(pastries)], 660)));
+  await sync();
   await assert.rejects(
-    catalogOf(merchant)("confirm_claim", claimBRef),
-    "confirm_claim must refuse past quantity_total (this bag's quantity_total is 1, already spent by customer A)",
+    call(bo, "dispatch")("test_create_link", { link_type: "BagToOrder", base: pastries, target: boOrder }),
+    /recorded by the order's store/,
+    "a customer can't record a sale",
   );
-  console.log("[PASS] confirm_claim refuses to confirm past quantity_total");
+  await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order }));
+  await sync();
+  const [standing] = await retryUntil(() => call(cara, "dispatch")<Standing[]>("bag_standings", [pastries]), (s) => s[0].left === 0);
+  assert.deepEqual(standing, { left: 0, ordered: true }, "sold to Cara, and she has it");
+  await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: boOrder }), /Pastry bag is sold out/, "the second order for the last bag");
+  console.log("[PASS] accepting an order sells its bag, and a sold-out bag's order can't be accepted");
 
-  const claimsForBag = await catalogOf(merchant)<HcRecord[]>("list_claims_for_bag", bagRef);
-  assert.equal(claimsForBag.length, 2);
-  console.log("[PASS] list_claims_for_bag discovers every claim (confirmed and pending) against one bag");
+  // ===== An order that came to nothing doesn't use up the bag =====
+  const first = actionHash(await retryUntilOk(() => pickup(bo, [one(bread)], 660)));
+  await sync();
+  await call(bo, "dispatch")("cancel_pickup_order", first);
+  await sync();
+  await retryUntilOk(() => pickup(bo, [one(bread)], 660));
+  console.log("[PASS] a customer who cancels before the store starts can order the bag again");
 
-  // `get_my_bag_claims` resolves to each claim's *latest* state (same
-  // `resolve_latest` convention as everywhere else) -- its action hash is
-  // now the post-confirm Update, not the original `claimARef` creation
-  // hash, so compare decoded content instead of the action hash itself.
-  const myClaimsA = await catalogOf(customerA)<{ record: HcRecord; dropoff: unknown }[]>("get_my_bag_claims");
-  assert.equal(myClaimsA.length, 1);
-  const myClaimA = decodeEntry<{ bag_ref: Uint8Array; status: string }>(myClaimsA[0].record);
-  assert.ok(bytesEqual(myClaimA.bag_ref, bagRef));
-  // Confirmed -- or already Redeemed, if the customer's app has ordered it
-  // and the store accepted that order.
-  assert.ok(["Confirmed", "Redeemed"].includes(myClaimA.status), `claim is ${myClaimA.status}`);
-  console.log("[PASS] get_my_bag_claims discovers the customer's own claim");
-
-  // Fulfillment mismatch: this bag supports delivery too, but claiming a
-  // bag that supports neither must be rejected.
-  const noFulfillmentBag = await catalogOf(merchant)<HcRecord>("create_goodie_bag", {
-    catalog_ref: catalogRef,
-    title: "Misconfigured bag",
-    description: "",
-    photo_data_uri: "",
-    original_value_cents: 1000,
-    price_cents: 400,
-    quantity_total: 1,
-    pickup_window_start: windowStart,
-    pickup_window_end: windowEnd,
-    supports_pickup: false,
-    supports_delivery: true,
-    created_at: now,
-  });
-  await dhtSync(all, customerA.cells[0].cell_id[0]);
-  await assert.rejects(
-    catalogOf(customerA)("claim_goodie_bag", { bag_ref: actionHash(noFulfillmentBag), fulfillment: "Pickup" }),
-    "claiming Pickup against a bag that only supports_delivery must fail",
-  );
-  console.log("[PASS] validate() rejects claiming a fulfillment method the bag doesn't support");
+  // ===== Only while its window is open =====
+  const lastCall = await listBag("Last-call bag", 5, { pickup: true, delivery: true }, 3);
+  await sync();
+  await new Promise((resolve) => setTimeout(resolve, 4000));
+  await assert.rejects(pickup(cara, [one(lastCall)], 660), /no longer available/);
+  await assert.rejects(raw(cara, [line(lastCall)], 660, 60), /before its window closes/);
+  console.log("[PASS] a bag isn't ordered once its window has closed");
 });

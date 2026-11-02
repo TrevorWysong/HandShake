@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { feeCapCents, priceCheckout, scheduledTime, tipCents, type PriceInput } from "../src/routes/customer/cart/pricing.ts";
 
 const base: PriceInput = {
+  menuSubtotalCents: 2000,
   fulfillment: "Delivery",
   subtotalCents: 2000,
   discountCents: 0,
