@@ -20,7 +20,7 @@ import {
   markNotCollected,
 } from "../../holochain/zomes/dispatch";
 import { QrScanner } from "../../components/QrScanner";
-import { decodeHandoverCode, decodePickupCode } from "../../lib/orders/handoverCode";
+import { decodeHandoverCode, decodePickupCode, pickupDigits } from "../../lib/orders/handoverCode";
 import { isFinished, itemCount, mergeNewestFirst, received } from "../../lib/orders/orderEntries";
 import { useMyStores, type StoreRow } from "../../store/merchantStores";
 import { fetchActiveQueue, storesKey, toRow, type QueueRow } from "../../store/merchantQueue";
@@ -40,7 +40,7 @@ import { ChatPanel } from "../../components/orders/ChatPanel";
 import { bytesEqual } from "../../holochain/decode";
 import { formatCents, formatClockTime, formatDeadline, formatEta } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import type { DeclineReason, Timestamp } from "../../holochain/types";
+import { HANDOFF_CODE_DIGITS, type DeclineReason, type Timestamp } from "../../holochain/types";
 import { POLL, isOrderSignal } from "../../lib/network/poll";
 import { acknowledgeLeg } from "../../holochain/zomes/attestation";
 import { OrderLines } from "../../components/orders/OrderLines";
@@ -48,6 +48,7 @@ import { CustomerHistory } from "../../components/orders/CustomerHistory";
 import { OrderIssues } from "../../components/orders/OrderIssues";
 import { StoreAppeals } from "../../components/orders/StoreAppeals";
 import { HandoverCode } from "../../components/orders/HandoverCode";
+import { PinField } from "../../components/orders/PinField";
 import { unconfirmedPickup } from "../../lib/orders/handoffs";
 import { useT, type MessageKey } from "../../i18n";
 
@@ -440,12 +441,14 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
 
 /// The driver at the counter: the store's check-in code for them to scan as
 /// they arrive, then the store scanning *their* code as it hands the order
-/// over -- or confirming the pickup they've recorded. Handing it over checks
+/// over -- or typing the digits under it, which match only the pickup this
+/// order's driver recorded. Handing it over checks
 /// them in too, if they hadn't. Checked in, the driver is owed their fee if
 /// the store keeps them waiting past the network's wait.
 function PickupHandoff({ orderHex, orderRef, checkedIn }: { orderHex: string; orderRef: Uint8Array; checkedIn: boolean }) {
   const terms = useTerms();
   const [scanning, setScanning] = useState(false);
+  const [typed, setTyped] = useState("");
   const t = useT();
   // A scanner reads a held-up code many times a second: one hand-over.
   const handing = useAction();
@@ -483,10 +486,20 @@ function PickupHandoff({ orderHex, orderRef, checkedIn }: { orderHex: string; or
           {t("merchantOrders.handOver")}
         </Button>
       )}
-      {pickup && (
-        <Button variant="ghost" className="w-full py-2 text-xs" loading={handing.busy} onClick={() => handOver(pickup)}>
-          {t("merchantOrders.confirmHanded")}
-        </Button>
+      {pickup && !scanning && (
+        <>
+          <p className="mt-1 text-center text-[11px] font-semibold uppercase tracking-wide text-ink-400">{t("handoff.orType")}</p>
+          <PinField value={typed} onChange={setTyped} />
+          <Button
+            variant="secondary"
+            className="w-full py-2 text-xs"
+            loading={handing.busy}
+            disabled={typed.length !== HANDOFF_CODE_DIGITS}
+            onClick={() => (typed === pickupDigits(pickup) ? handOver(pickup) : handing.setError(t("merchantOrders.notDriverCode")))}
+          >
+            {t("merchantOrders.confirmHanded")}
+          </Button>
+        </>
       )}
       {handing.error && <p className="text-xs text-red-600 dark:text-red-400">{handing.error}</p>}
       <p className="text-[11px] text-ink-400">{t("merchantOrders.waitNote", { minutes: Math.round(terms.store_wait_secs / 60) })}</p>

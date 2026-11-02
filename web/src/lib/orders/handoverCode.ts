@@ -50,3 +50,12 @@ export function decodePickupCode(text: string): { orderHex: string; leg: Uint8Ar
   const match = PICKUP_PATTERN.exec(text.trim());
   return match ? { orderHex: match[1], leg: hexToBytes(match[2]) } : null;
 }
+
+/// A driver's pickup code as digits to read out, for a store that can't scan
+/// it: taken from their pickup leg, so it says no more than the QR code does.
+export function pickupDigits(leg: Uint8Array): string {
+  // A hash's 32 core bytes follow its 3-byte type prefix.
+  let n = 0;
+  for (const byte of leg.subarray(3, 9)) n = (n * 256 + byte) % 10 ** HANDOFF_CODE_DIGITS;
+  return String(n).padStart(HANDOFF_CODE_DIGITS, "0");
+}
