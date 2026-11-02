@@ -57,6 +57,14 @@ The HoloFuel Network opened on 1 November 2026. **Decision unchanged: no HoloFue
   - Unyt's own server agents (a "bridge orchestrator" and an "hf-swapper") call the app headlessly through [`ham`](https://github.com/unytco/ham), a Holochain client wrapper. That is the shape a HandShake HoloFuel issuer would take (question 1 below), but `ham`, `unytctl` and `raindex-orders` carry no licence, so we can't build on them without Unyt's permission.
 - **Who to ask.** Net Zero for the network ([Telegram](https://t.me/netzerozone), help@netzero.zone); Unyt in the Holochain Discord (Projects → Unyt).
 
+**Signals about where it's heading** (read from Unyt's [roadmap](https://unyt.co/roadmap/), Net Zero's [platform terms](https://netzero.zone/platform-terms.html) and Unyt's public [agreement library](https://github.com/unytco/smart_agreement_library); none is a commitment):
+- **Ways in and out:** the roadmap's planned "Stablecoin-Backed Remittances -- on-ramp and off-ramp for real-world value", undated. The pieces it needs have shipped: bridging any ERC-20 (February 2026) and market-price oracles. Generic "purchase of units" and "redemption of units" agreements were deprecated in January 2026 in favour of bridging ones, so money in and out is heading through bridged tokens, not Unyt taking dollars. Net Zero's terms say it neither accepts fiat or crypto deposits nor converts HoloFuel to fiat, so dollars would come through someone else.
+- **Earnings from services other than hosting:** the library has a rideshare "proof of service" agreement (December 2025) that prices a trip by distance, minutes, tolls and surge, pays the driver and splits a fee to the operating service -- the shape of a HandShake delivery. Which agreements let HoloFuel swap out is a configuration Net Zero chooses, so delivery earnings are a policy question rather than missing technology.
+- **Apps building on it:** today Unyt sits inside other software only as a Moss tool; its own server agents use `ham`. Planned: a public web gateway and "gateway marketplace auto-config". Nothing yet for a separate hApp.
+- **Identity:** "KYC/AML integrations & token gating" shipped in March 2026; "certifications, badges & token gating" and "redeemable token certificates" (portable, self-proving claims) are planned -- what an app could check to accept "a verified HoloFuel member".
+- **Price:** no sign of moving off HOT's market price.
+- **Timing:** items the roadmap put in Q2 2026 (the public gateway, mobile apps, stablecoins) are still "on the horizon" in November 2026.
+
 Questions this adds for Net Zero/Unyt:
 7. **Merchant earnings:** could a harvesting agreement, or another way out to HOT, cover HoloFuel earned by selling goods and services, not only hosting?
 8. **Integration licence:** may a third-party issuer service use `ham` and the app's zome API, and will the API be documented and versioned?
