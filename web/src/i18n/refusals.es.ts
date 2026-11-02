@@ -31,7 +31,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.have-the-store-scan-your-code-or": "Pide a la tienda que escanee tu código o que confirme que te lo ha entregado.",
   "refusal.it-isn-t-time-to-send-this": "Todavía no es hora de enviar este pedido.",
   "refusal.keep-the-note-short": "Escribe una nota más corta.",
-  "refusal.listing-a-store-sets-aside-a-deposit": "Publicar una tienda reserva un depósito de tu saldo, que se te devuelve al cerrarla. Añade fondos para publicarla.",
+  "refusal.listing-a-store-sets-aside-a-deposit": "Publicar una tienda reserva un depósito de {amount_cents} de tu saldo, que se te devuelve al cerrarla. Añade fondos para publicarla.",
   "refusal.no-driver-left-this-order-cooking": "Ningún repartidor dejó este pedido mientras se preparaba.",
   "refusal.no-such-appeal": "Esa apelación no existe.",
   "refusal.no-such-verification": "Esa verificación no existe.",

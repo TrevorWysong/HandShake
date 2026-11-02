@@ -57,10 +57,10 @@ pub fn get_nearby_merchants(input: NearbyMerchantsInput) -> ExternResult<NearbyM
 
 /// Lists a store (its original action) under its area, backed by a stake
 /// from the owner's balance (`ledger::stake_listing`) -- in this same call,
-/// so the two commit together.
+/// so the two commit together. A balance that can't cover it is the
+/// ledger's refusal, which says so.
 pub(crate) fn list(catalog_ref: &ActionHash, geohash: &str) -> ExternResult<ActionHash> {
-    let stake: ActionHash = call_local("ledger", "stake_listing", catalog_ref.clone())?
-        .map_err(|_| guest("Listing a store sets aside a deposit from your balance, returned when you close it. Add funds to list it."))?;
+    let stake: ActionHash = call_local("ledger", "stake_listing", catalog_ref.clone())?.map_err(|_| guest("couldn't ask the ledger for the listing deposit"))?;
     create_link(geohash_anchor_path(geohash)?.path_entry_hash()?, catalog_ref.clone(), LinkTypes::GeohashToCatalog, LinkTag::new(listing_tag(&stake)))
 }
 

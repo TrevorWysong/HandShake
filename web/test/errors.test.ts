@@ -21,6 +21,18 @@ test("a refusal reads as its sentence, in English as written", () => {
   assert.equal(describeError(refused("This order isn't taking offers any more.")), "This order isn't taking offers any more.");
 });
 
+test("a refusal from a zome another one called reads as its sentence too", () => {
+  // The listing deposit's refusal, from the ledger, inside the catalog's call to it.
+  const nested = new Error(`Wasm runtime error while working with Ribosome: RuntimeError: holochain::core::ribosome::host_fn::call:239: Host("Wasm runtime error while working with Ribosome: RuntimeError: handshake_coordinator_support:14: Guest(\\"Not enough funds for this order.\\")")`);
+  assert.equal(describeError(nested), "Not enough funds for this order.");
+  const quoted = new Error(`RuntimeError: call:239: Host("RuntimeError: x:1: Guest(\\"The \\\\\\"Fries\\\\\\") are gone.\\")")`);
+  assert.equal(describeError(quoted), 'The "Fries") are gone.');
+  assert.equal(describeError(refused('The "Fries") are gone.')), 'The "Fries") are gone.', "an escaped quote and bracket don't end it");
+  const deposit = new Error(`RuntimeError: call:239: Host("RuntimeError: support:14: Guest(\\"Listing a store sets aside a 2000 deposit from your balance, returned when you close it. Add funds to list it.\\")")`);
+  assert.match(describeError(deposit), /^Listing a store sets aside a \D*20\.00\D* deposit from your balance, returned when you close it\. Add funds to list it\.$/);
+  inSpanish(() => assert.match(describeError(deposit), /^Publicar una tienda reserva un depósito de \D*20[.,]00\D* de tu saldo/));
+});
+
 test("in Spanish, a refusal is translated, its values filled back in", () => {
   inSpanish(() => {
     assert.equal(describeError(refused("This order isn't taking offers any more.")), "Este pedido ya no acepta ofertas.");

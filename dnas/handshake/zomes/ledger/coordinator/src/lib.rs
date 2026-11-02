@@ -60,7 +60,10 @@ pub(crate) fn append(kind: LedgerKind, amount: u64) -> ExternResult<ActionHash> 
             let after = balance - signed;
             let limit = handshake_governance::credit_limit_cents() as i64;
             if after < -limit {
-                return Err(guest("Not enough funds for this order."));
+                return Err(match kind {
+                    LedgerKind::Stake { .. } => guest(format!("Listing a store sets aside a {amount_cents} deposit from your balance, returned when you close it. Add funds to list it.", amount_cents = amount)),
+                    _ => guest("Not enough funds for this order."),
+                });
             }
             after
         }
