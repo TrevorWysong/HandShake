@@ -180,7 +180,7 @@ export default function App() {
           <Route path="/driver/earnings" element={<Screen width="medium"><Earnings /></Screen>} />
           <Route path="/merchant" element={<Screen width="wide"><MerchantOrders /></Screen>} />
           <Route path="/merchant/catalog" element={<Screen width="medium"><MerchantCatalog /></Screen>} />
-          <Route path="/merchant/rewards" element={<Screen width="medium"><MerchantRewards /></Screen>} />
+          <Route path="/merchant/rewards" element={<Screen width="wide"><MerchantRewards /></Screen>} />
           <Route path="/rewards" element={<Screen width="wide"><RewardsPage /></Screen>} />
           <Route path="/rewards/:hash" element={<Screen width="reading"><RewardsDetail /></Screen>} />
           <Route path="/rewards/:hash/redeem" element={<Screen width="reading"><RedeemRewards /></Screen>} />
