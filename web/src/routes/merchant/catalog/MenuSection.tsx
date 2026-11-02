@@ -32,7 +32,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
   }
 
   return (
-    <>
+    <section className="mb-6">
       <motion.div variants={fadeSlideUp} className="mb-3 flex items-center justify-between">
         <SectionLabel>{t("nav.menu")}</SectionLabel>
         <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setEditing(editing ? null : { kind: "new" })}>
@@ -65,7 +65,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
 
       <motion.div variants={staggerContainer} initial="hidden" animate="visible">
         {[...grouped.entries()].map(([category, rows]) => (
-          <motion.div variants={fadeSlideUp} key={category} className="mb-4">
+          <motion.div variants={fadeSlideUp} key={category} className="mb-4 last:mb-0">
             <SectionLabel className="mb-2">{category}</SectionLabel>
             <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
               {rows.map((row) => (
@@ -97,7 +97,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
           </motion.div>
         ))}
       </motion.div>
-    </>
+    </section>
   );
 }
 

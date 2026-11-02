@@ -76,6 +76,16 @@
   * {
     scrollbar-width: thin;
   }
+  /* A number field is typed into: the browser's step arrows crowd its value
+     and its unit. Arrow keys still step it. */
+  input[type="number"] {
+    appearance: textfield;
+  }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
   @media (prefers-color-scheme: dark) {
     body {
       background-color: var(--color-ink-950);
