@@ -86,6 +86,13 @@ const script = TARGETS[target];
 if (!script) fail(`Pass a target: ${Object.keys(TARGETS).join(", ")}.`);
 if (!existsSync(WEBHAPP)) fail("deploy/handshake.webhapp is missing -- run `npm run package -- --network ../desktop/network.json` in web/ first.");
 
+// A signing secret the release environment doesn't have arrives empty, and
+// electron-builder reads an empty certificate path as the folder it's in:
+// unset, the build is simply unsigned (as kangaroo.config.ts reads it).
+for (const key of ["CSC_LINK", "CSC_KEY_PASSWORD", "WIN_CSC_LINK", "WIN_CSC_KEY_PASSWORD", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"]) {
+  if (process.env[key] === "") delete process.env[key];
+}
+
 fetchKangaroo();
 copyFileSync(path.join(DESKTOP, "kangaroo.config.ts"), path.join(KANGAROO, "kangaroo.config.ts"));
 for (const { file, from, to } of PATCHES) {
@@ -101,10 +108,7 @@ copyFileSync(WEBHAPP, path.join(KANGAROO, "pouch/handshake.webhapp"));
 // release never picks up a newer (or swapped) package on its own.
 run("yarn", ["install", "--frozen-lockfile"]);
 run("yarn", ["setup"]);
-// Kangaroo's build scripts end in a bare `--config`: name the file it
-// writes (scripts/write-configs.js), rather than leave electron-builder to
-// read the folder as one.
-run("yarn", target === "dev" ? [script] : [script, "electron-builder.yml"]);
+run("yarn", [script]);
 
 /// A fresh copy of Kangaroo at KANGAROO_COMMIT, every build, so no earlier
 /// build's patches linger -- a tarball, not a clone, so there's no git remote
