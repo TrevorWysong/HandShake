@@ -490,7 +490,7 @@ function RewardEditor({ reward, menu, tiers, pointsName, onChange, onRemove }: {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <Field label={t("rewardsAdmin.cost")}>
-          <Input type="number" min={1} max={1_000_000} value={reward.cost} onChange={(e) => onChange({ ...reward, cost: clamp(e.target.value, 1, 1_000_000) })} suffix={pointsName.slice(0, 4)} />
+          <Input type="number" min={1} max={1_000_000} value={reward.cost} onChange={(e) => onChange({ ...reward, cost: clamp(e.target.value, 1, 1_000_000) })} suffix={pointsName} />
         </Field>
         <Field label={t("rewardsAdmin.gives")}>
           <Select value={kind} onChange={(e) => setKind(e.target.value as BenefitKind)}>

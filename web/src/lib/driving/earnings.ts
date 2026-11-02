@@ -43,11 +43,14 @@ export function earningsByPeriod(rows: LedgerRow[], grouping: Grouping): Earning
   const mine = new Map<string, LedgerRow>();
   for (const row of rows) if ("Hold" in row.entry.kind) mine.set(bytesToHex(row.hash), row);
 
-  const periods = new Map<number, EarningsPeriod & { holds: Set<string> }>();
+  // A delivery's fee can come from two holds -- the customer's and, where
+  // the store pays part of it, the store's -- collected on one basis, the
+  // delivery: counted once.
+  const periods = new Map<number, EarningsPeriod & { delivered: Set<string> }>();
   const period = (at: number) => {
     const start = periodStart(at / 1000, grouping);
     let p = periods.get(start);
-    if (!p) periods.set(start, (p = { start, deliveries: 0, fees: 0, tips: 0, lateCover: 0, forfeited: 0, cashedOut: 0, holds: new Set() }));
+    if (!p) periods.set(start, (p = { start, deliveries: 0, fees: 0, tips: 0, lateCover: 0, forfeited: 0, cashedOut: 0, delivered: new Set() }));
     return p;
   };
   for (const row of rows) {
@@ -58,7 +61,7 @@ export function earningsByPeriod(rows: LedgerRow[], grouping: Grouping): Earning
       const p = period(row.at);
       if (kind.Collect.portion === "Fee") {
         p.fees += row.entry.amount;
-        p.holds.add(hold);
+        p.delivered.add(bytesToHex(kind.Collect.basis));
       } else if (kind.Collect.portion === "Tip") p.tips += row.entry.amount;
       else if (kind.Collect.portion === "LateCover") p.lateCover += row.entry.amount;
     } else if ("Forfeit" in kind) {
@@ -68,7 +71,7 @@ export function earningsByPeriod(rows: LedgerRow[], grouping: Grouping): Earning
     }
   }
   return [...periods.values()]
-    .map(({ holds, ...p }) => ({ ...p, deliveries: holds.size }))
+    .map(({ delivered, ...p }) => ({ ...p, deliveries: delivered.size }))
     .sort((a, b) => b.start - a.start);
 }
 
