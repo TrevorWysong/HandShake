@@ -5,16 +5,17 @@
 import { useState } from "react";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Card, Input, Switch } from "../../components/ui";
+import { Card, Chip, ChipRow, Input, Switch } from "../../components/ui";
 import { currencySymbol, formatCents, fromMinorUnits, toMinorUnits } from "../../lib/ui/format";
 import { useTerms } from "../../store/network";
 import { useDriverSettings } from "../../store/roleSettings";
 import { useT } from "../../i18n";
+import { TRAVEL_MODES } from "../../lib/driving/routing";
 
 export function DriverSettingsCard() {
   const t = useT();
   const networkMax = useTerms().max_concurrent_deliveries;
-  const { limits, travelSpeedKmh, setLimits, setTravelSpeed, autoBid, setAutoBid } = useDriverSettings();
+  const { limits, travelMode, setLimits, setTravelMode, autoBid, setAutoBid } = useDriverSettings();
   const [open, setOpen] = useState(false);
   const atOnce = Math.min(limits.maxAtOnce ?? networkMax, networkMax);
   const summary = [
@@ -64,25 +65,29 @@ export function DriverSettingsCard() {
                 </span>
                 <Switch checked={limits.takePriority} onChange={(takePriority) => setLimits({ takePriority })} label={t("driverSettings.takePriority")} />
               </div>
-              <div className="flex gap-3">
-                <label className="flex-1 text-xs font-semibold text-ink-500">
-                  {t("driverSettings.lowestFee")}
-                  <Input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    value={fromMinorUnits(limits.minFeeCents)}
-                    onChange={(e) => setLimits({ minFeeCents: Math.max(0, toMinorUnits(Number(e.target.value))) })}
-                    prefix={currencySymbol()}
-                    className="mt-1 py-1.5 text-sm"
-                  />
-                </label>
-                <label className="flex-1 text-xs font-semibold text-ink-500">
-                  {t("driverSettings.speed")}
-                  <Input type="number" min={1} step={1} value={travelSpeedKmh} onChange={(e) => setTravelSpeed(Math.max(1, Math.round(Number(e.target.value))))} suffix="km/h" className="mt-1 py-1.5 text-sm" />
-                </label>
+              <label className="block text-xs font-semibold text-ink-500">
+                {t("driverSettings.lowestFee")}
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={fromMinorUnits(limits.minFeeCents)}
+                  onChange={(e) => setLimits({ minFeeCents: Math.max(0, toMinorUnits(Number(e.target.value))) })}
+                  prefix={currencySymbol()}
+                  className="mt-1 py-1.5 text-sm"
+                />
+              </label>
+              <div>
+                <span className="block text-xs font-semibold text-ink-500">{t("driverSettings.travel")}</span>
+                <ChipRow>
+                  {TRAVEL_MODES.map(({ mode, label }) => (
+                    <Chip key={mode} active={travelMode === mode} onClick={() => setTravelMode(mode)}>
+                      {t(label)}
+                    </Chip>
+                  ))}
+                </ChipRow>
+                <p className="mt-1 text-[11px] text-ink-400">{t("driverSettings.travelNote")}</p>
               </div>
-              <p className="text-[11px] text-ink-400">{t("driverSettings.speedNote")}</p>
               <div className="flex items-center justify-between gap-3 border-t border-ink-100 pt-4 dark:border-ink-800">
                 <span>
                   <span className="block text-xs font-semibold text-ink-500">{t("driverSettings.autoBid")}</span>

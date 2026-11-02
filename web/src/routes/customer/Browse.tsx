@@ -7,6 +7,7 @@ import { getNearbyMerchants, getNearbyGoodieBags } from "../../holochain/zomes/c
 import { averageRating, getRatingSummary } from "../../holochain/zomes/reputation";
 import { decodeEntry, bytesToHex } from "../../holochain/decode";
 import { encodeGeohash } from "../../lib/places/geohash";
+import { minutesTo } from "../../lib/driving/routing";
 import { useSession } from "../../store/session";
 import { useFavorites } from "../../lib/hooks/useFavorites";
 import { useResource } from "../../lib/hooks/useResource";
@@ -89,6 +90,16 @@ export function Browse() {
       );
     },
     { pollMs: POLL.slow },
+  );
+  // How long each store's food takes to drive here, by road -- one request
+  // for the list, asked again only when the stores or the address change.
+  const storesHex = rows?.map((r) => bytesToHex(r.hash)).join(",");
+  const { data: driveMinutes } = useResource(
+    rows ? `browse-drive:${location.lat},${location.lon}:${storesHex}` : null,
+    async () => {
+      const minutes = await minutesTo(location, rows!.map((r) => r.catalog.location));
+      return new Map(rows!.map((r, i) => [bytesToHex(r.hash), minutes[i]]));
+    },
   );
   // Expired bags are already filtered out server-side (and claims after the
   // window are rejected on-chain); filtering again here drops one that
@@ -243,6 +254,7 @@ export function Browse() {
               rating={r.rating}
               reviewCount={r.reviewCount}
               customer={location}
+              driveMinutes={driveMinutes?.get(bytesToHex(r.hash)) ?? null}
               favorited={favoritesHex.has(bytesToHex(r.hash))}
               onToggleFavorite={() => toggleFavorite(r.hash)}
             />

@@ -593,6 +593,9 @@ pub struct NetworkTerms {
     pub map_attribution: String,
     /// A Nominatim-compatible address search API.
     pub geocoder_url: String,
+    /// An OSRM-compatible routing API, `{profile}` for how one travels -- if
+    /// the network names one.
+    pub routing_url: Option<String>,
     /// The push relay that wakes a closed app, if the network runs one.
     pub push_relay_url: Option<String>,
 }
@@ -641,6 +644,7 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         map_tiles_url: handshake_governance::services().map_tiles_url,
         map_attribution: handshake_governance::services().map_attribution,
         geocoder_url: handshake_governance::services().geocoder_url,
+        routing_url: handshake_governance::services().routing_url,
         push_relay_url: handshake_governance::services().push_relay_url,
     })
 }

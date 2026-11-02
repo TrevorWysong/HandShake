@@ -27,6 +27,7 @@ import type { Bid, DeliveryOrder, DeliveryStatus, DropoffDetails, GeoPoint, Merc
 import { POLL, isOrderSignal } from "../../lib/network/poll";
 import { offerable, offerRefusal, offerRules, type Commitment } from "../../lib/driving/addOns";
 import { estimateTrip } from "../../lib/driving/eta";
+import { legMinutes } from "../../lib/driving/routing";
 import { autoBidPrice, skipsStore } from "../../lib/driving/autoBid";
 import { currentBeacon } from "../../lib/network/timeSource";
 import { useClock } from "../../lib/hooks/useClock";
@@ -111,9 +112,10 @@ export function DriverDashboard() {
   );
 
   /// Bids on each newly offered order the driver's rule takes, at their
-  /// rate -- skipping stores other drivers keep reporting.
+  /// rate -- skipping stores other drivers keep reporting, and any order
+  /// the routing service can't time (its ETA is the driver's to type).
   async function bidAutomatically(offered: OrderRow[]) {
-    const { autoBid, limits, travelSpeedKmh } = useDriverSettings.getState();
+    const { autoBid, limits, travelMode } = useDriverSettings.getState();
     if (!autoBid.on) return;
     const commitmentsNow: Commitment[] = activeOrders.map((row) => ({ order: row.order, dropoff: dropoffPoint(row) }));
     for (const { hash: orderRef, order } of offerable(offered, commitmentsNow, offerRules(terms, limits))) {
@@ -127,7 +129,9 @@ export function DriverDashboard() {
         const dropoffAt = geohashCenter(order.dropoff_geohash);
         const price = autoBidPrice(distanceKm(location, storeAt) + distanceKm(storeAt, dropoffAt), order.max_delivery_fee, { rule: autoBid, minFeeCents: limits.minFeeCents });
         if (price === null) continue;
-        const trip = estimateTrip({ from: location, store: storeAt, dropoff: dropoffAt, speedKmh: travelSpeedKmh, readyBy: order.ready_by, prepMinutes: order.prep_minutes, nowMs: Date.now() });
+        const legs = await legMinutes(travelMode, [location, storeAt, dropoffAt]);
+        if (!legs) continue;
+        const trip = estimateTrip({ toStoreMinutes: legs[0], toDropoffMinutes: legs[1], readyBy: order.ready_by, prepMinutes: order.prep_minutes, nowMs: Date.now() });
         await sendBid(driverHex, orderRef, trip, price);
       } catch {
         // Already bid, or the order moved on: nothing to do.
@@ -477,15 +481,20 @@ function BidCard({
   /// Where the driver is, for the ETA estimate.
   location: GeoPoint;
 }) {
-  // The ETA starts as an estimate -- there, waiting for the kitchen if need
-  // be, then on to the drop-off at the driver's usual speed -- until they
-  // type their own.
-  const speedKmh = useDriverSettings((s) => s.travelSpeedKmh);
+  // The ETA starts as an estimate -- there by road, waiting for the kitchen
+  // if need be, then on to the drop-off -- until they type their own. With
+  // no route from the network's routing service, it's theirs to type.
+  const travelMode = useDriverSettings((s) => s.travelMode);
   const t = useT();
   const storeHex = bytesToHex(order.catalog_ref);
   const { data: storeAt = null } = useResource(`store-location:${storeHex}`, async () => decodeEntry<MerchantCatalog>(await getCatalog(order.catalog_ref)).location);
+  // Timed again only once the driver's moved a block or so.
+  const { data: legs = null } = useResource(
+    storeAt ? `bid-route:${travelMode}:${encodeGeohash(location.lat, location.lon, 7)}:${storeHex}:${order.dropoff_geohash}` : null,
+    () => legMinutes(travelMode, [location, storeAt!, geohashCenter(order.dropoff_geohash)]),
+  );
   const now = useClock(30_000);
-  const estimate = storeAt && estimateTrip({ from: location, store: storeAt, dropoff: geohashCenter(order.dropoff_geohash), speedKmh, readyBy: order.ready_by, prepMinutes: order.prep_minutes, nowMs: now.getTime() });
+  const estimate = legs && estimateTrip({ toStoreMinutes: legs[0], toDropoffMinutes: legs[1], readyBy: order.ready_by, prepMinutes: order.prep_minutes, nowMs: now.getTime() });
   const [typedEta, setEta] = useState<number | null>(null);
   const eta = typedEta ?? estimate?.etaMinutes ?? null;
   // How the store treats drivers: kept them waiting, or refused to check
