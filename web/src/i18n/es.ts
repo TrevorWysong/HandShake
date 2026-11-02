@@ -934,6 +934,7 @@ export const es: Catalog = {
   "transparency.paidShare": "{percent} % pagado",
   "transparency.entries": "Todos los movimientos de tu registro",
   "transparency.empty": "Aún no hay nada. Haz o completa un pedido para verlo aquí.",
+  "transparency.balanceAfter": "saldo {amount}",
   "notifications.title": "Notificaciones en este dispositivo",
   "notifications.orders": "Novedades de pedidos",
   "notifications.unsupported": "Este dispositivo no puede mostrar notificaciones.",

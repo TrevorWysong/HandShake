@@ -113,36 +113,37 @@ export function Transparency() {
       <motion.h2 variants={fadeSlideUp} className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">
         {t("transparency.entries")}
       </motion.h2>
-      {rows.length === 0 && (
-        <motion.p variants={fadeSlideUp} className="rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-6 text-center text-sm text-ink-400">
+      {rows.length === 0 ? (
+        <motion.p variants={fadeSlideUp} className="mb-6 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-6 text-center text-sm text-ink-400">
           {t("transparency.empty")}
         </motion.p>
+      ) : (
+        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="pb-6">
+          <Card className="flex flex-col gap-3 p-4">
+            {rows.map((row) => {
+              const { label, direction } = describeLedgerEntry(row.entry);
+              const Icon = direction === "in" ? ArrowDownCircle : direction === "out" ? Lock : ArrowUpCircle;
+              return (
+                <motion.div variants={fadeSlideUp} key={bytesToHex(row.hash)} className="flex items-center gap-2.5">
+                  <Icon size={18} className={direction === "in" ? "shrink-0 text-presence-600" : "shrink-0 text-ink-400"} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{label}</p>
+                    <p className="text-xs text-ink-400">
+                      <TimeAgo at={row.at} /> · {t("transparency.balanceAfter", { amount: formatCents(row.entry.balance) })}
+                    </p>
+                  </div>
+                  {direction !== "none" && (
+                    <StatNumber tone={direction === "in" ? "success" : "default"} className="text-sm">
+                      {direction === "in" ? "+" : "−"}
+                      {formatCents(row.entry.amount)}
+                    </StatNumber>
+                  )}
+                </motion.div>
+              );
+            })}
+          </Card>
+        </motion.div>
       )}
-      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="pb-6">
-        <Card className="flex flex-col gap-3 p-4">
-          {rows.map((row) => {
-            const { label, direction } = describeLedgerEntry(row.entry);
-            const Icon = direction === "in" ? ArrowDownCircle : direction === "out" ? Lock : ArrowUpCircle;
-            return (
-              <motion.div variants={fadeSlideUp} key={bytesToHex(row.hash)} className="flex items-center gap-2.5">
-                <Icon size={18} className={direction === "in" ? "shrink-0 text-presence-600" : "shrink-0 text-ink-400"} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{label}</p>
-                  <p className="text-xs text-ink-400">
-                    <TimeAgo at={row.at} /> · balance {formatCents(row.entry.balance)}
-                  </p>
-                </div>
-                {direction !== "none" && (
-                  <StatNumber tone={direction === "in" ? "success" : "default"} className="text-sm">
-                    {direction === "in" ? "+" : "−"}
-                    {formatCents(row.entry.amount)}
-                  </StatNumber>
-                )}
-              </motion.div>
-            );
-          })}
-        </Card>
-      </motion.div>
     </motion.div>
   );
 }
