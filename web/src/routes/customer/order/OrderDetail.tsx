@@ -225,6 +225,12 @@ export function OrderDetail() {
             <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.dropoffLabel")} </span>
             {t(DROPOFF_PREFERENCE_LABEL[order.dropoff_preference])}
           </p>
+          {details?.dropoff?.line2 && (
+            <p className="text-ink-500">
+              <span className="font-semibold text-ink-900 dark:text-ink-50">{t("address.line2")} </span>
+              {details.dropoff.line2}
+            </p>
+          )}
           {details?.dropoff?.notes && (
             <p className="text-ink-500">
               <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.dropoffNotesLabel")} </span>

@@ -65,6 +65,8 @@ pub struct PublishCatalogInput {
     #[serde(default)]
     pub address_street: String,
     #[serde(default)]
+    pub address_line2: String,
+    #[serde(default)]
     pub address_city: String,
     #[serde(default)]
     pub address_state: String,
@@ -159,6 +161,7 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
         email: input.email,
         website: input.website,
         address_street: input.address_street,
+        address_line2: input.address_line2,
         address_city: input.address_city,
         address_state: input.address_state,
         address_zip: input.address_zip,

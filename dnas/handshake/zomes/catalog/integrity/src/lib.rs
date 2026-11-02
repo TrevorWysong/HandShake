@@ -189,6 +189,7 @@ fn validate_catalog(catalog: &MerchantCatalog, author: &AgentPubKey) -> ExternRe
         contact::email_problem(&catalog.email),
         contact::website_problem(&catalog.website),
         text_problem("address_street", &catalog.address_street, MAX_STREET_CHARS),
+        text_problem("address_line2", &catalog.address_line2, MAX_ADDRESS_LINE2_CHARS),
         text_problem("address_city", &catalog.address_city, MAX_PLACE_CHARS),
         text_problem("address_state", &catalog.address_state, MAX_PLACE_CHARS),
         text_problem("address_zip", &catalog.address_zip, MAX_POSTAL_CODE_CHARS),

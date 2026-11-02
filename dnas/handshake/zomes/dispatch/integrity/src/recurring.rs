@@ -23,6 +23,9 @@ pub enum RecurrenceRule {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct TemplateDetails {
     pub dropoff: GeoPoint,
+    /// The apartment, suite or unit it goes to, if any.
+    #[serde(default)]
+    pub dropoff_line2: String,
     pub dropoff_notes: String,
     pub kitchen_notes: String,
     /// Each order asks for a driver of its own (`DeliveryOrder::priority`).

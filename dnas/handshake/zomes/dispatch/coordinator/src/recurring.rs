@@ -25,6 +25,8 @@ pub struct CreateRecurringTemplateInput {
     #[serde(default)]
     pub dropoff_notes: String,
     #[serde(default)]
+    pub dropoff_line2: String,
+    #[serde(default)]
     pub tip_cents: u64,
     #[serde(default)]
     pub dropoff_preference: DropoffPreference,
@@ -52,9 +54,10 @@ pub fn create_recurring_template(input: CreateRecurringTemplateInput) -> ExternR
     }
     let next_run_at = next_occurrence(&input.recurrence, &input.time_zone, sys_time()?.as_micros());
     crate::orders::check_note(&input.dropoff_notes)?;
+    crate::orders::check_line2(&input.dropoff_line2)?;
     crate::orders::check_note(&input.kitchen_notes)?;
     let template = RecurringOrderTemplate {
-        sealed_details: seal_chunked(&requester, &TemplateDetails { dropoff: input.dropoff, dropoff_notes: input.dropoff_notes, kitchen_notes: input.kitchen_notes, priority: input.priority })?,
+        sealed_details: seal_chunked(&requester, &TemplateDetails { dropoff: input.dropoff, dropoff_line2: input.dropoff_line2, dropoff_notes: input.dropoff_notes, kitchen_notes: input.kitchen_notes, priority: input.priority })?,
         requester,
         merchant: input.merchant,
         catalog_ref: input.catalog_ref,
@@ -202,6 +205,7 @@ fn fire(template: &RecurringOrderTemplate, details: &TemplateDetails) -> ExternR
         max_delivery_fee: template.max_delivery_fee,
         kitchen_notes: details.kitchen_notes.clone(),
         dropoff_notes: details.dropoff_notes.clone(),
+        dropoff_line2: details.dropoff_line2.clone(),
         tip_cents: template.tip_cents,
         requested_delivery_time: None,
         promo_code_ref: promo,

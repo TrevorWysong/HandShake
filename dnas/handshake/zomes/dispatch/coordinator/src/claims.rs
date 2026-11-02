@@ -102,6 +102,7 @@ fn redeem(mine: &MyClaimWire) -> ExternResult<()> {
                 max_delivery_fee,
                 kitchen_notes,
                 dropoff_notes: String::new(),
+                dropoff_line2: String::new(),
                 tip_cents: 0,
                 requested_delivery_time: None,
                 promo_code_ref: None,

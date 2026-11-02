@@ -378,6 +378,7 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
       {row.dropoff?.recipient && <p className="mt-2 text-sm font-semibold text-ink-900 dark:text-ink-50">{t("drive.deliverTo", { name: row.dropoff.recipient })}</p>}
       {!row.dropoff && row.order.status === "BidAccepted" && <p className="mt-2 text-xs text-ink-400">{t("drive.addressAfterCommit")}</p>}
       <p className="mt-2 text-xs font-semibold text-handshake-600">{t("order.dropoffLabel")} {t(DROPOFF_PREFERENCE_LABEL[row.order.dropoff_preference])}</p>
+      {row.dropoff?.line2 && <p className="mt-1 text-sm text-ink-700 dark:text-ink-200">{row.dropoff.line2}</p>}
       {row.dropoff?.notes && (
         <p className="mt-3 rounded-lg bg-ink-100/60 dark:bg-ink-800/60 p-2.5 text-xs text-ink-500">
           <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.dropoffNotesLabel")} </span>

@@ -17,6 +17,9 @@ export function useDeliveryOptions() {
   // Editable per order -- a friend's place, say -- and kept as the default
   // only if asked.
   const [dropoff, setDropoff] = useState<GeoPoint>(location);
+  // Its second line -- the apartment, suite or unit -- typed, or a saved
+  // address's own.
+  const [dropoffLine2, setDropoffLine2] = useState("");
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [chosenPreference, setChosenPreference] = useState<DropoffPreference>(usual.dropoffPreference);
   // Leaving it at the door means accepting it's delivered once it's left --
@@ -40,6 +43,8 @@ export function useDeliveryOptions() {
     feePresets,
     dropoff,
     setDropoff,
+    dropoffLine2,
+    setDropoffLine2,
     saveAsDefault,
     setSaveAsDefault,
     chosenPreference,

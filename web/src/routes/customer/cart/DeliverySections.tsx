@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AddressSwitcher } from "../../../components/places/AddressSwitcher";
+import { AddressLine2Field } from "../../../components/places/SplitAddressFields";
 import { InfoTip } from "../../../components/InfoTip";
 import { Button, Checkbox, Input, SectionLabel, Select } from "../../../components/ui";
 import type { DropoffPreference, GeoPoint, RecurrenceRule } from "../../../holochain/types";
@@ -20,7 +21,10 @@ export function DeliverToSection({ options, preference, doorAllowed, store }: { 
   const t = useT();
   return (
     <Section title={t("cart.deliverTo")}>
-      <AddressSwitcher value={options.dropoff} onChange={options.setDropoff} onValidate={(point) => validateDropoffRadius(point, store.location, store.radiusKm)} label={t("cart.deliverTo")} />
+      <AddressSwitcher value={options.dropoff} onChange={options.setDropoff} onLine2={options.setDropoffLine2} onValidate={(point) => validateDropoffRadius(point, store.location, store.radiusKm)} label={t("cart.deliverTo")} />
+      <div className="mt-3">
+        <AddressLine2Field value={options.dropoffLine2} onChange={options.setDropoffLine2} />
+      </div>
       <label className="mt-2 flex items-center gap-2 text-xs text-ink-400">
         <Checkbox checked={options.saveAsDefault} onChange={(e) => options.setSaveAsDefault(e.target.checked)} />
         {t("cart.saveDefault")}

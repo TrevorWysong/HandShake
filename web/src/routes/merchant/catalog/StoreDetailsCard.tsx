@@ -10,6 +10,7 @@ import { bytesToHex } from "../../../holochain/decode";
 import { Button, Card, Field, Input, Notice, SectionLabel, Switch, Textarea } from "../../../components/ui";
 import { PhotoInput } from "../../../components/PhotoInput";
 import { SplitAddressFields } from "../../../components/places/SplitAddressFields";
+import { fromCatalogAddress, toCatalogAddress } from "../../../lib/places/splitAddress";
 import type { MerchantCatalog } from "../../../holochain/types";
 import { MAX_DESCRIPTION_CHARS, MAX_EMAIL_CHARS, MAX_LABEL_CHARS, MAX_PHONE_CHARS, MAX_WEBSITE_CHARS } from "../../../holochain/types";
 import { isStoreEmail, isStoreWebsite, normalizeWebsite, websiteLabel } from "../../../lib/storefront/contact";
@@ -80,6 +81,7 @@ function detailsDraftFrom(catalog: MerchantCatalog) {
     email: catalog.email,
     website: catalog.website,
     address_street: catalog.address_street,
+    address_line2: catalog.address_line2,
     address_city: catalog.address_city,
     address_state: catalog.address_state,
     address_zip: catalog.address_zip,
@@ -114,8 +116,8 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
         point={catalog.location}
         onPointChange={() => {}}
         pointIsEditable={false}
-        address={{ street: draft.address_street, city: draft.address_city, state: draft.address_state, zip: draft.address_zip }}
-        onAddressChange={(a) => set({ address_street: a.street, address_city: a.city, address_state: a.state, address_zip: a.zip })}
+        address={fromCatalogAddress(draft)}
+        onAddressChange={(a) => set(toCatalogAddress(a))}
       />
       <SectionLabel className="mt-2">{t("storeSettings.contact")}</SectionLabel>
       <p className="-mt-1 text-xs text-ink-400">{t("storeSettings.contactDetail")}</p>

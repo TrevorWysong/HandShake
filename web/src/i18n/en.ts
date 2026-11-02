@@ -726,6 +726,8 @@ export const en = {
   "address.longitude": "Longitude",
   "address.byAddress": "Search by address instead",
   "address.street": "Street address",
+  "address.line2": "Address line 2",
+  "address.line2Placeholder": "Apartment, suite, unit, etc. (optional)",
   "address.city": "City",
   "address.region": "State, province or region",
   "address.postalCode": "Postal code",

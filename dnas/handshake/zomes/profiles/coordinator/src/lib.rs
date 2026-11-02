@@ -193,6 +193,9 @@ fn sealed_address(details: &AddressDetails) -> ExternResult<SavedAddress> {
     if details.label.trim().is_empty() {
         return Err(guest("Give the address a name, like “Home”."));
     }
+    if details.line2.chars().count() > handshake_integrity_support::limits::MAX_ADDRESS_LINE2_CHARS {
+        return Err(guest("That second address line is too long."));
+    }
     let me = agent_info()?.agent_initial_pubkey;
     Ok(SavedAddress { sealed: seal(&me, details)?, created_at: sys_time()? })
 }

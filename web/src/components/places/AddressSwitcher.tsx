@@ -10,7 +10,7 @@ import { AddressSearch } from "./AddressSearch";
 import { Button, Input, SectionLabel } from "../ui";
 import type { AddressComponents } from "../../lib/places/geocoding";
 import type { GeoPoint, AddressDetails } from "../../holochain/types";
-import { MAX_LABEL_CHARS } from "../../holochain/types";
+import { MAX_LABEL_CHARS, MAX_ADDRESS_LINE2_CHARS } from "../../holochain/types";
 import { useT } from "../../i18n";
 import { useResource } from "../../lib/hooks/useResource";
 import { useAction } from "../../lib/hooks/useAction";
@@ -50,15 +50,19 @@ function cityStateZip(a: { city: string; state: string; zip: string }): string {
 /// blocks the pick and shows it inline instead of closing the sheet,
 /// which is how Cart.tsx rejects a dropoff outside the merchant's own
 /// delivery radius without duplicating this sheet's own pick-handling.
+/// `onLine2` hears the second address line of what was picked -- a saved
+/// address's own, or the one typed beside a new one.
 export function AddressSwitcher({
   value,
   onChange,
   onValidate,
+  onLine2,
   label: labelProp,
 }: {
   value?: GeoPoint;
   onChange?: (point: GeoPoint) => void;
   onValidate?: (point: GeoPoint) => string | null;
+  onLine2?: (line2: string) => void;
   label?: string;
 } = {}) {
   const t = useT();
@@ -71,6 +75,7 @@ export function AddressSwitcher({
   const [addresses, setAddresses] = useState<AddressRow[] | null>(null);
   const [picked, setPicked] = useState<{ point: GeoPoint; components: AddressComponents } | null>(null);
   const [newLabel, setNewLabel] = useState("");
+  const [newLine2, setNewLine2] = useState("");
   // Saving, renaming or deleting an address -- one at a time.
   const action = useAction();
   /// The saved address being renamed, and its new name.
@@ -99,7 +104,7 @@ export function AddressSwitcher({
     setValidationError(null);
   }
 
-  function pickAddress(point: GeoPoint) {
+  function pickAddress(point: GeoPoint, line2: string) {
     const error = onValidate?.(point) ?? null;
     if (error) {
       setValidationError(error);
@@ -107,18 +112,20 @@ export function AddressSwitcher({
     }
     setValidationError(null);
     setLocation(point);
+    onLine2?.(line2);
     closeSheet();
     setPicked(null);
     setNewLabel("");
+    setNewLine2("");
   }
 
   function saveCurrentPick() {
     if (!picked || !newLabel.trim()) return;
-    const [{ point, components }, label] = [picked, newLabel.trim()];
+    const [{ point, components }, label, line2] = [picked, newLabel.trim(), newLine2.trim()];
     return action.run(async () => {
-      await saveAddress({ label, location: point, street: components.street, city: components.city, state: components.state, zip: components.zip });
+      await saveAddress({ label, location: point, street: components.street, line2, city: components.city, state: components.state, zip: components.zip });
       loadAddresses();
-      pickAddress(point);
+      pickAddress(point, line2);
     }, { as: "save" });
   }
 
@@ -198,15 +205,18 @@ export function AddressSwitcher({
                   />
 
                   {picked && (
-                    <div className="mt-3 flex items-center gap-2 rounded-xl bg-ink-50 dark:bg-ink-800/50 p-3">
-                      <Input maxLength={MAX_LABEL_CHARS} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={t("address.labelPlaceholder")} className="flex-1" />
-                      <Button loading={action.doing === "save"} disabled={action.busy || !newLabel.trim()} onClick={saveCurrentPick} className="px-3 py-2.5 text-xs">
-                        <Plus size={14} /> {t("common.save")}
-                      </Button>
+                    <div className="mt-3 flex flex-col gap-2 rounded-xl bg-ink-50 dark:bg-ink-800/50 p-3">
+                      <Input maxLength={MAX_ADDRESS_LINE2_CHARS} value={newLine2} onChange={(e) => setNewLine2(e.target.value)} placeholder={t("address.line2Placeholder")} autoComplete="address-line2" aria-label={t("address.line2")} />
+                      <div className="flex items-center gap-2">
+                        <Input maxLength={MAX_LABEL_CHARS} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={t("address.labelPlaceholder")} className="flex-1" />
+                        <Button loading={action.doing === "save"} disabled={action.busy || !newLabel.trim()} onClick={saveCurrentPick} className="px-3 py-2.5 text-xs">
+                          <Plus size={14} /> {t("common.save")}
+                        </Button>
+                      </div>
                     </div>
                   )}
                   {picked && (
-                    <button onClick={() => pickAddress(picked.point)} className="mt-2 text-xs font-semibold text-handshake-600 underline-offset-2 hover:underline">
+                    <button onClick={() => pickAddress(picked.point, newLine2.trim())} className="mt-2 text-xs font-semibold text-handshake-600 underline-offset-2 hover:underline">
                       {t("address.useOnce")}
                     </button>
                   )}
@@ -235,14 +245,14 @@ export function AddressSwitcher({
                         }
                         return (
                           <div key={hex} className="flex items-center gap-2 py-3">
-                            <button onClick={() => pickAddress(row.address.location)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                            <button onClick={() => pickAddress(row.address.location, row.address.line2)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                               <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${isCurrent ? "bg-handshake-500 text-white" : "bg-ink-100 dark:bg-ink-800 text-ink-500"}`}>
                                 <MapPin size={15} />
                               </div>
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{row.address.label}</p>
                                 <p className="truncate text-xs text-ink-400">
-                                  {row.address.street}
+                                  {[row.address.street, row.address.line2].filter(Boolean).join(", ")}
                                   {row.address.street && ", "}
                                   {cityStateZip(row.address)}
                                 </p>

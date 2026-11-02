@@ -107,6 +107,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.that-s-as-many-saved-card-payments": "Ya has hecho todos los pagos con tarjeta guardada que permite un día. Usa el formulario de tarjeta.",
   "refusal.that-s-more-than-the-network-lets": "Eso supera lo que la red deja emitir a un emisor en un día. Se reinicia a medianoche UTC.",
   "refusal.that-s-this-network-the-account-moves": "Esta es la red actual: la cuenta se traslada a la siguiente.",
+  "refusal.that-second-address-line-is-too-long": "Esa segunda línea de dirección es demasiado larga.",
   "refusal.that-signature-isn-t-yours": "Esa firma no es tuya.",
   "refusal.that-store-couldn-t-be-found": "No se encontró esa tienda.",
   "refusal.that-store-wasn-t-this-account-s": "Esa tienda no era de esta cuenta.",

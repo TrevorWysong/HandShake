@@ -1,7 +1,7 @@
 import { Field, Input } from "../ui";
 import { AddressSearch } from "./AddressSearch";
 import type { GeoPoint } from "../../holochain/types";
-import { MAX_PLACE_CHARS, MAX_POSTAL_CODE_CHARS } from "../../holochain/types";
+import { MAX_PLACE_CHARS, MAX_POSTAL_CODE_CHARS, MAX_ADDRESS_LINE2_CHARS } from "../../holochain/types";
 import { useT } from "../../i18n";
 import type { SplitAddress } from "../../lib/places/splitAddress";
 
@@ -24,6 +24,7 @@ export function SplitAddressFields({
   onAddressChange,
   pointIsEditable = true,
   streetLabel,
+  withLine2 = true,
 }: {
   point: GeoPoint;
   onPointChange: (p: GeoPoint) => void;
@@ -37,6 +38,9 @@ export function SplitAddressFields({
   /// actually driving a real, saved coordinate.
   pointIsEditable?: boolean;
   streetLabel?: string;
+  /// Off where an address only says where someone is (onboarding's area to
+  /// browse), not where to come to: there's no door to find.
+  withLine2?: boolean;
 }) {
   const t = useT();
   return (
@@ -44,7 +48,8 @@ export function SplitAddressFields({
       <AddressSearch
         value={point}
         onChange={onPointChange}
-        onSelectComponents={(c) => onAddressChange({ street: c.street, city: c.city, state: c.state, zip: c.zip })}
+        // A search finds the building, never the unit: what's typed stays.
+        onSelectComponents={(c) => onAddressChange({ ...address, street: c.street, city: c.city, state: c.state, zip: c.zip })}
         label={streetLabel ?? t("address.street")}
         placeholder={t("address.search")}
         displayAfterSelect="street"
@@ -52,6 +57,7 @@ export function SplitAddressFields({
         showLocationWarning={pointIsEditable}
         initialQuery={address.street}
       />
+      {withLine2 && <AddressLine2Field value={address.line2} onChange={(line2) => onAddressChange({ ...address, line2 })} />}
       <Field label={t("address.city")}>
         <Input maxLength={MAX_PLACE_CHARS} value={address.city} onChange={(e) => onAddressChange({ ...address, city: e.target.value })} />
       </Field>
@@ -64,5 +70,15 @@ export function SplitAddressFields({
         </Field>
       </div>
     </>
+  );
+}
+
+/// An address's second line: the apartment, suite or unit, if any.
+export function AddressLine2Field({ value, onChange }: { value: string; onChange: (line2: string) => void }) {
+  const t = useT();
+  return (
+    <Field label={t("address.line2")}>
+      <Input maxLength={MAX_ADDRESS_LINE2_CHARS} value={value} onChange={(e) => onChange(e.target.value)} placeholder={t("address.line2Placeholder")} autoComplete="address-line2" />
+    </Field>
   );
 }

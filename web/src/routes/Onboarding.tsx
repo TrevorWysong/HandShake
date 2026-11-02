@@ -226,6 +226,7 @@ export function Onboarding() {
                     address={addressDraft}
                     onAddressChange={setAddressDraft}
                     streetLabel={t("onboarding.location")}
+                    withLine2={false}
                   />
                 </div>
                 {devHost && (

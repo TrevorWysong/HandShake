@@ -20,6 +20,9 @@ export async function requestDelivery(input: {
   kitchen_notes?: string;
   /// Drop-off instructions -- sealed with the address, for the driver.
   dropoff_notes?: string;
+  /// The drop-off's second address line (apartment, suite, unit), sealed
+  /// with it.
+  dropoff_line2?: string;
   tip_cents?: number;
   requested_delivery_time?: Timestamp | null;
   promo_code_ref?: ActionHash | null;
@@ -45,6 +48,7 @@ export async function requestDelivery(input: {
   return callZome("dispatch", "request_delivery", {
     kitchen_notes: "",
     dropoff_notes: "",
+    dropoff_line2: "",
     tip_cents: 0,
     requested_delivery_time: null,
     promo_code_ref: null,
@@ -238,6 +242,9 @@ export async function createRecurringTemplate(input: {
   kitchen_notes?: string;
   /// Drop-off instructions -- sealed with the address, for the driver.
   dropoff_notes?: string;
+  /// The drop-off's second address line (apartment, suite, unit), sealed
+  /// with it.
+  dropoff_line2?: string;
   tip_cents?: number;
   dropoff_preference?: DropoffPreference;
   /// Required for `LeaveAtDoor` -- see `requestDelivery`.
@@ -252,6 +259,7 @@ export async function createRecurringTemplate(input: {
   return callZome("dispatch", "create_recurring_template", {
     kitchen_notes: "",
     dropoff_notes: "",
+    dropoff_line2: "",
     tip_cents: 0,
     dropoff_preference: "HandToMe",
     door_risk_accepted: false,

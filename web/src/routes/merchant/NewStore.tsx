@@ -8,6 +8,7 @@ import { useSession } from "../../store/session";
 import { useMerchantStores } from "../../store/merchantStores";
 import { Button, Card, Field, Input, Notice } from "../../components/ui";
 import { SplitAddressFields } from "../../components/places/SplitAddressFields";
+import { EMPTY_SPLIT_ADDRESS, toCatalogAddress } from "../../lib/places/splitAddress";
 import { MAX_NAME_CHARS } from "../../holochain/types";
 import { formatCents } from "../../lib/ui/format";
 import { useTerms } from "../../store/network";
@@ -33,13 +34,13 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
   // prefilling the new store's split address fields at creation time
   // instead of leaving them blank until the merchant re-types the same
   // address in "Storefront details."
-  const [addressDraft, setAddressDraft] = useState({ address_street: "", address_city: "", address_state: "", address_zip: "" });
+  const [addressDraft, setAddressDraft] = useState(EMPTY_SPLIT_ADDRESS);
   const action = useAction();
 
   function publish() {
     if (!businessName.trim()) return;
     return action.run(async () => {
-      const record = await publishCatalog({ business_name: businessName.trim(), location: pickupLocation, ...addressDraft });
+      const record = await publishCatalog({ business_name: businessName.trim(), location: pickupLocation, ...toCatalogAddress(addressDraft) });
       // Only a merchant's *first* store moves their browsing location --
       // that's "where I am" for someone just setting up. Adding a second
       // location across town shouldn't silently change where their own
@@ -78,8 +79,8 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
         <SplitAddressFields
           point={pickupLocation}
           onPointChange={setPickupLocation}
-          address={{ street: addressDraft.address_street, city: addressDraft.address_city, state: addressDraft.address_state, zip: addressDraft.address_zip }}
-          onAddressChange={(a) => setAddressDraft({ address_street: a.street, address_city: a.city, address_state: a.state, address_zip: a.zip })}
+          address={addressDraft}
+          onAddressChange={setAddressDraft}
           streetLabel={t("newStore.pickupLocation")}
         />
         {stake > 0 && (

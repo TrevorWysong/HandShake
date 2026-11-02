@@ -721,6 +721,8 @@ export const es: Catalog = {
   "address.longitude": "Longitud",
   "address.byAddress": "Buscar por dirección",
   "address.street": "Dirección",
+  "address.line2": "Línea de dirección 2",
+  "address.line2Placeholder": "Apartamento, piso, unidad, etc. (opcional)",
   "address.city": "Ciudad",
   "address.region": "Provincia, estado o región",
   "address.postalCode": "Código postal",
