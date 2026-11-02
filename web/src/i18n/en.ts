@@ -732,6 +732,7 @@ export const en = {
   "address.labelPlaceholder": "Label (e.g. Home, Work)",
   "address.home": "Home",
   "common.save": "Save",
+  "common.saved": "Saved",
   "address.useOnce": "Just use this address once, without saving",
   "address.saved": "Saved addresses",
   "common.loading": "Loading…",

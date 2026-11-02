@@ -42,6 +42,12 @@ export function TaxCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCat
     new Set(parsed.map((r) => r.category)).size !== parsed.length ? t("taxEditor.problem.unique") :
     null;
 
+  const unchanged =
+    included === (catalog.prices_include_tax ?? false) &&
+    registration === (catalog.tax_registration ?? "") &&
+    parsed.length === saved.length &&
+    parsed.every((r, i) => r.category === saved[i].category && r.basis_points === saved[i].basis_points);
+
   function save() {
     if (problem) return;
     return action.run(async () => {
@@ -86,7 +92,7 @@ export function TaxCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCat
         </>
       )}
       {(problem || action.error) && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{action.error ?? problem}</p>}
-      <Button className="mt-3 w-full py-2 text-xs" loading={action.busy} disabled={!!problem} onClick={save}>
+      <Button className="mt-3 w-full py-2 text-xs" loading={action.busy} disabled={!!problem || unchanged} onClick={save}>
         {t("taxEditor.save")}
       </Button>
       <p className="mt-2 text-[11px] leading-relaxed text-ink-400">{t("taxEditor.advice")}</p>

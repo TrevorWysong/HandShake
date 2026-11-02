@@ -727,6 +727,7 @@ export const es: Catalog = {
   "address.labelPlaceholder": "Etiqueta (p. ej., Casa, Trabajo)",
   "address.home": "Casa",
   "common.save": "Guardar",
+  "common.saved": "Guardado",
   "address.useOnce": "Usar esta dirección solo una vez, sin guardarla",
   "address.saved": "Direcciones guardadas",
   "common.loading": "Cargando…",
