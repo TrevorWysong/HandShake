@@ -28,8 +28,8 @@ A card issuer and a HoloFuel issuer are two rows on the same roster. Orders, esc
 
 **Decided 2026-10-11:** build cards (and bank transfer) first. HoloFuel waits until it has launched and Unyt has published how apps integrate with it; then it's worth a short exploratory build. Nothing in the cards-first work blocks it: `Redeem` and the issuer service are shared by both payment methods.
 
-**Look into it when** any of these happens:
-- HoloFuel launches for third-party apps, after the HOT migration;
+**Look into it when** any of these happens (HoloFuel itself launched on 1 November 2026, for people -- see "Findings, November 2026"):
+- HoloFuel opens to third-party apps, or HoloFuel earned by selling goods can be swapped out;
 - Unyt publishes developer documentation or an integration example;
 - someone at Unyt can answer the questions under "What to ask Unyt".
 
@@ -40,6 +40,24 @@ A card issuer and a HoloFuel issuer are two rows on the same roster. Orders, esc
 4. **Value:** whether HoloFuel has a reference rate, and how closely it tracks hosting costs.
 5. **Legal:** whether Unyt or Holo handles identity checks and exchange to dollars.
 6. **Availability:** when third-party apps can use it, and at what cost.
+
+## Findings, November 2026: HoloFuel is live
+
+The HoloFuel Network opened on 1 November 2026. **Decision unchanged: no HoloFuel code yet.** It's live for people, not yet for apps, and money paid to a restaurant in it has no way out.
+
+- **What launched.** The HoloFuel Network, operated by Net Zero FZC (assigned by Holo), runs inside Unyt's desktop app (v1.0.1, Mac/Windows/Linux). Joining takes 30-45 minutes: a keystore passphrase, identity verification with a government ID through Didit, and an invite code. HOT swaps 1:1 for HoloFuel, both ways, with no fee or spread, for at least six months (60 days' notice before closing). ([launch](https://netzero.zone/holofuel-launch.html), [parameters](https://netzero.zone/parameters))
+- **Nobody starts with credit.** General members' credit limit is zero, so HoloFuel comes only from swapping HOT or being paid. A HandShake customer would need HOT, or someone to sell them HoloFuel, before they could top up.
+- **Earnings from food can't leave.** Only HoloFuel "earned through providing network utility ... via one of the authorized harvesting agreements" (hosting) swaps back to HOT. A restaurant or driver paid in HoloFuel could spend it with other members (the [Decent Directory](https://directory.holoventures.io/)) but couldn't swap it out, and there's still no fiat gateway. This is the deciding issue: sellers and drivers need dollars.
+- **Still no way for another app to integrate.**
+  - [Unyt's docs](https://unyt.co/docs) cover using the app, configuring alliances and smart agreements (Rhai templates, [library](https://github.com/unytco/smart_agreement_library), GPL-3.0). Nothing on another hApp sending, receiving or checking payments.
+  - The HoloFuel app's own source (`unytco/unyt-app`) is private; the public `unyt-sandbox` only packages releases. So its zome functions aren't documented or public.
+  - Unyt's own server agents (a "bridge orchestrator" and an "hf-swapper") call the app headlessly through [`ham`](https://github.com/unytco/ham), a Holochain client wrapper. That is the shape a HandShake HoloFuel issuer would take (question 1 below), but `ham`, `unytctl` and `raindex-orders` carry no licence, so we can't build on them without Unyt's permission.
+- **Who to ask.** Net Zero for the network ([Telegram](https://t.me/netzerozone), help@netzero.zone); Unyt in the Holochain Discord (Projects → Unyt).
+
+Questions this adds for Net Zero/Unyt:
+7. **Merchant earnings:** could a harvesting agreement, or another way out to HOT, cover HoloFuel earned by selling goods and services, not only hosting?
+8. **Integration licence:** may a third-party issuer service use `ham` and the app's zome API, and will the API be documented and versioned?
+9. **Onboarding:** can a member join with lighter identity checks for small amounts, or is the full Didit check required for everyone?
 
 ## Findings, October 2026
 
