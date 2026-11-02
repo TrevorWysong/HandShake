@@ -939,6 +939,7 @@ export const en = {
   "transparency.paidShare": "{percent}% paid",
   "transparency.entries": "Every entry on your ledger",
   "transparency.empty": "Nothing here yet. Place or complete an order to see it appear.",
+  "transparency.balanceAfter": "balance {amount}",
   "notifications.title": "Notifications on this device",
   "notifications.orders": "Order updates",
   "notifications.unsupported": "This device can't show notifications.",
