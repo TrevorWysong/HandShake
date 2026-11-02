@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { legMinutes, minutesTo } from "../src/lib/driving/routing.ts";
+import { forgetRoutes, legMinutes, minutesTo } from "../src/lib/driving/routing.ts";
 import { useNetwork } from "../src/store/network.ts";
 import type { NetworkTerms } from "../src/holochain/types.ts";
 
@@ -12,6 +12,7 @@ let asked: string[] = [];
 
 function answer(body: unknown, status = 200) {
   asked = [];
+  forgetRoutes();
   globalThis.fetch = (async (url: string) => {
     asked.push(url);
     return new Response(JSON.stringify(body), { status });
@@ -27,7 +28,42 @@ test("a trip's legs, timed by road for how the driver travels", async () => {
   answer({ code: "Ok", routes: [{ legs: [{ duration: 600 }, { duration: 900 }] }] });
   assert.deepEqual(await legMinutes("bike", [A, B, C]), [10, 15]);
   assert.equal(asked.length, 1);
-  assert.ok(asked[0].startsWith("https://routing.openstreetmap.de/routed-bike/route/v1/driving/-82.640300,27.767600;"), asked[0]);
+  assert.ok(asked[0].startsWith("https://routing.openstreetmap.de/routed-bike/route/v1/driving/-82.640,27.768;"), asked[0]);
+});
+
+test("points go out rounded to about 100 m, and a repeat shares the answer", async () => {
+  answer({ code: "Ok", routes: [{ legs: [{ duration: 60 }] }] });
+  await legMinutes("car", [{ lat: 27.767612345, lon: -82.640387654 }, B]);
+  await legMinutes("car", [{ lat: 27.76759, lon: -82.64041 }, B]);
+  assert.equal(asked.length, 1, "the same rounded trip is asked once");
+  assert.ok(!/\d\.\d{4}/.test(asked[0]), asked[0]);
+});
+
+test("only an https service is asked -- or a dev machine's own", async () => {
+  for (const routing_url of ["http://routing.example.com", "ftp://x", "javascript:alert(1)", "not a url"]) {
+    useNetwork.setState({ terms: { routing_url } as unknown as NetworkTerms });
+    answer({ code: "Ok", routes: [{ legs: [{ duration: 60 }] }] });
+    assert.equal(await legMinutes("car", [A, B]), null, routing_url);
+    assert.equal(asked.length, 0, routing_url);
+  }
+  useNetwork.setState({ terms: { routing_url: "http://localhost:5000" } as unknown as NetworkTerms });
+  answer({ code: "Ok", routes: [{ legs: [{ duration: 60 }] }] });
+  assert.deepEqual(await legMinutes("car", [A, B]), [1]);
+});
+
+test("a burst of trips is asked a few at a time", async () => {
+  forgetRoutes();
+  let open = 0;
+  let most = 0;
+  globalThis.fetch = (async () => {
+    most = Math.max(most, ++open);
+    await new Promise((r) => setTimeout(r, 5));
+    open--;
+    return new Response(JSON.stringify({ code: "Ok", routes: [{ legs: [{ duration: 60 }] }] }));
+  }) as typeof fetch;
+  const trips = Array.from({ length: 20 }, (_, i) => legMinutes("car", [A, { lat: 27.7 + i / 100, lon: -82.6 }]));
+  assert.ok((await Promise.all(trips)).every((legs) => legs?.[0] === 1));
+  assert.ok(most <= 4, `at most 4 at once, saw ${most}`);
 });
 
 test("a scooter rides the roads a car does", async () => {
