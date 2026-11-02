@@ -48,7 +48,7 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
   }, { as: hex });
 
   return (
-    <>
+    <section className="mb-6">
       <motion.div variants={fadeSlideUp} className="mb-3 flex items-center justify-between">
         <SectionLabel>{t("bags.title")}</SectionLabel>
         <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setShowForm((v) => !v)}>
@@ -71,9 +71,9 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
       </AnimatePresence>
 
       {data && bags.length === 0 && !showForm ? (
-        <p className="mb-4 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-6 text-center text-sm text-ink-400">{t("bags.none")}</p>
+        <p className="rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-6 text-center text-sm text-ink-400">{t("bags.none")}</p>
       ) : (
-        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="mb-4 flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
+        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
           {bags.map(({ hex, bag }) =>
             editing === hex ? (
               <EditBagForm
@@ -109,7 +109,7 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
       )}
 
       {claims.length > 0 && (
-        <motion.div variants={fadeSlideUp} className="mb-6">
+        <motion.div variants={fadeSlideUp} className="mt-6">
           <SectionLabel className="mb-2">{t("bags.pending")}</SectionLabel>
           <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
             {claims.map(({ hash, hex, claim }) => (
@@ -126,7 +126,7 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
           </div>
         </motion.div>
       )}
-    </>
+    </section>
   );
 }
 

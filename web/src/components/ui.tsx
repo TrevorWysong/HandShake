@@ -1,6 +1,7 @@
 import type { HTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { ChevronDown, Minus, Plus } from "lucide-react";
+import { useState } from "react";
 import clsx from "clsx";
 import { useT } from "../i18n";
 
@@ -160,19 +161,53 @@ const fieldBase =
 
 type Adornment = { prefix?: ReactNode; suffix?: ReactNode };
 
+/// The same field, drawn around an input and its unit rather than on the
+/// input itself, so the unit sits beside the text instead of over it.
+const adornedField =
+  "flex items-center gap-2 rounded-xl border border-ink-200/70 dark:border-ink-700/70 bg-ink-50/80 dark:bg-ink-800/50 px-3.5 py-2.5 text-sm transition focus-within:border-handshake-400 focus-within:bg-white dark:focus-within:bg-ink-900 focus-within:ring-2 focus-within:ring-handshake-100 dark:focus-within:ring-handshake-900/40";
+
 /// `prefix`/`suffix` render as fixed, non-editable glyphs inside the field
 /// (e.g. `prefix={currencySymbol()}` for an amount, `suffix="%"` for a percentage)
 /// -- unlike placeholder text, these never disappear once the customer
-/// starts typing, so the unit stays legible the whole time.
-export function Input({ className, prefix, suffix, ...rest }: InputHTMLAttributes<HTMLInputElement> & Adornment) {
+/// starts typing, so the unit stays legible the whole time. `className`
+/// sizes and places the whole field, unit included.
+export function Input({ className, prefix, suffix, ...props }: InputHTMLAttributes<HTMLInputElement> & Adornment) {
+  const rest = useNumberDraft(props);
   if (!prefix && !suffix) return <input className={clsx(fieldBase, className)} {...rest} />;
   return (
-    <div className="relative flex items-center">
-      {prefix && <span className="pointer-events-none absolute left-3.5 text-sm font-medium text-ink-400">{prefix}</span>}
-      <input className={clsx(fieldBase, prefix && "pl-7", suffix && "pr-8", className)} {...rest} />
-      {suffix && <span className="pointer-events-none absolute right-3.5 text-sm font-medium text-ink-400">{suffix}</span>}
+    <div className={clsx(adornedField, className)}>
+      {prefix && <span className="shrink-0 font-medium text-ink-400">{prefix}</span>}
+      <input className="w-full min-w-0 flex-1 bg-transparent text-ink-900 dark:text-ink-50 placeholder:text-ink-400 dark:placeholder:text-ink-500 outline-none" {...rest} />
+      {suffix && <span className="shrink-0 font-medium text-ink-400">{suffix}</span>}
     </div>
   );
+}
+
+/// A number field bound to a number shows what's being typed -- empty once
+/// cleared, "010" on the way to 10 -- and passes on only numbers, never an empty field;
+/// once it loses focus it shows the number again. Bound straight to the
+/// number, a cleared field snaps back to 0 and a typed 1 reads "01". Focusing
+/// it selects what's there, so typing replaces it.
+function useNumberDraft(props: InputHTMLAttributes<HTMLInputElement>): InputHTMLAttributes<HTMLInputElement> {
+  const [draft, setDraft] = useState<string | null>(null);
+  if (props.type !== "number" || typeof props.value !== "number") return props;
+  const { onChange, onFocus, onBlur } = props;
+  return {
+    ...props,
+    value: draft ?? props.value,
+    onFocus: (e) => {
+      e.target.select();
+      onFocus?.(e);
+    },
+    onChange: (e) => {
+      setDraft(e.target.value);
+      if (e.target.value !== "" && !Number.isNaN(e.target.valueAsNumber)) onChange?.(e);
+    },
+    onBlur: (e) => {
+      setDraft(null);
+      onBlur?.(e);
+    },
+  };
 }
 
 export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
