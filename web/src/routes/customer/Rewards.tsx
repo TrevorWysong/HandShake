@@ -33,7 +33,7 @@ export function RewardsPage() {
       </motion.div>
 
       {cards === undefined && (
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Skeleton className="h-44 w-full rounded-[28px]" />
           <Skeleton className="h-44 w-full rounded-[28px]" />
         </div>
@@ -52,7 +52,7 @@ export function RewardsPage() {
         </motion.div>
       )}
       {/* One card under another on a phone; side by side on a wide screen. */}
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {cards
           ?.filter((card) => card.program)
           .map((card) => (

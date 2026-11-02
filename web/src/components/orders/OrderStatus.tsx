@@ -71,6 +71,52 @@ function TerminalBanner({ icon, tone, children }: { icon: React.ReactNode; tone:
 /// "fills" with a quick top-down scale animation as it completes, instead
 /// of just snapping to its done state -- the one place in this app where
 /// *progress itself* (not just a list appearing) deserves motion.
+/// A happy path's steps, those done and the current one lit -- the
+/// timeline both order kinds draw.
+function StepList({ labels, icons, current }: { labels: MessageKey[]; icons: (typeof Check)[]; current: number }) {
+  const t = useT();
+  return (
+    <ol className="relative flex flex-col gap-0">
+      {labels.map((label, i) => {
+        const Icon = icons[i];
+        const done = i < current;
+        const active = i === current;
+        return (
+          <li key={label} className="flex gap-3 pb-2 last:pb-0">
+            <div className="flex flex-col items-center">
+              <motion.div
+                initial={false}
+                animate={{ scale: done || active ? 1 : 0.92, opacity: done || active ? 1 : 0.7 }}
+                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                className={clsx(
+                  "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+                  done || active ? "bg-handshake-500 text-white shadow-[var(--shadow-glow)]" : "bg-ink-100 dark:bg-ink-800 text-ink-300 dark:text-ink-600",
+                )}
+              >
+                <Icon size={14} />
+              </motion.div>
+              {i < labels.length - 1 && (
+                <div className="relative mt-1 w-0.5 flex-1 overflow-hidden bg-ink-100 dark:bg-ink-800" style={{ minHeight: 12 }}>
+                  <motion.div
+                    className="absolute inset-x-0 top-0 bg-handshake-400"
+                    initial={false}
+                    animate={{ height: done ? "100%" : "0%" }}
+                    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                  />
+                </div>
+              )}
+            </div>
+            <div className={clsx("pt-0.5 text-sm font-medium", done || active ? "text-ink-900 dark:text-ink-50" : "text-ink-400 dark:text-ink-600")}>
+              {t(label)}
+              {active && <span className="ml-2 inline-block h-2 w-2 rounded-full bg-presence-500 animate-pulse align-middle" />}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function OrderStatusTimeline({ status, cancellation = null }: { status: DeliveryStatus; cancellation?: Cancellation | null }) {
   const t = useT();
   if (status === "Scheduled") {
@@ -100,46 +146,7 @@ export function OrderStatusTimeline({ status, cancellation = null }: { status: D
   const currentIndex = steps.findIndex((s) => s.status === status);
   const icons = collecting ? [CircleDot, Store, ShoppingBag, Check] : [CircleDot, Store, Check, Bike, ChefHat, MapPin, PackageCheck, Check];
 
-  return (
-    <ol className="relative flex flex-col gap-0">
-      {steps.map((step, i) => {
-        const Icon = icons[i];
-        const done = i < currentIndex;
-        const active = i === currentIndex;
-        return (
-          <li key={step.status} className="flex gap-3 pb-6 last:pb-0">
-            <div className="flex flex-col items-center">
-              <motion.div
-                initial={false}
-                animate={{ scale: done || active ? 1 : 0.92, opacity: done || active ? 1 : 0.7 }}
-                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                className={clsx(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                  done || active ? "bg-handshake-500 text-white shadow-[var(--shadow-glow)]" : "bg-ink-100 dark:bg-ink-800 text-ink-300 dark:text-ink-600",
-                )}
-              >
-                <Icon size={16} />
-              </motion.div>
-              {i < steps.length - 1 && (
-                <div className="relative mt-1 w-0.5 flex-1 overflow-hidden bg-ink-100 dark:bg-ink-800" style={{ minHeight: 24 }}>
-                  <motion.div
-                    className="absolute inset-x-0 top-0 bg-handshake-400"
-                    initial={false}
-                    animate={{ height: done ? "100%" : "0%" }}
-                    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                  />
-                </div>
-              )}
-            </div>
-            <div className={clsx("pt-1 text-sm font-medium", done || active ? "text-ink-900 dark:text-ink-50" : "text-ink-400 dark:text-ink-600")}>
-              {t(step.label)}
-              {active && <span className="ml-2 inline-block h-2 w-2 rounded-full bg-presence-500 animate-pulse align-middle" />}
-            </div>
-          </li>
-        );
-      })}
-    </ol>
-  );
+  return <StepList labels={steps.map((s) => s.label)} icons={icons} current={currentIndex} />;
 }
 
 const PICKUP_STEPS: { status: PickupStatus; label: MessageKey }[] = [
@@ -195,44 +202,5 @@ export function PickupStatusTimeline({ status, cancellation = null }: { status: 
   const currentIndex = PICKUP_STEPS.findIndex((s) => s.status === status);
   const icons = [CircleDot, ChefHat, ShoppingBag, Check];
 
-  return (
-    <ol className="relative flex flex-col gap-0">
-      {PICKUP_STEPS.map((step, i) => {
-        const Icon = icons[i];
-        const done = i < currentIndex;
-        const active = i === currentIndex;
-        return (
-          <li key={step.status} className="flex gap-3 pb-6 last:pb-0">
-            <div className="flex flex-col items-center">
-              <motion.div
-                initial={false}
-                animate={{ scale: done || active ? 1 : 0.92, opacity: done || active ? 1 : 0.7 }}
-                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                className={clsx(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                  done || active ? "bg-handshake-500 text-white shadow-[var(--shadow-glow)]" : "bg-ink-100 dark:bg-ink-800 text-ink-300 dark:text-ink-600",
-                )}
-              >
-                <Icon size={16} />
-              </motion.div>
-              {i < PICKUP_STEPS.length - 1 && (
-                <div className="relative mt-1 w-0.5 flex-1 overflow-hidden bg-ink-100 dark:bg-ink-800" style={{ minHeight: 24 }}>
-                  <motion.div
-                    className="absolute inset-x-0 top-0 bg-handshake-400"
-                    initial={false}
-                    animate={{ height: done ? "100%" : "0%" }}
-                    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                  />
-                </div>
-              )}
-            </div>
-            <div className={clsx("pt-1 text-sm font-medium", done || active ? "text-ink-900 dark:text-ink-50" : "text-ink-400 dark:text-ink-600")}>
-              {t(step.label)}
-              {active && <span className="ml-2 inline-block h-2 w-2 rounded-full bg-presence-500 animate-pulse align-middle" />}
-            </div>
-          </li>
-        );
-      })}
-    </ol>
-  );
+  return <StepList labels={PICKUP_STEPS.map((s) => s.label)} icons={icons} current={currentIndex} />;
 }

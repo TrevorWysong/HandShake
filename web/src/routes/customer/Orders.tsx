@@ -119,9 +119,12 @@ async function fetchPast(before: Timestamp | null): Promise<PastState> {
   return { rows: page.orders.map(toOrderRow).filter(isFinished), nextBefore: page.next_before };
 }
 
+/// One order in the list: which store, what it came to, where it stands.
 function OrderCard({ row, showTime, children }: { row: OrderRow; showTime?: boolean; children?: React.ReactNode }) {
   const t = useT();
   const count = itemCount(row.order);
+  const storeHex = bytesToHex(row.order.catalog_ref);
+  const { data: storeName } = useResource(`store-name:${storeHex}`, async () => decodeEntry<MerchantCatalog>(await getCatalog(row.order.catalog_ref)).business_name);
   return (
     <Card className="flex items-center gap-2 p-4">
       <Link to={customerOrderPath(row)} className="min-w-0 flex-1">
@@ -132,9 +135,9 @@ function OrderCard({ row, showTime, children }: { row: OrderRow; showTime?: bool
           </span>
           {showTime && <span className="font-normal normal-case tracking-normal text-ink-300"><TimeAgo at={row.order.requested_at} /></span>}
         </div>
-        <StatNumber className="text-sm">{formatCents(row.order.order_total)}</StatNumber>
+        <p className="truncate text-sm font-bold text-ink-900 dark:text-ink-50">{storeName ?? "\u00a0"}</p>
         <p className="text-xs text-ink-400">
-          {t("orders.items", { count })}
+          {t("orders.items", { count })} · <StatNumber className="text-xs">{formatCents(row.order.order_total)}</StatNumber>
         </p>
       </Link>
       {row.kind === "Delivery" ? <StatusBadge status={row.order.status} /> : <PickupStatusBadge status={row.order.status} />}

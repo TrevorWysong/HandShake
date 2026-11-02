@@ -1,4 +1,4 @@
-import { matchPath, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import { Home, ClipboardList, ShoppingCart, User, Car, DollarSign, Sparkles, Gift } from "lucide-react";
@@ -18,31 +18,21 @@ import { topUpIfLow } from "../../lib/money/autoTopUp";
 import { reaffirmRecoveryPlan } from "../../holochain/zomes/account";
 import { bytesToHex } from "../../holochain/decode";
 import { useCustomerSettings } from "../../store/roleSettings";
-import { useWideScreen } from "../../lib/hooks/useWideScreen";
+import { useWideScreen } from "../../lib/hooks/useMediaQuery";
 import { useT } from "../../i18n";
 
-/// How wide each screen grows in a wide window: grids and boards to the
-/// whole width, a dashboard or editor of stacked cards to a middle width,
-/// and every other screen -- forms, an order, a profile -- a reading width.
-const SCREEN_WIDTHS: [string[], string][] = [
-  [["/customer", "/customer/merchant/:hash", "/merchant", "/rewards"], "lg:max-w-6xl"],
-  [["/merchant/catalog", "/merchant/rewards", "/driver", "/driver/earnings"], "lg:max-w-4xl"],
-];
-
-function screenWidth(pathname: string): string {
-  return SCREEN_WIDTHS.find(([paths]) => paths.some((path) => matchPath(path, pathname)))?.[1] ?? "lg:max-w-2xl";
-}
 
 /// Wraps whichever route is active in a short fade+rise so navigating
 /// between screens (Browse -> cart, an order's detail page, switching
 /// modes) feels like one continuous app rather than a hard page swap --
 /// `mode="wait"` so the outgoing screen finishes leaving before the next
 /// one enters, `initial={false}` so the very first screen on load doesn't
-/// also play the enter animation (it's already there).
+/// also play the enter animation (it's already there). Each screen starts
+/// at its top, as a page does -- once the last one has gone.
 function AnimatedOutlet() {
   const location = useLocation();
   return (
-    <AnimatePresence mode="wait" initial={false}>
+    <AnimatePresence mode="wait" initial={false} onExitComplete={() => window.scrollTo(0, 0)}>
       <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" exit="exit">
         <Outlet />
       </motion.div>
@@ -54,7 +44,6 @@ export function AppShell() {
   const { mode, setMode, profile, agentPubKey } = useSession();
   const cartCount = useCart((s) => s.lines.reduce((n, l) => n + l.quantity, 0));
   const navigate = useNavigate();
-  const { pathname } = useLocation();
   const wide = useWideScreen();
   const t = useT();
   const roles = profile?.roles ?? [];
@@ -105,7 +94,7 @@ export function AppShell() {
   return (
     <div className="min-h-svh bg-ink-50 lg:flex dark:bg-ink-950">
       {wide && (
-        <aside className="sticky top-0 flex h-svh w-64 shrink-0 flex-col gap-6 border-r border-ink-100 bg-white px-4 py-5 dark:border-ink-800 dark:bg-ink-900">
+        <aside className="sticky top-0 flex h-svh w-sidebar shrink-0 flex-col gap-6 border-r border-ink-100 bg-white px-4 py-5 dark:border-ink-800 dark:bg-ink-900">
           <div className="px-2">{brand}</div>
           {modeSwitch}
           <nav className="flex flex-col gap-1">
@@ -123,9 +112,10 @@ export function AppShell() {
         </aside>
       )}
 
-      <div className="mx-auto flex min-h-svh w-full max-w-md flex-col lg:max-w-none lg:min-w-0 lg:flex-1">
+      {/* A phone's column, wider on a tablet; beside the sidebar on a wide screen. */}
+      <div className="mx-auto flex min-h-svh w-full max-w-md flex-col md:max-w-2xl lg:max-w-none lg:min-w-0 lg:flex-1">
         {!wide && (
-          <header className="sticky top-0 z-20 flex items-center justify-between border-b border-ink-100 bg-white/90 px-4 py-3 backdrop-blur dark:border-ink-800 dark:bg-ink-900/80">
+          <header className="sticky top-0 z-20 flex h-header items-center justify-between border-b border-ink-100 bg-white/90 px-4 backdrop-blur dark:border-ink-800 dark:bg-ink-900/80">
             {brand}
             <div className="flex items-center gap-2">
               {modeSwitch}
@@ -139,13 +129,13 @@ export function AppShell() {
         <Notifier />
         <ConnectionBanner />
         <NewVersionBanner enabled={!!agentPubKey} />
-        <main className={clsx("flex-1 pb-20 lg:mx-auto lg:w-full lg:px-6 lg:pt-4 lg:pb-12", screenWidth(pathname))}>
+        <main className="flex-1 pb-20 lg:px-6 lg:pt-4 lg:pb-12">
           <AnimatedOutlet />
         </main>
       </div>
 
       {!wide && (
-        <nav className="fixed bottom-0 left-1/2 z-20 flex w-full max-w-md -translate-x-1/2 border-t border-ink-100 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-ink-800 dark:bg-ink-900/95">
+        <nav className="fixed bottom-0 left-1/2 z-20 flex w-full max-w-md -translate-x-1/2 md:max-w-2xl border-t border-ink-100 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-ink-800 dark:bg-ink-900/95">
           <ModeNav mode={mode} cartCount={cartCount} placement="bar" />
         </nav>
       )}

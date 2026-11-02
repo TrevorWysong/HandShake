@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, MapPin, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useSession } from "../../store/session";
 import { saveAddress, deleteSavedAddress, listMyAddresses, updateSavedAddress } from "../../holochain/zomes/profiles";
 import { bytesToHex } from "../../holochain/decode";
 import { reverseGeocode } from "../../lib/places/geocoding";
 import { AddressSearch } from "./AddressSearch";
+import { Sheet } from "../Sheet";
 import { Button, Input, SectionLabel } from "../ui";
 import type { AddressComponents } from "../../lib/places/geocoding";
 import type { GeoPoint, AddressDetails } from "../../holochain/types";
@@ -162,128 +161,97 @@ export function AddressSwitcher({
         <ChevronDown size={16} className="shrink-0 text-ink-400" />
       </button>
 
-      {createPortal(
-        <AnimatePresence>
-          {open && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
-              onClick={closeSheet}
-            >
-              <motion.div
-                initial={{ y: "100%" }}
-                animate={{ y: 0 }}
-                exit={{ y: "100%" }}
-                transition={{ type: "spring", damping: 28, stiffness: 300 }}
-                onClick={(e) => e.stopPropagation()}
-                className="flex max-h-[85dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white dark:bg-ink-900"
-              >
-                <div className="flex items-center justify-between p-4 pb-0">
-                  <h2 className="text-base font-black text-ink-900 dark:text-ink-50">{label}</h2>
-                  <button onClick={closeSheet} className="grid h-8 w-8 place-items-center rounded-full text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-800">
-                    <X size={18} />
+      <Sheet open={open} onClose={closeSheet} title={label}>
+        {current?.components.street && (
+          <div className="mb-4 rounded-xl bg-handshake-50 dark:bg-handshake-900/20 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-handshake-600 dark:text-handshake-400">{t("address.current")}</p>
+            <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{current.components.street}</p>
+            <p className="text-xs text-ink-400">{cityStateZip(current.components)}</p>
+          </div>
+        )}
+
+        <AddressSearch
+          value={location}
+          onChange={(point) => setPicked((prev) => ({ point, components: prev?.components ?? { street: "", city: "", state: "", zip: "" } }))}
+          onSelectComponents={(components) => setPicked((prev) => (prev ? { ...prev, components } : null))}
+          label={t("address.searchNew")}
+          placeholder={t("address.enterStreet")}
+        />
+
+        {picked && (
+          <div className="mt-3 flex flex-col gap-2 rounded-xl bg-ink-50 dark:bg-ink-800/50 p-3">
+            <Input maxLength={MAX_ADDRESS_LINE2_CHARS} value={newLine2} onChange={(e) => setNewLine2(e.target.value)} placeholder={t("address.line2Placeholder")} autoComplete="address-line2" aria-label={t("address.line2")} />
+            <div className="flex items-center gap-2">
+              <Input maxLength={MAX_LABEL_CHARS} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={t("address.labelPlaceholder")} className="flex-1" />
+              <Button loading={action.doing === "save"} disabled={action.busy || !newLabel.trim()} onClick={saveCurrentPick} className="px-3 py-2.5 text-xs">
+                <Plus size={14} /> {t("common.save")}
+              </Button>
+            </div>
+          </div>
+        )}
+        {picked && (
+          <button onClick={() => pickAddress(picked.point, newLine2.trim())} className="mt-2 text-xs font-semibold text-handshake-600 underline-offset-2 hover:underline">
+            {t("address.useOnce")}
+          </button>
+        )}
+        {(validationError ?? action.error) && <p className="mt-2 text-xs font-semibold text-red-500">{validationError ?? action.error}</p>}
+
+        <div className="mt-5">
+          <SectionLabel className="mb-2">{t("address.saved")}</SectionLabel>
+          {addresses === null && <p className="text-xs text-ink-400">{t("common.loading")}</p>}
+          {addresses?.length === 0 && <p className="text-xs text-ink-400">{t("address.noneSaved")}</p>}
+          <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800">
+            {addresses?.map((row) => {
+              const hex = bytesToHex(row.hash);
+              const isCurrent = location.lat === row.address.location.lat && location.lon === row.address.location.lon;
+              if (renaming?.hex === hex) {
+                return (
+                  <div key={hex} className="flex items-center gap-2 py-3">
+                    <Input autoFocus maxLength={MAX_LABEL_CHARS} value={renaming.label} onChange={(e) => setRenaming({ hex, label: e.target.value })} className="flex-1" />
+                    <Button loading={action.doing === "rename"} disabled={action.busy || !renaming.label.trim()} onClick={() => renameAddress(row)} className="px-3 py-2.5 text-xs" aria-label={t("common.save")}>
+                      <Check size={14} />
+                    </Button>
+                    <button onClick={() => setRenaming(null)} aria-label={t("common.cancel")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-800">
+                      <X size={15} />
+                    </button>
+                  </div>
+                );
+              }
+              return (
+                <div key={hex} className="flex items-center gap-2 py-3">
+                  <button onClick={() => pickAddress(row.address.location, row.address.line2)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                    <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${isCurrent ? "bg-handshake-500 text-white" : "bg-ink-100 dark:bg-ink-800 text-ink-500"}`}>
+                      <MapPin size={15} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{row.address.label}</p>
+                      <p className="truncate text-xs text-ink-400">
+                        {[row.address.street, row.address.line2].filter(Boolean).join(", ")}
+                        {row.address.street && ", "}
+                        {cityStateZip(row.address)}
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setRenaming({ hex, label: row.address.label })}
+                    aria-label={t("common.edit")}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-300 hover:bg-ink-100 hover:text-ink-600 dark:hover:bg-ink-800"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={() => removeAddress(row)}
+                    disabled={action.busy}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-300 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
+                  >
+                    <Trash2 size={15} />
                   </button>
                 </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto p-4 pt-3">
-                  {current?.components.street && (
-                    <div className="mb-4 rounded-xl bg-handshake-50 dark:bg-handshake-900/20 p-3">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-handshake-600 dark:text-handshake-400">{t("address.current")}</p>
-                      <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{current.components.street}</p>
-                      <p className="text-xs text-ink-400">{cityStateZip(current.components)}</p>
-                    </div>
-                  )}
-
-                  <AddressSearch
-                    value={location}
-                    onChange={(point) => setPicked((prev) => ({ point, components: prev?.components ?? { street: "", city: "", state: "", zip: "" } }))}
-                    onSelectComponents={(components) => setPicked((prev) => (prev ? { ...prev, components } : null))}
-                    label={t("address.searchNew")}
-                    placeholder={t("address.enterStreet")}
-                  />
-
-                  {picked && (
-                    <div className="mt-3 flex flex-col gap-2 rounded-xl bg-ink-50 dark:bg-ink-800/50 p-3">
-                      <Input maxLength={MAX_ADDRESS_LINE2_CHARS} value={newLine2} onChange={(e) => setNewLine2(e.target.value)} placeholder={t("address.line2Placeholder")} autoComplete="address-line2" aria-label={t("address.line2")} />
-                      <div className="flex items-center gap-2">
-                        <Input maxLength={MAX_LABEL_CHARS} value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder={t("address.labelPlaceholder")} className="flex-1" />
-                        <Button loading={action.doing === "save"} disabled={action.busy || !newLabel.trim()} onClick={saveCurrentPick} className="px-3 py-2.5 text-xs">
-                          <Plus size={14} /> {t("common.save")}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  {picked && (
-                    <button onClick={() => pickAddress(picked.point, newLine2.trim())} className="mt-2 text-xs font-semibold text-handshake-600 underline-offset-2 hover:underline">
-                      {t("address.useOnce")}
-                    </button>
-                  )}
-                  {(validationError ?? action.error) && <p className="mt-2 text-xs font-semibold text-red-500">{validationError ?? action.error}</p>}
-
-                  <div className="mt-5">
-                    <SectionLabel className="mb-2">{t("address.saved")}</SectionLabel>
-                    {addresses === null && <p className="text-xs text-ink-400">{t("common.loading")}</p>}
-                    {addresses?.length === 0 && <p className="text-xs text-ink-400">{t("address.noneSaved")}</p>}
-                    <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800">
-                      {addresses?.map((row) => {
-                        const hex = bytesToHex(row.hash);
-                        const isCurrent = location.lat === row.address.location.lat && location.lon === row.address.location.lon;
-                        if (renaming?.hex === hex) {
-                          return (
-                            <div key={hex} className="flex items-center gap-2 py-3">
-                              <Input autoFocus maxLength={MAX_LABEL_CHARS} value={renaming.label} onChange={(e) => setRenaming({ hex, label: e.target.value })} className="flex-1" />
-                              <Button loading={action.doing === "rename"} disabled={action.busy || !renaming.label.trim()} onClick={() => renameAddress(row)} className="px-3 py-2.5 text-xs" aria-label={t("common.save")}>
-                                <Check size={14} />
-                              </Button>
-                              <button onClick={() => setRenaming(null)} aria-label={t("common.cancel")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-800">
-                                <X size={15} />
-                              </button>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div key={hex} className="flex items-center gap-2 py-3">
-                            <button onClick={() => pickAddress(row.address.location, row.address.line2)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                              <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${isCurrent ? "bg-handshake-500 text-white" : "bg-ink-100 dark:bg-ink-800 text-ink-500"}`}>
-                                <MapPin size={15} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{row.address.label}</p>
-                                <p className="truncate text-xs text-ink-400">
-                                  {[row.address.street, row.address.line2].filter(Boolean).join(", ")}
-                                  {row.address.street && ", "}
-                                  {cityStateZip(row.address)}
-                                </p>
-                              </div>
-                            </button>
-                            <button
-                              onClick={() => setRenaming({ hex, label: row.address.label })}
-                              aria-label={t("common.edit")}
-                              className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-300 hover:bg-ink-100 hover:text-ink-600 dark:hover:bg-ink-800"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              onClick={() => removeAddress(row)}
-                              disabled={action.busy}
-                              className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-300 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>,
-        document.body,
-      )}
+              );
+            })}
+          </div>
+        </div>
+      </Sheet>
     </>
   );
 }

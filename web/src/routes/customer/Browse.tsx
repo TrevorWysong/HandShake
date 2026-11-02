@@ -232,7 +232,7 @@ export function Browse() {
       </div>
 
       {rows === undefined && (
-        <div className="grid grid-cols-2 gap-3 pb-6 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 pb-6 md:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <CardSkeleton key={i} />
           ))}
@@ -244,7 +244,7 @@ export function Browse() {
       )}
 
       {filtered && filtered.length > 0 && (
-        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-3 pb-6 lg:grid-cols-3 xl:grid-cols-4">
+        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-3 pb-6 md:grid-cols-3 xl:grid-cols-4">
           {filtered.map((r) => (
             <RestaurantCard
               key={bytesToHex(r.hash)}

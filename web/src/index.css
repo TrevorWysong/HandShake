@@ -1,6 +1,13 @@
 @import "tailwindcss";
 
 @theme {
+  /* The wide-screen sidebar's width: the shell's `w-sidebar`, and
+     `lg:left-sidebar` on bars that float over the content beside it. */
+  --spacing-sidebar: 16rem;
+  /* The phone and tablet header's height: `h-header` on it, and
+     `top-header` on bars that stick just under it. */
+  --spacing-header: 3.75rem;
+
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
 
   /* Ink -- a full neutral warm-gray scale (surfaces + text), used with

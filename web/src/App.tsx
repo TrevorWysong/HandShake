@@ -5,6 +5,7 @@ import { HOST } from "./holochain/host";
 import { Spinner } from "./components/ui";
 import { Fingerprint } from "lucide-react";
 import { AppShell } from "./components/shell/AppShell";
+import { Screen } from "./components/shell/Screen";
 import { Onboarding } from "./routes/Onboarding";
 import { Browse } from "./routes/customer/Browse";
 import { MerchantDetail } from "./routes/customer/MerchantDetail";
@@ -169,28 +170,28 @@ export default function App() {
           }
         >
           <Route path="/" element={<HomeForMode />} />
-          <Route path="/customer" element={<Browse />} />
-          <Route path="/customer/merchant/:hash" element={<MerchantDetail />} />
-          <Route path="/customer/cart" element={<Cart />} />
-          <Route path="/customer/orders" element={<Orders />} />
-          <Route path="/customer/orders/:hash" element={<OrderDetail />} />
-          <Route path="/customer/pickup-orders/:hash" element={<PickupOrderDetail />} />
-          <Route path="/driver" element={<DriverDashboard />} />
-          <Route path="/driver/earnings" element={<Earnings />} />
-          <Route path="/merchant" element={<MerchantOrders />} />
-          <Route path="/merchant/catalog" element={<MerchantCatalog />} />
-          <Route path="/merchant/rewards" element={<MerchantRewards />} />
-          <Route path="/rewards" element={<RewardsPage />} />
-          <Route path="/rewards/:hash" element={<RewardsDetail />} />
-          <Route path="/rewards/:hash/redeem" element={<RedeemRewards />} />
-          <Route path="/merchant/stores/new" element={<NewStore />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/transparency" element={<Transparency />} />
-          <Route path="/wallet" element={<Wallet />} />
-          <Route path="/policies" element={<Policies />} />
-          <Route path="/account" element={<AccountPage />} />
-          <Route path="/verify" element={<VerifyPage />} />
-          <Route path="/arbitrate" element={<ArbitratePage />} />
+          <Route path="/customer" element={<Screen width="wide"><Browse /></Screen>} />
+          <Route path="/customer/merchant/:hash" element={<Screen width="wide"><MerchantDetail /></Screen>} />
+          <Route path="/customer/cart" element={<Screen width="wide"><Cart /></Screen>} />
+          <Route path="/customer/orders" element={<Screen width="reading"><Orders /></Screen>} />
+          <Route path="/customer/orders/:hash" element={<Screen width="wide"><OrderDetail /></Screen>} />
+          <Route path="/customer/pickup-orders/:hash" element={<Screen width="reading"><PickupOrderDetail /></Screen>} />
+          <Route path="/driver" element={<Screen width="wide"><DriverDashboard /></Screen>} />
+          <Route path="/driver/earnings" element={<Screen width="medium"><Earnings /></Screen>} />
+          <Route path="/merchant" element={<Screen width="wide"><MerchantOrders /></Screen>} />
+          <Route path="/merchant/catalog" element={<Screen width="medium"><MerchantCatalog /></Screen>} />
+          <Route path="/merchant/rewards" element={<Screen width="medium"><MerchantRewards /></Screen>} />
+          <Route path="/rewards" element={<Screen width="wide"><RewardsPage /></Screen>} />
+          <Route path="/rewards/:hash" element={<Screen width="reading"><RewardsDetail /></Screen>} />
+          <Route path="/rewards/:hash/redeem" element={<Screen width="reading"><RedeemRewards /></Screen>} />
+          <Route path="/merchant/stores/new" element={<Screen width="reading"><NewStore /></Screen>} />
+          <Route path="/profile" element={<Screen width="reading"><ProfilePage /></Screen>} />
+          <Route path="/transparency" element={<Screen width="reading"><Transparency /></Screen>} />
+          <Route path="/wallet" element={<Screen width="reading"><Wallet /></Screen>} />
+          <Route path="/policies" element={<Screen width="reading"><Policies /></Screen>} />
+          <Route path="/account" element={<Screen width="reading"><AccountPage /></Screen>} />
+          <Route path="/verify" element={<Screen width="reading"><VerifyPage /></Screen>} />
+          <Route path="/arbitrate" element={<Screen width="reading"><ArbitratePage /></Screen>} />
           <Route path="*" element={<HomeForMode />} />
         </Route>
       </Routes>
