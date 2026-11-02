@@ -5,7 +5,7 @@
 //! the order is refused with the new total rather than charged silently.
 
 use crate::order_queues::my_completions_at;
-use catalog_types::{order_tax, order_total, total_with_tax, BagClaim, GoodieBag, MerchantCatalog, MenuItem, PricedLine, PromoCode, PromoRequirement, PromoReward, TaxableLine};
+use catalog_types::{order_tax, order_total, total_with_tax, BagClaim, GoodieBag, MerchantCatalog, MenuItem, PromoCode, PromoRequirement, PromoReward, TaxableLine};
 use handshake_coordinator_support::{call_local, decode_or, guest, original_action_of, resolve_latest};
 use dispatch_integrity::*;
 use hdk::prelude::*;
@@ -144,9 +144,9 @@ pub(crate) fn price_menu_order(catalog_ref: &ActionHash, store: &MerchantCatalog
             return Err(guest(format!("{} is sold out", item.name)));
         }
         let selections = at_latest(&selections)?;
-        let unit_price = pricer.unit_price(&item, &selections)?.map_err(|reason| guest(format!("{}: {reason}", item.name)))?;
-        lines.push(OrderLine { item_ref: item_ref.clone(), priced_version: record.action_address().clone(), quantity, selections });
-        priced.push(PricedLine { item_ref, base_price: item.price_cents, unit_price, quantity });
+        let line = pricer.priced_line(item_ref.clone(), &item, &selections, quantity)?.map_err(|reason| guest(format!("{}: {reason}", item.name)))?;
+        lines.push(OrderLine { item_ref, priced_version: record.action_address().clone(), quantity, selections });
+        priced.push(line);
         categories.push(item.tax_category);
         age_restricted |= item.age_restricted;
     }

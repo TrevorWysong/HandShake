@@ -17,7 +17,7 @@ pub use links::catalog_geohash_path;
 // a direct dependency on this crate wouldn't work. Re-exported here so
 // nothing else in this crate or the coordinator crate (which imports via
 // `catalog_integrity::*`) needs to change.
-pub use catalog_types::{listing_stake, listing_tag, BagClaim, BagClaimFulfillment, BagClaimStatus, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
+pub use catalog_types::{listing_stake, listing_tag, BagClaim, BagClaimFulfillment, BagClaimStatus, ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
 
 /// Precision used for the merchant-discovery anchor -- coarse (city-block
 /// scale), matching open orders' drop-off precision so both discovery paths
@@ -417,11 +417,10 @@ fn validate_reward(reward: &PromoReward) -> Option<&'static str> {
         PromoReward::FreeItem { quantity, .. } if *quantity == 0 || *quantity > MAX_LINE_QUANTITY => {
             Some("FreeItem's quantity must be between one and the most on a line")
         }
-        PromoReward::FreeItem { .. } => None,
         PromoReward::PercentOffItem { percent, quantity, .. } if *percent == 0 || *percent > 100 || *quantity == 0 || *quantity > MAX_LINE_QUANTITY => {
             Some("PercentOffItem's percent must be between 1 and 100, and its quantity between one and the most on a line")
         }
-        PromoReward::PercentOffItem { .. } => None,
+        PromoReward::FreeItem { choices, .. } | PromoReward::PercentOffItem { choices, .. } => catalog_types::choice_terms_problem(choices),
     }
 }
 

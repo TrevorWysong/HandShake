@@ -183,6 +183,32 @@ await runScenario(async (scenario) => {
   );
   console.log("[PASS] a store's changed choices price new orders, and it refuses old prices");
 
+  // ===== A reward for some choices =====
+  // "A free large latte with an extra": the item, Large, and one chosen
+  // extra -- anything else on the line still charged, and a small one not
+  // covered at all. The network prices it from the order's own choices.
+  const largeWithAnExtra = [
+    { group: size, options: [2], included: 1 },
+    { group: shots, options: [], included: 1 },
+  ];
+  await assert.rejects(
+    call(merchant, "catalog")("create_promo_code", { catalog_ref: store, code: "TWICE", requirement: "None", reward: { FreeItem: { item_ref: latteRef, quantity: 1, choices: [largeWithAnExtra[0], largeWithAnExtra[0]] } } }),
+    /names each choice group once/,
+    "a reward names a choice group once",
+  );
+  const promo = actionHash(await call(merchant, "catalog")<HcRecord>("create_promo_code", { catalog_ref: store, code: "LARGEONUS", requirement: "None", reward: { FreeItem: { item_ref: latteRef, quantity: 1, choices: largeWithAnExtra } } }));
+  await sync();
+  // Large now +125, three shots with one free (+160): 685; a small: 400.
+  // The reward covers 400 + 125 + one shot (80).
+  const items = [
+    { item_ref: latteRef, quantity: 1, selections: [pick(size, [[1, 1]]), pick(shots, [])] },
+    { item_ref: latteRef, quantity: 1, selections: [pick(size, [[2, 1]]), pick(shots, [[1, 3]])] },
+  ];
+  const withPromo = (order_total: number) => call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items, order_total, promo_code_ref: promo });
+  await assert.rejects(withPromo(80), /the total is now 480 cents/, "the small latte isn't the one it covers");
+  await retryUntilOk(() => withPromo(480));
+  console.log("[PASS] a reward covers the choices it names, and no others");
+
   // ===== A report is worth its line =====
   await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order }));
   await call(merchant, "dispatch")("mark_ready_for_pickup", order);

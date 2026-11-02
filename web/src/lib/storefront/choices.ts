@@ -4,7 +4,7 @@
 // `catalog_types::modifiers::line_price`, which validation enforces, so the
 // running price on the item sheet is what the order is charged; both are
 // tested on the same cases (web/test/choices.test.ts).
-import type { ActionHash, ChosenInput, MenuItem, ModifierGroup, SelectionInput } from "../../holochain/types";
+import type { ActionHash, ChoiceTerms, ChosenInput, MenuItem, ModifierGroup, SelectionInput } from "../../holochain/types";
 import { MAX_CHOICE_DEPTH, MAX_LINE_CHOICES } from "../../holochain/types";
 import { bytesEqual, bytesToHex } from "../../holochain/decode";
 import { t } from "../../i18n";
@@ -12,7 +12,17 @@ import { t } from "../../i18n";
 /// A store's choice groups at their latest, by original action (hex).
 export type Groups = Map<string, ModifierGroup>;
 
-export type Priced = { ok: true; price: number } | { ok: false; reason: string };
+/// What a line's chosen options in one of its item's groups add to a unit
+/// of it, unit by unit -- after the group's free selections, with what each
+/// opened (`catalog_types::GroupCharges`): what an item reward covers.
+export interface GroupCharges {
+  /// The group's original action, hex.
+  group: string;
+  units: { option: number; cents: number }[];
+}
+
+export type Priced = { ok: true; price: number; choices: GroupCharges[] } | { ok: false; reason: string };
+type Failed = { ok: false; reason: string };
 
 /// What one unit of `item` costs with `selections`, or why they don't fit
 /// -- one per item group in order, options ascending and on offer, each
@@ -21,27 +31,30 @@ export type Priced = { ok: true; price: number } | { ok: false; reason: string }
 export function linePrice(item: MenuItem, selections: SelectionInput[], groups: Groups): Priced {
   const budget = { left: MAX_LINE_CHOICES };
   const choices = priceSelections(item.modifier_groups, selections, groups, 1, budget);
-  return choices.ok ? { ok: true, price: item.price_cents + choices.price } : choices;
+  return choices.ok ? { ok: true, price: item.price_cents + costOf(choices.groups), choices: choices.groups } : choices;
 }
 
-function priceSelections(refs: ActionHash[], selections: SelectionInput[], groups: Groups, depth: number, budget: { left: number }): Priced {
+const costOf = (groups: GroupCharges[]) => groups.reduce((sum, g) => sum + g.units.reduce((n, u) => n + u.cents, 0), 0);
+
+function priceSelections(refs: ActionHash[], selections: SelectionInput[], groups: Groups, depth: number, budget: { left: number }): { ok: true; groups: GroupCharges[] } | Failed {
   if (selections.length !== refs.length || selections.some((s, i) => !bytesEqual(s.group, refs[i]))) {
     return { ok: false, reason: t("choices.chooseEach") };
   }
-  let total = 0;
+  const charges: GroupCharges[] = [];
   for (const selection of selections) {
-    const group = groups.get(bytesToHex(selection.group));
+    const key = bytesToHex(selection.group);
+    const group = groups.get(key);
     if (!group) return { ok: false, reason: t("choices.changed") };
     const priced = priceGroup(group, selection, groups, depth, budget);
     if (!priced.ok) return priced;
-    total += priced.price;
+    charges.push({ group: key, units: priced.units });
   }
-  return { ok: true, price: total };
+  return { ok: true, groups: charges };
 }
 
-function priceGroup(group: ModifierGroup, selection: SelectionInput, groups: Groups, depth: number, budget: { left: number }): Priced {
-  const units: number[] = [];
-  let nestedCost = 0;
+function priceGroup(group: ModifierGroup, selection: SelectionInput, groups: Groups, depth: number, budget: { left: number }): { ok: true; units: GroupCharges["units"] } | Failed {
+  // Each unit chosen: its option, its price, and what it opened.
+  const units: { option: number; price: number; opened: number }[] = [];
   let previous = -1;
   for (const chosen of selection.options) {
     if (chosen.option <= previous) return { ok: false, reason: t("choices.once", { group: group.name }) };
@@ -51,26 +64,39 @@ function priceGroup(group: ModifierGroup, selection: SelectionInput, groups: Gro
     const option = group.options.find((o) => o.id === chosen.option && o.available);
     if (!option) return { ok: false, reason: t("choices.gone", { group: group.name }) };
     if (chosen.quantity < 1 || chosen.quantity > group.max_per_option) return { ok: false, reason: t("choices.perOption", { option: option.name, max: group.max_per_option }) };
-    for (let i = 0; i < chosen.quantity; i++) units.push(option.price_cents);
+    let opened = 0;
     if (option.nested_group) {
       if (depth >= MAX_CHOICE_DEPTH) return { ok: false, reason: t("choices.tooDeep") };
       const nested = priceSelections([option.nested_group], chosen.nested, groups, depth + 1, budget);
       if (!nested.ok) return nested;
-      nestedCost += nested.price * chosen.quantity;
+      opened = costOf(nested.groups);
     } else if (chosen.nested.length > 0) {
       return { ok: false, reason: t("choices.nothingMore", { option: option.name }) };
     }
+    for (let i = 0; i < chosen.quantity; i++) units.push({ option: option.id, price: option.price_cents, opened });
   }
   const count = units.length;
   if (count < group.min_selections || (group.max_selections !== null && count > group.max_selections)) {
     return { ok: false, reason: t("choices.range", { group: group.name, range: rangeLabel(group) }) };
   }
-  units.sort((a, b) => a - b);
-  const charged = units.slice(group.free_selections).reduce((sum, p) => sum + p, 0);
-  return { ok: true, price: charged + nestedCost };
+  // The cheapest free -- by price, then option, as validation picks them.
+  units.sort((a, b) => a.price - b.price || a.option - b.option);
+  return { ok: true, units: units.map((u, i) => ({ option: u.option, cents: (i < group.free_selections ? 0 : u.price) + u.opened })) };
 }
 
 /// "Choose 1", "Choose up to 3", "Choose 2 to 4" -- what a group asks for.
+/// `groups` with only the options `terms` allow, in the groups they name:
+/// what a reward's item can be chosen with.
+export function within(groups: Groups, terms: ChoiceTerms[]): Groups {
+  const shown = new Map(groups);
+  for (const term of terms) {
+    const key = bytesToHex(term.group);
+    const group = groups.get(key);
+    if (group && term.options.length > 0) shown.set(key, { ...group, options: group.options.filter((o) => term.options.includes(o.id)) });
+  }
+  return shown;
+}
+
 export function rangeLabel(group: ModifierGroup): string {
   const { min_selections: min, max_selections: max } = group;
   if (max !== null && min === max) return t("choices.exactly", { count: max });

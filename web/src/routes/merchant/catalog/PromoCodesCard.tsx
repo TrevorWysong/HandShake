@@ -13,6 +13,7 @@ import { myPromoUses } from "../../../holochain/zomes/dispatch";
 import type { PromoCode, PromoRequirement, PromoReward, Timestamp } from "../../../holochain/types";
 import { MAX_PROMO_CODE_CHARS } from "../../../holochain/types";
 import { currencySymbol } from "../../../lib/ui/format";
+import { ChoiceTermsEditor } from "./ChoiceTermsEditor";
 import { useT } from "../../../i18n";
 import { useAction } from "../../../lib/hooks/useAction";
 
@@ -143,6 +144,7 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
   );
   const percentReward = form.rewardKind !== "flatOffSubtotal";
   const itemReward = form.rewardKind === "freeItem" || form.rewardKind === "percentOffItem";
+  const rewardRow = items.find((row) => bytesToHex(row.hash) === form.rewardItemHex);
 
   return (
     <motion.div
@@ -212,10 +214,11 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
         </div>
         {itemReward && (
           <div className="mt-2.5 flex items-center gap-2">
-            {itemSelect(form.rewardItemHex, (hex) => set({ rewardItemHex: hex }))}
+            {itemSelect(form.rewardItemHex, (hex) => set({ rewardItemHex: hex, rewardChoices: [] }))}
             <Input type="number" min={1} step={1} value={form.rewardQuantity} onChange={(e) => set({ rewardQuantity: Number(e.target.value) })} placeholder={t("promoEditor.qty")} className="w-20" />
           </div>
         )}
+        {itemReward && rewardRow && <ChoiceTermsEditor key={form.rewardItemHex} catalogRef={catalogRef} row={rewardRow} value={form.rewardChoices} onChange={(rewardChoices) => set({ rewardChoices })} />}
       </div>
 
       <div className="rounded-xl bg-ink-50 dark:bg-ink-800/50 p-3">

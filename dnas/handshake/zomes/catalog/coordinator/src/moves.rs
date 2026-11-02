@@ -97,7 +97,7 @@ pub(crate) fn copy_contents(source: &Source, from: &ActionHash, to: &ActionHash)
     let groups = copy_groups(source, from, to)?;
     let items = copy_items(source, from, to, &groups)?;
     recompute_dietary_tags(to)?;
-    copy_promos(source, from, to, &items)
+    copy_promos(source, from, to, &items, &groups)
 }
 
 /// Copies the store's choice groups, each after the groups its options
@@ -161,10 +161,12 @@ fn copy_items(source: &Source, from: &ActionHash, to: &ActionHash, groups: &BTre
     }
 }
 
-/// Copies the promo codes still live, naming the copies of their items.
-fn copy_promos(source: &Source, from: &ActionHash, to: &ActionHash, items: &BTreeMap<ActionHash, ActionHash>) -> ExternResult<()> {
+/// Copies the promo codes still live, naming the copies of their items and
+/// choice groups. One that names one not copied isn't.
+fn copy_promos(source: &Source, from: &ActionHash, to: &ActionHash, items: &BTreeMap<ActionHash, ActionHash>, groups: &BTreeMap<ActionHash, ActionHash>) -> ExternResult<()> {
     let now = sys_time()?;
     let remap = |item: &ActionHash| items.get(item).cloned();
+    let remap_choices = |choices: Vec<ChoiceTerms>| choices.into_iter().map(|terms| Some(ChoiceTerms { group: groups.get(&terms.group)?.clone(), ..terms })).collect::<Option<Vec<_>>>();
     for view in source.read::<_, Vec<PromoView>>("list_live_promo_codes", from.clone())? {
         let Some(promo) = decode_or::<PromoCode>(&view.record) else { continue };
         if !promo.active || promo.expires_at.is_some_and(|at| at <= now) {
@@ -178,13 +180,13 @@ fn copy_promos(source: &Source, from: &ActionHash, to: &ActionHash, items: &BTre
             other => other,
         };
         let reward = match promo.reward {
-            PromoReward::FreeItem { item_ref, quantity } => match remap(&item_ref) {
-                Some(item_ref) => PromoReward::FreeItem { item_ref, quantity },
-                None => continue,
+            PromoReward::FreeItem { item_ref, quantity, choices } => match (remap(&item_ref), remap_choices(choices)) {
+                (Some(item_ref), Some(choices)) => PromoReward::FreeItem { item_ref, quantity, choices },
+                _ => continue,
             },
-            PromoReward::PercentOffItem { item_ref, percent, quantity } => match remap(&item_ref) {
-                Some(item_ref) => PromoReward::PercentOffItem { item_ref, percent, quantity },
-                None => continue,
+            PromoReward::PercentOffItem { item_ref, percent, quantity, choices } => match (remap(&item_ref), remap_choices(choices)) {
+                (Some(item_ref), Some(choices)) => PromoReward::PercentOffItem { item_ref, percent, quantity, choices },
+                _ => continue,
             },
             other => other,
         };

@@ -97,6 +97,6 @@ export async function cartLinesFromOrder(catalogRef: ActionHash, lines: OrderLin
     const selections = selectionInputs(line.selections);
     const priced = linePrice(row.item, selections, groups);
     if (!priced.ok) return [];
-    return [{ itemRef: row.hash, name: row.item.name, basePriceCents: row.item.price_cents, priceCents: priced.price, quantity: line.quantity, selections, choiceLabels: choiceLabels(selections, groups) }];
+    return [{ itemRef: row.hash, name: row.item.name, basePriceCents: row.item.price_cents, priceCents: priced.price, choiceCharges: priced.choices, quantity: line.quantity, selections, choiceLabels: choiceLabels(selections, groups) }];
   });
 }

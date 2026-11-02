@@ -252,12 +252,24 @@ pub enum PromoReward {
     /// same catalog) become free. The generic shape behind both
     /// "spend $X, get item Y free" and buy-X-get-Y-free/BOGO deals --
     /// which one it is depends entirely on the paired `PromoRequirement`,
-    /// not on anything here.
-    FreeItem { item_ref: ActionHash, quantity: u32 },
+    /// not on anything here. `choices` narrow it to some of the item's
+    /// choices ("a medium 2-topping pizza"); none, any.
+    FreeItem {
+        item_ref: ActionHash,
+        quantity: u32,
+        #[serde(default)]
+        choices: Vec<ChoiceTerms>,
+    },
     /// Up to `quantity` units of `item_ref` get `percent` (1-100) off
     /// instead of fully free -- e.g. "buy a burger, get a second burger
-    /// 50% off."
-    PercentOffItem { item_ref: ActionHash, percent: u8, quantity: u32 },
+    /// 50% off." `choices` as for `FreeItem`.
+    PercentOffItem {
+        item_ref: ActionHash,
+        percent: u8,
+        quantity: u32,
+        #[serde(default)]
+        choices: Vec<ChoiceTerms>,
+    },
 }
 
 /// Merchant-scoped, not global -- one restaurant's "WELCOME10" is a

@@ -9,7 +9,8 @@ import { bytesToHex, decodeEntry, hexToBytes } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
 import { fetchMenu, itemNamer, type ItemRow } from "../../lib/storefront/menu";
 import { describeReward } from "../../lib/storefront/promotions";
-import { ACCENTS, redeemable, rewardLine, tierOf } from "../../lib/rewards/rewards";
+import { ACCENTS, redeemable, tierOf } from "../../lib/rewards/rewards";
+import { useRewardChooser } from "../../components/rewards/useRewardChooser";
 import { RewardArt } from "../../components/rewards/RewardPieces";
 import { Sheet } from "../../components/Sheet";
 import { Button, Skeleton } from "../../components/ui";
@@ -34,6 +35,11 @@ export function RedeemRewards() {
   const [bucket, setBucket] = useState<number | null>(null);
   const [opening, setOpening] = useState<Reward | null>(null);
   const [added, setAdded] = useState(false);
+  const chooser = useRewardChooser(catalogRef, menu, (reward, line) => {
+    if (!store) return;
+    cart.redeem(catalogRef, store.owner, store.business_name, { id: reward.id, name: reward.name, cost: reward.cost }, line);
+    setAdded(true);
+  });
 
   if (!card) {
     return (
@@ -63,11 +69,6 @@ export function RedeemRewards() {
   const shown = bucket === null ? rewards : rewards.filter((r) => r.cost === bucket);
   const itemName = itemNamer(menu);
 
-  const redeem = (reward: Reward) => {
-    if (!store) return;
-    cart.redeem(catalogRef, store.owner, store.business_name, { id: reward.id, name: reward.name, cost: reward.cost }, rewardLine(reward, menu));
-    setAdded(true);
-  };
 
   return (
     <div className="pb-32">
@@ -175,7 +176,7 @@ export function RedeemRewards() {
                   {t("redeem.remove")}
                 </Button>
               ) : (
-                <Button className="w-full" disabled={added || !store} onClick={() => redeem(opening)} style={{ background: colors.to }}>
+                <Button className="w-full" disabled={added || !store} onClick={() => chooser.redeem(opening)} style={{ background: colors.to }}>
                   {added ? (
                     <>
                       <Check size={16} strokeWidth={3} /> {t("redeem.added")}
@@ -221,6 +222,7 @@ export function RedeemRewards() {
           </div>
         )}
       </Sheet>
+      {chooser.sheet}
     </div>
   );
 }

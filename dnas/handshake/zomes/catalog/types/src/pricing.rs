@@ -6,6 +6,7 @@
 
 use super::{PromoRequirement, PromoReward, TaxRate};
 use hdi::prelude::*;
+use handshake_integrity_support::limits::{MAX_GROUP_OPTIONS, MAX_ITEM_GROUPS, MAX_LINE_CHOICES};
 
 /// One line of an order, priced. The same item may be on several lines,
 /// with different choices.
@@ -19,11 +20,75 @@ pub struct PricedLine {
     /// With its choices (`modifiers::line_price`).
     pub unit_price: u64,
     pub quantity: u32,
+    /// What its choices cost, by the item's choice groups.
+    pub choices: Vec<GroupCharges>,
+}
+
+/// What a line's chosen options in one of its item's choice groups cost a
+/// unit of the line: each chosen unit's charge, after the group's free
+/// selections and with what it opened (`modifiers::line_price`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupCharges {
+    /// The group, by its original action.
+    pub group: ActionHash,
+    pub units: Vec<UnitCharge>,
+}
+
+/// One unit of a chosen option, and what it adds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnitCharge {
+    pub option: u32,
+    pub cents: u64,
+}
+
+/// What an item reward says about one of the item's choice groups ("Size:
+/// Medium", "Toppings: any two"): the options a line may have chosen in it
+/// -- none listed, any -- and how many chosen units the reward pays for
+/// too, the dearest first. A line that doesn't choose from the group isn't
+/// covered. A group the reward doesn't name is open, and charged.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ChoiceTerms {
+    /// The group, by its original action.
+    pub group: ActionHash,
+    /// Option ids, each once.
+    pub options: Vec<u32>,
+    pub included: u32,
+}
+
+/// What's wrong with an item reward's choice terms, if anything: a group
+/// at most once, and no more of them, options or included units than a
+/// line can have.
+pub fn choice_terms_problem(terms: &[ChoiceTerms]) -> Option<&'static str> {
+    let problem = terms.len() > MAX_ITEM_GROUPS
+        || terms.iter().enumerate().any(|(i, term)| {
+            terms[..i].iter().any(|t| t.group == term.group)
+                || term.options.len() > MAX_GROUP_OPTIONS
+                || term.options.iter().enumerate().any(|(j, o)| term.options[..j].contains(o))
+                || term.included as usize > MAX_LINE_CHOICES
+        });
+    problem.then_some("an item reward names each choice group once, and no more options than a line can choose")
 }
 
 impl PricedLine {
     pub fn total(&self) -> u64 {
         self.unit_price * u64::from(self.quantity)
+    }
+
+    /// What an item reward with `terms` pays for in one unit of this line --
+    /// the item, and the chosen units the terms include -- or `None` if the
+    /// line's choices fall outside them.
+    fn covered(&self, terms: &[ChoiceTerms]) -> Option<u64> {
+        let mut covered = self.base_price;
+        for term in terms {
+            let group = self.choices.iter().find(|g| g.group == term.group)?;
+            if !term.options.is_empty() && group.units.iter().any(|u| !term.options.contains(&u.option)) {
+                return None;
+            }
+            let mut charges: Vec<u64> = group.units.iter().map(|u| u.cents).collect();
+            charges.sort_unstable_by(|a, b| b.cmp(a));
+            covered += charges.iter().take(term.included as usize).sum::<u64>();
+        }
+        Some(covered.min(self.unit_price))
     }
 }
 
@@ -36,14 +101,16 @@ fn units_of(lines: &[PricedLine], item_ref: &ActionHash) -> u32 {
     lines.iter().filter(|line| &line.item_ref == item_ref).map(|line| line.quantity).sum()
 }
 
-/// What `quantity` units of `item_ref` come to at `per_unit` of each line's
-/// base price, taking units from the cart's lines in order.
-fn off_units(lines: &[PricedLine], item_ref: &ActionHash, quantity: u32, per_unit: impl Fn(u64) -> u64) -> u64 {
+/// What `quantity` units of `item_ref` within `terms` come to at `per_unit`
+/// of what the terms cover of each, taking units from the cart's lines in
+/// order.
+fn off_units(lines: &[PricedLine], item_ref: &ActionHash, terms: &[ChoiceTerms], quantity: u32, per_unit: impl Fn(u64) -> u64) -> u64 {
     let mut left = quantity;
     let mut off = 0;
     for line in lines.iter().filter(|line| &line.item_ref == item_ref) {
+        let Some(covered) = line.covered(terms) else { continue };
         let units = left.min(line.quantity);
-        off += u64::from(units) * per_unit(line.base_price);
+        off += u64::from(units) * per_unit(covered);
         left -= units;
     }
     off
@@ -79,8 +146,8 @@ impl PromoReward {
         let off = match self {
             PromoReward::PercentOffSubtotal(percent) => subtotal * u64::from((*percent).min(100)) / 100,
             PromoReward::FlatOffSubtotal(cents) => *cents,
-            PromoReward::FreeItem { item_ref, quantity } => off_units(lines, item_ref, *quantity, |base| base),
-            PromoReward::PercentOffItem { item_ref, percent, quantity } => off_units(lines, item_ref, *quantity, |base| base * u64::from((*percent).min(100)) / 100),
+            PromoReward::FreeItem { item_ref, quantity, choices } => off_units(lines, item_ref, choices, *quantity, |covered| covered),
+            PromoReward::PercentOffItem { item_ref, percent, quantity, choices } => off_units(lines, item_ref, choices, *quantity, |covered| covered * u64::from((*percent).min(100)) / 100),
         };
         off.min(subtotal)
     }
@@ -196,10 +263,10 @@ mod tests {
         ActionHash::from_raw_36(vec![n; 36])
     }
     fn line(n: u8, unit_price: u64, quantity: u32) -> PricedLine {
-        PricedLine { item_ref: item(n), base_price: unit_price, unit_price, quantity }
+        PricedLine { item_ref: item(n), base_price: unit_price, unit_price, quantity, choices: Vec::new() }
     }
     fn with_choices(n: u8, base_price: u64, unit_price: u64, quantity: u32) -> PricedLine {
-        PricedLine { item_ref: item(n), base_price, unit_price, quantity }
+        PricedLine { item_ref: item(n), base_price, unit_price, quantity, choices: Vec::new() }
     }
 
     // Each case also runs in web/test/promotions.test.ts -- keep them in step.
@@ -218,7 +285,7 @@ mod tests {
     #[test]
     fn a_free_item_is_capped_at_what_the_cart_holds() {
         let lines = [line(1, 450, 1), line(2, 1000, 1)];
-        let reward = PromoReward::FreeItem { item_ref: item(1), quantity: 2 };
+        let reward = PromoReward::FreeItem { item_ref: item(1), quantity: 2, choices: Vec::new() };
         assert_eq!(order_total(&lines, Some((&PromoRequirement::None, &reward)), 0), Some(1000));
     }
 
@@ -226,7 +293,7 @@ mod tests {
     fn buy_two_get_one_free() {
         let lines = [line(1, 400, 3)];
         let requirement = PromoRequirement::MinimumItemQuantity { item_ref: item(1), quantity: 2 };
-        let reward = PromoReward::FreeItem { item_ref: item(1), quantity: 1 };
+        let reward = PromoReward::FreeItem { item_ref: item(1), quantity: 1, choices: Vec::new() };
         assert_eq!(order_total(&lines, Some((&requirement, &reward)), 0), Some(800));
         assert_eq!(order_total(&[line(1, 400, 1)], Some((&requirement, &reward)), 0), None);
     }
@@ -234,7 +301,7 @@ mod tests {
     #[test]
     fn percent_off_an_item_rounds_down_per_unit() {
         let lines = [line(1, 999, 2)];
-        let reward = PromoReward::PercentOffItem { item_ref: item(1), percent: 50, quantity: 1 };
+        let reward = PromoReward::PercentOffItem { item_ref: item(1), percent: 50, quantity: 1, choices: Vec::new() };
         assert_eq!(order_total(&lines, Some((&PromoRequirement::None, &reward)), 0), Some(999 * 2 - 499));
     }
 
@@ -260,7 +327,7 @@ mod tests {
         // A burger at 800 with 200 of extras, twice: one free burger leaves
         // its extras charged.
         let lines = [with_choices(1, 800, 1000, 2)];
-        let reward = PromoReward::FreeItem { item_ref: item(1), quantity: 1 };
+        let reward = PromoReward::FreeItem { item_ref: item(1), quantity: 1, choices: Vec::new() };
         assert_eq!(order_total(&lines, Some((&PromoRequirement::None, &reward)), 0), Some(1200));
     }
 
@@ -268,8 +335,49 @@ mod tests {
     fn an_item_on_several_lines_counts_them_all() {
         let lines = [with_choices(1, 400, 400, 1), with_choices(1, 400, 475, 1)];
         let requirement = PromoRequirement::MinimumItemQuantity { item_ref: item(1), quantity: 2 };
-        let reward = PromoReward::FreeItem { item_ref: item(1), quantity: 2 };
+        let reward = PromoReward::FreeItem { item_ref: item(1), quantity: 2, choices: Vec::new() };
         assert_eq!(order_total(&lines, Some((&requirement, &reward)), 0), Some(75));
+    }
+
+    fn group(n: u8) -> ActionHash {
+        ActionHash::from_raw_36(vec![100 + n; 36])
+    }
+    /// A pizza at 1000 with a size (1 small, 2 medium +200, 3 large +400)
+    /// and toppings at 150 each, chosen by option id.
+    fn pizza(size: u32, toppings: &[u32]) -> PricedLine {
+        let size_cents = [0, 0, 200, 400][size as usize];
+        let choices = vec![
+            GroupCharges { group: group(1), units: vec![UnitCharge { option: size, cents: size_cents }] },
+            GroupCharges { group: group(2), units: toppings.iter().map(|&option| UnitCharge { option, cents: 150 }).collect() },
+        ];
+        let unit_price = 1000 + size_cents + 150 * toppings.len() as u64;
+        PricedLine { item_ref: item(1), base_price: 1000, unit_price, quantity: 1, choices }
+    }
+    fn medium_two_topping() -> PromoReward {
+        let choices = vec![ChoiceTerms { group: group(1), options: vec![2], included: 1 }, ChoiceTerms { group: group(2), options: Vec::new(), included: 2 }];
+        PromoReward::FreeItem { item_ref: item(1), quantity: 1, choices }
+    }
+
+    #[test]
+    fn an_item_reward_covers_the_choices_it_names() {
+        let reward = medium_two_topping();
+        assert_eq!(reward.discount(&[pizza(2, &[7, 8])]), 1500, "a medium two-topping pizza is free");
+        assert_eq!(reward.discount(&[pizza(2, &[7, 8, 9])]), 1500, "a third topping is charged");
+        assert_eq!(reward.discount(&[pizza(2, &[])]), 1200, "fewer toppings: what was chosen");
+        assert_eq!(reward.discount(&[pizza(3, &[7])]), 0, "a large isn't covered");
+        assert_eq!(reward.discount(&[pizza(3, &[7]), pizza(2, &[7])]), 1350, "the covered line, wherever it is");
+        // A line that doesn't choose from a named group isn't covered.
+        let plain = PricedLine { choices: Vec::new(), ..pizza(2, &[]) };
+        assert_eq!(reward.discount(&[plain]), 0);
+    }
+
+    #[test]
+    fn choice_terms_are_bounded() {
+        let term = |g: u8, options: Vec<u32>, included: u32| ChoiceTerms { group: group(g), options, included };
+        assert_eq!(choice_terms_problem(&[term(1, vec![2], 1), term(2, Vec::new(), 2)]), None);
+        assert!(choice_terms_problem(&[term(1, vec![2], 1), term(1, vec![3], 1)]).is_some(), "a group twice");
+        assert!(choice_terms_problem(&[term(1, vec![2, 2], 1)]).is_some(), "an option twice");
+        assert!(choice_terms_problem(&[term(1, Vec::new(), MAX_LINE_CHOICES as u32 + 1)]).is_some());
     }
 
     #[test]

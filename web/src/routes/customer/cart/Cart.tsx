@@ -349,6 +349,7 @@ export function Cart() {
           }}
         />
       )}
+      {discounts.rewardSheet}
     </motion.div>
   );
 }

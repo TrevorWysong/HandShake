@@ -3,7 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { base64ToBytes, bytesToBase64 } from "../lib/util/base64";
 import type { ActionHash, OrderItem, SelectionInput } from "../holochain/types";
 import { bytesEqual, bytesToHex } from "../holochain/decode";
-import { selectionsKey } from "../lib/storefront/choices";
+import { selectionsKey, type GroupCharges } from "../lib/storefront/choices";
 
 export interface CartLine {
   itemRef: ActionHash;
@@ -12,6 +12,8 @@ export interface CartLine {
   basePriceCents: number;
   /// One unit with its choices.
   priceCents: number;
+  /// What its choices add, by group -- what an item reward can cover.
+  choiceCharges: GroupCharges[];
   quantity: number;
   /// What was chosen, as the order sends it -- empty for an item without
   /// choices.
@@ -152,7 +154,8 @@ export const useCart = create<CartState>()(
       total: () => get().lines.reduce((sum, l) => sum + l.priceCents * l.quantity, 0),
     }),
     {
-      name: "handshake.cart.v1",
+      // v2: lines carry their choices' charges.
+      name: "handshake.cart.v2",
       storage: createJSONStorage(() => localStorage, { replacer, reviver }),
       partialize: ({ catalogRef, merchant, merchantName, lines, promoHex, reward }) => ({ catalogRef, merchant, merchantName, lines, promoHex, reward }),
     },

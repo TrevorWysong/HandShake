@@ -428,6 +428,7 @@ pub fn benefit_problem(benefit: &PromoReward) -> Option<&'static str> {
         PromoReward::FlatOffSubtotal(cents) if *cents == 0 || handshake_integrity_support::amount_problem("cents", *cents).is_some() => Some("a reward takes more than nothing off"),
         PromoReward::FreeItem { quantity, .. } if *quantity == 0 || *quantity > MAX_REWARD_QUANTITY => Some("a reward's free items number between one and ten"),
         PromoReward::PercentOffItem { percent, quantity, .. } if *percent == 0 || *percent > 100 || *quantity == 0 || *quantity > MAX_REWARD_QUANTITY => Some("a reward takes between 1% and 100% off between one and ten items"),
+        PromoReward::FreeItem { choices, .. } | PromoReward::PercentOffItem { choices, .. } => catalog_types::choice_terms_problem(choices),
         _ => None,
     }
 }
@@ -450,7 +451,7 @@ mod tests {
             accent: Accent::Ember,
             earn: EarnRules { points_per_dollar: 10, min_order_cents: 0, max_per_order: None, welcome_bonus: 0, item_bonuses: Vec::new(), happy_hours: Vec::new() },
             tiers: Vec::new(),
-            rewards: vec![Reward { id: 1, name: "Free soup".into(), cost: 100, benefit: PromoReward::FreeItem { item_ref: hash(9), quantity: 1 }, min_tier: 0 }],
+            rewards: vec![Reward { id: 1, name: "Free soup".into(), cost: 100, benefit: PromoReward::FreeItem { item_ref: hash(9), quantity: 1, choices: Vec::new() }, min_tier: 0 }],
             birthday_points: 0,
             expiry_days: None,
             max_balance: None,
@@ -489,7 +490,7 @@ mod tests {
         assert!(bad(&|p| p.rewards[0].cost = 0).is_some());
         assert!(bad(&|p| p.rewards[0].min_tier = 1).is_some(), "a tier it has");
         assert!(bad(&|p| p.rewards.push(p.rewards[0].clone())).is_some(), "unique ids");
-        assert!(bad(&|p| p.rewards[0].benefit = PromoReward::FreeItem { item_ref: hash(9), quantity: 11 }).is_some());
+        assert!(bad(&|p| p.rewards[0].benefit = PromoReward::FreeItem { item_ref: hash(9), quantity: 11, choices: Vec::new() }).is_some());
         assert!(bad(&|p| p.rewards[0].benefit = PromoReward::PercentOffSubtotal(0)).is_some());
         assert!(bad(&|p| p.max_balance = Some(99)).is_some(), "room for the dearest reward");
         assert!(bad(&|p| p.expiry_days = Some(29)).is_some());

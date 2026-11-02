@@ -11,7 +11,7 @@
 //! `web/src/lib/storefront/choices.ts` mirrors it for the item sheet's running price;
 //! both are tested on the same cases.
 
-use super::MenuItem;
+use super::{GroupCharges, MenuItem, UnitCharge};
 use hdi::prelude::*;
 use handshake_integrity_support::limits::{MAX_AMOUNT, MAX_CHOICE_DEPTH, MAX_GROUP_OPTIONS, MAX_LINE_CHOICES, MAX_NAME_CHARS, MAX_OPTION_QUANTITY};
 use handshake_integrity_support::text_problem;
@@ -193,18 +193,30 @@ pub fn choice_count(selections: &[Selection]) -> usize {
 ///
 /// The price: the item's, plus each group's chosen options -- its
 /// `free_selections` cheapest units free -- plus, for each unit of an
-/// option, what was chosen from its nested group.
-pub fn line_price(item: &MenuItem, selections: &[Selection], group_at: &mut impl FnMut(&ActionHash) -> ExternResult<Option<GroupAt>>) -> ExternResult<Result<u64, String>> {
+/// option, what was chosen from its nested group. With it, what each of
+/// the item's groups adds, unit by unit, for an item reward to cover.
+pub fn line_price(item: &MenuItem, selections: &[Selection], group_at: &mut impl FnMut(&ActionHash) -> ExternResult<Option<GroupAt>>) -> ExternResult<Result<LinePrice, String>> {
     let mut budget = MAX_LINE_CHOICES;
     let choices = match price_selections(&item.modifier_groups, selections, &item.catalog_ref, 1, &mut budget, group_at)? {
-        Ok(cost) => cost,
+        Ok(choices) => choices,
         Err(reason) => return Ok(Err(reason)),
     };
-    let price = u128::from(item.price_cents) + choices;
+    let price = u128::from(item.price_cents) + cost_of(&choices);
     if price > u128::from(MAX_AMOUNT) {
         return Ok(Err("an item with its choices costs at most the most any amount may be".into()));
     }
-    Ok(Ok(price as u64))
+    Ok(Ok(LinePrice { unit_price: price as u64, choices }))
+}
+
+/// One unit of a line, priced: in all, and by its item's choice groups.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinePrice {
+    pub unit_price: u64,
+    pub choices: Vec<GroupCharges>,
+}
+
+fn cost_of(groups: &[GroupCharges]) -> u128 {
+    groups.iter().flat_map(|g| &g.units).map(|u| u128::from(u.cents)).sum()
 }
 
 fn price_selections(
@@ -214,21 +226,21 @@ fn price_selections(
     depth: usize,
     budget: &mut usize,
     group_at: &mut impl FnMut(&ActionHash) -> ExternResult<Option<GroupAt>>,
-) -> ExternResult<Result<u128, String>> {
+) -> ExternResult<Result<Vec<GroupCharges>, String>> {
     if selections.len() != groups.len() || selections.iter().zip(groups).any(|(s, g)| &s.group != g) {
         return Ok(Err("a line chooses from each of its item's choice groups, in order".into()));
     }
-    let mut total: u128 = 0;
+    let mut charges = Vec::with_capacity(selections.len());
     for selection in selections {
         match group_at(&selection.version)? {
             Some((original, group)) if original == selection.group && &group.catalog_ref == catalog_ref => match price_group(&group, selection, catalog_ref, depth, budget, group_at)? {
-                Ok(cost) => total += cost,
+                Ok(units) => charges.push(GroupCharges { group: original, units }),
                 Err(reason) => return Ok(Err(reason)),
             },
             _ => return Ok(Err("a selection is priced at a version of its own choice group, from the item's store".into())),
         }
     }
-    Ok(Ok(total))
+    Ok(Ok(charges))
 }
 
 fn price_group(
@@ -238,9 +250,9 @@ fn price_group(
     depth: usize,
     budget: &mut usize,
     group_at: &mut impl FnMut(&ActionHash) -> ExternResult<Option<GroupAt>>,
-) -> ExternResult<Result<u128, String>> {
-    let mut units: Vec<u64> = Vec::new();
-    let mut nested_cost: u128 = 0;
+) -> ExternResult<Result<Vec<UnitCharge>, String>> {
+    // Each unit chosen: its option, its price, and what it opened.
+    let mut units: Vec<(u32, u64, u128)> = Vec::new();
     let mut previous: Option<u32> = None;
     for chosen in &selection.options {
         if previous.is_some_and(|p| p >= chosen.option) {
@@ -257,17 +269,17 @@ fn price_group(
         if chosen.quantity == 0 || chosen.quantity > group.max_per_option {
             return Ok(Err(format!("{} may be chosen between 1 and {} times", option.name, group.max_per_option)));
         }
-        units.extend(std::iter::repeat_n(option.price_cents, chosen.quantity as usize));
-        match &option.nested_group {
+        let opened = match &option.nested_group {
             // Too deep to choose from: the option can't be chosen here.
             Some(_) if depth >= MAX_CHOICE_DEPTH => return Ok(Err(format!("choices nest at most {MAX_CHOICE_DEPTH} levels deep"))),
             Some(nested) => match price_selections(std::slice::from_ref(nested), &chosen.nested, catalog_ref, depth + 1, budget, group_at)? {
-                Ok(cost) => nested_cost += cost * u128::from(chosen.quantity),
+                Ok(charges) => cost_of(&charges),
                 Err(reason) => return Ok(Err(reason)),
             },
             None if !chosen.nested.is_empty() => return Ok(Err(format!("{} has nothing more to choose", option.name))),
-            None => {}
-        }
+            None => 0,
+        };
+        units.extend(std::iter::repeat_n((chosen.option, option.price_cents, opened), chosen.quantity as usize));
     }
     let count = units.len() as u32;
     if count < group.min_selections || group.max_selections.is_some_and(|max| count > max) {
@@ -278,9 +290,11 @@ fn price_group(
         };
         return Ok(Err(format!("{}: choose {range}", group.name)));
     }
-    units.sort_unstable();
-    let charged: u128 = units.iter().skip(group.free_selections as usize).map(|&p| u128::from(p)).sum();
-    Ok(Ok(charged + nested_cost))
+    // The cheapest free -- by price, then option, so every app agrees which.
+    units.sort_unstable_by_key(|&(option, price, _)| (price, option));
+    let free = group.free_selections as usize;
+    // At most MAX_AMOUNT each, and a line's are bounded: they fit.
+    Ok(Ok(units.into_iter().enumerate().map(|(i, (option, price, opened))| UnitCharge { option, cents: if i < free { 0 } else { price } + opened as u64 }).collect()))
 }
 
 #[cfg(test)]
@@ -322,6 +336,9 @@ mod tests {
 
     impl Menu {
         fn price(&self, item: &MenuItem, selections: &[Selection]) -> Result<u64, String> {
+            self.priced(item, selections).map(|p| p.unit_price)
+        }
+        fn priced(&self, item: &MenuItem, selections: &[Selection]) -> Result<LinePrice, String> {
             line_price(item, selections, &mut |version: &ActionHash| Ok(self.0.iter().find(|(n, _)| &hash(**n) == version).map(|(n, g)| (hash(*n), g.clone())))).unwrap()
         }
     }
@@ -352,6 +369,9 @@ mod tests {
     fn the_cheapest_choices_are_the_free_ones() {
         let menu = Menu(BTreeMap::from([(1, group("Toppings", 0, Some(4), 2, vec![option(1, 100), option(2, 50), option(3, 200)]))]));
         assert_eq!(menu.price(&item(1000, &[1]), &[pick(1, &[(1, 1), (2, 1), (3, 1)])]), Ok(1200), "50 and 100 free, 200 charged");
+        // Each unit's charge, for an item reward to cover. Mirrored in web/test/choices.test.ts.
+        let units = menu.priced(&item(1000, &[1]), &[pick(1, &[(1, 1), (2, 1), (3, 1)])]).unwrap().choices.remove(0).units;
+        assert_eq!(units, vec![UnitCharge { option: 2, cents: 0 }, UnitCharge { option: 1, cents: 0 }, UnitCharge { option: 3, cents: 200 }]);
         assert_eq!(menu.price(&item(1000, &[1]), &[pick(1, &[(3, 1)])]), Ok(1000));
     }
 

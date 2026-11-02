@@ -13,7 +13,9 @@ import { getModifierGroups } from "../../holochain/zomes/catalog";
 import { bytesToHex, decodeEntry } from "../../holochain/decode";
 import type { ActionHash, ModifierGroup, SelectionInput } from "../../holochain/types";
 import { MAX_CHOICE_DEPTH } from "../../holochain/types";
-import { choiceLabels, choose, emptySelections, isSingleChoice, linePrice, missingGroups, rangeLabel, withNested, type Groups } from "../../lib/storefront/choices";
+import { choiceLabels, choose, emptySelections, isSingleChoice, linePrice, missingGroups, rangeLabel, within, withNested, type Groups } from "../../lib/storefront/choices";
+import { covered } from "../../lib/storefront/promotions";
+import type { RewardItem } from "../../lib/rewards/rewards";
 import { formatCents } from "../../lib/ui/format";
 import type { ItemRow } from "../../lib/storefront/menu";
 import { useResource } from "../../lib/hooks/useResource";
@@ -35,18 +37,24 @@ async function fetchItemGroups(catalogRef: ActionHash, row: ItemRow): Promise<Gr
   return groups;
 }
 
-export function ItemSheet({ catalogRef, row, editing, onClose, onDone }: { catalogRef: ActionHash; row: ItemRow; editing?: CartLine; onClose: () => void; onDone: (line: CartLine) => void }) {
+/// With `gift`, the item a reward gives: its quantity is the reward's, only
+/// the options it allows show, and the button says what's still charged.
+export function ItemSheet({ catalogRef, row, editing, gift, onClose, onDone }: { catalogRef: ActionHash; row: ItemRow; editing?: CartLine; gift?: RewardItem; onClose: () => void; onDone: (line: CartLine) => void }) {
   const t = useT();
   const { item } = row;
   const { data: groups, error } = useResource(`item-groups:${bytesToHex(row.version)}`, () => fetchItemGroups(catalogRef, row));
   const [selections, setSelections] = useState<SelectionInput[]>(editing?.selections ?? emptySelections(item.modifier_groups));
-  const [quantity, setQuantity] = useState(editing?.quantity ?? 1);
+  const [chosenQuantity, setQuantity] = useState(editing?.quantity ?? 1);
+  const quantity = gift?.quantity ?? chosenQuantity;
+  const shown = groups && gift ? within(groups, gift.choices) : groups;
   /// Whether the customer has tried to add it -- unanswered groups are
   /// marked from then on.
   const [attempted, setAttempted] = useState(false);
 
   const priced = groups ? linePrice(item, selections, groups) : null;
   const unit = priced?.ok ? priced.price : item.price_cents;
+  // What a gift leaves charged: whatever its terms don't cover.
+  const charged = gift && priced?.ok ? unit - (covered({ basePriceCents: item.price_cents, priceCents: unit, choiceCharges: priced.choices }, gift.choices) ?? 0) : null;
 
   function done(event: React.MouseEvent<HTMLButtonElement>) {
     if (!groups) return;
@@ -56,7 +64,7 @@ export function ItemSheet({ catalogRef, row, editing, onClose, onDone }: { catal
       event.currentTarget.closest("[role=dialog]")?.querySelector("[data-unanswered=true]")?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    onDone({ itemRef: row.hash, name: item.name, basePriceCents: item.price_cents, priceCents: priced.price, quantity, selections, choiceLabels: choiceLabels(selections, groups) });
+    onDone({ itemRef: row.hash, name: item.name, basePriceCents: item.price_cents, priceCents: priced.price, choiceCharges: priced.choices, quantity, selections, choiceLabels: choiceLabels(selections, groups) });
   }
 
   return (
@@ -66,9 +74,9 @@ export function ItemSheet({ catalogRef, row, editing, onClose, onDone }: { catal
       title={item.name}
       footer={
         <div className="flex items-center gap-3">
-          <Stepper value={quantity} min={1} max={99} onChange={setQuantity} />
+          {!gift && <Stepper value={quantity} min={1} max={99} onChange={setQuantity} />}
           <Button className="flex-1" disabled={!groups} onClick={done}>
-            {editing ? t("item.update") : t("item.add")} · {formatCents(unit * quantity)}
+            {gift ? (charged ? t("item.addRewardCharged", { amount: formatCents(charged * quantity) }) : t("item.addReward")) : `${editing ? t("item.update") : t("item.add")} · ${formatCents(unit * quantity)}`}
           </Button>
         </div>
       }
@@ -85,12 +93,12 @@ export function ItemSheet({ catalogRef, row, editing, onClose, onDone }: { catal
           <Skeleton className="h-12 w-full" />
         </div>
       )}
-      {groups && (
+      {shown && (
         <div className="mt-2 flex flex-col">
           {selections.map((selection, i) => {
-            const group = groups.get(bytesToHex(selection.group));
+            const group = shown.get(bytesToHex(selection.group));
             return group ? (
-              <GroupPicker key={bytesToHex(selection.group)} group={group} groups={groups} selection={selection} attempted={attempted} onChange={(next) => setSelections((all) => all.map((s, j) => (j === i ? next : s)))} />
+              <GroupPicker key={bytesToHex(selection.group)} group={group} groups={shown} selection={selection} attempted={attempted} onChange={(next) => setSelections((all) => all.map((s, j) => (j === i ? next : s)))} />
             ) : null;
           })}
         </div>

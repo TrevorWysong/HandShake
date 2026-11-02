@@ -58,6 +58,7 @@ const SOURCES: &[Source] = &[
     all("dnas/handshake/zomes/attestation/types/src/lib.rs"),
     all("dnas/handshake/zomes/catalog/types/src/lib.rs"),
     only("dnas/handshake/zomes/catalog/types/src/hours.rs", &["OpeningPeriod"]),
+    only("dnas/handshake/zomes/catalog/types/src/pricing.rs", &["ChoiceTerms"]),
     only("dnas/handshake/zomes/catalog/types/src/modifiers.rs", &["ModifierGroup", "ModifierOption", "Selection", "Chosen", "SelectionInput", "ChosenInput"]),
     all("dnas/handshake/zomes/dispatch/types/src/lib.rs"),
     only("dnas/handshake/zomes/dispatch/types/src/settlement.rs", &["HoldPurpose", "Portion", "InHand"]),

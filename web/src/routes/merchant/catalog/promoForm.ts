@@ -1,5 +1,5 @@
 import { hexToBytes } from "../../../holochain/decode";
-import type { PromoLimits, PromoPeriod, PromoRequirement, PromoReward } from "../../../holochain/types";
+import type { ChoiceTerms, PromoLimits, PromoPeriod, PromoRequirement, PromoReward } from "../../../holochain/types";
 import { toMinorUnits } from "../../../lib/ui/format";
 
 // Requirement and reward are picked independently (two dropdowns), the
@@ -20,6 +20,8 @@ export const EMPTY_PROMO_FORM = {
   rewardAmount: 10,
   rewardItemHex: "",
   rewardQuantity: 1,
+  /// Which of the reward item's choices it covers.
+  rewardChoices: [] as ChoiceTerms[],
   autoApply: false,
   /// Who may use it, and how often.
   firstOrderOnly: false,
@@ -69,9 +71,9 @@ export function buildReward(form: PromoForm): PromoReward | null {
       return { FlatOffSubtotal: Math.max(1, toMinorUnits(form.rewardAmount)) };
     case "freeItem":
       if (!form.rewardItemHex) return null;
-      return { FreeItem: { item_ref: hexToBytes(form.rewardItemHex), quantity } };
+      return { FreeItem: { item_ref: hexToBytes(form.rewardItemHex), quantity, choices: form.rewardChoices } };
     case "percentOffItem":
       if (!form.rewardItemHex) return null;
-      return { PercentOffItem: { item_ref: hexToBytes(form.rewardItemHex), percent, quantity } };
+      return { PercentOffItem: { item_ref: hexToBytes(form.rewardItemHex), percent, quantity, choices: form.rewardChoices } };
   }
 }

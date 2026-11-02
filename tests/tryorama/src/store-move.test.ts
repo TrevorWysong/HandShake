@@ -38,7 +38,7 @@ await runScenario(async (scenario) => {
   const account = (p: typeof alice) => retryingCaller(p.cells[0], "account");
 
   // Alice's store: a combo whose side opens a fries-size choice, and a promo
-  // giving the combo free.
+  // giving the combo free with salad.
   const published = await catalog(alice)<HcRecord>("publish_catalog", { business_name: "Alice's Diner", location: ST_PETE });
   const store = actionHash(published);
   const area = decodeEntry<{ geohash: string }>(published).geohash;
@@ -49,7 +49,7 @@ await runScenario(async (scenario) => {
   const combo = actionHash(
     await catalog(alice)<HcRecord>("add_menu_item", { catalog_ref: store, name: "Burger combo", price_cents: 900, available: true, description: "", photo_data_uri: "", category: "", dietary_tags: ["halal"], modifier_groups: [side] }),
   );
-  await catalog(alice)("create_promo_code", { catalog_ref: store, code: "FREECOMBO", requirement: "None", reward: { FreeItem: { item_ref: combo, quantity: 1 } }, expires_at: null, auto_apply: false });
+  await catalog(alice)("create_promo_code", { catalog_ref: store, code: "FREECOMBO", requirement: "None", reward: { FreeItem: { item_ref: combo, quantity: 1, choices: [{ group: side, options: [2], included: 1 }] } }, expires_at: null, auto_apply: false });
 
   // ===== Alice loses her phone, and recovers her account onto Bob's key =====
   const phrase = phraseKey();
@@ -79,9 +79,10 @@ await runScenario(async (scenario) => {
   assert.ok(same(item.modifier_groups[0], newSide.ref), "the item offers the copied group");
   assert.ok(same(newSide.options[0].nested_group, newFries.ref), "which opens the copied nested group");
   assert.ok(!same(newSide.ref, side) && !same(newFries.ref, fries));
-  const [promo] = (await catalog(bob)<View[]>("list_live_promo_codes", moved)).map((v) => decodeEntry<{ code: string; reward: { FreeItem: { item_ref: Uint8Array } } }>(v.record));
+  const [promo] = (await catalog(bob)<View[]>("list_live_promo_codes", moved)).map((v) => decodeEntry<{ code: string; reward: { FreeItem: { item_ref: Uint8Array; choices: { group: Uint8Array }[] } } }>(v.record));
   assert.equal(promo.code, "FREECOMBO");
   assert.ok(same(promo.reward.FreeItem.item_ref, item.ref), "the promo names the copied item");
+  assert.ok(same(promo.reward.FreeItem.choices[0].group, newSide.ref), "and the copied choice group");
   console.log("[PASS] the new store copies the old faithfully, references and all");
 
   // ===== Everyone is sent on; its history follows =====

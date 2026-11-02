@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { cartItems, lineKey, useCart, type CartLine } from "../src/store/cart.ts";
-import { rewardDiscount, rewardLine } from "../src/lib/rewards/rewards.ts";
+import { plainRewardLine, rewardDiscount, rewardItem } from "../src/lib/rewards/rewards.ts";
 import type { Reward } from "../src/holochain/types.ts";
 import type { ItemRow } from "../src/lib/storefront/menu.ts";
 
@@ -11,9 +11,15 @@ const store = new Uint8Array([1, 2, 3]);
 const owner = new Uint8Array([9]);
 const bread = new Uint8Array([7]);
 const soup = new Uint8Array([8]);
-const line = (itemRef: Uint8Array, priceCents: number, quantity = 1): CartLine => ({ itemRef, name: "x", basePriceCents: priceCents, priceCents, quantity, selections: [], choiceLabels: [] });
+const line = (itemRef: Uint8Array, priceCents: number, quantity = 1): CartLine => ({ itemRef, name: "x", basePriceCents: priceCents, priceCents, choiceCharges: [], quantity, selections: [], choiceLabels: [] });
 const menu = [{ hash: bread, version: bread, item: { name: "Bread", price_cents: 400 } }] as unknown as ItemRow[];
-const freeBread: Reward = { id: 1, name: "Free bread", cost: 100, benefit: { FreeItem: { item_ref: bread, quantity: 1 } }, min_tier: 0 };
+const freeBread: Reward = { id: 1, name: "Free bread", cost: 100, benefit: { FreeItem: { item_ref: bread, quantity: 1, choices: [] } }, min_tier: 0 };
+/// The line a reward puts in the bag, as the redeem screens do for an item
+/// with nothing to choose.
+const rewardLine = (reward: Reward, rows: ItemRow[]) => {
+  const gift = rewardItem(reward, rows);
+  return gift && plainRewardLine(gift);
+};
 const fiveOff: Reward = { id: 2, name: "$5 off", cost: 300, benefit: { FlatOffSubtotal: 500 }, min_tier: 0 };
 
 test("a redeemed item is a free line of its own, and the order counts it with any paid ones", () => {
