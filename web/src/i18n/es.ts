@@ -422,6 +422,7 @@ export const es: Catalog = {
   "rewards.pending.why": "Los puntos llegan cuando termina el periodo de reembolso del pedido, así siempre coinciden con lo que pagaste.",
   "rewards.pending.earnedAt": "Ganados en {program}",
   "rewards.arriveAfterRefunds": "Llegan cuando termina el periodo de reembolso.",
+  "rewardsAdmin.noStoreDetail": "Publica una tienda y luego crea aquí un programa de recompensas para sus clientes habituales.",
   "rewardsAdmin.title": "Recompensas",
   "rewardsAdmin.subtitleLive": "Tu programa, activo para todos tus clientes.",
   "rewardsAdmin.subtitleNew": "Diseña un programa que haga volver a tus clientes.",

@@ -14,6 +14,7 @@ import { ACCENT_NAMES, ACCENTS, describeHappyHour, starterProgram } from "../../
 import { RewardsCard } from "../../components/rewards/RewardsCard";
 import { HowYouEarn, RewardRail, RewardTile } from "../../components/rewards/RewardPieces";
 import { StoreSwitcher } from "../../components/store/StoreSwitcher";
+import { NoStoreYet } from "../../components/store/NoStoreYet";
 import { Button, Card, Field, Input, SectionLabel, Select, Skeleton, Switch } from "../../components/ui";
 import { MAX_HAPPY_HOURS, MAX_ITEM_BONUSES, MAX_REWARDS, MAX_TIERS, type MerchantCatalog, type PromoReward, type Reward, type RewardsProgram } from "../../holochain/types";
 import { useT } from "../../i18n";
@@ -48,8 +49,10 @@ function draftProblem(p: RewardsProgram, t: Translate): string | null {
 /// The Rewards tab: the selected store's program, built with its card
 /// drawn live above.
 export function MerchantRewards() {
+  const t = useT();
   const stores = useMyStores();
   const activeHex = useMerchantStores((s) => s.activeHex);
+  if (stores !== null && stores.length === 0) return <NoStoreYet detail={t("rewardsAdmin.noStoreDetail")} />;
   if (stores === null || !activeHex) {
     return (
       <div className="px-4 pt-4">

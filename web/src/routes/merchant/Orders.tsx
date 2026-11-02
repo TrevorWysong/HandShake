@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { TimeAgo } from "../../components/TimeAgo";
-import { useNavigate } from "react-router-dom";
 import { Bike, ClipboardList, ShoppingBag, Store } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
@@ -34,6 +33,7 @@ import { useTerms } from "../../store/network";
 import { useStoreSteps } from "../../lib/orders/storeSteps";
 import { currentBeacon } from "../../lib/network/timeSource";
 import { ResponseCountdown } from "../../components/orders/ResponseCountdown";
+import { NoStoreYet } from "../../components/store/NoStoreYet";
 import { Button, Card, Chip, ChipRow, EmptyState, Notice, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
 import { StatusBadge, PickupStatusBadge } from "../../components/orders/OrderStatus";
 import { ChatPanel } from "../../components/orders/ChatPanel";
@@ -72,7 +72,6 @@ const PREP_CHOICES = [5, 10, 15, 20, 30, 45, 60];
 /// stores, every order is labelled with its store, since "which kitchen
 /// makes this" is the first thing a multi-store owner needs to know.
 export function MerchantOrders() {
-  const navigate = useNavigate();
   const t = useT();
   const stores = useMyStores();
   useStoreSteps((stores?.length ?? 0) > 0);
@@ -88,12 +87,7 @@ export function MerchantOrders() {
 
   if (stores === null) return <QueueSkeleton />;
   if (stores.length === 0) {
-    return (
-      <div className="flex flex-col items-center px-4">
-        <EmptyState icon={<Store size={32} />} title={t("merchantOrders.noStore")} subtitle={t("merchantOrders.noStoreDetail")} />
-        <Button onClick={() => navigate("/merchant/catalog")}>{t("merchantOrders.setUp")}</Button>
-      </div>
-    );
+    return <NoStoreYet detail={t("merchantOrders.noStoreDetail")} />;
   }
 
   const label = (hex: string) => (multiStore ? (storeName.get(hex) ?? t("role.Merchant")) : null);
