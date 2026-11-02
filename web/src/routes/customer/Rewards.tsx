@@ -33,13 +33,13 @@ export function RewardsPage() {
       </motion.div>
 
       {cards === undefined && (
-        <div className="flex flex-col gap-4">
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           <Skeleton className="h-44 w-full rounded-[28px]" />
           <Skeleton className="h-44 w-full rounded-[28px]" />
         </div>
       )}
       {cards && cards.length === 0 && (
-        <motion.div variants={fadeSlideUp} className="relative overflow-hidden rounded-[28px] bg-ink-900 p-7 text-white">
+        <motion.div variants={fadeSlideUp} className="relative overflow-hidden rounded-[28px] bg-ink-900 p-7 text-white lg:max-w-xl">
           <div aria-hidden className="absolute -right-10 -top-16 h-48 w-48 rounded-full bg-handshake-500/40 blur-3xl" />
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10">
             <Sparkles size={22} />
@@ -51,7 +51,8 @@ export function RewardsPage() {
           </Button>
         </motion.div>
       )}
-      <div className="flex flex-col gap-4">
+      {/* One card under another on a phone; side by side on a wide screen. */}
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {cards
           ?.filter((card) => card.program)
           .map((card) => (
@@ -61,10 +62,7 @@ export function RewardsPage() {
           ))}
       </div>
 
-      <motion.div variants={fadeSlideUp} className="mt-6">
-      </motion.div>
-
-      <motion.div variants={fadeSlideUp} className="mt-6">
+      <motion.div variants={fadeSlideUp} className="mt-6 lg:max-w-xl">
         <BirthdayCard />
       </motion.div>
     </motion.div>

@@ -12,6 +12,7 @@ export const es: Catalog = {
   "nav.dash": "Inicio",
   "nav.earnings": "Ganancias",
   "nav.menu": "Menú",
+  "nav.profile": "Perfil",
   "shell.connected": "conectado",
   "shell.newVersion": "Hay una nueva versión de HandShake. Mueve tu cuenta",
   "language.title": "Idioma",

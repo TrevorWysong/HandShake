@@ -315,11 +315,12 @@ function StorePage({ hash }: { hash: string }) {
         {[...grouped.entries()].map(([category, rows]) => (
           <motion.div variants={fadeSlideUp} key={category} className="mt-6">
             <SectionLabel className="mb-2">{category}</SectionLabel>
-            <div className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900">
+            {/* One list on a phone; cards two abreast on a wide screen. */}
+            <div className="flex flex-col divide-y divide-ink-100 rounded-2xl border border-ink-100 bg-white lg:grid lg:grid-cols-2 lg:gap-3 lg:divide-y-0 lg:border-0 lg:bg-transparent dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-900 lg:dark:bg-transparent">
               {rows.map((row) => {
                 const { hash: itemHash, item } = row;
                 return (
-                <div key={bytesToHex(itemHash)} className="flex items-center gap-3 p-4">
+                <div key={bytesToHex(itemHash)} className="flex items-center gap-3 p-4 lg:rounded-2xl lg:border lg:border-ink-100 lg:bg-white lg:dark:border-ink-800 lg:dark:bg-ink-900">
                   {item.photo_data_uri && <img src={item.photo_data_uri} alt="" className="h-14 w-14 shrink-0 rounded-xl object-cover" />}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{item.name}</p>
@@ -398,7 +399,7 @@ function StorePage({ hash }: { hash: string }) {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 30 }}
-            className="fixed inset-x-0 bottom-20 z-20 mx-auto flex max-w-md justify-center px-4"
+            className="fixed inset-x-0 bottom-20 z-20 mx-auto flex max-w-md justify-center px-4 lg:bottom-6 lg:left-64"
           >
             <motion.button
               whileTap={{ scale: 0.97 }}

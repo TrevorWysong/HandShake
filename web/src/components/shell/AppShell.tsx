@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { matchPath, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import { Home, ClipboardList, ShoppingCart, User, Car, DollarSign, Sparkles, Gift } from "lucide-react";
@@ -6,7 +6,7 @@ import { useSession, type Mode } from "../../store/session";
 import { useCart } from "../../store/cart";
 import { pageVariants } from "../../lib/ui/motion";
 import { PresenceDot } from "../ui";
-import { BottomNavLink } from "./BottomNavLink";
+import { NavItem, type NavPlacement } from "./NavItem";
 import { MerchantNav } from "./MerchantNav";
 import { Notifier } from "./Notifier";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -18,7 +18,20 @@ import { topUpIfLow } from "../../lib/money/autoTopUp";
 import { reaffirmRecoveryPlan } from "../../holochain/zomes/account";
 import { bytesToHex } from "../../holochain/decode";
 import { useCustomerSettings } from "../../store/roleSettings";
+import { useWideScreen } from "../../lib/hooks/useWideScreen";
 import { useT } from "../../i18n";
+
+/// How wide each screen grows in a wide window: grids and boards to the
+/// whole width, a dashboard or editor of stacked cards to a middle width,
+/// and every other screen -- forms, an order, a profile -- a reading width.
+const SCREEN_WIDTHS: [string[], string][] = [
+  [["/customer", "/customer/merchant/:hash", "/merchant", "/rewards"], "lg:max-w-6xl"],
+  [["/merchant/catalog", "/merchant/rewards", "/driver", "/driver/earnings"], "lg:max-w-4xl"],
+];
+
+function screenWidth(pathname: string): string {
+  return SCREEN_WIDTHS.find(([paths]) => paths.some((path) => matchPath(path, pathname)))?.[1] ?? "lg:max-w-2xl";
+}
 
 /// Wraps whichever route is active in a short fade+rise so navigating
 /// between screens (Browse -> cart, an order's detail page, switching
@@ -41,6 +54,8 @@ export function AppShell() {
   const { mode, setMode, profile, agentPubKey } = useSession();
   const cartCount = useCart((s) => s.lines.reduce((n, l) => n + l.quantity, 0));
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const wide = useWideScreen();
   const t = useT();
   const roles = profile?.roles ?? [];
   // Funds an issuer added, and cash-outs it declined, land in the balance
@@ -64,69 +79,102 @@ export function AppShell() {
     navigate(`/${next}`);
   }
 
-  return (
-    <div className="mx-auto flex min-h-svh max-w-md flex-col bg-ink-50 dark:bg-ink-950">
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-ink-100 dark:border-ink-800 bg-white/90 dark:bg-ink-900/80 backdrop-blur px-4 py-3">
-        <div className="flex items-center gap-2">
-          <img src="favicon.svg" alt="" className="h-8 w-8 rounded-xl" />
-          <span className="font-black text-lg tracking-tight">HandShake</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {availableModes.length > 1 && (
-            <div className="flex items-center rounded-full bg-ink-100 dark:bg-ink-800 p-1 text-xs font-semibold">
-              {availableModes.map((m) => (
-                <button
-                  key={m}
-                  onClick={() => switchMode(m)}
-                  className={clsx(
-                    "rounded-full px-2.5 py-1 transition capitalize",
-                    mode === m ? "bg-white dark:bg-ink-950 shadow-sm text-ink-900 dark:text-white" : "text-ink-400"
-                  )}
-                >
-                  {t(`mode.${m}`)}
-                </button>
-              ))}
-            </div>
+  const modeSwitch = availableModes.length > 1 && (
+    <div className="flex items-center rounded-full bg-ink-100 p-1 text-xs font-semibold dark:bg-ink-800">
+      {availableModes.map((m) => (
+        <button
+          key={m}
+          onClick={() => switchMode(m)}
+          className={clsx(
+            "flex-1 rounded-full px-2.5 py-1 capitalize transition",
+            mode === m ? "bg-white text-ink-900 shadow-sm dark:bg-ink-950 dark:text-white" : "text-ink-400 hover:text-ink-700 dark:hover:text-ink-200"
           )}
-          <NavLink to="/profile" className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 dark:bg-ink-800">
-            <User size={18} />
-          </NavLink>
-        </div>
-      </header>
+        >
+          {t(`mode.${m}`)}
+        </button>
+      ))}
+    </div>
+  );
+  const brand = (
+    <div className="flex items-center gap-2">
+      <img src="favicon.svg" alt="" className="h-8 w-8 rounded-xl" />
+      <span className="text-lg font-black tracking-tight">HandShake</span>
+    </div>
+  );
 
-      <Notifier />
-      <ConnectionBanner />
-      <NewVersionBanner enabled={!!agentPubKey} />
-      <main className="flex-1 overflow-y-auto pb-20">
-        <AnimatedOutlet />
-      </main>
+  return (
+    <div className="min-h-svh bg-ink-50 lg:flex dark:bg-ink-950">
+      {wide && (
+        <aside className="sticky top-0 flex h-svh w-64 shrink-0 flex-col gap-6 border-r border-ink-100 bg-white px-4 py-5 dark:border-ink-800 dark:bg-ink-900">
+          <div className="px-2">{brand}</div>
+          {modeSwitch}
+          <nav className="flex flex-col gap-1">
+            <ModeNav mode={mode} cartCount={cartCount} placement="side" />
+          </nav>
+          <div className="mt-auto flex flex-col gap-1">
+            <NavItem to="/profile" icon={User} label={t("nav.profile")} placement="side" />
+            {agentPubKey && (
+              <p className="flex items-center gap-2 px-3 pt-2 text-[11px] text-ink-400">
+                <PresenceDot />
+                {t("shell.connected")}
+              </p>
+            )}
+          </div>
+        </aside>
+      )}
 
-      <nav className="fixed bottom-0 left-1/2 z-20 flex w-full max-w-md -translate-x-1/2 border-t border-ink-100 dark:border-ink-800 bg-white/95 dark:bg-ink-900/95 backdrop-blur px-2 pb-[env(safe-area-inset-bottom)]">
-        {mode === "customer" && (
-          <>
-            <BottomNavLink to="/customer" icon={Home} label={t("nav.browse")} />
-            <BottomNavLink to="/customer/cart" icon={ShoppingCart} label={t("nav.cart")} badge={cartCount} />
-            <BottomNavLink to="/customer/orders" icon={ClipboardList} label={t("nav.orders")} />
-            <BottomNavLink to="/rewards" icon={Gift} label={t("nav.rewards")} />
-          </>
+      <div className="mx-auto flex min-h-svh w-full max-w-md flex-col lg:max-w-none lg:min-w-0 lg:flex-1">
+        {!wide && (
+          <header className="sticky top-0 z-20 flex items-center justify-between border-b border-ink-100 bg-white/90 px-4 py-3 backdrop-blur dark:border-ink-800 dark:bg-ink-900/80">
+            {brand}
+            <div className="flex items-center gap-2">
+              {modeSwitch}
+              <NavLink to="/profile" className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-100 dark:bg-ink-800">
+                <User size={18} />
+              </NavLink>
+            </div>
+          </header>
         )}
-        {mode === "driver" && (
-          <>
-            <BottomNavLink to="/driver" icon={Car} label={t("nav.dash")} />
-            <BottomNavLink to="/driver/earnings" icon={DollarSign} label={t("nav.earnings")} />
-          </>
-        )}
-        {mode === "merchant" && <MerchantNav />}
-      </nav>
 
-      {agentPubKey && (
-        <div className="fixed left-2 top-2 z-30 hidden items-center gap-1 rounded-full bg-black/70 px-2 py-1 text-[10px] text-white lg:flex">
-          <PresenceDot />
-          {t("shell.connected")}
-        </div>
+        <Notifier />
+        <ConnectionBanner />
+        <NewVersionBanner enabled={!!agentPubKey} />
+        <main className={clsx("flex-1 pb-20 lg:mx-auto lg:w-full lg:px-6 lg:pt-4 lg:pb-12", screenWidth(pathname))}>
+          <AnimatedOutlet />
+        </main>
+      </div>
+
+      {!wide && (
+        <nav className="fixed bottom-0 left-1/2 z-20 flex w-full max-w-md -translate-x-1/2 border-t border-ink-100 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-ink-800 dark:bg-ink-900/95">
+          <ModeNav mode={mode} cartCount={cartCount} placement="bar" />
+        </nav>
       )}
     </div>
   );
+}
+
+/// The places in the current mode, in the bottom bar or the sidebar.
+function ModeNav({ mode, cartCount, placement }: { mode: Mode; cartCount: number; placement: NavPlacement }) {
+  const t = useT();
+  if (mode === "customer") {
+    return (
+      <>
+        <NavItem to="/customer" icon={Home} label={t("nav.browse")} placement={placement} />
+        <NavItem to="/customer/cart" icon={ShoppingCart} label={t("nav.cart")} badge={cartCount} placement={placement} />
+        <NavItem to="/customer/orders" icon={ClipboardList} label={t("nav.orders")} placement={placement} />
+        <NavItem to="/rewards" icon={Gift} label={t("nav.rewards")} placement={placement} />
+      </>
+    );
+  }
+  if (mode === "driver") {
+    return (
+      <>
+        <NavItem to="/driver" icon={Car} label={t("nav.dash")} placement={placement} />
+        <NavItem to="/driver/earnings" icon={DollarSign} label={t("nav.earnings")} placement={placement} />
+      </>
+    );
+  }
+  return <MerchantNav placement={placement} />;
 }
 
 /// A line under the header once a new version of HandShake is out
