@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Lock, QrCode } from "lucide-react";
 import QRCode from "qrcode";
+import clsx from "clsx";
 import { bytesToHex } from "../../holochain/decode";
 import type { ActionHash, PinSecret } from "../../holochain/types";
 import { encodeHandoverCode } from "../../lib/orders/handoverCode";
@@ -26,13 +27,7 @@ export function HandoverCode({ orderRef, secret, giver = "customer" }: { orderRe
         <p className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-400">
           <Lock size={12} /> {t(copy.title)}
         </p>
-        <div className="mt-3 flex justify-center gap-1.5" aria-label={t("code.pin", { digits: secret.pin.split("").join(" ") })}>
-          {secret.pin.split("").map((digit, i) => (
-            <span key={i} className="grid h-14 w-11 place-items-center rounded-xl bg-ink-50 font-mono text-[28px] font-black text-ink-900 dark:bg-ink-800 dark:text-ink-50">
-              {digit}
-            </span>
-          ))}
-        </div>
+        <CodeDigits pin={secret.pin} className="mt-3" />
         <p className="mx-auto mt-3 max-w-xs text-xs leading-relaxed text-ink-500 dark:text-ink-400">
           {t(copy.note)}
         </p>
@@ -61,6 +56,20 @@ export function HandoverCode({ orderRef, secret, giver = "customer" }: { orderRe
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/// A code's digits, large, to read out.
+export function CodeDigits({ pin, className }: { pin: string; className?: string }) {
+  const t = useT();
+  return (
+    <div className={clsx("flex justify-center gap-1.5", className)} aria-label={t("code.pin", { digits: pin.split("").join(" ") })}>
+      {pin.split("").map((digit, i) => (
+        <span key={i} className="grid h-14 w-11 place-items-center rounded-xl bg-ink-50 font-mono text-[28px] font-black text-ink-900 dark:bg-ink-800 dark:text-ink-50">
+          {digit}
+        </span>
+      ))}
     </div>
   );
 }

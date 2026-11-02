@@ -5,8 +5,9 @@
 //   moved on -- and if the store then keeps them waiting past the network's
 //   wait, they can call it late: the customer is refunded and the store
 //   pays their fee.
-// - **Collecting.** They show their own code; the store scans it as it
-//   hands the order over, and their app picks it up on the store's record.
+// - **Collecting.** They show their own code; the store scans it (or types
+//   its digits) as it hands the order over, and their app picks it up on the
+//   store's record.
 //
 // A store that won't check them in can't be proved wrong, so reporting it
 // moves no money -- it shows on the store's record, which drivers see.
@@ -18,7 +19,7 @@ import { callStoreLate, getOrderTiming, pickUpOrder, reportCheckInRefused } from
 import { myAgentPubKey } from "../../holochain/client";
 import { actionHash, bytesEqual, bytesToHex, decodeEntry } from "../../holochain/decode";
 import { HANDOFF_CODE_DIGITS, type DeliveryOrder, type GeoPoint, type Leg } from "../../holochain/types";
-import { decodeHandoverCode, encodePickupCode } from "../../lib/orders/handoverCode";
+import { decodeHandoverCode, encodePickupCode, pickupDigits } from "../../lib/orders/handoverCode";
 import { useAction } from "../../lib/hooks/useAction";
 import { formatClockTime } from "../../lib/ui/format";
 import { POLL } from "../../lib/network/poll";
@@ -26,7 +27,7 @@ import { currentBeacon } from "../../lib/network/timeSource";
 import { useClock } from "../../lib/hooks/useClock";
 import { useResource } from "../../lib/hooks/useResource";
 import { Button, Input, Notice } from "../../components/ui";
-import { QrSvg } from "../../components/orders/HandoverCode";
+import { CodeDigits, QrSvg } from "../../components/orders/HandoverCode";
 import { QrScanner } from "../../components/QrScanner";
 import { Sheet } from "../../components/Sheet";
 import { t as translate, useT } from "../../i18n";
@@ -169,7 +170,8 @@ export function StorePickup({ orderRef, order, location, onDone }: Props) {
       {leg ? (
         <div className="flex flex-col items-center rounded-2xl bg-white p-4 ring-1 ring-ink-100 dark:ring-ink-800">
           <QrSvg text={encodePickupCode(orderHex, leg)} size={196} />
-          <p className="mt-2 text-center text-xs text-ink-500">{t("store.pickup.show")}</p>
+          <CodeDigits pin={pickupDigits(leg)} className="mt-3" />
+          <p className="mt-3 text-center text-xs text-ink-500">{t("store.pickup.show")}</p>
           <button onClick={checkAgain} disabled={action.busy} className="mt-2 text-xs font-semibold text-ink-500 underline-offset-4 hover:underline disabled:opacity-50">
             {t("store.pickup.checkAgain")}
           </button>
