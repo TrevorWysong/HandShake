@@ -71,6 +71,13 @@ const PATCHES = [
     from: "  maintainer: electronjs.org",
     to: `  maintainer: ${OWNER}`,
   },
+  {
+    // A Linux package names its project's homepage; electron-builder reads
+    // it from package.json, which Kangaroo's leaves out.
+    file: "package.json",
+    from: '  "license": "CAL-1.0",\n',
+    to: `  "license": "CAL-1.0",\n  "homepage": "https://github.com/${OWNER}/${NAME}",\n`,
+  },
 ];
 
 const TARGETS: Record<string, string> = { "mac-arm64": "build:mac-arm64", "mac-x64": "build:mac-x64", win: "build:win", linux: "build:linux", dev: "dev" };
