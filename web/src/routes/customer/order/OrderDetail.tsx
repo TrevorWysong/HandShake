@@ -174,231 +174,243 @@ export function OrderDetail() {
   // A merchant who ordered from their own store has no store to rate.
   const selfOrder = bytesEqual(order.merchant, myAgentPubKey());
 
+  // A delivery on its way shows where it is, with its chat.
+  const live = ACTIVE_DELIVERY_STATUSES.includes(order.status);
+
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-10 pt-4">
-      <motion.div variants={fadeSlideUp} className="mb-4 flex items-center justify-between">
-        <h1 className="flex items-baseline gap-1.5 text-xl font-black text-ink-900 dark:text-ink-50">
-          {t("order.heading")}<StatNumber className="text-xl">{formatCents(order.order_total)}</StatNumber>
-        </h1>
-        <div className="flex items-center gap-1.5">
-          {order.priority && (
-            <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-              <Zap size={11} /> {t("cart.speed.priority")}
-            </span>
-          )}
-          <StatusBadge status={order.status} />
-        </div>
-      </motion.div>
+      {/* Where it stands and what to do, with the map and chat beside it on a wide
+          screen while it's on its way; one column, in this order, on a phone. */}
+      <div className={live ? "lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start lg:gap-x-8" : "lg:mx-auto lg:max-w-2xl"}>
+        <div className="min-w-0 lg:col-start-1">
+          <motion.div variants={fadeSlideUp} className="mb-4 flex items-center justify-between">
+            <h1 className="flex items-baseline gap-1.5 text-xl font-black text-ink-900 dark:text-ink-50">
+              {t("order.heading")}<StatNumber className="text-xl">{formatCents(order.order_total)}</StatNumber>
+            </h1>
+            <div className="flex items-center gap-1.5">
+              {order.priority && (
+                <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                  <Zap size={11} /> {t("cart.speed.priority")}
+                </span>
+              )}
+              <StatusBadge status={order.status} />
+            </div>
+          </motion.div>
 
-      {order.status !== "Delivered" && (
-        <motion.div variants={fadeSlideUp} className="-mt-2 mb-4">
-          <OrderSummary orderRef={orderRef} count={order.lines.reduce((n, l) => n + l.quantity, 0)} />
-        </motion.div>
-      )}
-
-      <motion.div variants={fadeSlideUp}>
-        <Card className="p-4">
-          <OrderStatusTimeline status={order.status} cancellation={order.cancellation} />
-          {order.ready_by !== null && ["Open", "BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed", "DriverAtStore"].includes(order.status) && (
-            <p className="mt-3 border-t border-ink-100 dark:border-ink-800 pt-3 text-xs text-ink-500">
-              {t("order.readyBy", { time: formatClockTime(order.ready_by) })}
-            </p>
+          {order.status !== "Delivered" && (
+            <motion.div variants={fadeSlideUp} className="-mt-2 mb-4">
+              <OrderSummary orderRef={orderRef} count={order.lines.reduce((n, l) => n + l.quantity, 0)} />
+            </motion.div>
           )}
-          {order.ready_by === null && order.prep_minutes !== null && ["Open", "BidAccepted"].includes(order.status) && (
-            <p className="mt-3 border-t border-ink-100 dark:border-ink-800 pt-3 text-xs text-ink-500">
-              {t("order.prepAfterDriver", { minutes: order.prep_minutes })}
-            </p>
-          )}
-          {order.status === "Placed" && <NetworkReach action={orderRef} />}
-        </Card>
-      </motion.div>
 
-      {order.status === "Placed" && snapshot && (
-        <motion.div variants={fadeSlideUp}>
-          <WaitingForStore writtenAt={snapshot.writtenAt} now={snapshot.now} cancelling={action.doing === "cancel"} onCancel={cancel} />
-        </motion.div>
-      )}
-
-      <motion.div variants={fadeSlideUp}>
-        <Card className="mt-3 flex flex-col gap-1 p-4 text-sm">
-          <p className="text-ink-500">
-            <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.dropoffLabel")} </span>
-            {t(DROPOFF_PREFERENCE_LABEL[order.dropoff_preference])}
-          </p>
-          {details?.dropoff?.line2 && (
-            <p className="text-ink-500">
-              <span className="font-semibold text-ink-900 dark:text-ink-50">{t("address.line2")} </span>
-              {details.dropoff.line2}
-            </p>
-          )}
-          {details?.dropoff?.notes && (
-            <p className="text-ink-500">
-              <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.dropoffNotesLabel")} </span>
-              {details.dropoff.notes}
-            </p>
-          )}
-          {details?.kitchen_note && (
-            <p className="text-ink-500">
-              <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.storeNoteLabel")} </span>
-              {details.kitchen_note}
-            </p>
-          )}
-          {order.tip_cents > 0 && (
-            <p className="text-ink-500">
-              <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.tipLabel")} </span>
-              {formatCents(order.tip_cents)}
-            </p>
-          )}
-        </Card>
-      </motion.div>
-
-      {order.status === "Open" && <OrderBids orderRef={orderRef} order={order} accepting={action.doing} onAccept={pickBid} />}
-
-      {["BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed", "DriverAtStore"].includes(order.status) && (
-        <motion.div variants={fadeSlideUp} className="mt-5 flex items-center gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
-          <Bike size={20} className="text-handshake-600" />
-          <p className="text-sm text-handshake-700 dark:text-handshake-300">{DRIVER_PROGRESS[order.status] && t(DRIVER_PROGRESS[order.status]!)}</p>
-        </motion.div>
-      )}
-
-      {handoverCode && (
-        <motion.div variants={fadeSlideUp} className="mt-4">
-          <HandoverCode orderRef={orderRef} secret={handoverCode} />
-        </motion.div>
-      )}
-
-      {!handedOver && ["BidAccepted", "MerchantConfirmed", "DriverEnRouteToMerchant", "PickedUp"].includes(order.status) && (
-        <motion.div variants={fadeSlideUp} className="mt-4 flex items-start gap-3 rounded-2xl border border-ink-100 p-4 dark:border-ink-800">
-          <DoorOpen size={20} className="mt-0.5 shrink-0 text-ink-400" />
-          <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">
-            <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.door.title")}</span> {t("order.door.detail")}
-          </p>
-        </motion.div>
-      )}
-
-      {order.status === "PickedUp" && (
-        <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
-          <div className="flex items-center gap-3">
-            <Bike size={20} className="text-handshake-600" />
-            <p className="text-sm text-handshake-700 dark:text-handshake-300">{t("order.pickedUp")}</p>
-          </div>
-          {order.collateral_hold && (
-            <p className="flex items-start gap-2 text-xs text-handshake-700 dark:text-handshake-300">
-              <ShieldCheck size={14} className="mt-0.5 shrink-0" />
-              {t("order.collateral", { amount: formatCents(order.order_total) })}
-            </p>
-          )}
-          {dropoff ? (
-            <p className="text-xs font-semibold text-handshake-700 dark:text-handshake-300">{t("order.handedAt", { time: formatClockTime(dropoff.at) })}</p>
-          ) : handedOver ? (
-            <p className="text-xs text-handshake-700 dark:text-handshake-300">
-              {t("order.confirmHint")}
-            </p>
-          ) : null}
-          {handedOver && (
-            <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmReceipt}>
-              {t("order.haveIt")}
-            </Button>
-          )}
-          <AnimatePresence mode="wait" initial={false}>
-            {confirmingClaim ? (
-              <motion.div key="claim" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-xl bg-white p-3 dark:bg-ink-900">
-                <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">
-                  {t("order.claim.warning")}
+          <motion.div variants={fadeSlideUp}>
+            <Card className="p-4">
+              <OrderStatusTimeline status={order.status} cancellation={order.cancellation} />
+              {order.ready_by !== null && ["Open", "BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed", "DriverAtStore"].includes(order.status) && (
+                <p className="mt-3 border-t border-ink-100 dark:border-ink-800 pt-3 text-xs text-ink-500">
+                  {t("order.readyBy", { time: formatClockTime(order.ready_by) })}
                 </p>
-                <div className="mt-3 flex gap-2">
-                  <Button variant="ghost" className="flex-1 py-2" onClick={() => setConfirmingClaim(false)}>
-                    {t("common.back")}
-                  </Button>
-                  <Button variant="danger" className="flex-1 py-2" loading={action.doing === "claim"} disabled={action.busy} onClick={claimItNeverArrived}>
-                    {t("order.claim.button")}
-                  </Button>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.button key="ask" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConfirmingClaim(true)} className="text-xs font-semibold text-handshake-700 underline-offset-4 hover:underline dark:text-handshake-300">
-                {t("order.claim.ask")}
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      )}
+              )}
+              {order.ready_by === null && order.prep_minutes !== null && ["Open", "BidAccepted"].includes(order.status) && (
+                <p className="mt-3 border-t border-ink-100 dark:border-ink-800 pt-3 text-xs text-ink-500">
+                  {t("order.prepAfterDriver", { minutes: order.prep_minutes })}
+                </p>
+              )}
+              {order.status === "Placed" && <NetworkReach action={orderRef} />}
+            </Card>
+          </motion.div>
 
-      {ACTIVE_DELIVERY_STATUSES.includes(order.status) && pickup && details?.dropoff && (
-        <motion.div variants={fadeSlideUp} className="mt-4">
-          <LiveMap orderRef={orderRef} pickup={pickup} dropoff={details.dropoff.point} />
-        </motion.div>
-      )}
-
-      {ACTIVE_DELIVERY_STATUSES.includes(order.status) && (
-        <motion.div variants={fadeSlideUp} className="mt-1">
-          <ChatPanel orderRef={orderRef} title={t("order.chat")} counterpart={t("chat.driver")} />
-        </motion.div>
-      )}
-
-      {dropoffPhoto && (
-        <motion.div variants={fadeSlideUp}>
-          <Card className="mt-4 p-4">
-            <SectionLabel className="mb-2">{t("order.dropoffPhoto")}</SectionLabel>
-            <img src={dropoffPhoto} alt={t("order.dropoffPhoto")} className="w-full rounded-xl object-cover" />
-          </Card>
-        </motion.div>
-      )}
-
-      <motion.div variants={fadeSlideUp}>
-        <LateOrder orderRef={orderRef} order={order} storeAddress={store?.address ?? ""} onChanged={reloadOrder} />
-      </motion.div>
-
-      {collecting && (
-        <motion.div variants={fadeSlideUp}>
-          <Card className="mt-4 p-4">
-            <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("order.collectFrom", { store: store?.name ?? t("order.theStore") })}</p>
-            {store?.address && <p className="mt-0.5 text-xs text-ink-400">{store.address}</p>}
-            <p className="mt-2 text-xs leading-relaxed text-ink-400">
-              {t("order.collectHint")}
-            </p>
-            <Button loading={action.doing === "collected"} disabled={action.busy} onClick={confirmCollectedHere} className="mt-3 w-full">
-              {t("order.gotIt")}
-            </Button>
-          </Card>
-        </motion.div>
-      )}
-
-      {order.status === "Open" && (
-        <motion.div variants={fadeSlideUp} className="mt-6">
-          <Button variant="ghost" loading={action.doing === "cancel"} disabled={action.busy} onClick={cancel} className="w-full">
-            {t("order.cancel")}
-          </Button>
-        </motion.div>
-      )}
-
-      <OrderPointsBadge orderRef={orderRef} />
-
-      {received(order.status) && (
-        <motion.div variants={fadeSlideUp}>
-          <OrderIssues orderRef={orderRef} role="customer" />
-          <OrderReceipt orderRef={orderRef} />
-        </motion.div>
-      )}
-
-      {order.status === "Disputed" && (
-        <motion.div variants={fadeSlideUp} className="mt-5 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100">
-          <AlertTriangle size={20} className="mt-0.5 shrink-0" />
-          {decisions?.not_delivered ? (
-            <p className="text-sm">
-              <span className="font-semibold">{t("order.refunded")}</span> {t("order.refundedDetail")}
-            </p>
-          ) : (
-            <p className="text-sm">
-              {decisions?.claim_decided_after ? t("order.claimedBy", { time: formatDeadline(decisions.claim_decided_after) }) : t("order.claimedSoon")}
-            </p>
+          {order.status === "Placed" && snapshot && (
+            <motion.div variants={fadeSlideUp}>
+              <WaitingForStore writtenAt={snapshot.writtenAt} now={snapshot.now} cancelling={action.doing === "cancel"} onCancel={cancel} />
+            </motion.div>
           )}
-        </motion.div>
-      )}
 
-      {received(order.status) && <RateOrder orderRef={orderRef} order={order} itemNames={itemNames} driver={driver} selfOrder={selfOrder} />}
+          <motion.div variants={fadeSlideUp}>
+            <Card className="mt-3 flex flex-col gap-1 p-4 text-sm">
+              <p className="text-ink-500">
+                <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.dropoffLabel")} </span>
+                {t(DROPOFF_PREFERENCE_LABEL[order.dropoff_preference])}
+              </p>
+              {details?.dropoff?.line2 && (
+                <p className="text-ink-500">
+                  <span className="font-semibold text-ink-900 dark:text-ink-50">{t("address.line2")} </span>
+                  {details.dropoff.line2}
+                </p>
+              )}
+              {details?.dropoff?.notes && (
+                <p className="text-ink-500">
+                  <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.dropoffNotesLabel")} </span>
+                  {details.dropoff.notes}
+                </p>
+              )}
+              {details?.kitchen_note && (
+                <p className="text-ink-500">
+                  <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.storeNoteLabel")} </span>
+                  {details.kitchen_note}
+                </p>
+              )}
+              {order.tip_cents > 0 && (
+                <p className="text-ink-500">
+                  <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.tipLabel")} </span>
+                  {formatCents(order.tip_cents)}
+                </p>
+              )}
+            </Card>
+          </motion.div>
 
-      {action.error && <Notice className="mt-4">{action.error}</Notice>}
+          {order.status === "Open" && <OrderBids orderRef={orderRef} order={order} accepting={action.doing} onAccept={pickBid} />}
+
+          {["BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed", "DriverAtStore"].includes(order.status) && (
+            <motion.div variants={fadeSlideUp} className="mt-5 flex items-center gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
+              <Bike size={20} className="text-handshake-600" />
+              <p className="text-sm text-handshake-700 dark:text-handshake-300">{DRIVER_PROGRESS[order.status] && t(DRIVER_PROGRESS[order.status]!)}</p>
+            </motion.div>
+          )}
+
+          {handoverCode && (
+            <motion.div variants={fadeSlideUp} className="mt-4">
+              <HandoverCode orderRef={orderRef} secret={handoverCode} />
+            </motion.div>
+          )}
+
+          {!handedOver && ["BidAccepted", "MerchantConfirmed", "DriverEnRouteToMerchant", "PickedUp"].includes(order.status) && (
+            <motion.div variants={fadeSlideUp} className="mt-4 flex items-start gap-3 rounded-2xl border border-ink-100 p-4 dark:border-ink-800">
+              <DoorOpen size={20} className="mt-0.5 shrink-0 text-ink-400" />
+              <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">
+                <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.door.title")}</span> {t("order.door.detail")}
+              </p>
+            </motion.div>
+          )}
+
+          {order.status === "PickedUp" && (
+            <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
+              <div className="flex items-center gap-3">
+                <Bike size={20} className="text-handshake-600" />
+                <p className="text-sm text-handshake-700 dark:text-handshake-300">{t("order.pickedUp")}</p>
+              </div>
+              {order.collateral_hold && (
+                <p className="flex items-start gap-2 text-xs text-handshake-700 dark:text-handshake-300">
+                  <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+                  {t("order.collateral", { amount: formatCents(order.order_total) })}
+                </p>
+              )}
+              {dropoff ? (
+                <p className="text-xs font-semibold text-handshake-700 dark:text-handshake-300">{t("order.handedAt", { time: formatClockTime(dropoff.at) })}</p>
+              ) : handedOver ? (
+                <p className="text-xs text-handshake-700 dark:text-handshake-300">
+                  {t("order.confirmHint")}
+                </p>
+              ) : null}
+              {handedOver && (
+                <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmReceipt}>
+                  {t("order.haveIt")}
+                </Button>
+              )}
+              <AnimatePresence mode="wait" initial={false}>
+                {confirmingClaim ? (
+                  <motion.div key="claim" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-xl bg-white p-3 dark:bg-ink-900">
+                    <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">
+                      {t("order.claim.warning")}
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <Button variant="ghost" className="flex-1 py-2" onClick={() => setConfirmingClaim(false)}>
+                        {t("common.back")}
+                      </Button>
+                      <Button variant="danger" className="flex-1 py-2" loading={action.doing === "claim"} disabled={action.busy} onClick={claimItNeverArrived}>
+                        {t("order.claim.button")}
+                      </Button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.button key="ask" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConfirmingClaim(true)} className="text-xs font-semibold text-handshake-700 underline-offset-4 hover:underline dark:text-handshake-300">
+                    {t("order.claim.ask")}
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </div>
+        <div className="lg:sticky lg:top-6 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+          {live && pickup && details?.dropoff && (
+            <motion.div variants={fadeSlideUp} className="mt-4 lg:mt-0">
+              <LiveMap orderRef={orderRef} pickup={pickup} dropoff={details.dropoff.point} />
+            </motion.div>
+          )}
+
+          {live && (
+            <motion.div variants={fadeSlideUp} className="mt-1">
+              <ChatPanel orderRef={orderRef} title={t("order.chat")} counterpart={t("chat.driver")} />
+            </motion.div>
+          )}
+        </div>
+        <div className="min-w-0 lg:col-start-1">
+
+          {dropoffPhoto && (
+            <motion.div variants={fadeSlideUp}>
+              <Card className="mt-4 p-4">
+                <SectionLabel className="mb-2">{t("order.dropoffPhoto")}</SectionLabel>
+                <img src={dropoffPhoto} alt={t("order.dropoffPhoto")} className="w-full rounded-xl object-cover" />
+              </Card>
+            </motion.div>
+          )}
+
+          <motion.div variants={fadeSlideUp}>
+            <LateOrder orderRef={orderRef} order={order} storeAddress={store?.address ?? ""} onChanged={reloadOrder} />
+          </motion.div>
+
+          {collecting && (
+            <motion.div variants={fadeSlideUp}>
+              <Card className="mt-4 p-4">
+                <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("order.collectFrom", { store: store?.name ?? t("order.theStore") })}</p>
+                {store?.address && <p className="mt-0.5 text-xs text-ink-400">{store.address}</p>}
+                <p className="mt-2 text-xs leading-relaxed text-ink-400">
+                  {t("order.collectHint")}
+                </p>
+                <Button loading={action.doing === "collected"} disabled={action.busy} onClick={confirmCollectedHere} className="mt-3 w-full">
+                  {t("order.gotIt")}
+                </Button>
+              </Card>
+            </motion.div>
+          )}
+
+          {order.status === "Open" && (
+            <motion.div variants={fadeSlideUp} className="mt-6">
+              <Button variant="ghost" loading={action.doing === "cancel"} disabled={action.busy} onClick={cancel} className="w-full">
+                {t("order.cancel")}
+              </Button>
+            </motion.div>
+          )}
+
+          <OrderPointsBadge orderRef={orderRef} />
+
+          {received(order.status) && (
+            <motion.div variants={fadeSlideUp}>
+              <OrderIssues orderRef={orderRef} role="customer" />
+              <OrderReceipt orderRef={orderRef} />
+            </motion.div>
+          )}
+
+          {order.status === "Disputed" && (
+            <motion.div variants={fadeSlideUp} className="mt-5 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100">
+              <AlertTriangle size={20} className="mt-0.5 shrink-0" />
+              {decisions?.not_delivered ? (
+                <p className="text-sm">
+                  <span className="font-semibold">{t("order.refunded")}</span> {t("order.refundedDetail")}
+                </p>
+              ) : (
+                <p className="text-sm">
+                  {decisions?.claim_decided_after ? t("order.claimedBy", { time: formatDeadline(decisions.claim_decided_after) }) : t("order.claimedSoon")}
+                </p>
+              )}
+            </motion.div>
+          )}
+
+          {received(order.status) && <RateOrder orderRef={orderRef} order={order} itemNames={itemNames} driver={driver} selfOrder={selfOrder} />}
+
+          {action.error && <Notice className="mt-4">{action.error}</Notice>}
+        </div>
+      </div>
     </motion.div>
   );
 }

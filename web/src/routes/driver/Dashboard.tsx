@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Bike, Link2, MapPin, Power, Route, ShieldCheck, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import clsx from "clsx";
 import { getOpenOrdersNear, submitBid, withdrawBid, getMyActiveDeliveries, getOrderPrivateDetails, dropOrder, commitToOrder } from "../../holochain/zomes/dispatch";
 import { useLocationSharing } from "../../lib/hooks/useLocationSharing";
 import { Sheet } from "../../components/Sheet";
@@ -210,97 +211,111 @@ export function DriverDashboard() {
       })
     : null;
 
+  // On a wide screen: going online beside what they take on, then what
+  // they're carrying beside what's on offer.
+  const carrying = activeOrders.length > 0;
   return (
     <div className="px-4 pt-4 pb-8">
-      <Card className="mb-5 flex items-center justify-between p-4">
-        <div>
-          <p className="flex items-center gap-2 text-sm font-bold text-ink-900 dark:text-ink-50">
-            <PresenceDot live={online} />
-            {online ? t("drive.online") : t("drive.offline")}
-          </p>
-          <p className="text-xs text-ink-400">{online ? t("drive.onlineDetail") : t("drive.offlineDetail")}</p>
-          {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} size={11} />}
-        </div>
-        <motion.button
-          onClick={toggleOnline}
-          aria-label={online ? t("drive.goOffline") : t("drive.goOnline")}
-          whileTap={{ scale: 0.92 }}
-          animate={{ backgroundColor: online ? "#22c55e" : "#ece9e6" }}
-          transition={{ duration: 0.25 }}
-          className={`grid h-11 w-11 place-items-center rounded-full ${online ? "text-white shadow-[var(--shadow-glow)]" : "text-ink-400"}`}
-          style={online ? { boxShadow: "0 6px 20px -4px rgba(34, 197, 94, 0.5)" } : undefined}
-        >
-          <Power size={20} />
-        </motion.button>
-      </Card>
-
-      {me && <VerificationCard me={me} />}
-      <DriverSettingsCard />
-
-      <AnimatePresence initial={false}>
-        {activeOrders.length > 0 && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-5 flex flex-col gap-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-handshake-600">
-              {t("drive.active", { count: activeOrders.length })}
+      <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-5">
+        <Card className="mb-5 flex items-center justify-between p-4 lg:order-1">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-bold text-ink-900 dark:text-ink-50">
+              <PresenceDot live={online} />
+              {online ? t("drive.online") : t("drive.offline")}
             </p>
-            {activeOrders.length > 1 && <SuggestedRoute orders={activeOrders} location={location} />}
-            {activeOrders.map((row) => (
-              <motion.div key={bytesToHex(row.hash)} layout variants={fadeSlideUp} initial="hidden" animate="visible" exit={{ opacity: 0, scale: 0.97 }}>
-                <ActiveDeliveryCard row={row} location={location} onAdvanced={reloadActive} />
-              </motion.div>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {online && refusal === null && (
-        <>
-          <div className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-ink-400">
-            <MapPin size={14} className="text-handshake-500" />
-            {activeOrders.length === 0 ? t("drive.nearby") : t("drive.addOns")}
+            <p className="text-xs text-ink-400">{online ? t("drive.onlineDetail") : t("drive.offlineDetail")}</p>
+            {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} size={11} />}
           </div>
-          {sortedNearby === null && (
-            <div className="flex flex-col gap-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Card key={i} className="p-4">
-                  <Skeleton className="h-4 w-1/3 mb-2" />
-                  <Skeleton className="h-3 w-2/3 mb-3" />
-                  <Skeleton className="h-8 w-full" />
-                </Card>
-              ))}
-            </div>
-          )}
-          {sortedNearby?.length === 0 &&
-            (activeOrders.length === 0 ? (
-              <EmptyState icon={<Bike size={28} />} title={t("drive.noneNearby")} subtitle={t("drive.noneNearbyDetail")} />
-            ) : (
-              <EmptyState icon={<Route size={28} />} title={t("drive.noAddOns")} subtitle={t("drive.noAddOnsDetail")} />
-            ))}
-          <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="flex flex-col gap-3">
-            {sortedNearby?.map(({ hash, order }) => (
-              <motion.div key={bytesToHex(hash)} variants={fadeSlideUp} layout>
-                <BidCard
-                  order={order}
-                  loading={bidding.doing === bytesToHex(hash)}
-                  sent={sentBids[`${driverHex}:${bytesToHex(hash)}`]}
-                  onBid={(trip, fee) => placeBid(hash, trip, fee)}
-                  onWithdraw={() => withdraw(hash)}
-                  sameMerchant={sameMerchantHexes.has(bytesToHex(order.catalog_ref))}
-                  nearbyDropoffKm={nearestActiveDropoffKm(order)}
-                  detourKm={rules.detourKm}
-                  location={location}
-                />
-              </motion.div>
-            ))}
-          </motion.div>
-        </>
-      )}
+          <motion.button
+            onClick={toggleOnline}
+            aria-label={online ? t("drive.goOffline") : t("drive.goOnline")}
+            whileTap={{ scale: 0.92 }}
+            animate={{ backgroundColor: online ? "#22c55e" : "#ece9e6" }}
+            transition={{ duration: 0.25 }}
+            className={`grid h-11 w-11 place-items-center rounded-full ${online ? "text-white shadow-[var(--shadow-glow)]" : "text-ink-400"}`}
+            style={online ? { boxShadow: "0 6px 20px -4px rgba(34, 197, 94, 0.5)" } : undefined}
+          >
+            <Power size={20} />
+          </motion.button>
+        </Card>
+        {me && (
+          <div className="lg:order-3 lg:col-span-2">
+            <VerificationCard me={me} />
+          </div>
+        )}
+        <div className="lg:order-2">
+          <DriverSettingsCard />
+        </div>
+      </div>
 
-      {online && refusal !== null && (
-        <p className="rounded-xl bg-ink-100/60 dark:bg-ink-800/60 px-4 py-3 text-center text-xs text-ink-400">
-          {refusal === "CarryingPriority" ? t("drive.onPriority") : t("drive.atLimit", { count: rules.maxAtOnce })}
-        </p>
-      )}
+      <div className={clsx(carrying && online && "lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-5")}>
+        <AnimatePresence initial={false}>
+          {carrying && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-5 flex flex-col gap-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-handshake-600">
+                {t("drive.active", { count: activeOrders.length })}
+              </p>
+              {activeOrders.length > 1 && <SuggestedRoute orders={activeOrders} location={location} />}
+              {activeOrders.map((row) => (
+                <motion.div key={bytesToHex(row.hash)} layout variants={fadeSlideUp} initial="hidden" animate="visible" exit={{ opacity: 0, scale: 0.97 }}>
+                  <ActiveDeliveryCard row={row} location={location} onAdvanced={reloadActive} />
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div>
+          {online && refusal === null && (
+            <>
+              <div className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-ink-400">
+                <MapPin size={14} className="text-handshake-500" />
+                {carrying ? t("drive.addOns") : t("drive.nearby")}
+              </div>
+              {sortedNearby === null && (
+                <div className={clsx("grid gap-3", !carrying && "lg:grid-cols-2")}>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="p-4">
+                      <Skeleton className="h-4 w-1/3 mb-2" />
+                      <Skeleton className="h-3 w-2/3 mb-3" />
+                      <Skeleton className="h-8 w-full" />
+                    </Card>
+                  ))}
+                </div>
+              )}
+              {sortedNearby?.length === 0 &&
+                (!carrying ? (
+                  <EmptyState icon={<Bike size={28} />} title={t("drive.noneNearby")} subtitle={t("drive.noneNearbyDetail")} />
+                ) : (
+                  <EmptyState icon={<Route size={28} />} title={t("drive.noAddOns")} subtitle={t("drive.noAddOnsDetail")} />
+                ))}
+              <motion.div variants={staggerContainer} initial="hidden" animate="visible" className={clsx("grid gap-3 lg:items-start", !carrying && "lg:grid-cols-2")}>
+                {sortedNearby?.map(({ hash, order }) => (
+                  <motion.div key={bytesToHex(hash)} variants={fadeSlideUp} layout>
+                    <BidCard
+                      order={order}
+                      loading={bidding.doing === bytesToHex(hash)}
+                      sent={sentBids[`${driverHex}:${bytesToHex(hash)}`]}
+                      onBid={(trip, fee) => placeBid(hash, trip, fee)}
+                      onWithdraw={() => withdraw(hash)}
+                      sameMerchant={sameMerchantHexes.has(bytesToHex(order.catalog_ref))}
+                      nearbyDropoffKm={nearestActiveDropoffKm(order)}
+                      detourKm={rules.detourKm}
+                      location={location}
+                    />
+                  </motion.div>
+                ))}
+              </motion.div>
+            </>
+          )}
+
+          {online && refusal !== null && (
+            <p className="rounded-xl bg-ink-100/60 dark:bg-ink-800/60 px-4 py-3 text-center text-xs text-ink-400">
+              {refusal === "CarryingPriority" ? t("drive.onPriority") : t("drive.atLimit", { count: rules.maxAtOnce })}
+            </p>
+          )}
+        </div>
+      </div>
 
       {bidding.error && <Notice className="mt-4">{bidding.error}</Notice>}
     </div>

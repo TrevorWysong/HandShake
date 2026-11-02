@@ -1,38 +1,34 @@
 import { useMemo, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Clock, Heart, Info, PackageOpen, Plus, ShoppingBag, Star } from "lucide-react";
+import { ArrowLeft, Clock, Heart, Info, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getCatalog, listGoodieBagsForCatalog, claimGoodieBag, storeSuccessor, type FulfillmentInput } from "../../holochain/zomes/catalog";
+import { getCatalog, listGoodieBagsForCatalog, storeSuccessor } from "../../holochain/zomes/catalog";
 import { averageRating, getRatingSummary, getReputationSummary, getReviewsFor, getItemRatingSummary, type ItemRatingSummary } from "../../holochain/zomes/reputation";
 import { useResource } from "../../lib/hooks/useResource";
 import { decodeEntry, hexToBytes, bytesToHex } from "../../holochain/decode";
-import { useSession } from "../../store/session";
 import { useCart } from "../../store/cart";
-import { currencySymbol, formatCents, nowMicros, toMinorUnits } from "../../lib/ui/format";
-import { Button, Chip, ChipRow, Input, SectionLabel, Skeleton, StatNumber } from "../../components/ui";
+import { formatCents, nowMicros } from "../../lib/ui/format";
+import { Chip, ChipRow, Skeleton } from "../../components/ui";
 import { useTerms } from "../../store/network";
 import { useT } from "../../i18n";
-import { AddressSearch } from "../../components/places/AddressSearch";
 import { StoreContact } from "../../components/store/StoreContact";
 import { StarRating } from "../../components/StarRating";
 import { StoreRewardsStrip } from "./Rewards";
 import { StoreDeals } from "../../components/store/Deals";
 import { ItemSheet } from "../../components/store/ItemSheet";
+import { MenuItemCard } from "../../components/store/MenuItemCard";
+import { MenuCategoryNav } from "../../components/store/MenuCategoryNav";
+import { StoreBags, type BagRow } from "../../components/store/StoreBags";
+import { StoreCartPanel } from "../../components/store/StoreCartPanel";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { fetchMenu, groupByCategory } from "../../lib/storefront/menu";
 import { useFavorites } from "../../lib/hooks/useFavorites";
 import type { ItemRow } from "../../lib/storefront/menu";
-import type { GeoPoint, MerchantCatalog, GoodieBag } from "../../holochain/types";
+import type { GoodieBag, MerchantCatalog } from "../../holochain/types";
 import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
 import { storeStatus } from "../../lib/storefront/storeHours";
 import { ReviewList } from "../../components/store/ReviewList";
-import { useAction } from "../../lib/hooks/useAction";
-
-interface BagRow {
-  hash: Uint8Array;
-  bag: GoodieBag;
-}
 
 /// Polled for the same reason Browse.tsx's list is -- a menu item added
 /// moments ago may not have gossiped to whatever peer answers this read
@@ -77,7 +73,6 @@ function StorePage({ hash }: { hash: string }) {
   // instantly; the fetch below replaces it with the live version (and is
   // the only source when arriving via a direct URL/refresh).
   const routerState = useLocation().state as { catalog?: MerchantCatalog } | null;
-  const location = useSession((s) => s.location);
   const cart = useCart();
   const catalogHash = useMemo(() => hexToBytes(hash), [hash]);
   const { data: menu } = useResource(`store-menu:${hash}`, () => fetchStoreMenu(catalogHash), { pollMs: POLL.slow });
@@ -105,32 +100,9 @@ function StorePage({ hash }: { hash: string }) {
   const { data: record = null } = useResource(`store-record:${hash}`, () => getReputationSummary({ Store: catalogHash }));
   const { favoritesHex, toggleFavorite } = useFavorites();
   const favorited = favoritesHex.has(hash);
-  const [claimingBagHex, setClaimingBagHex] = useState<string | null>(null);
-  const [claimFulfillment, setClaimFulfillment] = useState<"Pickup" | "Delivery">("Pickup");
-  const [claimDropoff, setClaimDropoff] = useState<GeoPoint>(location);
-  const [claimFee, setClaimFee] = useState(5);
-  const action = useAction();
-  const [claimedBagHexes, setClaimedBagHexes] = useState<Set<string>>(new Set());
   const [dietaryFilter, setDietaryFilter] = useState<string[]>([]);
   /// The item whose choices are open, if any.
   const [choosing, setChoosing] = useState<ItemRow | null>(null);
-
-  function openClaim(row: BagRow) {
-    const hex = bytesToHex(row.hash);
-    setClaimingBagHex(claimingBagHex === hex ? null : hex);
-    setClaimFulfillment(row.bag.supports_pickup ? "Pickup" : "Delivery");
-    setClaimDropoff(location);
-    setClaimFee(5);
-    action.setError(null);
-  }
-
-  const submitClaim = (row: BagRow) => action.run(async () => {
-    const fulfillment: FulfillmentInput =
-      claimFulfillment === "Pickup" ? "Pickup" : { Delivery: { dropoff: claimDropoff, max_delivery_fee: toMinorUnits(claimFee) } };
-    await claimGoodieBag(row.hash, fulfillment);
-    setClaimedBagHexes((prev) => new Set(prev).add(bytesToHex(row.hash)));
-    setClaimingBagHex(null);
-  });
 
   // Scoped to this one restaurant's own menu, not a union across every
   // nearby restaurant -- a per-merchant menu is naturally small and bounded,
@@ -153,12 +125,14 @@ function StorePage({ hash }: { hash: string }) {
   if (!catalog || !items) {
     return (
       <div className="pb-24">
-        <Skeleton className="h-40 w-full rounded-none" />
-        <div className="px-4 pt-4">
-          <Skeleton className="h-6 w-2/3 mb-2" />
-          <Skeleton className="h-4 w-1/3 mb-6" />
-          <Skeleton className="h-24 w-full mb-3" />
-          <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-44 w-full rounded-none md:h-56 lg:h-64 lg:rounded-3xl" />
+        <div className="px-4 pt-4 lg:px-0 lg:pt-6">
+          <Skeleton className="mb-2 h-7 w-2/3 max-w-sm" />
+          <Skeleton className="mb-6 h-4 w-1/3 max-w-48" />
+          <div className="grid gap-3 md:grid-cols-2">
+            <Skeleton className="h-28 w-full" />
+            <Skeleton className="h-28 w-full" />
+          </div>
         </div>
       </div>
     );
@@ -177,32 +151,36 @@ function StorePage({ hash }: { hash: string }) {
   };
   const avgRating = rating ? averageRating(rating) : null;
   const grouped = groupByCategory(filteredItems);
+  const categories = [...grouped.keys()].map((name, i) => ({ id: `menu-${i}`, name }));
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pb-24">
-      <div className="relative h-40">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pb-24 lg:pb-8">
+      <div className="relative h-44 overflow-hidden md:h-56 lg:h-64 lg:rounded-3xl">
         {catalog.banner_data_uri ? (
           <img src={catalog.banner_data_uri} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center bg-gradient-to-br from-handshake-400 to-handshake-600 text-5xl">🍽️</div>
+          <div className="flex h-full items-center justify-center bg-gradient-to-br from-handshake-400 to-handshake-600 text-6xl">🍽️</div>
         )}
-        <motion.button whileTap={{ scale: 0.9 }} onClick={() => navigate(-1)} className="absolute left-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 shadow backdrop-blur-sm">
+        <div aria-hidden className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/25 to-transparent" />
+        <motion.button whileTap={{ scale: 0.9 }} onClick={() => navigate(-1)} aria-label={t("common.back")} className="absolute top-3 left-3 grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow backdrop-blur-sm transition hover:bg-white lg:top-4 lg:left-4">
           <ArrowLeft size={18} className="text-ink-900" />
         </motion.button>
         <motion.button
           whileTap={{ scale: 0.85 }}
           onClick={() => toggleFavorite(catalogHash)}
-          className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 shadow backdrop-blur-sm"
+          aria-label={t(favorited ? "store.unfavorite" : "store.favorite")}
+          aria-pressed={favorited}
+          className="absolute top-3 right-3 grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow backdrop-blur-sm transition hover:bg-white lg:top-4 lg:right-4"
         >
           <Heart size={18} className="text-red-500" fill={favorited ? "currentColor" : "none"} />
         </motion.button>
       </div>
 
-      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pt-4">
-        <motion.h1 variants={fadeSlideUp} className="text-xl font-black tracking-tight text-ink-900 dark:text-ink-50">{catalog.business_name}</motion.h1>
-        {catalog.description && <p className="mt-1 text-sm text-ink-500">{catalog.description}</p>}
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pt-4 lg:px-0 lg:pt-6">
+        <motion.h1 variants={fadeSlideUp} className="text-2xl font-black tracking-tight text-ink-900 lg:text-3xl dark:text-ink-50">{catalog.business_name}</motion.h1>
+        {catalog.description && <p className="mt-1 max-w-2xl text-sm text-ink-500 lg:text-base">{catalog.description}</p>}
 
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-400">
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-400 lg:text-sm">
           {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} />}
           <span className={status?.open ? "flex items-center gap-1 font-semibold text-presence-600" : "flex items-center gap-1 font-semibold text-red-500"}>
             <Clock size={12} />
@@ -224,160 +202,57 @@ function StorePage({ hash }: { hash: string }) {
 
         {hash && <StoreRewardsStrip catalogHex={hash} />}
         {hash && <StoreDeals catalogHex={hash} menu={items ?? []} />}
+        <StoreBags bags={bags} />
 
-        {bags.length > 0 && (
-          <motion.div variants={fadeSlideUp} className="mt-6">
-            <SectionLabel icon={<PackageOpen size={13} className="text-handshake-500" />} className="mb-2">{t("store.bags")}</SectionLabel>
-            <div className="flex flex-col gap-2">
-              {bags.map((row) => {
-                const hex = bytesToHex(row.hash);
-                const claimed = claimedBagHexes.has(hex);
-                const open = claimingBagHex === hex;
-                return (
-                  <div key={hex} className="rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-4">
-                    <div className="flex items-center gap-3">
-                      {row.bag.photo_data_uri ? (
-                        <img src={row.bag.photo_data_uri} alt="" className="h-14 w-14 shrink-0 rounded-xl object-cover" />
-                      ) : (
-                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-amber-300 to-handshake-500 text-xl">🎁</div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{row.bag.title}</p>
-                        {row.bag.description && <p className="truncate text-xs text-ink-400">{row.bag.description}</p>}
-                        <div className="flex items-center gap-2">
-                          <StatNumber className="text-sm">{formatCents(row.bag.price_cents)}</StatNumber>
-                          <span className="text-xs text-ink-400 line-through">{formatCents(row.bag.original_value_cents)}</span>
-                        </div>
-                      </div>
-                      <Button
-                        variant={claimed ? "secondary" : "primary"}
-                        disabled={claimed}
-                        className="shrink-0 px-3 py-1.5 text-xs"
-                        onClick={() => openClaim(row)}
-                      >
-                        {claimed ? t("store.claimed") : open ? t("common.cancel") : t("store.claim")}
-                      </Button>
-                    </div>
-
-                    <AnimatePresence initial={false}>
-                      {open && (
-                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
-                          <div className="mt-3 flex flex-col gap-2 border-t border-ink-100 dark:border-ink-800 pt-3">
-                            {row.bag.supports_pickup && row.bag.supports_delivery && (
-                              <div className="flex gap-2">
-                                {(["Pickup", "Delivery"] as const).map((f) => (
-                                  <button
-                                    key={f}
-                                    onClick={() => setClaimFulfillment(f)}
-                                    className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                                      claimFulfillment === f ? "bg-handshake-500 text-white" : "bg-ink-100 dark:bg-ink-800 text-ink-500"
-                                    }`}
-                                  >
-                                    {t(f === "Pickup" ? "cart.pickup" : "cart.delivery")}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                            {claimFulfillment === "Delivery" && (
-                              <>
-                                <AddressSearch value={claimDropoff} onChange={setClaimDropoff} label={t("store.deliveryLocation")} />
-                                <Input type="number" min={0} step={0.5} value={claimFee} onChange={(e) => setClaimFee(Number(e.target.value))} placeholder={t("store.maxFee")} prefix={currencySymbol()} />
-                              </>
-                            )}
-                            {action.error && <p className="text-xs text-red-500">{action.error}</p>}
-                            <Button loading={action.busy} onClick={() => submitClaim(row)} className="py-2 text-xs">
-                              {t("store.confirmClaim")}
-                            </Button>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-
-        {dietaryTags.length > 0 && (
-          <div className="mt-6 flex items-center gap-2">
-            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-ink-300 dark:text-ink-600">{t("store.diet")}</span>
-            <ChipRow>
-              {dietaryTags.map((tag) => (
-                <Chip key={tag} active={dietaryFilter.includes(tag)} onClick={() => setDietaryFilter((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))} tone="brand">
-                  {tag}
-                </Chip>
-              ))}
-            </ChipRow>
+        {/* The menu: categories beside it and the cart beside that, as the window allows. */}
+        <div className="mt-6 lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-8 2xl:grid-cols-[11rem_minmax(0,1fr)_18rem]">
+          <div className="hidden lg:block">
+            <MenuCategoryNav categories={categories} placement="side" label={t("store.categories")} />
           </div>
-        )}
 
-        {[...grouped.entries()].map(([category, rows]) => (
-          <motion.div variants={fadeSlideUp} key={category} className="mt-6">
-            <SectionLabel className="mb-2">{category}</SectionLabel>
-            {/* One list on a phone; cards two abreast on a wide screen. */}
-            <div className="flex flex-col divide-y divide-ink-100 rounded-2xl border border-ink-100 bg-white lg:grid lg:grid-cols-2 lg:gap-3 lg:divide-y-0 lg:border-0 lg:bg-transparent dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-900 lg:dark:bg-transparent">
-              {rows.map((row) => {
-                const { hash: itemHash, item } = row;
-                return (
-                <div key={bytesToHex(itemHash)} className="flex items-center gap-3 p-4 lg:rounded-2xl lg:border lg:border-ink-100 lg:bg-white lg:dark:border-ink-800 lg:dark:bg-ink-900">
-                  {item.photo_data_uri && <img src={item.photo_data_uri} alt="" className="h-14 w-14 shrink-0 rounded-xl object-cover" />}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{item.name}</p>
-                    {item.description && <p className="truncate text-xs text-ink-400">{item.description}</p>}
-                    <div className="flex items-center gap-2">
-                      <StatNumber className="text-sm">{formatCents(item.price_cents)}</StatNumber>
-                      {(() => {
-                        const r = itemRatings[bytesToHex(itemHash)];
-                        if (!r || r.count === 0) return null;
-                        return (
-                          <span className="flex items-center gap-0.5 text-xs text-ink-400">
-                            <Star size={11} className="fill-amber-400 text-amber-400" /> {(r.rating_sum / r.count).toFixed(1)} ({r.count})
-                          </span>
-                        );
-                      })()}
-                    </div>
-                    {item.age_restricted && minAge && (
-                      <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-                        {t("age.badge", { age: minAge })}
-                      </span>
-                    )}
-                    {(item.dietary_tags ?? []).length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {(item.dietary_tags ?? []).map((tag) => (
-                          <span key={tag} className="rounded-full bg-ink-100 dark:bg-ink-800 px-2 py-0.5 text-[10px] font-medium text-ink-500">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {!item.available && <span className="text-xs font-medium text-red-600">{t("store.unavailable")}</span>}
-                  </div>
-                  <motion.button
-                    whileTap={{ scale: 0.85 }}
-                    disabled={!item.available || !status?.open}
-                    aria-label={t("store.add", { item: item.name })}
-                    onClick={() => addItem(row)}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-900 dark:bg-white text-white dark:text-ink-900 transition hover:scale-105 disabled:bg-ink-200 disabled:text-ink-400"
-                  >
-                    <Plus size={18} />
-                  </motion.button>
+          <div className="min-w-0">
+            <MenuCategoryNav categories={categories} placement="bar" label={t("store.categories")} className="lg:hidden" />
+
+            {dietaryTags.length > 0 && (
+              <div className="mt-4 flex items-center gap-2 lg:mt-0">
+                <span className="shrink-0 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">{t("store.diet")}</span>
+                <ChipRow>
+                  {dietaryTags.map((tag) => (
+                    <Chip key={tag} active={dietaryFilter.includes(tag)} onClick={() => setDietaryFilter((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))} tone="brand">
+                      {tag}
+                    </Chip>
+                  ))}
+                </ChipRow>
+              </div>
+            )}
+
+            {[...grouped.entries()].map(([category, rows], i) => (
+              <section key={category} id={categories[i].id} className="mt-6 scroll-mt-32 first:mt-4 lg:scroll-mt-6">
+                <h2 className="mb-3 text-lg font-bold tracking-tight text-ink-900 dark:text-ink-50">{category}</h2>
+                {/* One column on a phone; two on a tablet, or a wide screen with room beside the categories. */}
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                  {rows.map((row) => (
+                    <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && !!status?.open} onAdd={() => addItem(row)} />
+                  ))}
                 </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        ))}
+              </section>
+            ))}
 
-        {items.length === 0 && <p className="mt-6 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-6 text-center text-sm text-ink-400">{t("store.noMenu")}</p>}
+            {items.length === 0 && <p className="mt-6 rounded-2xl border border-ink-100 bg-white p-6 text-center text-sm text-ink-400 dark:border-ink-800 dark:bg-ink-900">{t("store.noMenu")}</p>}
 
-        <motion.div variants={fadeSlideUp}>
-          <StoreContact catalog={catalog} />
-        </motion.div>
+            <motion.div variants={fadeSlideUp}>
+              <StoreContact catalog={catalog} />
+            </motion.div>
 
-        <motion.div variants={fadeSlideUp}>
-          <ReviewList className="mt-6" feedKey={`store:${hash}`} fetchPage={(before) => getReviewsFor({ Store: catalogHash }, before)} />
-        </motion.div>
+            <motion.div variants={fadeSlideUp}>
+              <ReviewList className="mt-6" feedKey={`store:${hash}`} fetchPage={(before) => getReviewsFor({ Store: catalogHash }, before)} />
+            </motion.div>
+          </div>
+
+          <div className="hidden 2xl:block">
+            <StoreCartPanel catalogRef={catalogHash} />
+          </div>
+        </div>
       </motion.div>
 
       {choosing && (
@@ -393,22 +268,23 @@ function StorePage({ hash }: { hash: string }) {
         />
       )}
 
+      {/* The cart, until the window has room to show it beside the menu. */}
       <AnimatePresence>
         {cartCount > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 30 }}
-            className="fixed inset-x-0 bottom-20 z-20 mx-auto flex max-w-md justify-center px-4 lg:bottom-6 lg:left-64"
+            className="fixed inset-x-0 bottom-20 z-20 mx-auto flex max-w-md justify-center px-4 lg:bottom-6 lg:left-sidebar 2xl:hidden"
           >
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={() => navigate("/customer/cart")}
-              className="flex w-full items-center justify-between rounded-full bg-handshake-500 px-5 py-3.5 font-semibold text-white shadow-[var(--shadow-glow)]"
+              className="flex w-full items-center justify-between rounded-full bg-handshake-500 px-5 py-3.5 font-semibold text-white shadow-[var(--shadow-glow)] transition hover:bg-handshake-600"
             >
               <span className="flex items-center gap-2">
                 <ShoppingBag size={18} />
-                View cart · {cartCount} item{cartCount === 1 ? "" : "s"}
+                {t("store.viewCart")} · {t("orders.items", { count: cartCount })}
               </span>
               <span>{formatCents(cart.total())}</span>
             </motion.button>

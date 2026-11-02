@@ -221,7 +221,7 @@ export function Cart() {
   }
 
   return (
-    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-28 pt-4">
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-28 pt-4 lg:px-0 lg:pb-8">
       <motion.button variants={fadeSlideUp} onClick={() => navigate(-1)} className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-ink-500">
         <ArrowLeft size={16} /> {t("common.back")}
       </motion.button>
@@ -232,86 +232,94 @@ export function Cart() {
         {t("cart.from", { store: cart.merchantName ?? "" })}
       </motion.p>
 
-      <motion.div variants={fadeSlideUp} className="mb-4 flex gap-2">
-        {!ageRestricted && (
-          <ToggleChip active={delivery} onClick={() => setFulfillment("Delivery")} className="flex-1 text-center">
-            {t("cart.delivery")}
-          </ToggleChip>
-        )}
-        <ToggleChip active={!delivery} onClick={() => setFulfillment("Pickup")} className="flex-1 text-center">
-          {t("cart.pickup")}
-        </ToggleChip>
-      </motion.div>
-      {ageRestricted && (
-        <motion.label variants={fadeSlideUp} className="mb-4 flex items-start gap-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
-          <Checkbox checked={ageConfirmed} onChange={(e) => setAgeConfirmed(e.target.checked)} className="mt-0.5" />
-          <span>{t("age.confirm", { age: terms.restricted_min_age ?? 18 })}</span>
-        </motion.label>
-      )}
+      {/* The choices, then the summary that places it -- side by side on a wide screen, the summary kept in view. */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-8">
+        <div className="min-w-0">
+          <motion.div variants={fadeSlideUp} className="mb-4 flex gap-2">
+            {!ageRestricted && (
+              <ToggleChip active={delivery} onClick={() => setFulfillment("Delivery")} className="flex-1 text-center">
+                {t("cart.delivery")}
+              </ToggleChip>
+            )}
+            <ToggleChip active={!delivery} onClick={() => setFulfillment("Pickup")} className="flex-1 text-center">
+              {t("cart.pickup")}
+            </ToggleChip>
+          </motion.div>
+          {ageRestricted && (
+            <motion.label variants={fadeSlideUp} className="mb-4 flex items-start gap-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+              <Checkbox checked={ageConfirmed} onChange={(e) => setAgeConfirmed(e.target.checked)} className="mt-0.5" />
+              <span>{t("age.confirm", { age: terms.restricted_min_age ?? 18 })}</span>
+            </motion.label>
+          )}
 
-      <CartLines menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} onEdit={setEditing} />
+          <CartLines menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} onEdit={setEditing} />
 
-      {delivery && (
-        <>
-          <DeliverToSection options={options} preference={dropoffPreference} doorAllowed={price.doorAllowed} store={{ location: storeInfo?.merchantLocation ?? null, radiusKm: storeInfo?.merchantRadiusKm ?? null }} />
-          <SpeedSection priority={options.priority} onChange={options.setPriority} storeWaitMinutes={storeInfo?.storeWaitMinutes ?? Math.round(terms.store_wait_secs / 60)} />
-          <MatchingSection autoMatch={options.autoMatch} onChange={options.setAutoMatch} />
-          <WhenSection options={options} />
-          <RepeatSection saving={action.doing === "recurring"} busy={action.busy} onSave={saveRecurring} />
-        </>
-      )}
+          {delivery && (
+            <>
+              <DeliverToSection options={options} preference={dropoffPreference} doorAllowed={price.doorAllowed} store={{ location: storeInfo?.merchantLocation ?? null, radiusKm: storeInfo?.merchantRadiusKm ?? null }} />
+              <SpeedSection priority={options.priority} onChange={options.setPriority} storeWaitMinutes={storeInfo?.storeWaitMinutes ?? Math.round(terms.store_wait_secs / 60)} />
+              <MatchingSection autoMatch={options.autoMatch} onChange={options.setAutoMatch} />
+              <WhenSection options={options} />
+              <RepeatSection saving={action.doing === "recurring"} busy={action.busy} onSave={saveRecurring} />
+            </>
+          )}
 
-      <NoteSection title={t("cart.storeNote")} value={kitchenNotes} onChange={setKitchenNotes} placeholder={t("cart.storeNotePlaceholder")} />
+          <NoteSection title={t("cart.storeNote")} value={kitchenNotes} onChange={setKitchenNotes} placeholder={t("cart.storeNotePlaceholder")} />
 
-      {delivery && (
-        <>
-          <NoteSection title={t("cart.dropoffNote")} value={dropoffNotes} onChange={setDropoffNotes} placeholder={t("cart.dropoffNotePlaceholder")} privacy={t("cart.dropoffNotePrivacy")} />
-          {/* A driver's bid can be anywhere up to this cap (validate_new_bid
-              rejects anything higher): the customer sets it, so they know at
-              checkout the most delivery can cost. */}
-          <Section title={t("cart.feeCap")}>
-            <p className="mb-2 text-xs text-ink-400">{t("cart.feeCapDetail")}</p>
-            <AmountChoice presets={options.feePresets} label={formatCents} preset={options.feePreset} custom={options.customFee} onPreset={options.setFeePreset} onCustom={options.setCustomFee} placeholder={t("cart.custom")} />
-          </Section>
-          <Section title={t("cart.tipTitle")}>
-            <AmountChoice presets={TIP_PRESETS_PERCENT} label={(p) => (p === 0 ? t("cart.noTip") : `${p}%`)} preset={options.tipPercent} custom={options.customTip} onPreset={options.setTipPercent} onCustom={options.setCustomTip} placeholder={t("cart.custom")} />
-          </Section>
-        </>
-      )}
+          {delivery && (
+            <>
+              <NoteSection title={t("cart.dropoffNote")} value={dropoffNotes} onChange={setDropoffNotes} placeholder={t("cart.dropoffNotePlaceholder")} privacy={t("cart.dropoffNotePrivacy")} />
+              {/* A driver's bid can be anywhere up to this cap (validate_new_bid
+                  rejects anything higher): the customer sets it, so they know at
+                  checkout the most delivery can cost. */}
+              <Section title={t("cart.feeCap")}>
+                <p className="mb-2 text-xs text-ink-400">{t("cart.feeCapDetail")}</p>
+                <AmountChoice presets={options.feePresets} label={formatCents} preset={options.feePreset} custom={options.customFee} onPreset={options.setFeePreset} onCustom={options.setCustomFee} placeholder={t("cart.custom")} />
+              </Section>
+              <Section title={t("cart.tipTitle")}>
+                <AmountChoice presets={TIP_PRESETS_PERCENT} label={(p) => (p === 0 ? t("cart.noTip") : `${p}%`)} preset={options.tipPercent} custom={options.customTip} onPreset={options.setTipPercent} onCustom={options.setCustomTip} placeholder={t("cart.custom")} />
+              </Section>
+            </>
+          )}
 
-      <RewardsSection discounts={discounts} menuItems={menuItems} onBrowse={() => catalogRef && navigate(`/rewards/${bytesToHex(catalogRef)}/redeem`)} />
-      <PromoSection discounts={discounts} />
+          <RewardsSection discounts={discounts} menuItems={menuItems} onBrowse={() => catalogRef && navigate(`/rewards/${bytesToHex(catalogRef)}/redeem`)} />
+          <PromoSection discounts={discounts} />
+        </div>
 
-      <CartTotals
-        fulfillment={fulfillment}
-        subtotalCents={subtotalCents}
-        price={price}
-        promo={discounts.appliedPromo && { code: discounts.appliedPromo.promo.code, cents: discounts.discountCents }}
-        reward={discounts.chosenReward && { name: discounts.chosenReward.name, cents: discounts.rewardDiscountCents }}
-        taxRates={taxRates}
-        taxIncluded={taxIncluded}
-        subsidyPercent={storeInfo?.subsidyPercent ?? 0}
-        tipCents={tipCents}
-        program={program}
-        pointsPreview={pointsPreview}
-      />
+        <div className="lg:sticky lg:top-6">
+          <p className="hidden text-lg font-bold tracking-tight text-ink-900 lg:block dark:text-ink-50">{t("cart.summary")}</p>
+          <CartTotals
+            fulfillment={fulfillment}
+            subtotalCents={subtotalCents}
+            price={price}
+            promo={discounts.appliedPromo && { code: discounts.appliedPromo.promo.code, cents: discounts.discountCents }}
+            reward={discounts.chosenReward && { name: discounts.chosenReward.name, cents: discounts.rewardDiscountCents }}
+            taxRates={taxRates}
+            taxIncluded={taxIncluded}
+            subsidyPercent={storeInfo?.subsidyPercent ?? 0}
+            tipCents={tipCents}
+            program={program}
+            pointsPreview={pointsPreview}
+          />
 
-      <motion.div variants={fadeSlideUp} className="mt-4 rounded-2xl bg-ink-100/60 dark:bg-ink-800/60 p-4 text-xs text-ink-500 dark:text-ink-400">
-        {delivery ? t("cart.deliveryNote") : t("cart.pickupNote")}
-      </motion.div>
+          <motion.div variants={fadeSlideUp} className="mt-4 rounded-2xl bg-ink-100/60 dark:bg-ink-800/60 p-4 text-xs text-ink-500 dark:text-ink-400">
+            {delivery ? t("cart.deliveryNote") : t("cart.pickupNote")}
+          </motion.div>
 
-      {action.error && <Notice className="mt-4">{action.error}</Notice>}
+          {action.error && <Notice className="mt-4">{action.error}</Notice>}
 
-      <CheckoutBar
-        notes={notes}
-        disabled={blocked}
-        placing={action.doing === "place"}
-        cardCents={price.payByCard ? price.cardChargeCents : null}
-        kind={!delivery ? "pickup" : options.scheduled ? "scheduled" : "delivery"}
-        totalCents={delivery ? price.estimatedTotalCents : price.orderTotalCents}
-        onPlace={placeOrder}
-        onPay={() => setPayingCents(price.cardChargeCents)}
-      />
+          <CheckoutBar
+            notes={notes}
+            disabled={blocked}
+            placing={action.doing === "place"}
+            cardCents={price.payByCard ? price.cardChargeCents : null}
+            kind={!delivery ? "pickup" : options.scheduled ? "scheduled" : "delivery"}
+            totalCents={delivery ? price.estimatedTotalCents : price.orderTotalCents}
+            onPlace={placeOrder}
+            onPay={() => setPayingCents(price.cardChargeCents)}
+          />
+        </div>
+      </div>
 
       {payingCents !== null && payIssuer && agentPubKey && (
         <CardPaySheet

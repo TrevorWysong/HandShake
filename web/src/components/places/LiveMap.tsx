@@ -100,7 +100,7 @@ export function LiveMap({ orderRef, pickup, dropoff, className }: Props) {
   return (
     <div>
       <div className="relative overflow-hidden rounded-2xl border border-ink-100 dark:border-ink-800 shadow-[var(--shadow-card)]">
-        <div ref={mountMap} className={className ?? "h-56 w-full"} />
+        <div ref={mountMap} className={className ?? "h-56 w-full lg:h-80"} />
         {live && (
           <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-1.5 rounded-full bg-white/90 dark:bg-ink-900/90 px-2.5 py-1 text-[10px] font-bold text-ink-700 dark:text-ink-200 shadow backdrop-blur-sm">
             <PresenceDot />

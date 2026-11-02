@@ -136,7 +136,7 @@ export function RedeemRewards() {
       {/* The reward in the bag, pinned above the nav. */}
       <AnimatePresence>
         {inBag && !opening && (
-          <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }} className="fixed inset-x-0 bottom-20 z-30 mx-auto max-w-md px-4 lg:bottom-6 lg:left-64">
+          <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }} className="fixed inset-x-0 bottom-20 z-30 mx-auto max-w-md px-4 lg:bottom-6 lg:left-sidebar">
             <button onClick={() => navigate("/customer/cart")} className="flex w-full items-center gap-3 rounded-2xl bg-ink-900 px-4 py-3 text-left text-white shadow-xl dark:bg-white dark:text-ink-900">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full" style={{ background: colors.to }}>
                 <Check size={15} strokeWidth={3} className="text-white" />

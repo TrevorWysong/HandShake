@@ -323,7 +323,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
       </Section>
 
       {/* Saving, kept in reach. */}
-      <div className="fixed inset-x-0 bottom-20 z-30 px-4 lg:bottom-6 lg:left-64">
+      <div className="fixed inset-x-0 bottom-20 z-30 px-4 lg:bottom-6 lg:left-sidebar">
         <div className="mx-auto max-w-lg rounded-2xl bg-white/90 p-3 shadow-[var(--shadow-float)] backdrop-blur-md dark:bg-ink-900/90">
           <AnimatePresence>
             {(problem || action.error) && (
