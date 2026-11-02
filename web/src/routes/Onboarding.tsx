@@ -8,7 +8,7 @@ import { Button, Card, Field, Input, Spinner, Textarea } from "../components/ui"
 import { PhotoInput } from "../components/PhotoInput";
 import { SplitAddressFields } from "../components/places/SplitAddressFields";
 import { EMPTY_SPLIT_ADDRESS } from "../lib/places/splitAddress";
-import { registerProviderCredential } from "../holochain/zomes/profiles";
+import { registerProviderCredential, saveAddress } from "../holochain/zomes/profiles";
 import type { GeoPoint, RoleTag } from "../holochain/types";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
 import { DEV_ADMIN_URL } from "../lib/network/devNode";
@@ -45,14 +45,9 @@ export function Onboarding() {
   const [phone, setPhone] = useState("");
   const [avatarDataUri, setAvatarDataUri] = useState("");
   const [location, setLocation] = useState<GeoPoint>(() => useSession.getState().location);
-  // Presentation-only right now -- `Profile` (profiles_integrity) has no
-  // address fields today, only `location` itself ever gets used (as the
-  // session's default browse/dropoff point). Captured here anyway so this
-  // screen matches the same split-address pattern every other "enter an
-  // address" moment in the app uses -- see SplitAddressFields' own doc
-  // comment. If a real saved mailing address for a customer/driver ever
-  // becomes a product need, this is already sitting here ready to wire
-  // into a Profile schema change.
+  // `location` is the session's browse and drop-off point; the address
+  // around it becomes the first saved address ("Home"), sealed like any
+  // other, so it's waiting at checkout.
   const [addressDraft, setAddressDraft] = useState(EMPTY_SPLIT_ADDRESS);
   const [roles, setRoles] = useState<RoleTag[]>(["Requester"]);
   // Part-way through bringing an account here (a reload while guardians
@@ -97,6 +92,12 @@ export function Onboarding() {
 
   const finish = () => action.run(async () => {
     await createIdentity(displayName.trim(), roles, location, { bio, avatarDataUri, phone }, adminUrl);
+    if (addressDraft.street.trim()) {
+      // Its own call, after the profile: an address that doesn't save
+      // leaves sign-up done, and it can be added at checkout instead.
+      const { street, line2, city, state, zip } = addressDraft;
+      await saveAddress({ label: t("address.home"), location, street: street.trim(), line2: line2.trim(), city: city.trim(), state: state.trim(), zip: zip.trim() }).catch(() => undefined);
+    }
     if (roles.includes("Provider")) {
       await registerProviderCredential({
         profile_action: useSession.getState().profileActionHash!,
@@ -217,11 +218,6 @@ export function Onboarding() {
                 <Field label={t("onboarding.phone")} className="mb-4">
                   <Input maxLength={MAX_PHONE_CHARS} value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" />
                 </Field>
-                {/* Same shared SplitAddressFields every other "enter an
-                    address" moment in the app uses (merchant storefront
-                    publish/edit) -- see this component's and
-                    addressDraft's own doc comments for why the split
-                    fields here are presentation-only for now. */}
                 <div className="mb-4 flex flex-col gap-2">
                   <SplitAddressFields
                     point={location}
@@ -229,7 +225,6 @@ export function Onboarding() {
                     address={addressDraft}
                     onAddressChange={setAddressDraft}
                     streetLabel={t("onboarding.location")}
-                    withLine2={false}
                   />
                 </div>
                 {devHost && (

@@ -24,7 +24,6 @@ export function SplitAddressFields({
   onAddressChange,
   pointIsEditable = true,
   streetLabel,
-  withLine2 = true,
 }: {
   point: GeoPoint;
   onPointChange: (p: GeoPoint) => void;
@@ -38,9 +37,6 @@ export function SplitAddressFields({
   /// actually driving a real, saved coordinate.
   pointIsEditable?: boolean;
   streetLabel?: string;
-  /// Off where an address only says where someone is (onboarding's area to
-  /// browse), not where to come to: there's no door to find.
-  withLine2?: boolean;
 }) {
   const t = useT();
   return (
@@ -57,7 +53,7 @@ export function SplitAddressFields({
         showLocationWarning={pointIsEditable}
         initialQuery={address.street}
       />
-      {withLine2 && <AddressLine2Field value={address.line2} onChange={(line2) => onAddressChange({ ...address, line2 })} />}
+      <AddressLine2Field value={address.line2} onChange={(line2) => onAddressChange({ ...address, line2 })} />
       <Field label={t("address.city")}>
         <Input maxLength={MAX_PLACE_CHARS} value={address.city} onChange={(e) => onAddressChange({ ...address, city: e.target.value })} />
       </Field>
