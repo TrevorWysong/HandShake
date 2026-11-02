@@ -258,9 +258,9 @@ export function StoreWaitCard({ catalog, catalogRef, onSaved }: { catalog: Merch
       <p className="mb-3 text-xs leading-relaxed text-ink-400">
         {t("storeSettings.waitDetail")} {own === null ? t("storeSettings.usingNetwork", { minutes: usual }) : ""}
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input type="number" min={min} max={max} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} suffix={t("storeSettings.min")} className="w-28" />
-        <Button loading={save.busy} disabled={!valid || minutes === own} onClick={() => saveWait(minutes)} className="px-4 py-2 text-xs">
+        <Button loading={save.busy} disabled={!valid || minutes === (own ?? usual)} onClick={() => saveWait(minutes)} className="px-4 py-2 text-xs">
           {t("common.save")}
         </Button>
         {own !== null && (
@@ -296,9 +296,9 @@ export function BusyCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCa
       <p className="mb-3 text-xs leading-relaxed text-ink-400">
         {busy ? t("storeSettings.busyOn", { minutes: catalog.prep_minutes + catalog.busy_extra_minutes, usual: catalog.prep_minutes }) : t("storeSettings.busyOff")}
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input type="number" min={1} max={room} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} suffix={t("storeSettings.min")} className="w-28" />
-        <Button loading={save.busy} disabled={!valid} onClick={() => saveBusy(extra)} className="px-4 py-2 text-xs">
+        <Button loading={save.busy} disabled={!valid || extra === catalog.busy_extra_minutes} onClick={() => saveBusy(extra)} className="px-4 py-2 text-xs">
           {busy ? t("item.update") : t("storeSettings.imBusy")}
         </Button>
         {busy && (
@@ -322,9 +322,9 @@ function LimitEditor({ initialCents, placeholder, onSave }: { initialCents: numb
   const cents = draft.trim() === "" || !Number.isFinite(dollars) || dollars <= 0 ? null : toMinorUnits(dollars);
   return (
     <div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input type="number" min={0} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder ?? t("storeSettings.noLimit")} prefix={currencySymbol()} className="w-32" />
-        <Button loading={save.busy} onClick={() => save.run(() => onSave(cents))} className="px-4 py-2 text-xs">
+        <Button loading={save.busy} disabled={cents === initialCents} onClick={() => save.run(() => onSave(cents))} className="px-4 py-2 text-xs">
           {t("common.save")}
         </Button>
       </div>
@@ -341,9 +341,9 @@ function SubsidyEditor({ initial, onSave }: { initial: number; onSave: (percent:
   const percent = Math.min(100, Math.max(0, Math.round(Number(draft || 0))));
   return (
     <div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input type="number" min={0} max={100} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="50" suffix="%" className="w-24" />
-        <Button loading={save.busy} onClick={() => save.run(() => onSave(percent))} className="px-4 py-2 text-xs">
+        <Button loading={save.busy} disabled={percent === initial} onClick={() => save.run(() => onSave(percent))} className="px-4 py-2 text-xs">
           {t("common.save")}
         </Button>
       </div>
@@ -376,7 +376,7 @@ export function ListingCard({ catalogRef }: { catalogRef: Uint8Array }) {
       </p>
       {listed ? (
         confirming ? (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="danger" loading={save.busy} onClick={() => act(() => closeListing(catalogRef))} className="px-4 py-2 text-xs">
               {t("storeSettings.close")}
             </Button>

@@ -9,6 +9,7 @@ import { PresenceDot } from "../ui";
 import { NavItem, type NavPlacement } from "./NavItem";
 import { MerchantNav } from "./MerchantNav";
 import { Notifier } from "./Notifier";
+import { Toaster } from "./Toaster";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { usePolling, useResource } from "../../lib/hooks/useResource";
 import { nextNetwork } from "../../lib/account/migration";
@@ -139,6 +140,7 @@ export function AppShell() {
           <ModeNav mode={mode} cartCount={cartCount} placement="bar" />
         </nav>
       )}
+      <Toaster />
     </div>
   );
 }

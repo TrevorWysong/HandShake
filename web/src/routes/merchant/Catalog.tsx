@@ -22,6 +22,7 @@ import { GoodieBagsSection } from "./catalog/GoodieBagsSection";
 import { StoreReviews } from "./catalog/StoreReviews";
 import type { MerchantCatalog as Catalog, ModifierGroup } from "../../holochain/types";
 import { useT } from "../../i18n";
+import { toast } from "../../store/toast";
 
 /// The Menu tab: everything about the *currently selected* store (see
 /// `StoreSwitcher`/`merchantStores.ts`). Each store renders as its own keyed
@@ -70,6 +71,15 @@ function StoreCatalog({ storeHex, openDetailsOnArrival }: { storeHex: string; op
   async function reloadProfile() {
     await Promise.all([reload(), loadStores()]);
   }
+  // A setting saved: the store as it is now, and a word that it took.
+  async function saved() {
+    await reload();
+    toast(t("common.saved"));
+  }
+  async function savedProfile() {
+    await reloadProfile();
+    toast(t("common.saved"));
+  }
 
   if (!data) {
     return (
@@ -109,24 +119,25 @@ function StoreCatalog({ storeHex, openDetailsOnArrival }: { storeHex: string; op
         {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} />}
 
         <motion.div variants={fadeSlideUp}>
-          <StoreDetailsCard catalog={catalog} catalogRef={catalogRef} startEditing={openDetailsOnArrival} onSaved={reloadProfile} />
+          <StoreDetailsCard catalog={catalog} catalogRef={catalogRef} startEditing={openDetailsOnArrival} onSaved={savedProfile} />
         </motion.div>
         <motion.div variants={fadeSlideUp}>
-          <HoursCard catalog={catalog} catalogRef={catalogRef} onSaved={reload} />
+          <HoursCard catalog={catalog} catalogRef={catalogRef} onSaved={saved} />
+        </motion.div>
+        {/* The store's one-line settings, side by side on a wide screen. */}
+        <motion.div variants={fadeSlideUp} className="lg:grid lg:grid-cols-2 lg:gap-x-4">
+          <AutoAcceptCard catalog={catalog} catalogRef={catalogRef} onSaved={saved} />
+          <BusyCard key={catalog.busy_extra_minutes} catalog={catalog} catalogRef={catalogRef} onSaved={saved} />
+          <MinimumOrderCard catalog={catalog} catalogRef={catalogRef} onSaved={saved} />
+          <StoreWaitCard catalog={catalog} catalogRef={catalogRef} onSaved={saved} />
+          <LeaveAtDoorCard catalog={catalog} catalogRef={catalogRef} onSaved={saved} />
+          <DeliverySubsidyCard catalog={catalog} catalogRef={catalogRef} onSaved={saved} />
         </motion.div>
         <motion.div variants={fadeSlideUp}>
-          <AutoAcceptCard catalog={catalog} catalogRef={catalogRef} onSaved={reload} />
-          <BusyCard key={catalog.busy_extra_minutes} catalog={catalog} catalogRef={catalogRef} onSaved={reload} />
-          <MinimumOrderCard catalog={catalog} catalogRef={catalogRef} onSaved={reload} />
-          <StoreWaitCard catalog={catalog} catalogRef={catalogRef} onSaved={reload} />
           <ListingCard catalogRef={catalogRef} />
           <InsightsCard catalogRef={catalogRef} items={items} />
-          <TaxCard key={JSON.stringify(catalog.tax_rates ?? [])} catalog={catalog} catalogRef={catalogRef} onSaved={reload} />
+          <TaxCard key={JSON.stringify(catalog.tax_rates ?? [])} catalog={catalog} catalogRef={catalogRef} onSaved={saved} />
           {(catalog.tax_rates ?? []).length > 0 && <TaxReportCard catalogRef={catalogRef} />}
-          <LeaveAtDoorCard catalog={catalog} catalogRef={catalogRef} onSaved={reload} />
-        </motion.div>
-        <motion.div variants={fadeSlideUp}>
-          <DeliverySubsidyCard catalog={catalog} catalogRef={catalogRef} onSaved={reload} />
         </motion.div>
         <motion.div variants={fadeSlideUp}>
           <PromoCodesCard storeHex={storeHex} catalogRef={catalogRef} items={items} />
