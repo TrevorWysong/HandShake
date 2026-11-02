@@ -2,14 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { estimateTrip } from "../src/lib/driving/eta.ts";
 
-const HERE = { lat: 27.7676, lon: -82.6403 };
-// Just under 10km north.
-const NORTH = { lat: 27.8575, lon: -82.6403 };
 const NOW = 1_800_000_000_000;
-const trip = { from: HERE, store: NORTH, dropoff: HERE, speedKmh: 20, readyBy: null, prepMinutes: null, nowMs: NOW };
+// Half an hour by road to the store, half an hour on.
+const trip = { toStoreMinutes: 30, toDropoffMinutes: 30, readyBy: null, prepMinutes: null, nowMs: NOW };
 
-test("an ETA is the trip to the store and on to the drop-off, at the driver's speed", () => {
-  // 10km to the store, 10km back, at 20km/h: half an hour each way.
+test("an ETA is the road time to the store and on to the drop-off", () => {
   assert.deepEqual(estimateTrip(trip), { toStoreMinutes: 30, etaMinutes: 60 });
 });
 
@@ -24,18 +21,22 @@ test("before the kitchen starts, the food's ready its quoted prep time from now"
 });
 
 test("an ETA is never under a minute", () => {
-  assert.deepEqual(estimateTrip({ ...trip, store: HERE }), { toStoreMinutes: 1, etaMinutes: 1 });
+  assert.deepEqual(estimateTrip({ ...trip, toStoreMinutes: 0.2, toDropoffMinutes: 0 }), { toStoreMinutes: 1, etaMinutes: 1 });
 });
 
-test("a restaurant card's estimate: prep, any busy extra, and the trip, rounded, with a driver's spread", async () => {
+test("a restaurant card's estimate: prep, any busy extra, and the drive, rounded, with a driver's spread", async () => {
   const { deliveryEstimate } = await import("../src/lib/driving/eta");
   const here = { lat: 27.7676, lon: -82.6403 };
-  // ~5 km away at 25 km/h is 12 minutes; 15 prep + 12 = 27 -> 25.
-  const near = deliveryEstimate({ location: { lat: 27.8126, lon: -82.6403 }, prep_minutes: 15, busy_extra_minutes: 0 }, here);
+  const store = { location: { lat: 27.8126, lon: -82.6403 }, prep_minutes: 15, busy_extra_minutes: 0 };
+  // 15 prep + 12 by road = 27 -> 25.
+  const near = deliveryEstimate(store, here, 12);
   assert.deepEqual([near.fromMinutes, near.toMinutes], [25, 35]);
   assert.ok(Math.abs(near.km - 5) < 0.1);
-  const busy = deliveryEstimate({ location: here, prep_minutes: 15, busy_extra_minutes: 20 }, here);
-  assert.deepEqual([busy.fromMinutes, busy.toMinutes], [35, 45], "a busy kitchen says so");
+  const busy = deliveryEstimate({ ...store, busy_extra_minutes: 20 }, here, 12);
+  assert.deepEqual([busy.fromMinutes, busy.toMinutes], [45, 55], "a busy kitchen says so");
+  const unrouted = deliveryEstimate(store, here, null);
+  assert.deepEqual([unrouted.fromMinutes, unrouted.toMinutes], [null, null], "no drive time, no guess");
+  assert.ok(Math.abs(unrouted.km - 5) < 0.1, "but still how far");
 });
 
 test("distances read in the local unit", async () => {

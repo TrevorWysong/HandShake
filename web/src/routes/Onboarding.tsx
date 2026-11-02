@@ -18,6 +18,8 @@ import { RestoreAccount } from "../components/account/RestoreAccount";
 import { isRestoring, rememberedMethod } from "../lib/account/restoring";
 import { MAX_LABEL_CHARS, MAX_LICENSE_PLATE_CHARS, MAX_NOTE_CHARS, MAX_PHONE_CHARS, MAX_VEHICLE_CHARS } from "../holochain/types";
 import { useT, type MessageKey } from "../i18n";
+import { useDriverSettings } from "../store/roleSettings";
+import { TRAVEL_MODES } from "../lib/driving/routing";
 import { useAction } from "../lib/hooks/useAction";
 
 const ROLE_CARDS: { role: RoleTag; label: MessageKey; blurb: MessageKey; icon: typeof Bike }[] = [
@@ -26,7 +28,6 @@ const ROLE_CARDS: { role: RoleTag; label: MessageKey; blurb: MessageKey; icon: t
   { role: "Merchant", label: "onboarding.role.sell", icon: ChefHat, blurb: "onboarding.role.sellBlurb" },
 ];
 
-const VEHICLE_TYPES: MessageKey[] = ["onboarding.vehicle.car", "onboarding.vehicle.bike", "onboarding.vehicle.scooter", "onboarding.vehicle.foot"];
 
 type Step = "roles" | "details" | "vehicle" | "restore";
 const STEP_ORDER: Step[] = ["roles", "details", "vehicle"];
@@ -62,7 +63,8 @@ export function Onboarding() {
   // Joining, or carrying on as an identity: once, as the app moves on.
   const action = useAction();
 
-  const [vehicleType, setVehicleType] = useState(VEHICLE_TYPES[0]);
+  // How they get around -- also what their bids' ETAs are timed for.
+  const [vehicle, setVehicle] = useState(TRAVEL_MODES[0]);
   const [vehicleDetail, setVehicleDetail] = useState("");
   const [licensePlate, setLicensePlate] = useState("");
   const [vehiclePhoto, setVehiclePhoto] = useState("");
@@ -98,12 +100,13 @@ export function Onboarding() {
     if (roles.includes("Provider")) {
       await registerProviderCredential({
         profile_action: useSession.getState().profileActionHash!,
-        vehicle_description: `${t(vehicleType)}${vehicleDetail ? " · " + vehicleDetail : ""}`,
+        vehicle_description: `${t(vehicle.label)}${vehicleDetail ? " · " + vehicleDetail : ""}`,
         capabilities: ["Food"],
         verified: false,
         license_plate: licensePlate,
         photo_data_uri: vehiclePhoto,
       });
+      useDriverSettings.getState().setTravelMode(vehicle.mode);
     }
     navigate(`/${primaryModeForRoles(roles)}`);
   }, { stayBusy: true });
@@ -270,16 +273,16 @@ export function Onboarding() {
 
                 <label className="block text-xs font-semibold text-ink-500 mb-1">{t("onboarding.vehicleType")}</label>
                 <div className="mb-4 flex flex-wrap gap-2">
-                  {VEHICLE_TYPES.map((type) => (
+                  {TRAVEL_MODES.map((option) => (
                     <button
-                      key={type}
-                      onClick={() => setVehicleType(type)}
+                      key={option.mode}
+                      onClick={() => setVehicle(option)}
                       className={clsx(
                         "rounded-full px-3 py-1.5 text-xs font-semibold transition",
-                        vehicleType === type ? "bg-handshake-500 text-white" : "bg-ink-100 text-ink-500 hover:bg-ink-200"
+                        vehicle === option ? "bg-handshake-500 text-white" : "bg-ink-100 text-ink-500 hover:bg-ink-200"
                       )}
                     >
-                      {t(type)}
+                      {t(option.label)}
                     </button>
                   ))}
                 </div>

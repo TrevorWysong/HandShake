@@ -1,7 +1,8 @@
 // A driver's automatic bid on an order they're offered: their rate for the
 // trip -- to the store, then on to the drop-off -- never under their lowest
 // fee, and never over the customer's cap (an order capped below their price
-// gets no bid). The ETAs are their usual estimate (`estimateTrip`).
+// gets no bid). The ETAs are timed by road (`routing.ts`, `estimateTrip`);
+// an order the routing service can't time gets no automatic bid.
 import type { AutoBid } from "../../store/roleSettings";
 
 export interface AutoBidTerms {

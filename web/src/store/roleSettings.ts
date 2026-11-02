@@ -5,7 +5,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { DropoffPreference } from "../holochain/types";
-import { TYPICAL_DRIVER_KMH } from "../lib/driving/eta";
+import type { TravelMode } from "../lib/driving/routing";
 
 /// A customer's checkout as they last left it, offered again next time.
 export interface CheckoutDefaults {
@@ -87,11 +87,11 @@ interface DriverSettings {
   limits: DriverLimits;
   autoBid: AutoBid;
   setAutoBid: (autoBid: Partial<AutoBid>) => void;
-  /// How fast they usually travel, door to door, in km/h -- what their bid
-  /// ETAs are estimated from.
-  travelSpeedKmh: number;
+  /// How they get around -- which roads their bids' ETAs are timed on
+  /// (`routing.ts`).
+  travelMode: TravelMode;
   setLimits: (limits: Partial<DriverLimits>) => void;
-  setTravelSpeed: (kmh: number) => void;
+  setTravelMode: (mode: TravelMode) => void;
 }
 
 export const useDriverSettings = create<DriverSettings>()(
@@ -100,9 +100,9 @@ export const useDriverSettings = create<DriverSettings>()(
       limits: { maxAtOnce: null, takePriority: true, minFeeCents: 0 },
       autoBid: { on: false, perKmCents: 100, skipRefusals: 3 },
       setAutoBid: (autoBid) => set((state) => ({ autoBid: { ...state.autoBid, ...autoBid } })),
-      travelSpeedKmh: TYPICAL_DRIVER_KMH,
+      travelMode: "car",
       setLimits: (limits) => set((state) => ({ limits: { ...state.limits, ...limits } })),
-      setTravelSpeed: (travelSpeedKmh) => set({ travelSpeedKmh }),
+      setTravelMode: (travelMode) => set({ travelMode }),
     }),
     // Settings saved before a field existed take its default.
     { name: "handshake.driver-settings.v1", merge: (saved, current) => ({ ...current, ...(saved as Partial<DriverSettings> | undefined), autoBid: { ...current.autoBid, ...(saved as Partial<DriverSettings> | undefined)?.autoBid } }) },

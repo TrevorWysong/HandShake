@@ -2303,6 +2303,11 @@ export interface NetworkTerms {
    */
   geocoder_url: string;
   /**
+   * An OSRM-compatible routing API, `{profile}` for how one travels -- if
+   * the network names one.
+   */
+  routing_url: string | null;
+  /**
    * The push relay that wakes a closed app, if the network runs one.
    */
   push_relay_url: string | null;

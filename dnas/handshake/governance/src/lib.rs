@@ -176,6 +176,13 @@ pub struct Services {
     /// Address search: the base of a Nominatim-compatible API (`/search`,
     /// `/reverse`) -- one's own Nominatim, or Photon's compatible endpoint.
     pub geocoder_url: String,
+    /// Travel times by road, for drivers' ETAs and stores' delivery times:
+    /// the base of an OSRM-compatible API (`/route/v1`, `/table/v1`), where
+    /// `{profile}` stands for `car`, `bike` or `foot` -- one instance for
+    /// each, as OSRM runs. Unset, apps estimate nothing: drivers type their
+    /// ETAs.
+    #[serde(default)]
+    pub routing_url: Option<String>,
     /// The push relay that wakes a closed app (docs/MOBILE.md, `push/`). Unset,
     /// the network has none: apps hear of changes only while open.
     #[serde(default)]
@@ -287,12 +294,13 @@ pub fn issuers() -> Vec<AgentPubKey> {
         .unwrap_or_default()
 }
 
-/// The map and address-search services apps use (see `HandShakeDnaProperties::services`).
+/// The map, address-search and routing services apps use (see `HandShakeDnaProperties::services`).
 pub fn services() -> Services {
     setting(|p| p.services, Services {
         map_tiles_url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png".into(),
         map_attribution: "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors".into(),
         geocoder_url: "https://nominatim.openstreetmap.org".into(),
+        routing_url: Some("https://routing.openstreetmap.de/routed-{profile}".into()),
         push_relay_url: None,
     })
 }
