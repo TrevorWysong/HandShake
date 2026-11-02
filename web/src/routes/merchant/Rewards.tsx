@@ -15,8 +15,9 @@ import { RewardsCard } from "../../components/rewards/RewardsCard";
 import { HowYouEarn, RewardRail, RewardTile } from "../../components/rewards/RewardPieces";
 import { StoreSwitcher } from "../../components/store/StoreSwitcher";
 import { NoStoreYet } from "../../components/store/NoStoreYet";
+import { ChoiceTermsEditor } from "./catalog/ChoiceTermsEditor";
 import { Button, Card, Field, Input, SectionLabel, Select, Skeleton, Switch } from "../../components/ui";
-import { MAX_HAPPY_HOURS, MAX_ITEM_BONUSES, MAX_REWARDS, MAX_TIERS, type MerchantCatalog, type PromoReward, type Reward, type RewardsProgram } from "../../holochain/types";
+import { MAX_HAPPY_HOURS, MAX_ITEM_BONUSES, MAX_REWARDS, MAX_TIERS, type ChoiceTerms, type MerchantCatalog, type PromoReward, type Reward, type RewardsProgram } from "../../holochain/types";
 import { useT } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
 
@@ -255,7 +256,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
             )}
             <div className="flex flex-col gap-3">
               {draft.rewards.map((reward, i) => (
-                <RewardEditor key={reward.id} reward={reward} menu={menu} tiers={draft.tiers.map((x) => x.name)} pointsName={draft.points_name} onChange={(next) => update((p) => ({ ...p, rewards: p.rewards.map((r, j) => (j === i ? next : r)) }))} onRemove={() => update((p) => ({ ...p, rewards: p.rewards.filter((_, j) => j !== i) }))} />
+                <RewardEditor key={reward.id} catalogRef={catalogRef} reward={reward} menu={menu} tiers={draft.tiers.map((x) => x.name)} onChange={(next) => update((p) => ({ ...p, rewards: p.rewards.map((r, j) => (j === i ? next : r)) }))} onRemove={() => update((p) => ({ ...p, rewards: p.rewards.filter((_, j) => j !== i) }))} />
               ))}
             </div>
             {draft.rewards.length < MAX_REWARDS && (
@@ -263,7 +264,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
                 onClick={() =>
                   update((p) => {
                     const id = Math.max(0, ...p.rewards.map((r) => r.id)) + 1;
-                    const benefit: PromoReward = menu[0] ? { FreeItem: { item_ref: menu[0].hash, quantity: 1 } } : { FlatOffSubtotal: 500 };
+                    const benefit: PromoReward = menu[0] ? { FreeItem: { item_ref: menu[0].hash, quantity: 1, choices: [] } } : { FlatOffSubtotal: 500 };
                     return { ...p, rewards: [...p.rewards, { id, name: menu[0] ? t("rewardsAdmin.freeNamed", { item: menu[0].item.name }) : t("rewardsAdmin.dollarsOff"), cost: 100 * id, benefit, min_tier: 0 }] };
                   })
                 }
@@ -470,14 +471,20 @@ type BenefitKind = "FreeItem" | "PercentOffItem" | "FlatOffSubtotal" | "PercentO
 const kindOf = (benefit: PromoReward): BenefitKind => Object.keys(benefit)[0] as BenefitKind;
 
 /// One reward, edited.
-function RewardEditor({ reward, menu, tiers, pointsName, onChange, onRemove }: { reward: Reward; menu: ItemRow[]; tiers: string[]; pointsName: string; onChange: (reward: Reward) => void; onRemove: () => void }) {
+function RewardEditor({ catalogRef, reward, menu, tiers, onChange, onRemove }: { catalogRef: Uint8Array; reward: Reward; menu: ItemRow[]; tiers: string[]; onChange: (reward: Reward) => void; onRemove: () => void }) {
   const t = useT();
   const kind = kindOf(reward.benefit);
-  const firstItem = menu[0]?.hash ?? new Uint8Array(39);
+  const benefit = reward.benefit;
+  // An item reward's item and the choices it covers, whichever kind it is.
+  const gift = "FreeItem" in benefit ? benefit.FreeItem : "PercentOffItem" in benefit ? benefit.PercentOffItem : null;
+  const giftRow = gift && menu.find((row) => bytesEqual(row.hash, gift.item_ref));
+  const setGift = (patch: { item_ref?: Uint8Array; choices?: ChoiceTerms[]; percent?: number }) =>
+    onChange({ ...reward, benefit: "FreeItem" in benefit ? { FreeItem: { ...benefit.FreeItem, ...patch } } : "PercentOffItem" in benefit ? { PercentOffItem: { ...benefit.PercentOffItem, ...patch } } : benefit });
   const setKind = (next: BenefitKind) => {
-    const item = "FreeItem" in reward.benefit ? reward.benefit.FreeItem.item_ref : "PercentOffItem" in reward.benefit ? reward.benefit.PercentOffItem.item_ref : firstItem;
+    const item = gift?.item_ref ?? menu[0]?.hash ?? new Uint8Array(39);
+    const choices = gift?.choices ?? [];
     const benefit: PromoReward =
-      next === "FreeItem" ? { FreeItem: { item_ref: item, quantity: 1 } } : next === "PercentOffItem" ? { PercentOffItem: { item_ref: item, percent: 50, quantity: 1 } } : next === "FlatOffSubtotal" ? { FlatOffSubtotal: 500 } : { PercentOffSubtotal: 10 };
+      next === "FreeItem" ? { FreeItem: { item_ref: item, quantity: 1, choices } } : next === "PercentOffItem" ? { PercentOffItem: { item_ref: item, percent: 50, quantity: 1, choices } } : next === "FlatOffSubtotal" ? { FlatOffSubtotal: 500 } : { PercentOffSubtotal: 10 };
     onChange({ ...reward, benefit });
   };
   return (
@@ -490,7 +497,7 @@ function RewardEditor({ reward, menu, tiers, pointsName, onChange, onRemove }: {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <Field label={t("rewardsAdmin.cost")}>
-          <Input type="number" min={1} max={1_000_000} value={reward.cost} onChange={(e) => onChange({ ...reward, cost: clamp(e.target.value, 1, 1_000_000) })} suffix={pointsName} />
+          <Input type="number" min={1} max={1_000_000} value={reward.cost} onChange={(e) => onChange({ ...reward, cost: clamp(e.target.value, 1, 1_000_000) })} suffix="pts" />
         </Field>
         <Field label={t("rewardsAdmin.gives")}>
           <Select value={kind} onChange={(e) => setKind(e.target.value as BenefitKind)}>
@@ -500,16 +507,16 @@ function RewardEditor({ reward, menu, tiers, pointsName, onChange, onRemove }: {
             <option value="PercentOffSubtotal">{t("rewardsAdmin.kind.percent")}</option>
           </Select>
         </Field>
-        {"FreeItem" in reward.benefit && (
-          <div className="col-span-2">
-            <ItemSelect menu={menu} value={reward.benefit.FreeItem.item_ref} onChange={(item_ref) => onChange({ ...reward, benefit: { FreeItem: { item_ref, quantity: 1 } } })} />
+        {gift && (
+          <div className={"PercentOffItem" in benefit ? undefined : "col-span-2"}>
+            <ItemSelect menu={menu} value={gift.item_ref} onChange={(item_ref) => setGift({ item_ref, choices: [] })} />
           </div>
         )}
-        {"PercentOffItem" in reward.benefit && (
-          <>
-            <ItemSelect menu={menu} value={reward.benefit.PercentOffItem.item_ref} onChange={(item_ref) => onChange({ ...reward, benefit: { PercentOffItem: { ...(reward.benefit as { PercentOffItem: { item_ref: Uint8Array; percent: number; quantity: number } }).PercentOffItem, item_ref } } })} />
-            <Input type="number" min={1} max={100} value={reward.benefit.PercentOffItem.percent} onChange={(e) => onChange({ ...reward, benefit: { PercentOffItem: { ...(reward.benefit as { PercentOffItem: { item_ref: Uint8Array; percent: number; quantity: number } }).PercentOffItem, percent: clamp(e.target.value, 1, 100) } } })} suffix="%" />
-          </>
+        {"PercentOffItem" in benefit && <Input type="number" min={1} max={100} value={benefit.PercentOffItem.percent} onChange={(e) => setGift({ percent: clamp(e.target.value, 1, 100) })} suffix="%" />}
+        {gift && giftRow && (
+          <div className="col-span-2">
+            <ChoiceTermsEditor key={bytesToHex(gift.item_ref)} catalogRef={catalogRef} row={giftRow} value={gift.choices} onChange={(choices) => setGift({ choices })} />
+          </div>
         )}
         {"FlatOffSubtotal" in reward.benefit && (
           <div className="col-span-2">

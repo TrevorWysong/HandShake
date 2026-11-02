@@ -215,6 +215,6 @@ await runScenario(async (scenario) => {
   assert.equal(decoded.find((d) => d.code === "GONE")?.active, false, "GONE should reflect its deactivation");
   const bogoDecoded = decoded.find((d) => d.code === "BOGOEMPANADA");
   assert.deepEqual(bogoDecoded?.requirement, { MinimumItemQuantity: { item_ref: menuItemRef, quantity: 2 } }, "BOGOEMPANADA's requirement should round-trip exactly");
-  assert.deepEqual(bogoDecoded?.reward, { FreeItem: { item_ref: menuItemRef, quantity: 1 } }, "BOGOEMPANADA's reward should round-trip exactly");
+  assert.deepEqual(bogoDecoded?.reward, { FreeItem: { item_ref: menuItemRef, quantity: 1, choices: [] } }, "BOGOEMPANADA's reward should round-trip exactly");
   console.log("[PASS] list_promo_codes_for_catalog returns every code the merchant created, with requirement/reward round-tripping exactly");
 });

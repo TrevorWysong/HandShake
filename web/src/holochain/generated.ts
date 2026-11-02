@@ -438,6 +438,25 @@ export type CatalogLocalSignal =
   | { ClaimConfirmed: ActionHash };
 
 /**
+ * What an item reward says about one of the item's choice groups ("Size:
+ * Medium", "Toppings: any two"): the options a line may have chosen in it
+ * -- none listed, any -- and how many chosen units the reward pays for
+ * too, the dearest first. A line that doesn't choose from the group isn't
+ * covered. A group the reward doesn't name is open, and charged.
+ */
+export interface ChoiceTerms {
+  /**
+   * The group, by its original action.
+   */
+  group: ActionHash;
+  /**
+   * Option ids, each once.
+   */
+  options: number[];
+  included: number;
+}
+
+/**
  * One option chosen, how many, and what was chosen from the group it
  * opens.
  */
@@ -3085,24 +3104,27 @@ export type PromoReward =
    * same catalog) become free. The generic shape behind both
    * "spend $X, get item Y free" and buy-X-get-Y-free/BOGO deals --
    * which one it is depends entirely on the paired `PromoRequirement`,
-   * not on anything here.
+   * not on anything here. `choices` narrow it to some of the item's
+   * choices ("a medium 2-topping pizza"); none, any.
    */
   | {
       FreeItem: {
         item_ref: ActionHash;
         quantity: number;
+        choices: ChoiceTerms[];
       };
     }
   /**
    * Up to `quantity` units of `item_ref` get `percent` (1-100) off
    * instead of fully free -- e.g. "buy a burger, get a second burger
-   * 50% off."
+   * 50% off." `choices` as for `FreeItem`.
    */
   | {
       PercentOffItem: {
         item_ref: ActionHash;
         percent: number;
         quantity: number;
+        choices: ChoiceTerms[];
       };
     };
 

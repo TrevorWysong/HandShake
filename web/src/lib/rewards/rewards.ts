@@ -3,7 +3,7 @@
 // web/test/rewards.test.ts and the Rust tests; keep them in step.
 import type { CartLine } from "../../store/cart";
 import type { ItemRow } from "../storefront/menu";
-import type { Accent, PointsState, PointsStatus, PromoReward, Reward, RewardsProgram } from "../../holochain/types";
+import type { Accent, ChoiceTerms, PointsState, PointsStatus, PromoReward, Reward, RewardsProgram } from "../../holochain/types";
 import { bytesEqual } from "../../holochain/decode";
 import { computePromoEffect } from "../storefront/promotions";
 import type { Translate } from "../../i18n";
@@ -113,14 +113,24 @@ export function rewardDiscount(benefit: PromoReward, lines: CartLine[]): number 
   return Math.min(subtotal, computePromoEffect(benefit, lines, subtotal).subtotalDiscountCents);
 }
 
-/// The line a reward puts in the bag: the item it gives, free -- `null` for
-/// a reward that takes money off instead.
-export function rewardLine(reward: Reward, menu: ItemRow[]): CartLine | null {
+/// The item a reward gives, how many, and the choices it covers -- `null`
+/// for a reward that takes money off instead, or whose item is gone.
+export interface RewardItem {
+  row: ItemRow;
+  quantity: number;
+  choices: ChoiceTerms[];
+}
+
+export function rewardItem(reward: Reward, menu: ItemRow[]): RewardItem | null {
   if (!("FreeItem" in reward.benefit)) return null;
-  const { item_ref, quantity } = reward.benefit.FreeItem;
+  const { item_ref, quantity, choices } = reward.benefit.FreeItem;
   const row = menu.find((m) => bytesEqual(m.hash, item_ref));
-  if (!row) return null;
-  return { itemRef: row.hash, name: row.item.name, basePriceCents: row.item.price_cents, priceCents: row.item.price_cents, quantity, selections: [], choiceLabels: [], rewardId: reward.id };
+  return row ? { row, quantity, choices } : null;
+}
+
+/// The line a reward puts in the bag for an item with nothing to choose.
+export function plainRewardLine({ row, quantity }: RewardItem): CartLine {
+  return { itemRef: row.hash, name: row.item.name, basePriceCents: row.item.price_cents, priceCents: row.item.price_cents, choiceCharges: [], quantity, selections: [], choiceLabels: [] };
 }
 
 /// When points expire, in microseconds -- `null` if they don't.

@@ -42,6 +42,9 @@ test("the cheapest choices are the free ones", () => {
   const groups = menu([[1, group("Toppings", 0, 4, 2, [option(1, 100), option(2, 50), option(3, 200)])]]);
   assert.equal(price(linePrice(item(1000, [1]), [pick(1, [[1, 1], [2, 1], [3, 1]])], groups)), 1200);
   assert.equal(price(linePrice(item(1000, [1]), [pick(1, [[3, 1]])], groups)), 1000);
+  // Each unit's charge, for an item reward to cover: the two cheapest free.
+  const priced = linePrice(item(1000, [1]), [pick(1, [[1, 1], [2, 1], [3, 1]])], groups);
+  assert.deepEqual(priced.ok && priced.choices, [{ group: bytesToHex(hash(1)), units: [{ option: 2, cents: 0 }, { option: 1, cents: 0 }, { option: 3, cents: 200 }] }]);
 });
 
 test("an option chosen several times counts each", () => {
@@ -58,6 +61,8 @@ test("a nested choice is priced per unit of its option", () => {
   ]);
   const nested: SelectionInput = { group: hash(1), options: [{ option: 1, quantity: 1, nested: [pick(2, [[2, 1]])] }] };
   assert.equal(price(linePrice(item(900, [1]), [nested], groups)), 1150);
+  const priced = linePrice(item(900, [1]), [nested], groups);
+  assert.deepEqual(priced.ok && priced.choices[0].units, [{ option: 1, cents: 250 }], "with what it opened");
   assert.equal(linePrice(item(900, [1]), [pick(1, [[1, 1]])], groups).ok, false);
   assert.deepEqual(choiceLabels([nested], groups), ["option 1 (option 2)"]);
 });

@@ -8,7 +8,7 @@
 // `case`/`in` arm in exactly one place (here), not a new code path threaded
 // through Cart.tsx or the merchant catalog UI.
 import { lineKey, type CartLine } from "../../store/cart";
-import type { ActionHash, PromoBlock, PromoCode, PromoLimits, PromoRequirement, PromoReward, PromoStanding } from "../../holochain/types";
+import type { ActionHash, ChoiceTerms, PromoBlock, PromoCode, PromoLimits, PromoRequirement, PromoReward, PromoStanding } from "../../holochain/types";
 import { bytesToHex } from "../../holochain/decode";
 import { formatCents } from "../ui/format";
 import { t } from "../../i18n";
@@ -20,15 +20,33 @@ function linesOf(lines: CartLine[], itemRef: ActionHash): CartLine[] {
   return lines.filter((l) => bytesToHex(l.itemRef) === key);
 }
 
-/// Up to `quantity` units of `itemRef`, taken from its lines in order, each
-/// discounted `perUnit` of its line's base price -- an item promo takes off
-/// the item, its paid choices still charged (`catalog_types::pricing`).
-function itemDiscount(lines: CartLine[], itemRef: ActionHash, quantity: number, perUnit: (basePrice: number) => number): PromoEffect {
+/// What an item reward with `terms` pays for in one unit of `line` -- the
+/// item, and the chosen units the terms include, the dearest first -- or
+/// `null` if its choices fall outside them (`catalog_types::pricing`).
+export function covered(line: Pick<CartLine, "basePriceCents" | "priceCents" | "choiceCharges">, terms: ChoiceTerms[]): number | null {
+  let cents = line.basePriceCents;
+  for (const term of terms) {
+    const group = line.choiceCharges.find((g) => g.group === bytesToHex(term.group));
+    if (!group) return null;
+    if (term.options.length > 0 && group.units.some((u) => !term.options.includes(u.option))) return null;
+    const charges = group.units.map((u) => u.cents).sort((a, b) => b - a);
+    cents += charges.slice(0, term.included).reduce((sum, c) => sum + c, 0);
+  }
+  return Math.min(cents, line.priceCents);
+}
+
+/// Up to `quantity` units of `itemRef` within `terms`, taken from its lines
+/// in order, each discounted `perUnit` of what the terms cover -- an item
+/// promo takes off the item and the choices it names, the rest still
+/// charged.
+function itemDiscount(lines: CartLine[], itemRef: ActionHash, terms: ChoiceTerms[], quantity: number, perUnit: (covered: number) => number): PromoEffect {
   let left = quantity;
   const itemEffects: PromoItemEffect[] = [];
   for (const line of linesOf(lines, itemRef)) {
+    const cents = covered(line, terms);
+    if (cents === null) continue;
     const units = Math.min(left, line.quantity);
-    if (units > 0) itemEffects.push({ lineKey: lineKey(line), quantity: units, discountCentsPerUnit: perUnit(line.basePriceCents) });
+    if (units > 0) itemEffects.push({ lineKey: lineKey(line), quantity: units, discountCentsPerUnit: perUnit(cents) });
     left -= units;
   }
   return { subtotalDiscountCents: itemEffects.reduce((sum, e) => sum + e.quantity * e.discountCentsPerUnit, 0), itemEffects };
@@ -78,12 +96,12 @@ export function computePromoEffect(reward: PromoReward, lines: CartLine[], subto
     return { subtotalDiscountCents: Math.min(reward.FlatOffSubtotal, subtotalCents), itemEffects: [] };
   }
   if ("FreeItem" in reward) {
-    const { item_ref, quantity } = reward.FreeItem;
-    return itemDiscount(lines, item_ref, quantity, (base) => base);
+    const { item_ref, quantity, choices } = reward.FreeItem;
+    return itemDiscount(lines, item_ref, choices, quantity, (cents) => cents);
   }
   if ("PercentOffItem" in reward) {
-    const { item_ref, percent, quantity } = reward.PercentOffItem;
-    return itemDiscount(lines, item_ref, quantity, (base) => Math.floor((base * percent) / 100));
+    const { item_ref, percent, quantity, choices } = reward.PercentOffItem;
+    return itemDiscount(lines, item_ref, choices, quantity, (cents) => Math.floor((cents * percent) / 100));
   }
   return NO_EFFECT;
 }
@@ -122,15 +140,17 @@ export function describeReward(reward: PromoReward, itemName: (hex: string) => s
   if ("PercentOffSubtotal" in reward) return t("promo.reward.percentOrder", { percent: reward.PercentOffSubtotal });
   if ("FlatOffSubtotal" in reward) return t("promo.reward.flatOrder", { amount: formatCents(reward.FlatOffSubtotal) });
   if ("FreeItem" in reward) {
-    const { item_ref, quantity } = reward.FreeItem;
-    return t("promo.reward.free", { count: quantity, item: itemName(bytesToHex(item_ref)) ?? t("promo.item") });
+    const { item_ref, quantity, choices } = reward.FreeItem;
+    return withChoices(t("promo.reward.free", { count: quantity, item: itemName(bytesToHex(item_ref)) ?? t("promo.item") }), choices);
   }
   if ("PercentOffItem" in reward) {
-    const { item_ref, percent, quantity } = reward.PercentOffItem;
-    return t("promo.reward.percentItem", { percent, count: quantity, item: itemName(bytesToHex(item_ref)) ?? t("promo.item") });
+    const { item_ref, percent, quantity, choices } = reward.PercentOffItem;
+    return withChoices(t("promo.reward.percentItem", { percent, count: quantity, item: itemName(bytesToHex(item_ref)) ?? t("promo.item") }), choices);
   }
   return t("promo.reward.unknown");
 }
+
+const withChoices = (text: string, choices: ChoiceTerms[]) => (choices.length > 0 ? t("promo.reward.someChoices", { reward: text }) : text);
 
 /// A promo's terms, as short chips: who it's for, how often, until when,
 /// how many are left.

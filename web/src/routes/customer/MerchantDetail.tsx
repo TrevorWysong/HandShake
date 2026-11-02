@@ -147,7 +147,7 @@ function StorePage({ hash }: { hash: string }) {
       return;
     }
     const { hash: itemRef, item } = row;
-    cart.addLine(catalogHash, catalog.owner, catalog.business_name, { itemRef, name: item.name, basePriceCents: item.price_cents, priceCents: item.price_cents, quantity: 1, selections: [], choiceLabels: [] });
+    cart.addLine(catalogHash, catalog.owner, catalog.business_name, { itemRef, name: item.name, basePriceCents: item.price_cents, priceCents: item.price_cents, choiceCharges: [], quantity: 1, selections: [], choiceLabels: [] });
   };
   const avgRating = rating ? averageRating(rating) : null;
   const grouped = groupByCategory(filteredItems);

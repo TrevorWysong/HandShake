@@ -9,7 +9,8 @@ import { myCard } from "../../../holochain/zomes/rewards";
 import { bytesToHex, hexToBytes } from "../../../holochain/decode";
 import { describeBlock, describeRequirement, evaluatePromo, isPromoEligible } from "../../../lib/storefront/promotions";
 import { itemNamer } from "../../../lib/storefront/menu";
-import { rewardDiscount, rewardLine } from "../../../lib/rewards/rewards";
+import { rewardDiscount } from "../../../lib/rewards/rewards";
+import { useRewardChooser } from "../../../components/rewards/useRewardChooser";
 import { useResource } from "../../../lib/hooks/useResource";
 import { nowMicros } from "../../../lib/ui/format";
 import { useT } from "../../../i18n";
@@ -32,11 +33,10 @@ export function useDiscounts(storeInfo: CartStoreInfo | undefined, now: Date) {
   const rewardsProgram = rewardsCard?.program?.program.active ? rewardsCard.program.program : null;
   const chosenReward = (cart.reward && rewardsProgram?.rewards.find((r) => r.id === cart.reward!.id)) || null;
 
-  /// Puts a reward in the bag -- or takes it out, tapped again.
-  const toggleReward = (reward: Reward) => {
-    if (chosenReward?.id === reward.id) return cart.releaseReward();
-    cart.redeem(cart.catalogRef!, cart.merchant!, cart.merchantName ?? "", { id: reward.id, name: reward.name, cost: reward.cost }, rewardLine(reward, menuItems));
-  };
+  /// Puts a reward in the bag -- or takes it out, tapped again. A free item
+  /// with choices is chosen first (`rewardSheet`).
+  const chooser = useRewardChooser(cart.catalogRef, menuItems, (reward, line) => cart.redeem(cart.catalogRef!, cart.merchant!, cart.merchantName ?? "", { id: reward.id, name: reward.name, cost: reward.cost }, line));
+  const toggleReward = (reward: Reward) => (chosenReward?.id === reward.id ? cart.releaseReward() : chooser.redeem(reward));
 
   // A code the customer typed wins; then a deal chosen on the store's page,
   // if it's theirs to use; then the best code that applies itself --
@@ -90,6 +90,7 @@ export function useDiscounts(storeInfo: CartStoreInfo | undefined, now: Date) {
     rewardsProgram,
     chosenReward,
     toggleReward,
+    rewardSheet: chooser.sheet,
     rewardDiscountCents,
     promoInput,
     setPromoInput,

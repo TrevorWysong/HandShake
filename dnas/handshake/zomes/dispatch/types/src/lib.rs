@@ -331,6 +331,16 @@ impl LinePricer {
     /// names -- or why the choices don't fit the item. Deterministic: what
     /// validation checks an order's total and a refund's worth against.
     pub fn unit_price(&mut self, item: &catalog_types::MenuItem, selections: &[Selection]) -> ExternResult<Result<u64, String>> {
+        Ok(self.price(item, selections)?.map(|price| price.unit_price))
+    }
+
+    /// The same, as a line ready for a promo: the unit, and what its
+    /// choices add, group by group.
+    pub fn priced_line(&mut self, item_ref: ActionHash, item: &catalog_types::MenuItem, selections: &[Selection], quantity: u32) -> ExternResult<Result<catalog_types::PricedLine, String>> {
+        Ok(self.price(item, selections)?.map(|price| catalog_types::PricedLine { item_ref, base_price: item.price_cents, unit_price: price.unit_price, quantity, choices: price.choices }))
+    }
+
+    fn price(&mut self, item: &catalog_types::MenuItem, selections: &[Selection]) -> ExternResult<Result<catalog_types::LinePrice, String>> {
         let groups = &mut self.groups;
         catalog_types::line_price(item, selections, &mut |version: &ActionHash| {
             if let Some(known) = groups.get(version) {

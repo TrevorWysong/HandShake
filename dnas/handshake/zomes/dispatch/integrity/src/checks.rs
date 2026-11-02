@@ -9,7 +9,7 @@
 //! coordinator pre-checks (`request_delivery`/`request_pickup_order`).
 
 use super::*;
-use catalog_types::{order_tax, order_total, total_with_tax, BagClaimStatus, GoodieBag, MenuItem, PricedLine, PromoRequirement, PromoReward, TaxableLine};
+use catalog_types::{order_tax, order_total, total_with_tax, BagClaimStatus, GoodieBag, MenuItem, PromoRequirement, PromoReward, TaxableLine};
 use dispatch_types::LinePricer;
 use handshake_integrity_support::limits::{MAX_LINE_QUANTITY, MAX_ORDER_CHOICES, MAX_ORDER_LINES};
 use handshake_integrity_support::{decode, original_creation};
@@ -106,11 +106,10 @@ pub(crate) fn check_pricing(order: OrderPricing<'_>) -> ExternResult<Option<Stri
         if &item.catalog_ref != order.catalog_ref {
             return Ok(Some("every item must be on this store's menu".into()));
         }
-        let unit_price = match pricer.unit_price(&item, &line.selections)? {
-            Ok(price) => price,
+        match pricer.priced_line(line.item_ref.clone(), &item, &line.selections, line.quantity)? {
+            Ok(priced_line) => priced.push(priced_line),
             Err(reason) => return Ok(Some(reason)),
-        };
-        priced.push(PricedLine { item_ref: line.item_ref.clone(), base_price: item.price_cents, unit_price, quantity: line.quantity });
+        }
         categories.push(item.tax_category);
         age_restricted |= item.age_restricted;
     }
