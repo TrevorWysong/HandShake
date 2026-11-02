@@ -121,7 +121,7 @@ export function Onboarding() {
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         className="mb-8 flex flex-col items-center gap-3"
       >
-        <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-handshake-600 font-black text-3xl shadow-xl">R</div>
+        <img src="favicon.svg" alt="" className="h-16 w-16 rounded-3xl shadow-xl" />
         <h1 className="text-3xl font-black tracking-tight">HandShake</h1>
         <p className="text-white/80 text-sm text-center max-w-xs">
           {t("onboarding.tagline")}

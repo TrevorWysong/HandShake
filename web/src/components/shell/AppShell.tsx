@@ -68,7 +68,7 @@ export function AppShell() {
     <div className="mx-auto flex min-h-svh max-w-md flex-col bg-ink-50 dark:bg-ink-950">
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-ink-100 dark:border-ink-800 bg-white/90 dark:bg-ink-900/80 backdrop-blur px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-handshake-500 text-white font-black text-sm">R</div>
+          <img src="favicon.svg" alt="" className="h-8 w-8 rounded-xl" />
           <span className="font-black text-lg tracking-tight">HandShake</span>
         </div>
         <div className="flex items-center gap-2">
