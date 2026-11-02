@@ -9,7 +9,8 @@ import type { LedgerEntry } from "../src/holochain/types";
 const h = (n: number) => new Uint8Array(39).fill(n);
 const at = (iso: string) => new Date(iso).getTime() * 1000;
 const row = (n: number, when: string, kind: LedgerEntry["kind"], amount: number): LedgerRow => ({ hash: h(n), at: at(when), entry: { kind, amount, balance: 0, in_hand: { orders: 0, priority: false }, previous: null } as unknown as LedgerEntry });
-const collect = (hold: number, portion: string) => ({ Collect: { hold: h(hold), portion, basis: h(99) } }) as unknown as LedgerEntry["kind"];
+/// A collection from `hold` on `basis`, the delivery that entitles it.
+const collect = (hold: number, portion: string, basis = hold + 100) => ({ Collect: { hold: h(hold), portion, basis: h(basis) } }) as unknown as LedgerEntry["kind"];
 
 test("fees, tips and late cover by week; money back from one's own holds isn't earnings", () => {
   const rows = [
@@ -24,15 +25,18 @@ test("fees, tips and late cover by week; money back from one's own holds isn't e
     row(12, "2026-10-13T09:00:00", { Hold: { order: h(72), purpose: { Collateral: { bid: h(73) } } } } as unknown as LedgerEntry["kind"], 900),
     row(13, "2026-10-13T10:00:00", { Forfeit: { hold: h(12), basis: h(98) } } as unknown as LedgerEntry["kind"], 0),
     row(14, "2026-10-14T10:00:00", collect(53, "Fee"), 700),
+    // A delivery whose store paid part of the fee: two holds, one delivery.
+    row(16, "2026-10-16T10:00:00", collect(54, "Fee", 160), 400),
+    row(17, "2026-10-16T10:00:00", collect(55, "Fee", 160), 200),
     row(15, "2026-10-15T10:00:00", { Redeem: { issuer: h(80), instructions: null } } as unknown as LedgerEntry["kind"], 2000),
   ];
   const [later, earlier] = earningsByPeriod(rows, "week");
   assert.deepEqual([earlier.deliveries, earlier.fees, earlier.tips, earlier.lateCover, earned(earlier)], [2, 1100, 200, 300, 1600]);
-  assert.deepEqual([later.deliveries, later.fees, later.forfeited, later.cashedOut], [1, 700, 900, 2000]);
+  assert.deepEqual([later.deliveries, later.fees, later.forfeited, later.cashedOut], [2, 1300, 900, 2000]);
   assert.equal(earlier.start, periodStart(new Date("2026-10-05T00:00:00").getTime(), "week"), "weeks start on Monday");
 
   const [month] = earningsByPeriod(rows, "month");
-  assert.equal(month.deliveries, 3);
+  assert.equal(month.deliveries, 4);
   const csv = earningsCsv([earlier], "week", (c) => (c / 100).toFixed(2));
   assert.equal(csv.split("\n")[1], "2026-10-05,2,11.00,2.00,3.00,16.00,0.00,0.00");
 });
