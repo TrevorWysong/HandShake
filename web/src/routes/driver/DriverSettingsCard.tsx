@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Card, Chip, ChipRow, Input, Switch } from "../../components/ui";
+import { Card, Chip, Input, Switch } from "../../components/ui";
 import { currencySymbol, formatCents, fromMinorUnits, toMinorUnits } from "../../lib/ui/format";
 import { useTerms } from "../../store/network";
 import { useDriverSettings } from "../../store/roleSettings";
@@ -79,14 +79,14 @@ export function DriverSettingsCard() {
               </label>
               <div>
                 <span className="block text-xs font-semibold text-ink-500">{t("driverSettings.travel")}</span>
-                <ChipRow>
+                <div className="mt-2 flex flex-wrap gap-2">
                   {TRAVEL_MODES.map(({ mode, label }) => (
                     <Chip key={mode} active={travelMode === mode} onClick={() => setTravelMode(mode)}>
                       {t(label)}
                     </Chip>
                   ))}
-                </ChipRow>
-                <p className="mt-1 text-[11px] text-ink-400">{t("driverSettings.travelNote")}</p>
+                </div>
+                <p className="mt-2 text-[11px] text-ink-400">{t("driverSettings.travelNote")}</p>
               </div>
               <div className="flex items-center justify-between gap-3 border-t border-ink-100 pt-4 dark:border-ink-800">
                 <span>
