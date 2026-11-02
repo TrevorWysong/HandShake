@@ -94,7 +94,10 @@ copyFileSync(WEBHAPP, path.join(KANGAROO, "pouch/handshake.webhapp"));
 // release never picks up a newer (or swapped) package on its own.
 run("yarn", ["install", "--frozen-lockfile"]);
 run("yarn", ["setup"]);
-run("yarn", [script]);
+// Kangaroo's build scripts end in a bare `--config`: name the file it
+// writes (scripts/write-configs.js), rather than leave electron-builder to
+// read the folder as one.
+run("yarn", target === "dev" ? [script] : [script, "electron-builder.yml"]);
 
 /// A fresh copy of Kangaroo at KANGAROO_COMMIT, every build, so no earlier
 /// build's patches linger -- a tarball, not a clone, so there's no git remote
@@ -102,10 +105,12 @@ run("yarn", [script]);
 function fetchKangaroo() {
   rmSync(KANGAROO, { recursive: true, force: true });
   mkdirSync(KANGAROO, { recursive: true });
-  const tarball = path.join(DESKTOP, ".kangaroo.tar.gz");
+  const tarball = ".kangaroo.tar.gz";
   run("curl", ["-fsSL", "-o", tarball, `https://codeload.github.com/holochain/kangaroo-electron/tar.gz/${KANGAROO_COMMIT}`], DESKTOP);
-  run("tar", ["-xzf", tarball, "-C", KANGAROO, "--strip-components=1"], DESKTOP);
-  rmSync(tarball);
+  // Named relative to desktop/ (where it runs): Windows' GNU tar reads a
+  // drive letter -- `D:\...` -- as a remote `host:path`.
+  run("tar", ["-xzf", tarball, "-C", path.relative(DESKTOP, KANGAROO), "--strip-components=1"], DESKTOP);
+  rmSync(path.join(DESKTOP, tarball));
   const got = treeHash(KANGAROO);
   if (got !== KANGAROO_TREE_SHA256) fail(`Kangaroo's files at ${KANGAROO_COMMIT} aren't what was reviewed (${got}). Nothing from them has run.`);
 }
