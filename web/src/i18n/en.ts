@@ -17,6 +17,7 @@ export const en = {
   "nav.dash": "Dash",
   "nav.earnings": "Earnings",
   "nav.menu": "Menu",
+  "nav.profile": "Profile",
   "shell.connected": "connected",
   "shell.newVersion": "A new version of HandShake is out. Move your account",
   "language.title": "Language",

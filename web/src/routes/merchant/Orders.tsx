@@ -179,7 +179,8 @@ function ActiveQueue({ stores, storeLabel, scope }: ListProps) {
     return <EmptyState icon={<ClipboardList size={32} />} title={t("merchantOrders.noActive")} subtitle={t("merchantOrders.noActiveDetail", { scope })} />;
   }
   return (
-    <div className="flex flex-col gap-3">
+    // One list on a phone; a two-column board on a wide screen.
+    <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
       <AnimatePresence initial={false}>
         {rows.map((row) => (
           <motion.div key={row.hex} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
@@ -369,18 +370,18 @@ function OrderHistory({ stores, storeLabel, scope }: ListProps) {
   if (data === undefined) return <QueueSkeleton />;
   if (data.rows.length === 0) return <EmptyState icon={<ClipboardList size={32} />} title={t("merchantOrders.noOrders")} subtitle={t("merchantOrders.noOrdersDetail", { scope })} />;
   return (
-    <div className="flex flex-col gap-3">
+    <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
       {data.rows.map((row) => (
         <OrderCard key={row.hex} row={row} storeLabel={storeLabel(row.storeHex)} showTime>
           {mayHaveOpenIssues(row, terms, now) && <OrderIssues orderRef={row.ref} role="store" />}
         </OrderCard>
       ))}
       {hasMore && (
-        <Button variant="ghost" loading={loading.busy} onClick={() => loadMore(data)} className="w-full py-2 text-xs">
+        <Button variant="ghost" loading={loading.busy} onClick={() => loadMore(data)} className="w-full py-2 text-xs lg:col-span-2">
           {t("common.loadMore")}
         </Button>
       )}
-      {loading.error && <Notice>{loading.error}</Notice>}
+      {loading.error && <Notice className="lg:col-span-2">{loading.error}</Notice>}
     </div>
   );
 }

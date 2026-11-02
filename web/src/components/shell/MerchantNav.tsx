@@ -5,15 +5,17 @@ import { useMyStores } from "../../store/merchantStores";
 import { awaitsAnswer, fetchActiveQueue, storesKey } from "../../store/merchantQueue";
 import { useResource } from "../../lib/hooks/useResource";
 import { useTerms } from "../../store/network";
-import { BottomNavLink } from "./BottomNavLink";
+import clsx from "clsx";
+import { NavItem, type NavPlacement } from "./NavItem";
 import { POLL, isOrderSignal } from "../../lib/network/poll";
 import { useT } from "../../i18n";
 
-/// The store side's bottom navigation, and its alert for orders waiting to
-/// be accepted: a badge on Orders, and -- on any other screen -- a banner,
-/// since an order not accepted within its window is cancelled. Re-read on
-/// every new-order signal, and polled in case one was missed.
-export function MerchantNav() {
+/// The store side's navigation, and its alert for orders waiting to be
+/// accepted: a badge on Orders, and -- on any other screen -- a banner
+/// (above the bottom bar, or atop the sidebar), since an order not accepted
+/// within its window is cancelled. Re-read on every new-order signal, and
+/// polled in case one was missed.
+export function MerchantNav({ placement }: { placement: NavPlacement }) {
   const stores = useMyStores();
   const t = useT();
   const windowSecs = useTerms().store_response_secs;
@@ -34,9 +36,9 @@ export function MerchantNav() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
-            className="absolute inset-x-2 bottom-full mb-2"
+            className={placement === "bar" ? "absolute inset-x-2 bottom-full mb-2" : "mb-2"}
           >
-            <NavLink to="/merchant" className="flex items-center gap-3 rounded-2xl bg-handshake-500 px-4 py-3 text-sm font-semibold text-white shadow-[var(--shadow-glow)]">
+            <NavLink to="/merchant" className={clsx("flex items-center gap-3 rounded-2xl bg-handshake-500 font-semibold text-white shadow-[var(--shadow-glow)]", placement === "bar" ? "px-4 py-3 text-sm" : "flex-wrap px-3 py-2.5 text-xs")}>
               <BellRing size={18} className="animate-pulse" />
               {t("merchantNav.waiting", { count: waiting })}
               <span className="ml-auto text-xs font-bold uppercase tracking-wide">{t("merchantNav.review")}</span>
@@ -44,9 +46,9 @@ export function MerchantNav() {
           </motion.div>
         )}
       </AnimatePresence>
-      <BottomNavLink to="/merchant" icon={ClipboardList} label={t("nav.orders")} badge={waiting} />
-      <BottomNavLink to="/merchant/catalog" icon={Store} label={t("nav.menu")} />
-      <BottomNavLink to="/merchant/rewards" icon={Gift} label={t("nav.rewards")} />
+      <NavItem to="/merchant" icon={ClipboardList} label={t("nav.orders")} badge={waiting} placement={placement} />
+      <NavItem to="/merchant/catalog" icon={Store} label={t("nav.menu")} placement={placement} />
+      <NavItem to="/merchant/rewards" icon={Gift} label={t("nav.rewards")} placement={placement} />
     </>
   );
 }
