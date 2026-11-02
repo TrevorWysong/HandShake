@@ -93,9 +93,20 @@ for (const key of ["CSC_LINK", "CSC_KEY_PASSWORD", "WIN_CSC_LINK", "WIN_CSC_KEY_
   if (process.env[key] === "") delete process.env[key];
 }
 
+// Without an Apple certificate, electron-builder skips signing, and an Apple
+// Silicon Mac calls the result "damaged": only its executable carries the
+// linker's signature, over resources it doesn't seal. Signed ad hoc instead
+// -- anonymous, but whole -- it opens once its user allows it (README). Ad
+// hoc, hardened runtime would refuse Electron's own frameworks, signed by
+// another team. A build with a certificate is signed as before.
+const macUnsigned = target.startsWith("mac") && !(process.env.CSC_LINK && process.env.APPLE_ID && process.env.APPLE_TEAM_ID);
+const patches = macUnsigned
+  ? [...PATCHES, { file: "templates/electron-builder-template.yml", from: "mac:\n  entitlementsInherit:", to: "mac:\n  identity: '-'\n  hardenedRuntime: false\n  entitlementsInherit:" }]
+  : PATCHES;
+
 fetchKangaroo();
 copyFileSync(path.join(DESKTOP, "kangaroo.config.ts"), path.join(KANGAROO, "kangaroo.config.ts"));
-for (const { file, from, to } of PATCHES) {
+for (const { file, from, to } of patches) {
   const at = path.join(KANGAROO, file);
   const text = readFileSync(at, "utf8");
   if (!text.includes(from)) fail(`Kangaroo's ${file} no longer has what desktop/build.ts patches -- check the patch against KANGAROO_COMMIT.`);
