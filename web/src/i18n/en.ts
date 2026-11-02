@@ -722,6 +722,7 @@ export const en = {
   "address.searchNew": "Search for a new address",
   "address.enterStreet": "Enter a street address…",
   "address.labelPlaceholder": "Label (e.g. Home, Work)",
+  "address.home": "Home",
   "common.save": "Save",
   "address.useOnce": "Just use this address once, without saving",
   "address.saved": "Saved addresses",

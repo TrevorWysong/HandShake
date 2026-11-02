@@ -717,6 +717,7 @@ export const es: Catalog = {
   "address.searchNew": "Busca una nueva dirección",
   "address.enterStreet": "Escribe una dirección…",
   "address.labelPlaceholder": "Etiqueta (p. ej., Casa, Trabajo)",
+  "address.home": "Casa",
   "common.save": "Guardar",
   "address.useOnce": "Usar esta dirección solo una vez, sin guardarla",
   "address.saved": "Direcciones guardadas",
