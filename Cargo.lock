@@ -1080,6 +1080,7 @@ name = "profiles_coordinator"
 version = "0.1.0"
 dependencies = [
  "handshake_coordinator_support",
+ "handshake_integrity_support",
  "hdk",
  "profiles_integrity",
  "serde",

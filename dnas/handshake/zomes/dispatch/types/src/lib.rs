@@ -254,6 +254,9 @@ pub enum DropoffPreference {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct DropoffDetails {
     pub point: GeoPoint,
+    /// The apartment, suite or unit it goes to, if any.
+    #[serde(default)]
+    pub line2: String,
     /// Drop-off instructions for the driver ("gate code 1234").
     pub notes: String,
     /// Who it's for, so the driver can hand it over -- the customer's name.

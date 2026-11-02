@@ -76,6 +76,7 @@ await runScenario(async (scenario) => {
     banner_data_uri: "data:image/jpeg;base64,banner",
     phone: "555-0200",
     address_street: "123 Main St",
+    address_line2: "Suite 4",
     address_city: "St. Petersburg",
     address_state: "FL",
     address_zip: "33710",
@@ -91,7 +92,9 @@ await runScenario(async (scenario) => {
   assert.deepEqual(catalog.weekly_hours, [{ weekday: 1, opens: 540, closes: 1320 }]);
   assert.equal(catalog.time_zone, "America/New_York");
   assert.equal(catalog.prep_minutes, 20);
-  console.log("[PASS] publish_catalog round-trips all storefront detail fields");
+  assert.equal(decodeEntry<{ address_line2: string }>(catalogRecord).address_line2, "Suite 4");
+  await assert.rejects(catalogOf(customer)("publish_catalog", { business_name: "Too Long", location: ST_PETE, address_line2: "x".repeat(51) }), /address_line2 may be at most 50 characters/);
+  console.log("[PASS] publish_catalog round-trips all storefront detail fields, and holds a second address line to its length");
 
   const updatedCatalogRecord = await catalogOf(customer)<HcRecord>("update_catalog_details", {
     original_action: catalogRef,
@@ -193,6 +196,7 @@ await runScenario(async (scenario) => {
       max_delivery_fee: null,
       kitchen_notes: "Extra salsa",
       dropoff_notes: "Ring the bell",
+      dropoff_line2: "Apt 4B",
       tip_cents: 150,
     });
   await assert.rejects(placeOrder(), /Empanada is sold out/, "a sold-out item can't be ordered");
@@ -202,8 +206,9 @@ await runScenario(async (scenario) => {
   const orderRef = actionHash(orderRecord);
   const order = decodeEntry<{ tip_cents: number }>(orderRecord);
   assert.equal(order.tip_cents, 150);
-  const details = await dispatchOf(customer)<{ dropoff: { notes: string } | null; kitchen_note: string | null }>("get_order_private_details", orderRef);
+  const details = await dispatchOf(customer)<{ dropoff: { notes: string; line2: string } | null; kitchen_note: string | null }>("get_order_private_details", orderRef);
   assert.equal(details.dropoff?.notes, "Ring the bell");
+  assert.equal(details.dropoff?.line2, "Apt 4B", "the second address line is sealed with the drop-off");
   assert.equal(details.kitchen_note, "Extra salsa");
   console.log("[PASS] request_delivery round-trips tip_cents, and its sealed notes for the customer");
 

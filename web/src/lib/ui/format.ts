@@ -52,9 +52,9 @@ export function currencySymbol(): string {
 /// merchant/Catalog.tsx's own view and customer/MerchantDetail.tsx so both
 /// read an address the same way. Returns "" (not any placeholder text) if
 /// every field is blank, so callers can just do `address && <span>...`.
-export function formatCatalogAddress(catalog: { address_street: string; address_city: string; address_state: string; address_zip: string }): string {
+export function formatCatalogAddress(catalog: { address_street: string; address_line2?: string; address_city: string; address_state: string; address_zip: string }): string {
   const stateZip = [catalog.address_state, catalog.address_zip].filter(Boolean).join(" ");
-  return [catalog.address_street, catalog.address_city, stateZip].filter(Boolean).join(", ");
+  return [catalog.address_street, catalog.address_line2, catalog.address_city, stateZip].filter(Boolean).join(", ");
 }
 
 export function formatEta(seconds: number): string {

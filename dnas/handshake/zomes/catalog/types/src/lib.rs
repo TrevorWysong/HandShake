@@ -54,6 +54,9 @@ pub struct MerchantCatalog {
     /// whole address to fix just one part of it.
     #[serde(default)]
     pub address_street: String,
+    /// The apartment, suite or unit, if the street address needs one.
+    #[serde(default)]
+    pub address_line2: String,
     #[serde(default)]
     pub address_city: String,
     #[serde(default)]

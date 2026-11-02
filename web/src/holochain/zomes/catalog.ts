@@ -36,6 +36,8 @@ export interface CatalogDetails {
   /// The store's own `http(s)://` website, or empty.
   website?: string;
   address_street?: string;
+  /// The apartment, suite or unit, if the street address needs one.
+  address_line2?: string;
   address_city?: string;
   address_state?: string;
   address_zip?: string;
@@ -59,6 +61,7 @@ const EMPTY_DETAILS: Required<CatalogDetails> = {
   email: "",
   website: "",
   address_street: "",
+  address_line2: "",
   address_city: "",
   address_state: "",
   address_zip: "",
@@ -79,6 +82,7 @@ export function detailsOf(catalog: MerchantCatalog): Required<CatalogDetails> {
     email: catalog.email,
     website: catalog.website,
     address_street: catalog.address_street,
+    address_line2: catalog.address_line2,
     address_city: catalog.address_city,
     address_state: catalog.address_state,
     address_zip: catalog.address_zip,

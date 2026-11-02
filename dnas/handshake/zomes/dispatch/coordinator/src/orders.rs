@@ -34,6 +34,10 @@ pub struct RequestDeliveryInput {
     /// Drop-off instructions -- sealed with the address, for the driver.
     #[serde(default)]
     pub dropoff_notes: String,
+    /// The apartment, suite or unit it goes to, if any -- sealed with the
+    /// address.
+    #[serde(default)]
+    pub dropoff_line2: String,
     #[serde(default)]
     pub tip_cents: u64,
     /// `None` (the default) places a normal, immediately-open order. `Some`
@@ -131,6 +135,14 @@ pub(crate) fn seal_note(recipient: &AgentPubKey, note: &str) -> ExternResult<Opt
 /// A note (for the kitchen, the driver, the store) within the longest a note
 /// may be -- checked before it's sealed, as validation can only bound the
 /// ciphertext.
+/// Refuses a second address line longer than one holds.
+pub(crate) fn check_line2(line2: &str) -> ExternResult<()> {
+    if line2.chars().count() > handshake_integrity_support::limits::MAX_ADDRESS_LINE2_CHARS {
+        return Err(guest("That second address line is too long."));
+    }
+    Ok(())
+}
+
 pub(crate) fn check_note(note: &str) -> ExternResult<()> {
     let max = handshake_integrity_support::limits::MAX_NOTE_CHARS;
     if note.chars().count() > max {
@@ -255,6 +267,7 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         return Err(guest("That drop-off isn't a real place."));
     }
     check_note(&input.dropoff_notes)?;
+    check_line2(&input.dropoff_line2)?;
     let dropoff_geohash = handshake_types::encode(input.dropoff, DROPOFF_GEOHASH_PRECISION);
     let status = if input.requested_delivery_time.is_some() { DeliveryStatus::Scheduled } else { DeliveryStatus::Placed };
 
@@ -312,7 +325,7 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         order_total: priced.order_total,
         tax_cents: priced.tax_cents,
         dropoff_geohash: dropoff_geohash.clone(),
-        sealed_dropoff: seal(&requester, &DropoffDetails { point: input.dropoff, notes: input.dropoff_notes, recipient: customer_name.clone(), wake: input.wake_for_driver.as_deref().map(checked_wake).transpose()?.map(str::to_string) })?,
+        sealed_dropoff: seal(&requester, &DropoffDetails { point: input.dropoff, line2: input.dropoff_line2, notes: input.dropoff_notes, recipient: customer_name.clone(), wake: input.wake_for_driver.as_deref().map(checked_wake).transpose()?.map(str::to_string) })?,
         kitchen_note: seal_note(&merchant, &input.kitchen_notes)?,
         sealed_customer_name: seal_note(&merchant, &customer_name)?,
         sealed_wake: seal_wake(&merchant, input.wake_for_store.as_deref())?,

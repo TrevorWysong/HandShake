@@ -101,6 +101,9 @@ pub struct AddressDetails {
     pub location: GeoPoint,
     #[serde(default)]
     pub street: String,
+    /// The apartment, suite or unit, if the street address needs one.
+    #[serde(default)]
+    pub line2: String,
     #[serde(default)]
     pub city: String,
     #[serde(default)]

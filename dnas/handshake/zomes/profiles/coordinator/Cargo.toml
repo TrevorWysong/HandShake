@@ -11,6 +11,7 @@ name = "profiles"
 hdk.workspace = true
 serde.workspace = true
 handshake_coordinator_support.workspace = true
+handshake_integrity_support.workspace = true
 profiles_integrity = { path = "../integrity" }
 
 [features]

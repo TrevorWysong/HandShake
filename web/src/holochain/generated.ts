@@ -48,6 +48,10 @@ export interface AddressDetails {
   label: string;
   location: GeoPoint;
   street: string;
+  /**
+   * The apartment, suite or unit, if the street address needs one.
+   */
+  line2: string;
   city: string;
   state: string;
   zip: string;
@@ -908,6 +912,10 @@ export interface DriverVerification {
 export interface DropoffDetails {
   point: GeoPoint;
   /**
+   * The apartment, suite or unit it goes to, if any.
+   */
+  line2: string;
+  /**
    * Drop-off instructions for the driver ("gate code 1234").
    */
   notes: string;
@@ -1605,6 +1613,11 @@ export interface LiveCounterpart {
 }
 
 /**
+ * An apartment, suite or unit -- an address's second line.
+ */
+export const MAX_ADDRESS_LINE2_CHARS = 50;
+
+/**
  * The most any single amount may be -- a price, fee, tip, minimum or grant
  * -- in minor units of the network's currency. Far past any real order, and
  * small enough that no total of an order's amounts can overflow: 100 lines
@@ -1934,6 +1947,10 @@ export interface MerchantCatalog {
    * whole address to fix just one part of it.
    */
   address_street: string;
+  /**
+   * The apartment, suite or unit, if the street address needs one.
+   */
+  address_line2: string;
   address_city: string;
   address_state: string;
   address_zip: string;
@@ -3754,6 +3771,10 @@ export interface TaxRate {
  */
 export interface TemplateDetails {
   dropoff: GeoPoint;
+  /**
+   * The apartment, suite or unit it goes to, if any.
+   */
+  dropoff_line2: string;
   dropoff_notes: string;
   kitchen_notes: string;
   /**

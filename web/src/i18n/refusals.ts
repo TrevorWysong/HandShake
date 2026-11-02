@@ -102,6 +102,7 @@ export const REFUSALS = {
   "refusal.that-reward-doesn-t-apply-to-what": "That reward doesn't apply to what's in your cart.",
   "refusal.that-reward-is-for-a-higher-tier": "That reward is for a higher tier.",
   "refusal.that-reward-isn-t-offered-anymore": "That reward isn't offered anymore.",
+  "refusal.that-second-address-line-is-too-long": "That second address line is too long.",
   "refusal.that-signature-isn-t-yours": "That signature isn't yours.",
   "refusal.that-store-couldn-t-be-found": "That store couldn't be found.",
   "refusal.that-store-wasn-t-this-account-s": "That store wasn't this account's.",

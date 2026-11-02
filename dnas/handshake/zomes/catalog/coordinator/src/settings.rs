@@ -142,6 +142,8 @@ pub struct UpdateCatalogDetailsInput {
     #[serde(default)]
     pub website: String,
     pub address_street: String,
+    #[serde(default)]
+    pub address_line2: String,
     pub address_city: String,
     pub address_state: String,
     pub address_zip: String,
@@ -164,6 +166,7 @@ pub fn update_catalog_details(input: UpdateCatalogDetailsInput) -> ExternResult<
     catalog.email = input.email;
     catalog.website = input.website;
     catalog.address_street = input.address_street;
+    catalog.address_line2 = input.address_line2;
     catalog.address_city = input.address_city;
     catalog.address_state = input.address_state;
     catalog.address_zip = input.address_zip;

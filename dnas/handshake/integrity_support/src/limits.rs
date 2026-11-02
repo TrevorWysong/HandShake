@@ -22,6 +22,8 @@ pub const MAX_EMAIL_CHARS: usize = 254;
 /// A website's address.
 pub const MAX_WEBSITE_CHARS: usize = 200;
 pub const MAX_STREET_CHARS: usize = 200;
+/// An apartment, suite or unit -- an address's second line.
+pub const MAX_ADDRESS_LINE2_CHARS: usize = 50;
 /// A city or a state.
 pub const MAX_PLACE_CHARS: usize = 100;
 pub const MAX_POSTAL_CODE_CHARS: usize = 20;
