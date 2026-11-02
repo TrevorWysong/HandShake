@@ -51,7 +51,7 @@ function SessionBootstrap({ children }: { children: React.ReactNode }) {
   if (resuming) {
     return (
       <div className="mesh-hero flex min-h-svh flex-col items-center justify-center gap-3 text-white">
-        <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-handshake-600 font-black text-3xl shadow-xl">R</div>
+        <img src="favicon.svg" alt="" className="h-16 w-16 rounded-3xl shadow-xl" />
         <Spinner className="h-6 w-6" />
         {/* A device-locked identity's reconnect can legitimately sit here
             up to a minute waiting on a Touch ID/Windows Hello prompt (an
@@ -85,7 +85,7 @@ function UnlockScreen({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="mesh-hero flex min-h-svh flex-col items-center justify-center gap-4 px-6 text-white">
-      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-3xl font-black text-handshake-600 shadow-xl">R</div>
+      <img src="favicon.svg" alt="" className="h-16 w-16 rounded-3xl shadow-xl" />
       <p className="text-lg font-bold">{t("app.welcomeBack")}</p>
       <button onClick={unlock} disabled={unlocking.busy} className="flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-handshake-600 shadow-lg disabled:opacity-60">
         {unlocking.busy ? <Spinner className="h-4 w-4" /> : <Fingerprint size={18} />} {t("app.unlock")}
@@ -133,7 +133,7 @@ function NoHost() {
   const t = useT();
   return (
     <div className="mesh-hero flex min-h-svh flex-col items-center justify-center gap-4 px-8 text-center text-white">
-      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-handshake-600 font-black text-3xl shadow-xl">R</div>
+      <img src="favicon.svg" alt="" className="h-16 w-16 rounded-3xl shadow-xl" />
       <h1 className="text-xl font-black">{t("app.openInApp")}</h1>
       <p className="max-w-sm text-sm text-white/80">
         {t("app.openInAppDetail")}

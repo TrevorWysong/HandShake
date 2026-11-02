@@ -24,6 +24,7 @@ const DESKTOP = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.dirname(DESKTOP);
 const KANGAROO = path.join(DESKTOP, ".kangaroo");
 const WEBHAPP = path.join(REPO, "deploy/handshake.webhapp");
+const SCREENS = path.join(DESKTOP, "screens");
 
 /// Kangaroo's main branch (its Holochain 0.7 line). Bump deliberately, and
 /// re-check that every patch still applies -- this script fails if one doesn't.
@@ -112,6 +113,16 @@ for (const { file, from, to } of patches) {
   if (!text.includes(from)) fail(`Kangaroo's ${file} no longer has what desktop/build.ts patches -- check the patch against KANGAROO_COMMIT.`);
   writeFileSync(at, text.replace(from, to));
 }
+// HandShake's own start-up screens over Kangaroo's (desktop/screens): the
+// same names, so its window loads them, and the same calls into its
+// preload. The mark is the app's own icon.
+const RENDERER = path.join(KANGAROO, "src/renderer");
+for (const name of readdirSync(SCREENS)) {
+  const to = path.join(RENDERER, name);
+  if (name.endsWith(".html") && !existsSync(to)) fail(`Kangaroo has no ${name} for desktop/screens to replace -- check against KANGAROO_COMMIT.`);
+  copyFileSync(path.join(SCREENS, name), to);
+}
+copyFileSync(path.join(REPO, "web/public/favicon.svg"), path.join(RENDERER, "img/handshake.svg"));
 // The one webhapp in its pouch: ours.
 copyFileSync(WEBHAPP, path.join(KANGAROO, "pouch/handshake.webhapp"));
 
