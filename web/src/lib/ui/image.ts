@@ -8,7 +8,7 @@
 // uploading something huge.
 
 import { t } from "../../i18n";
-import { currentTerms } from "../../store/network";
+import { useNetwork } from "../../store/network";
 
 const MAX_DIMENSION = 640;
 const JPEG_QUALITY = 0.72;
@@ -28,7 +28,10 @@ export async function fileToResizedDataUri(file: File): Promise<string> {
 
   const dataUri = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
   // The network's ceiling (`max_image_bytes`) -- validation refuses more.
-  if (dataUri.length > currentTerms().max_image_bytes) {
+  // On the sign-up screen it isn't read yet (that's part of connecting), and
+  // validation alone holds the line: a photo this size is far under it.
+  const limit = useNetwork.getState().terms?.max_image_bytes;
+  if (limit !== undefined && dataUri.length > limit) {
     throw new Error(t("image.tooLarge", { size: Math.round(dataUri.length / 1024) }));
   }
   return dataUri;
