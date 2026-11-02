@@ -31,7 +31,7 @@ export default function ArbitratePage() {
     setOlder((prev) => ({ appeals: [...(prev?.appeals ?? []), ...page.appeals], next_before: page.next_before }));
   });
   return (
-    <div className="mx-auto max-w-md px-4 py-6">
+    <div className="px-4 py-6">
       <h1 className="mb-1 flex items-center gap-2 text-xl font-black text-ink-900 dark:text-ink-50">
         <Gavel size={20} /> {t("account.appeals")}
       </h1>

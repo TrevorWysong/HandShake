@@ -72,7 +72,7 @@ export function RedeemRewards() {
   return (
     <div className="pb-32">
       {/* The member's points, large -- what every reward below is measured against. */}
-      <div className="relative overflow-hidden px-5 pb-8 pt-4 text-white" style={{ backgroundImage: `linear-gradient(150deg, ${colors.from}, ${colors.to})` }}>
+      <div className="relative overflow-hidden px-5 pb-8 pt-4 text-white md:rounded-3xl" style={{ backgroundImage: `linear-gradient(150deg, ${colors.from}, ${colors.to})` }}>
         <div aria-hidden className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
         <button onClick={() => navigate(-1)} className="relative flex items-center gap-1.5 text-sm font-semibold text-white/85">
           <ArrowLeft size={16} /> {card.store_name}
@@ -107,7 +107,7 @@ export function RedeemRewards() {
 
       {/* What they cost, as tabs: everything, or one price at a time. */}
       {buckets.length > 1 && (
-        <div className="no-scrollbar sticky top-0 z-10 -mt-4 flex gap-2 overflow-x-auto rounded-t-3xl bg-cream px-4 pb-2 pt-4 dark:bg-ink-950">
+        <div className="no-scrollbar sticky top-header z-10 -mt-4 flex gap-2 overflow-x-auto rounded-t-3xl bg-cream px-4 pb-2 pt-4 lg:top-0 dark:bg-ink-950">
           {[null, ...buckets].map((cost) => (
             <button
               key={cost ?? "all"}
@@ -124,7 +124,7 @@ export function RedeemRewards() {
       {rewards.length === 0 ? (
         <p className="px-6 py-16 text-center text-sm text-ink-400">{t("redeem.none")}</p>
       ) : (
-        <motion.div layout className={clsx("grid grid-cols-2 gap-3 px-4", buckets.length > 1 ? "pt-2" : "pt-5")}>
+        <motion.div layout className={clsx("grid grid-cols-2 gap-3 px-4 md:grid-cols-3", buckets.length > 1 ? "pt-2" : "pt-5")}>
           <AnimatePresence>
             {shown.map((reward) => (
               <RedeemTile key={reward.id} program={program} reward={reward} balance={spendable(reward)} tier={tier} menu={menu} inBag={inBag?.id === reward.id} onOpen={() => setOpening(reward)} />

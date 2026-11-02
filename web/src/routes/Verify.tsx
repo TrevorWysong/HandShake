@@ -26,7 +26,7 @@ export default function VerifyPage() {
     return <p className="p-6 text-sm text-ink-500">{t("verify.onlyVerifiers")}</p>;
   }
   return (
-    <div className="mx-auto max-w-md px-4 py-6">
+    <div className="px-4 py-6">
       <h1 className="mb-1 text-xl font-black text-ink-900 dark:text-ink-50">{t("verify.title")}</h1>
       <p className="mb-5 text-sm text-ink-500">{t("verify.intro")}</p>
       {driver ? <DriverForm key={bytesToHex(driver)} driver={driver} onDone={() => setDriver(null)} /> : <AccountCodeReader prompt={t("verify.point")} onKey={setDriver} />}

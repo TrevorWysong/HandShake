@@ -119,208 +119,216 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
         {data.view && <Switch checked={draft.active} onChange={(active) => update((p) => ({ ...p, active }))} label={t("rewardsAdmin.running")} />}
       </motion.div>
 
-      {/* The card as members will see it, live. */}
-      <motion.div variants={fadeSlideUp} className="sticky top-2 z-20">
-        <RewardsCard program={draft} storeName={store.business_name} balance={previewPoints} tier={previewTier} />
-      </motion.div>
-      <motion.div variants={fadeSlideUp} className="mt-3 flex items-center gap-3 px-1">
-        <span className="shrink-0 text-xs font-semibold text-ink-400">{t("rewardsAdmin.previewAt")}</span>
-        <input type="range" min={0} max={Math.max(1000, ...draft.rewards.map((r) => r.cost), ...draft.tiers.map((x) => x.threshold))} value={previewPoints} onChange={(e) => setPreviewPoints(Number(e.target.value))} className="flex-1 accent-handshake-500" aria-label={t("rewardsAdmin.previewAt")} />
-      </motion.div>
+      {/* The settings, and the card as members will see it, live -- kept in
+          view while editing: stuck above them on a phone or tablet, beside
+          them on a wide screen. */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-8">
+        <div className="contents lg:sticky lg:top-6 lg:col-start-2 lg:row-start-1 lg:block">
+          {/* The card as members will see it, live. */}
+          <motion.div variants={fadeSlideUp} className="sticky top-[calc(var(--spacing-header)+0.5rem)] z-20 lg:static">
+            <RewardsCard program={draft} storeName={store.business_name} balance={previewPoints} tier={previewTier} />
+          </motion.div>
+          <motion.div variants={fadeSlideUp} className="mt-3 flex items-center gap-3 px-1">
+            <span className="shrink-0 text-xs font-semibold text-ink-400">{t("rewardsAdmin.previewAt")}</span>
+            <input type="range" min={0} max={Math.max(1000, ...draft.rewards.map((r) => r.cost), ...draft.tiers.map((x) => x.threshold))} value={previewPoints} onChange={(e) => setPreviewPoints(Number(e.target.value))} className="flex-1 accent-handshake-500" aria-label={t("rewardsAdmin.previewAt")} />
+          </motion.div>
 
-      {stats && data.view && (
-        <motion.div variants={fadeSlideUp} className="mt-5 grid grid-cols-2 gap-3">
-          <Stat icon={Users} label={t("rewardsAdmin.stats.members")} value={stats.members} sub={t("rewardsAdmin.stats.active", { count: stats.active_members })} />
-          <Stat icon={Sparkles} label={t("rewardsAdmin.stats.orders")} value={stats.orders} sub={t("rewardsAdmin.stats.ordersSub")} />
-          <Stat icon={Gift} label={t("rewardsAdmin.stats.redeemed")} value={stats.redemptions} sub={t("rewardsAdmin.stats.rewards")} />
-          <Stat icon={Crown} label={t("rewardsAdmin.stats.tiers")} value={draft.tiers.length} sub={t("rewardsAdmin.stats.levels")} />
-        </motion.div>
-      )}
+          {stats && data.view && (
+            <motion.div variants={fadeSlideUp} className="mt-5 grid grid-cols-2 gap-3">
+              <Stat icon={Users} label={t("rewardsAdmin.stats.members")} value={stats.members} sub={t("rewardsAdmin.stats.active", { count: stats.active_members })} />
+              <Stat icon={Sparkles} label={t("rewardsAdmin.stats.orders")} value={stats.orders} sub={t("rewardsAdmin.stats.ordersSub")} />
+              <Stat icon={Gift} label={t("rewardsAdmin.stats.redeemed")} value={stats.redemptions} sub={t("rewardsAdmin.stats.rewards")} />
+              <Stat icon={Crown} label={t("rewardsAdmin.stats.tiers")} value={draft.tiers.length} sub={t("rewardsAdmin.stats.levels")} />
+            </motion.div>
+          )}
+        </div>
+        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+          <Section icon={Palette} title={t("rewardsAdmin.brand")}>
+            <div className="grid gap-3">
+              <Field label={t("rewardsAdmin.name")}>
+                <Input maxLength={40} value={draft.name} onChange={(e) => update((p) => ({ ...p, name: e.target.value }))} />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t("rewardsAdmin.pointsName")}>
+                  <Input maxLength={20} value={draft.points_name} onChange={(e) => update((p) => ({ ...p, points_name: e.target.value }))} placeholder="points" />
+                </Field>
+                <Field label={t("rewardsAdmin.timeZone")}>
+                  <Input value={draft.time_zone} onChange={(e) => update((p) => ({ ...p, time_zone: e.target.value }))} />
+                </Field>
+              </div>
+              <Field label={t("rewardsAdmin.tagline")}>
+                <Input maxLength={120} value={draft.tagline} onChange={(e) => update((p) => ({ ...p, tagline: e.target.value }))} placeholder={t("rewardsAdmin.taglineHint")} />
+              </Field>
+              <div>
+                <p className="mb-2 text-xs font-semibold text-ink-500">{t("rewardsAdmin.colour")}</p>
+                <div className="flex gap-2.5">
+                  {ACCENT_NAMES.map((accent) => (
+                    <motion.button
+                      key={accent}
+                      type="button"
+                      whileTap={{ scale: 0.9 }}
+                      aria-label={accent}
+                      onClick={() => update((p) => ({ ...p, accent }))}
+                      className={clsx("h-10 w-10 rounded-full ring-offset-2 transition dark:ring-offset-ink-900", draft.accent === accent ? "ring-2 ring-ink-900 dark:ring-white" : "")}
+                      style={{ backgroundImage: `linear-gradient(135deg, ${ACCENTS[accent].from}, ${ACCENTS[accent].to})` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Section>
 
-      <Section icon={Palette} title={t("rewardsAdmin.brand")}>
-        <div className="grid gap-3">
-          <Field label={t("rewardsAdmin.name")}>
-            <Input maxLength={40} value={draft.name} onChange={(e) => update((p) => ({ ...p, name: e.target.value }))} />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={t("rewardsAdmin.pointsName")}>
-              <Input maxLength={20} value={draft.points_name} onChange={(e) => update((p) => ({ ...p, points_name: e.target.value }))} placeholder="points" />
-            </Field>
-            <Field label={t("rewardsAdmin.timeZone")}>
-              <Input value={draft.time_zone} onChange={(e) => update((p) => ({ ...p, time_zone: e.target.value }))} />
-            </Field>
-          </div>
-          <Field label={t("rewardsAdmin.tagline")}>
-            <Input maxLength={120} value={draft.tagline} onChange={(e) => update((p) => ({ ...p, tagline: e.target.value }))} placeholder={t("rewardsAdmin.taglineHint")} />
-          </Field>
-          <div>
-            <p className="mb-2 text-xs font-semibold text-ink-500">{t("rewardsAdmin.colour")}</p>
-            <div className="flex gap-2.5">
-              {ACCENT_NAMES.map((accent) => (
-                <motion.button
-                  key={accent}
-                  type="button"
-                  whileTap={{ scale: 0.9 }}
-                  aria-label={accent}
-                  onClick={() => update((p) => ({ ...p, accent }))}
-                  className={clsx("h-10 w-10 rounded-full ring-offset-2 transition dark:ring-offset-ink-900", draft.accent === accent ? "ring-2 ring-ink-900 dark:ring-white" : "")}
-                  style={{ backgroundImage: `linear-gradient(135deg, ${ACCENTS[accent].from}, ${ACCENTS[accent].to})` }}
-                />
+          <Section icon={Sparkles} title={t("rewardsAdmin.earning")}>
+            <div className="grid gap-4">
+              <div>
+                <div className="mb-1 flex items-baseline justify-between">
+                  <span className="text-xs font-semibold text-ink-500">{t("rewardsAdmin.rate")}</span>
+                  <span className="text-lg font-black tabular-nums text-ink-900 dark:text-ink-50">
+                    {draft.earn.points_per_dollar} <span className="text-xs font-semibold text-ink-400">{t("rewardsAdmin.perDollar", { name: draft.points_name })}</span>
+                  </span>
+                </div>
+                <input type="range" min={1} max={100} value={draft.earn.points_per_dollar} onChange={(e) => update((p) => ({ ...p, earn: { ...p.earn, points_per_dollar: Number(e.target.value) } }))} className="w-full accent-handshake-500" aria-label={t("rewardsAdmin.rate")} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t("rewardsAdmin.welcome")}>
+                  <Input type="number" min={0} max={100000} value={draft.earn.welcome_bonus} onChange={(e) => update((p) => ({ ...p, earn: { ...p.earn, welcome_bonus: clamp(e.target.value, 0, 100000) } }))} suffix="pts" />
+                </Field>
+                <Field label={t("rewardsAdmin.minOrder")}>
+                  <Input type="number" min={0} step="0.01" value={fromMinorUnits(draft.earn.min_order_cents)} onChange={(e) => update((p) => ({ ...p, earn: { ...p.earn, min_order_cents: toMinorUnits(Math.max(0, Number(e.target.value) || 0)) } }))} prefix={currencySymbol()} />
+                </Field>
+              </div>
+              <OptionalNumber label={t("rewardsAdmin.capPerOrder")} hint={t("rewardsAdmin.capPerOrderHint")} value={draft.earn.max_per_order} fallback={500} max={1_000_000} onChange={(max_per_order) => update((p) => ({ ...p, earn: { ...p.earn, max_per_order } }))} />
+            </div>
+          </Section>
+
+          <Section icon={Flame} title={t("rewardsAdmin.boosts")} hint={t("rewardsAdmin.boostsHint")}>
+            <SectionLabel className="mb-2">{t("rewardsAdmin.itemBoosts")}</SectionLabel>
+            <div className="flex flex-col gap-2">
+              {draft.earn.item_bonuses.map((bonus, i) => (
+                <Row key={i} onRemove={() => update((p) => ({ ...p, earn: { ...p.earn, item_bonuses: p.earn.item_bonuses.filter((_, j) => j !== i) } }))}>
+                  <ItemSelect menu={menu} value={bonus.item_ref} onChange={(item_ref) => update((p) => withBonus(p, i, { ...p.earn.item_bonuses[i], item_ref }))} />
+                  <MultiplierSelect options={[150, 200, 300, 500, 1000]} value={bonus.percent} onChange={(percent) => update((p) => withBonus(p, i, { ...p.earn.item_bonuses[i], percent }))} />
+                </Row>
               ))}
             </div>
-          </div>
-        </div>
-      </Section>
+            {draft.earn.item_bonuses.length < MAX_ITEM_BONUSES && menu.length > 0 && (
+              <AddButton onClick={() => update((p) => ({ ...p, earn: { ...p.earn, item_bonuses: [...p.earn.item_bonuses, { item_ref: unusedItem(menu, p.earn.item_bonuses.map((b) => b.item_ref)), percent: 200 }] } }))}>{t("rewardsAdmin.addItemBoost")}</AddButton>
+            )}
 
-      <Section icon={Sparkles} title={t("rewardsAdmin.earning")}>
-        <div className="grid gap-4">
-          <div>
-            <div className="mb-1 flex items-baseline justify-between">
-              <span className="text-xs font-semibold text-ink-500">{t("rewardsAdmin.rate")}</span>
-              <span className="text-lg font-black tabular-nums text-ink-900 dark:text-ink-50">
-                {draft.earn.points_per_dollar} <span className="text-xs font-semibold text-ink-400">{t("rewardsAdmin.perDollar", { name: draft.points_name })}</span>
-              </span>
+            <SectionLabel className="mb-2 mt-5">{t("rewardsAdmin.happyHours")}</SectionLabel>
+            <div className="flex flex-col gap-3">
+              {draft.earn.happy_hours.map((hour, i) => (
+                <div key={i} className="rounded-2xl bg-ink-50 p-3 dark:bg-ink-800/60">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-600 dark:text-ink-300">
+                      <Clock size={13} /> {describeHappyHour(hour.days, hour.start_minute, hour.end_minute, t)}
+                    </p>
+                    <button type="button" aria-label={t("common.remove")} onClick={() => update((p) => ({ ...p, earn: { ...p.earn, happy_hours: p.earn.happy_hours.filter((_, j) => j !== i) } }))} className="text-ink-400 hover:text-red-500">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  <DayPicker days={hour.days} onChange={(days) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], days }))} />
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    <Input type="time" value={clock(hour.start_minute)} onChange={(e) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], start_minute: minutes(e.target.value) }))} aria-label={t("rewardsAdmin.starts")} />
+                    <Input type="time" value={clock(hour.end_minute)} onChange={(e) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], end_minute: minutes(e.target.value) || 1440 }))} aria-label={t("rewardsAdmin.ends")} />
+                    <MultiplierSelect options={[150, 200, 300, 500]} value={hour.percent} onChange={(percent) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], percent }))} />
+                  </div>
+                </div>
+              ))}
             </div>
-            <input type="range" min={1} max={100} value={draft.earn.points_per_dollar} onChange={(e) => update((p) => ({ ...p, earn: { ...p.earn, points_per_dollar: Number(e.target.value) } }))} className="w-full accent-handshake-500" aria-label={t("rewardsAdmin.rate")} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={t("rewardsAdmin.welcome")}>
-              <Input type="number" min={0} max={100000} value={draft.earn.welcome_bonus} onChange={(e) => update((p) => ({ ...p, earn: { ...p.earn, welcome_bonus: clamp(e.target.value, 0, 100000) } }))} suffix="pts" />
-            </Field>
-            <Field label={t("rewardsAdmin.minOrder")}>
-              <Input type="number" min={0} step="0.01" value={fromMinorUnits(draft.earn.min_order_cents)} onChange={(e) => update((p) => ({ ...p, earn: { ...p.earn, min_order_cents: toMinorUnits(Math.max(0, Number(e.target.value) || 0)) } }))} prefix={currencySymbol()} />
-            </Field>
-          </div>
-          <OptionalNumber label={t("rewardsAdmin.capPerOrder")} hint={t("rewardsAdmin.capPerOrderHint")} value={draft.earn.max_per_order} fallback={500} max={1_000_000} onChange={(max_per_order) => update((p) => ({ ...p, earn: { ...p.earn, max_per_order } }))} />
-        </div>
-      </Section>
+            {draft.earn.happy_hours.length < MAX_HAPPY_HOURS && (
+              <AddButton onClick={() => update((p) => ({ ...p, earn: { ...p.earn, happy_hours: [...p.earn.happy_hours, { days: 0b0011111, start_minute: 14 * 60, end_minute: 16 * 60, percent: 200 }] } }))}>{t("rewardsAdmin.addHappyHour")}</AddButton>
+            )}
+          </Section>
 
-      <Section icon={Flame} title={t("rewardsAdmin.boosts")} hint={t("rewardsAdmin.boostsHint")}>
-        <SectionLabel className="mb-2">{t("rewardsAdmin.itemBoosts")}</SectionLabel>
-        <div className="flex flex-col gap-2">
-          {draft.earn.item_bonuses.map((bonus, i) => (
-            <Row key={i} onRemove={() => update((p) => ({ ...p, earn: { ...p.earn, item_bonuses: p.earn.item_bonuses.filter((_, j) => j !== i) } }))}>
-              <ItemSelect menu={menu} value={bonus.item_ref} onChange={(item_ref) => update((p) => withBonus(p, i, { ...p.earn.item_bonuses[i], item_ref }))} />
-              <MultiplierSelect options={[150, 200, 300, 500, 1000]} value={bonus.percent} onChange={(percent) => update((p) => withBonus(p, i, { ...p.earn.item_bonuses[i], percent }))} />
-            </Row>
-          ))}
-        </div>
-        {draft.earn.item_bonuses.length < MAX_ITEM_BONUSES && menu.length > 0 && (
-          <AddButton onClick={() => update((p) => ({ ...p, earn: { ...p.earn, item_bonuses: [...p.earn.item_bonuses, { item_ref: unusedItem(menu, p.earn.item_bonuses.map((b) => b.item_ref)), percent: 200 }] } }))}>{t("rewardsAdmin.addItemBoost")}</AddButton>
-        )}
-
-        <SectionLabel className="mb-2 mt-5">{t("rewardsAdmin.happyHours")}</SectionLabel>
-        <div className="flex flex-col gap-3">
-          {draft.earn.happy_hours.map((hour, i) => (
-            <div key={i} className="rounded-2xl bg-ink-50 p-3 dark:bg-ink-800/60">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-600 dark:text-ink-300">
-                  <Clock size={13} /> {describeHappyHour(hour.days, hour.start_minute, hour.end_minute, t)}
-                </p>
-                <button type="button" aria-label={t("common.remove")} onClick={() => update((p) => ({ ...p, earn: { ...p.earn, happy_hours: p.earn.happy_hours.filter((_, j) => j !== i) } }))} className="text-ink-400 hover:text-red-500">
-                  <Trash2 size={15} />
-                </button>
+          <Section icon={Gift} title={t("rewardsAdmin.rewards")} hint={t("rewardsAdmin.rewardsHint")}>
+            {draft.rewards.length > 0 && (
+              <div className="mb-4">
+                <RewardRail>
+                  {[...draft.rewards]
+                    .sort((a, b) => a.cost - b.cost)
+                    .map((reward) => (
+                      <RewardTile key={reward.id} program={draft} reward={reward} balance={previewPoints} tier={previewTier} menu={menu} />
+                    ))}
+                </RewardRail>
               </div>
-              <DayPicker days={hour.days} onChange={(days) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], days }))} />
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                <Input type="time" value={clock(hour.start_minute)} onChange={(e) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], start_minute: minutes(e.target.value) }))} aria-label={t("rewardsAdmin.starts")} />
-                <Input type="time" value={clock(hour.end_minute)} onChange={(e) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], end_minute: minutes(e.target.value) || 1440 }))} aria-label={t("rewardsAdmin.ends")} />
-                <MultiplierSelect options={[150, 200, 300, 500]} value={hour.percent} onChange={(percent) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], percent }))} />
-              </div>
+            )}
+            <div className="flex flex-col gap-3">
+              {draft.rewards.map((reward, i) => (
+                <RewardEditor key={reward.id} reward={reward} menu={menu} tiers={draft.tiers.map((x) => x.name)} pointsName={draft.points_name} onChange={(next) => update((p) => ({ ...p, rewards: p.rewards.map((r, j) => (j === i ? next : r)) }))} onRemove={() => update((p) => ({ ...p, rewards: p.rewards.filter((_, j) => j !== i) }))} />
+              ))}
             </div>
-          ))}
-        </div>
-        {draft.earn.happy_hours.length < MAX_HAPPY_HOURS && (
-          <AddButton onClick={() => update((p) => ({ ...p, earn: { ...p.earn, happy_hours: [...p.earn.happy_hours, { days: 0b0011111, start_minute: 14 * 60, end_minute: 16 * 60, percent: 200 }] } }))}>{t("rewardsAdmin.addHappyHour")}</AddButton>
-        )}
-      </Section>
+            {draft.rewards.length < MAX_REWARDS && (
+              <AddButton
+                onClick={() =>
+                  update((p) => {
+                    const id = Math.max(0, ...p.rewards.map((r) => r.id)) + 1;
+                    const benefit: PromoReward = menu[0] ? { FreeItem: { item_ref: menu[0].hash, quantity: 1 } } : { FlatOffSubtotal: 500 };
+                    return { ...p, rewards: [...p.rewards, { id, name: menu[0] ? t("rewardsAdmin.freeNamed", { item: menu[0].item.name }) : t("rewardsAdmin.dollarsOff"), cost: 100 * id, benefit, min_tier: 0 }] };
+                  })
+                }
+              >
+                {t("rewardsAdmin.addReward")}
+              </AddButton>
+            )}
+          </Section>
 
-      <Section icon={Gift} title={t("rewardsAdmin.rewards")} hint={t("rewardsAdmin.rewardsHint")}>
-        {draft.rewards.length > 0 && (
-          <div className="mb-4">
-            <RewardRail>
-              {[...draft.rewards]
-                .sort((a, b) => a.cost - b.cost)
-                .map((reward) => (
-                  <RewardTile key={reward.id} program={draft} reward={reward} balance={previewPoints} tier={previewTier} menu={menu} />
-                ))}
-            </RewardRail>
-          </div>
-        )}
-        <div className="flex flex-col gap-3">
-          {draft.rewards.map((reward, i) => (
-            <RewardEditor key={reward.id} reward={reward} menu={menu} tiers={draft.tiers.map((x) => x.name)} pointsName={draft.points_name} onChange={(next) => update((p) => ({ ...p, rewards: p.rewards.map((r, j) => (j === i ? next : r)) }))} onRemove={() => update((p) => ({ ...p, rewards: p.rewards.filter((_, j) => j !== i) }))} />
-          ))}
-        </div>
-        {draft.rewards.length < MAX_REWARDS && (
-          <AddButton
-            onClick={() =>
-              update((p) => {
-                const id = Math.max(0, ...p.rewards.map((r) => r.id)) + 1;
-                const benefit: PromoReward = menu[0] ? { FreeItem: { item_ref: menu[0].hash, quantity: 1 } } : { FlatOffSubtotal: 500 };
-                return { ...p, rewards: [...p.rewards, { id, name: menu[0] ? t("rewardsAdmin.freeNamed", { item: menu[0].item.name }) : t("rewardsAdmin.dollarsOff"), cost: 100 * id, benefit, min_tier: 0 }] };
-              })
-            }
-          >
-            {t("rewardsAdmin.addReward")}
-          </AddButton>
-        )}
-      </Section>
-
-      <Section icon={Crown} title={t("rewardsAdmin.tiers")} hint={t("rewardsAdmin.tiersHint")}>
-        <div className="flex flex-col gap-3">
-          {draft.tiers.map((tier, i) => (
-            <div key={i} className="rounded-2xl bg-ink-50 p-3 dark:bg-ink-800/60">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="grid h-7 w-7 place-items-center rounded-full text-white" style={{ backgroundImage: `linear-gradient(135deg, ${ACCENTS[draft.accent].from}, ${ACCENTS[draft.accent].to})` }}>
-                  <Crown size={13} />
-                </span>
-                <Input maxLength={24} value={tier.name} onChange={(e) => update((p) => withTier(p, i, { ...p.tiers[i], name: e.target.value }))} className="flex-1 py-2" aria-label={t("rewardsAdmin.tierName")} />
-                <button type="button" aria-label={t("common.remove")} onClick={() => update((p) => ({ ...p, tiers: p.tiers.filter((_, j) => j !== i), rewards: p.rewards.map((r) => ({ ...r, min_tier: Math.min(r.min_tier, p.tiers.length - 1) })) }))} className="text-ink-400 hover:text-red-500">
-                  <Trash2 size={15} />
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label={t("rewardsAdmin.tierAt")}>
-                  <Input type="number" min={1} value={tier.threshold} onChange={(e) => update((p) => withTier(p, i, { ...p.tiers[i], threshold: clamp(e.target.value, 1, 1_000_000_000) }))} suffix="pts" />
-                </Field>
-                <Field label={t("rewardsAdmin.tierEarns")}>
-                  <MultiplierSelect options={[100, 110, 125, 150, 175, 200, 250, 300]} value={tier.percent} onChange={(percent) => update((p) => withTier(p, i, { ...p.tiers[i], percent }))} />
-                </Field>
-              </div>
-              <Input maxLength={120} value={tier.perk} onChange={(e) => update((p) => withTier(p, i, { ...p.tiers[i], perk: e.target.value }))} placeholder={t("rewardsAdmin.perkHint")} className="mt-2" />
+          <Section icon={Crown} title={t("rewardsAdmin.tiers")} hint={t("rewardsAdmin.tiersHint")}>
+            <div className="flex flex-col gap-3">
+              {draft.tiers.map((tier, i) => (
+                <div key={i} className="rounded-2xl bg-ink-50 p-3 dark:bg-ink-800/60">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="grid h-7 w-7 place-items-center rounded-full text-white" style={{ backgroundImage: `linear-gradient(135deg, ${ACCENTS[draft.accent].from}, ${ACCENTS[draft.accent].to})` }}>
+                      <Crown size={13} />
+                    </span>
+                    <Input maxLength={24} value={tier.name} onChange={(e) => update((p) => withTier(p, i, { ...p.tiers[i], name: e.target.value }))} className="flex-1 py-2" aria-label={t("rewardsAdmin.tierName")} />
+                    <button type="button" aria-label={t("common.remove")} onClick={() => update((p) => ({ ...p, tiers: p.tiers.filter((_, j) => j !== i), rewards: p.rewards.map((r) => ({ ...r, min_tier: Math.min(r.min_tier, p.tiers.length - 1) })) }))} className="text-ink-400 hover:text-red-500">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label={t("rewardsAdmin.tierAt")}>
+                      <Input type="number" min={1} value={tier.threshold} onChange={(e) => update((p) => withTier(p, i, { ...p.tiers[i], threshold: clamp(e.target.value, 1, 1_000_000_000) }))} suffix="pts" />
+                    </Field>
+                    <Field label={t("rewardsAdmin.tierEarns")}>
+                      <MultiplierSelect options={[100, 110, 125, 150, 175, 200, 250, 300]} value={tier.percent} onChange={(percent) => update((p) => withTier(p, i, { ...p.tiers[i], percent }))} />
+                    </Field>
+                  </div>
+                  <Input maxLength={120} value={tier.perk} onChange={(e) => update((p) => withTier(p, i, { ...p.tiers[i], perk: e.target.value }))} placeholder={t("rewardsAdmin.perkHint")} className="mt-2" />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        {draft.tiers.length < MAX_TIERS && (
-          <AddButton
-            onClick={() =>
-              update((p) => {
-                const last = p.tiers[p.tiers.length - 1];
-                const names = ["Silver", "Gold", "Platinum", "Diamond"];
-                return { ...p, tiers: [...p.tiers, { name: names[p.tiers.length] ?? "Tier", threshold: (last?.threshold ?? 0) + 1000, percent: Math.min(300, (last?.percent ?? 100) + 25), perk: "" }] };
-              })
-            }
-          >
-            {t("rewardsAdmin.addTier")}
-          </AddButton>
-        )}
-      </Section>
+            {draft.tiers.length < MAX_TIERS && (
+              <AddButton
+                onClick={() =>
+                  update((p) => {
+                    const last = p.tiers[p.tiers.length - 1];
+                    const names = ["Silver", "Gold", "Platinum", "Diamond"];
+                    return { ...p, tiers: [...p.tiers, { name: names[p.tiers.length] ?? "Tier", threshold: (last?.threshold ?? 0) + 1000, percent: Math.min(300, (last?.percent ?? 100) + 25), perk: "" }] };
+                  })
+                }
+              >
+                {t("rewardsAdmin.addTier")}
+              </AddButton>
+            )}
+          </Section>
 
-      <Section icon={Cake} title={t("rewardsAdmin.extras")}>
-        <div className="grid gap-4">
-          <Field label={t("rewardsAdmin.birthday")}>
-            <Input type="number" min={0} max={100000} value={draft.birthday_points} onChange={(e) => update((p) => ({ ...p, birthday_points: clamp(e.target.value, 0, 100000) }))} suffix="pts" />
-          </Field>
-          <p className="-mt-2 text-xs text-ink-400">{t("rewardsAdmin.birthdayHint")}</p>
-          <OptionalNumber icon={Hourglass} label={t("rewardsAdmin.expiry")} hint={t("rewardsAdmin.expiryHint")} value={draft.expiry_days} fallback={180} min={30} max={1095} suffix={t("rewardsAdmin.days")} onChange={(expiry_days) => update((p) => ({ ...p, expiry_days }))} />
-          <OptionalNumber label={t("rewardsAdmin.maxBalance")} hint={t("rewardsAdmin.maxBalanceHint")} value={draft.max_balance} fallback={Math.max(5000, ...draft.rewards.map((r) => r.cost))} max={1_000_000_000} onChange={(max_balance) => update((p) => ({ ...p, max_balance }))} />
-        </div>
-      </Section>
+          <Section icon={Cake} title={t("rewardsAdmin.extras")}>
+            <div className="grid gap-4">
+              <Field label={t("rewardsAdmin.birthday")}>
+                <Input type="number" min={0} max={100000} value={draft.birthday_points} onChange={(e) => update((p) => ({ ...p, birthday_points: clamp(e.target.value, 0, 100000) }))} suffix="pts" />
+              </Field>
+              <p className="-mt-2 text-xs text-ink-400">{t("rewardsAdmin.birthdayHint")}</p>
+              <OptionalNumber icon={Hourglass} label={t("rewardsAdmin.expiry")} hint={t("rewardsAdmin.expiryHint")} value={draft.expiry_days} fallback={180} min={30} max={1095} suffix={t("rewardsAdmin.days")} onChange={(expiry_days) => update((p) => ({ ...p, expiry_days }))} />
+              <OptionalNumber label={t("rewardsAdmin.maxBalance")} hint={t("rewardsAdmin.maxBalanceHint")} value={draft.max_balance} fallback={Math.max(5000, ...draft.rewards.map((r) => r.cost))} max={1_000_000_000} onChange={(max_balance) => update((p) => ({ ...p, max_balance }))} />
+            </div>
+          </Section>
 
-      <Section icon={Sparkles} title={t("rewardsAdmin.membersSee")}>
-        <HowYouEarn program={draft} menu={menu} />
-      </Section>
+          <Section icon={Sparkles} title={t("rewardsAdmin.membersSee")}>
+            <HowYouEarn program={draft} menu={menu} />
+          </Section>
+        </div>
+      </div>
 
       {/* Saving, kept in reach. */}
       <div className="fixed inset-x-0 bottom-20 z-30 px-4 lg:bottom-6 lg:left-sidebar">
