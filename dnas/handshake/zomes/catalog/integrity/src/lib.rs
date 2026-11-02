@@ -17,7 +17,7 @@ pub use links::catalog_geohash_path;
 // a direct dependency on this crate wouldn't work. Re-exported here so
 // nothing else in this crate or the coordinator crate (which imports via
 // `catalog_integrity::*`) needs to change.
-pub use catalog_types::{listing_stake, listing_tag, BagClaim, BagClaimFulfillment, BagClaimStatus, ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
+pub use catalog_types::{listing_stake, listing_tag, ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
 
 /// Precision used for the merchant-discovery anchor -- coarse (city-block
 /// scale), matching open orders' drop-off precision so both discovery paths
@@ -34,7 +34,6 @@ pub enum EntryTypes {
     MenuItem(MenuItem),
     PromoCode(PromoCode),
     GoodieBag(GoodieBag),
-    BagClaim(BagClaim),
     ModifierGroup(ModifierGroup),
     StoreSuccession(StoreSuccession),
     StoreImport(StoreImport),
@@ -55,8 +54,6 @@ pub enum LinkTypes {
     /// parallel geohash anchor for bags: a bag's location *is* its
     /// catalog's location, so there's nothing a second anchor would add.
     CatalogToBag,
-    BagToClaim,
-    CustomerToClaim,
     /// A store's currently active promo codes, base = the store. Linked
     /// when a code is created or reactivated and unlinked when it's
     /// deactivated, so checkout reads only the codes it could apply,
@@ -83,7 +80,6 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::MenuItem(item) => validate_menu_item(&item, action.author()),
             EntryTypes::PromoCode(promo) => validate_new_promo_code(&promo, action.author()),
             EntryTypes::GoodieBag(bag) => validate_new_goodie_bag(&bag, action.author(), action.timestamp()),
-            EntryTypes::BagClaim(claim) => validate_new_claim(&claim, action.author(), action.timestamp(), action.prev_action()),
             EntryTypes::ModifierGroup(group) => validate_modifier_group(&group, action.author(), None),
             EntryTypes::StoreSuccession(succession) => validate_store_succession(&succession, action.author(), action.prev_action()),
             EntryTypes::StoreImport(import) => validate_store_import(&import, action.author(), action.prev_action()),
@@ -93,7 +89,6 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::MenuItem(item) => validate_menu_item_update(&item, action.author(), &action.original_action_address),
             EntryTypes::PromoCode(promo) => validate_promo_code_update(&promo, action.author(), &action.original_action_address),
             EntryTypes::GoodieBag(bag) => validate_goodie_bag_update(&bag, action.author(), &action.original_action_address),
-            EntryTypes::BagClaim(claim) => validate_claim_update(&claim, action.author(), &action.original_action_address),
             EntryTypes::ModifierGroup(group) => validate_modifier_group_update(&group, action.author(), &action.original_action_address),
             EntryTypes::StoreSuccession(_) => invalid("a store's move can't be changed"),
             EntryTypes::StoreImport(_) => invalid("a store's import can't be changed"),
@@ -561,10 +556,6 @@ fn validate_bag_fields(bag: &GoodieBag, author: &AgentPubKey) -> ExternResult<Va
     if bag.quantity_total == 0 {
         return Ok(ValidateCallbackResult::Invalid("quantity_total must be greater than zero".into()));
     }
-    let max_hold_minutes = handshake_governance::goodie_bag_max_lifetime().as_secs() / 60;
-    if bag.hold_minutes == 0 || u64::from(bag.hold_minutes) > max_hold_minutes {
-        return Ok(ValidateCallbackResult::Invalid("a bag holds a confirmed claim for at least a minute, and no longer than a bag may be listed".into()));
-    }
     if bag.pickup_window_end <= bag.pickup_window_start {
         return Ok(ValidateCallbackResult::Invalid(
             "pickup_window_end must be after pickup_window_start".into(),
@@ -585,9 +576,9 @@ fn validate_bag_fields(bag: &GoodieBag, author: &AgentPubKey) -> ExternResult<Va
 }
 
 /// Only the presentation may change after listing (title, description,
-/// photo). Claims are validated against the bag as created
+/// photo). Orders are validated against the bag as created
 /// (`must_get_valid_record` is literal), so its window, price, quantity and
-/// fulfillment options have to stay what claimants saw -- a merchant who
+/// fulfillment options have to stay what customers saw -- a merchant who
 /// needs different terms lists a new bag.
 fn validate_goodie_bag_update(bag: &GoodieBag, author: &AgentPubKey, original_action_hash: &ActionHash) -> ExternResult<ValidateCallbackResult> {
     let prior_record = must_get_valid_record(original_action_hash.clone())?;
@@ -602,102 +593,13 @@ fn validate_goodie_bag_update(bag: &GoodieBag, author: &AgentPubKey, original_ac
         && prior.pickup_window_end == bag.pickup_window_end
         && prior.supports_pickup == bag.supports_pickup
         && prior.supports_delivery == bag.supports_delivery
-        && prior.created_at == bag.created_at
-        && prior.hold_minutes == bag.hold_minutes;
+        && prior.created_at == bag.created_at;
     if !terms_unchanged {
         return Ok(ValidateCallbackResult::Invalid(
             "a goodie bag update may only change its title, description or photo".into(),
         ));
     }
     validate_bag_fields(bag, author)
-}
-
-fn validate_new_claim(claim: &BagClaim, author: &AgentPubKey, claimed: Timestamp, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
-    if (claim.claimed_at.as_micros() - claimed.as_micros()).abs() > clock_tolerance_micros() {
-        return Ok(ValidateCallbackResult::Invalid("claimed_at must match when the claim was actually made".into()));
-    }
-    if &claim.customer != author {
-        return Ok(ValidateCallbackResult::Invalid(
-            "a bag claim can only be authored by its own customer".into(),
-        ));
-    }
-    if claim.status != BagClaimStatus::Pending {
-        return Ok(ValidateCallbackResult::Invalid("a new bag claim must start Pending".into()));
-    }
-    let bag_record = must_get_valid_record(claim.bag_ref.clone())?;
-    let Ok(Some(bag)) = bag_record.entry().to_app_option::<GoodieBag>() else {
-        return Ok(ValidateCallbackResult::Invalid("bag_ref does not point at a GoodieBag entry".into()));
-    };
-    // On-chain expiry: the window can't change after listing (see
-    // `validate_goodie_bag_update`), so the bag as created is authoritative.
-    if claimed >= bag.pickup_window_end {
-        return Ok(ValidateCallbackResult::Invalid("this goodie bag's pickup window has closed".into()));
-    }
-    // Mirrors `validate_new_bid`'s self-dealing check: a merchant claiming
-    // their own bag is a no-op the ledger would reject anyway (`from == to`),
-    // same reasoning, caught here with a clearer reason instead.
-    if claim.customer == owner_of_catalog(&bag.catalog_ref)? {
-        return Ok(ValidateCallbackResult::Invalid(
-            "a merchant cannot claim their own goodie bag".into(),
-        ));
-    }
-    let fulfillment_supported = match &claim.fulfillment {
-        BagClaimFulfillment::Pickup => bag.supports_pickup,
-        BagClaimFulfillment::Delivery { .. } => bag.supports_delivery,
-    };
-    if !fulfillment_supported {
-        return Ok(ValidateCallbackResult::Invalid(
-            "this bag does not support the claimed fulfillment method".into(),
-        ));
-    }
-    // One claim per customer per bag, so nobody can flood a store's claims
-    // or hold more than one of a bag at a time.
-    let Some(prev) = prev_action else { return Ok(ValidateCallbackResult::Invalid("a claim can't open a chain".into())) };
-    if wrote_since::<BagClaim>(author, prev, bag_record.action().timestamp(), UnitEntryTypes::BagClaim.try_into()?, |earlier| earlier.bag_ref == claim.bag_ref)? {
-        return Ok(ValidateCallbackResult::Invalid("a customer claims a goodie bag once".into()));
-    }
-    Ok(ValidateCallbackResult::Valid)
-}
-
-/// The store moving a claim on -- confirming it (`Pending` to `Confirmed`)
-/// or recording its order (`Confirmed` to `Redeemed`). Only the bag's own
-/// catalog owner (the single authoritative party for this scarce resource,
-/// see `BagClaim`'s own doc comment), and nothing but `status` may change. Deliberately does **not** attempt to
-/// re-derive "have fewer than `quantity_total` claims already been
-/// confirmed for this bag" here -- counting sibling claims is exactly the
-/// non-deterministic `get_links` walk this codebase already names as a
-/// known, accepted gap for `order_total`/`dietary_tags` (see those doc
-/// comments); `catalog::confirm_claim`'s own re-derived count is
-/// coordinator-level trust, same tier as those.
-fn validate_claim_update(claim: &BagClaim, author: &AgentPubKey, original_action_hash: &ActionHash) -> ExternResult<ValidateCallbackResult> {
-    let bag_record = must_get_valid_record(claim.bag_ref.clone())?;
-    let Ok(Some(bag)) = bag_record.entry().to_app_option::<GoodieBag>() else {
-        return Ok(ValidateCallbackResult::Invalid("bag_ref does not point at a GoodieBag entry".into()));
-    };
-    let owner = owner_of_catalog(&bag.catalog_ref)?;
-    if &owner != author {
-        return Ok(ValidateCallbackResult::Invalid(
-            "a bag claim can only be confirmed by that bag's catalog owner".into(),
-        ));
-    }
-    let prior_record = must_get_valid_record(original_action_hash.clone())?;
-    let Ok(Some(prior)) = prior_record.entry().to_app_option::<BagClaim>() else {
-        return Ok(ValidateCallbackResult::Invalid("original_action_hash does not point at a BagClaim entry".into()));
-    };
-    let step = matches!(
-        (prior.status, claim.status),
-        (BagClaimStatus::Pending, BagClaimStatus::Confirmed) | (BagClaimStatus::Confirmed, BagClaimStatus::Redeemed)
-    );
-    if !step {
-        return Ok(ValidateCallbackResult::Invalid("a claim is confirmed while pending, and redeemed once confirmed".into()));
-    }
-    let unchanged = prior.bag_ref == claim.bag_ref && prior.customer == claim.customer && prior.fulfillment == claim.fulfillment && prior.claimed_at == claim.claimed_at;
-    if !unchanged {
-        return Ok(ValidateCallbackResult::Invalid(
-            "a claim update may only change status -- every other field must stay the same".into(),
-        ));
-    }
-    Ok(ValidateCallbackResult::Valid)
 }
 
 /// How far a self-reported time may sit from its own action's timestamp

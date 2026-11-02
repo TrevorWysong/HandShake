@@ -43,7 +43,7 @@ await runScenario(async (scenario) => {
   const raw = (age_confirmed: boolean) =>
     call(customer, "dispatch")("create_raw_pickup_order_for_testing", {
       requester: customer.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: placed.catalog_version, lines: placed.lines,
-      order_total: 900, tax_cents: 0, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null, bag_claim_ref: null, loyalty_proof: [], age_confirmed,
+      order_total: 900, tax_cents: 0, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null, loyalty_proof: [], age_confirmed,
     });
   await assert.rejects(raw(false), /confirm they're 21 or older/, "a pickup without the age confirmation is refused");
   console.log("[PASS] validation refuses age-restricted items without the customer's confirmation");

@@ -5,7 +5,7 @@
 //! the order is refused with the new total rather than charged silently.
 
 use crate::order_queues::my_completions_at;
-use catalog_types::{order_tax, order_total, total_with_tax, BagClaim, GoodieBag, MerchantCatalog, MenuItem, PromoCode, PromoRequirement, PromoReward, TaxableLine};
+use catalog_types::{order_tax, order_total, total_with_tax, GoodieBag, MerchantCatalog, MenuItem, PricedLine, PromoCode, PromoRequirement, PromoReward, TaxableLine};
 use handshake_coordinator_support::{call_local, decode_or, guest, original_action_of, resolve_latest};
 use dispatch_integrity::*;
 use hdk::prelude::*;
@@ -22,7 +22,8 @@ pub(crate) struct PricedOrder {
     pub age_restricted: bool,
     pub loyalty_proof: Vec<ActionHash>,
     /// The menu items' price before any promo -- what a store's minimum
-    /// order is measured against. `None` for a goodie bag, priced on its own.
+    /// order is measured against. `None` with only goodie bags, which run
+    /// on their own windows rather than the store's hours.
     pub menu_subtotal: Option<u64>,
 }
 
@@ -59,27 +60,34 @@ fn taxed(store: &MerchantCatalog, food: u64, lines: &[TaxableLine]) -> (u64, u64
     (total_with_tax(food, tax, store.prices_include_tax), tax)
 }
 
-/// What a goodie-bag order costs the customer: the bag's price, and the
-/// store's tax at its default rate (as `price_bag_order` prices it).
-pub(crate) fn bag_order_total(store: &MerchantCatalog, price: u64) -> u64 {
-    taxed(store, price, &[TaxableLine { category: "", total: price }]).0
-}
-
 /// Prices an order at `catalog_ref`, under `store` -- the version of it the
-/// order will cite, whose tax it carries. A goodie-bag order
-/// (`bag_claim_ref`) is the claimed bag at its own price; anything else is
-/// priced from the menu. Fails if an item isn't on this store's menu or is
-/// sold out, if a promo's requirement isn't met, or if the total isn't
-/// `expected_total`. A `reward` (what a rewards redemption takes off) is
-/// priced in place of any promo.
-pub(crate) fn price_order(catalog_ref: &ActionHash, store: &MerchantCatalog, items: &[OrderItem], promo_ref: Option<&ActionHash>, bag_claim_ref: Option<&ActionHash>, reward: Option<&PromoReward>, expected_total: u64) -> ExternResult<PricedOrder> {
-    if reward.is_some() && (promo_ref.is_some() || bag_claim_ref.is_some()) {
-        return Err(guest("A reward can't be combined with a promo code or a goodie bag."));
+/// order will cite, whose tax it carries: its menu items, less any promo or
+/// `reward` (what a rewards redemption takes off, in place of a promo), and
+/// its goodie bags at their own prices, had `delivery` or picked up. Fails
+/// if an item isn't on this store's menu or is sold out, a bag can't be had
+/// now or this way, a promo's requirement isn't met, or the total isn't
+/// `expected_total`.
+pub(crate) fn price_order(catalog_ref: &ActionHash, store: &MerchantCatalog, items: &[OrderItem], promo_ref: Option<&ActionHash>, reward: Option<&PromoReward>, delivery: bool, expected_total: u64) -> ExternResult<PricedOrder> {
+    if reward.is_some() && promo_ref.is_some() {
+        return Err(guest("A reward can't be combined with a promo code."));
     }
-    let priced = match bag_claim_ref {
-        Some(claim_ref) => price_bag_order(catalog_ref, store, claim_ref, promo_ref)?,
-        None => price_menu_order(catalog_ref, store, items, promo_ref, reward)?,
-    };
+    let mut menu = Vec::new();
+    let mut bags = Vec::new();
+    for item in items {
+        match decode_or::<GoodieBag>(&resolve_latest(item.item_ref.clone())?) {
+            Some(bag) => bags.push((item, bag)),
+            None => menu.push(item.clone()),
+        }
+    }
+    if menu.is_empty() && (promo_ref.is_some() || reward.is_some()) {
+        return Err(guest("Promo codes and rewards apply to menu items, not goodie bags."));
+    }
+    let priced_menu = if menu.is_empty() { None } else { Some(price_menu(catalog_ref, items_merged(&menu)?, promo_ref, reward)?) };
+    let bag_lines = bags.iter().map(|(item, bag)| bag_line(catalog_ref, item, bag, delivery)).collect::<ExternResult<Vec<_>>>()?;
+    if bag_lines.iter().enumerate().any(|(i, (line, _))| bag_lines[..i].iter().any(|(l, _)| l.item_ref == line.item_ref)) {
+        return Err(guest("A goodie bag is one to an order."));
+    }
+    let priced = finish(store, priced_menu, bag_lines);
     if priced.order_total != expected_total {
         return Err(guest(format!(
             "prices have changed since this was added to your cart: the total is now {} cents, not {expected_total}",
@@ -89,32 +97,78 @@ pub(crate) fn price_order(catalog_ref: &ActionHash, store: &MerchantCatalog, ite
     Ok(priced)
 }
 
-fn price_bag_order(catalog_ref: &ActionHash, store: &MerchantCatalog, claim_ref: &ActionHash, promo_ref: Option<&ActionHash>) -> ExternResult<PricedOrder> {
-    if promo_ref.is_some() {
-        return Err(guest("A goodie bag can't be combined with a promo code."));
-    }
-    let claim: BagClaim = decode_latest(claim_ref, "BagClaim")?;
-    let bag: GoodieBag = decode_latest(&claim.bag_ref, "GoodieBag")?;
+/// A goodie bag's line: one of it, at its own price -- if it's from this
+/// store, still on sale, offered this way, not the caller's own, and not
+/// one they've ordered already (validation's rules, told first).
+fn bag_line(catalog_ref: &ActionHash, item: &OrderItem, bag: &GoodieBag, delivery: bool) -> ExternResult<(OrderLine, u64)> {
     if &bag.catalog_ref != catalog_ref {
         return Err(guest("That goodie bag isn't from this store."));
     }
-    // A bag is food at the store's default rate.
-    let (order_total, tax_cents) = taxed(store, bag.price_cents, &[TaxableLine { category: "", total: bag.price_cents }]);
-    Ok(PricedOrder {
-        lines: vec![OrderLine { item_ref: claim.bag_ref.clone(), priced_version: claim.bag_ref, quantity: 1, selections: Vec::new() }],
-        order_total,
-        tax_cents,
-        age_restricted: false,
-        loyalty_proof: Vec::new(),
-        menu_subtotal: None,
-    })
+    if item.quantity != 1 || !item.selections.is_empty() {
+        return Err(guest("A goodie bag is one to an order."));
+    }
+    if !bag.orderable_at(sys_time()?) {
+        return Err(guest(format!("{} is no longer available.", bag.title)));
+    }
+    if !bag.supports(delivery) {
+        return Err(guest(if delivery { format!("{} is pickup only.", bag.title) } else { format!("{} is delivery only.", bag.title) }));
+    }
+    let latest = resolve_latest(item.item_ref.clone())?;
+    if latest.action().author() == &agent_info()?.agent_initial_pubkey {
+        return Err(guest("You can't order your own goodie bag."));
+    }
+    if let Some(standing) = crate::bags::bag_standings(vec![item.item_ref.clone()])?.first() {
+        if standing.ordered {
+            return Err(guest(format!("You've already ordered {}.", bag.title)));
+        }
+        if standing.left == 0 {
+            return Err(guest(format!("{} is sold out.", bag.title)));
+        }
+    }
+    let line = OrderLine { item_ref: item.item_ref.clone(), priced_version: latest.action_address().clone(), quantity: 1, selections: Vec::new() };
+    Ok((line, bag.price_cents))
 }
 
-/// An order from the menu at current prices, less `promo_ref` -- what
-/// `price_order` checks a client's total against, and what a recurring
-/// order is placed at (`recurring::fire`).
+/// The menu part of an order, priced: its lines, each line priced with its
+/// choices, each one's tax category, and what the food comes to after any
+/// promo or reward.
+struct MenuPrice {
+    lines: Vec<OrderLine>,
+    priced: Vec<PricedLine>,
+    categories: Vec<String>,
+    food: u64,
+    age_restricted: bool,
+    loyalty_proof: Vec<ActionHash>,
+}
+
+/// An order from the menu alone at current prices, less `promo_ref` -- what
+/// a recurring order is placed at (`recurring::fire`).
 pub(crate) fn price_menu_order(catalog_ref: &ActionHash, store: &MerchantCatalog, items: &[OrderItem], promo_ref: Option<&ActionHash>, reward: Option<&PromoReward>) -> ExternResult<PricedOrder> {
-    // One line per item and its choices, however the client listed them.
+    Ok(finish(store, Some(price_menu(catalog_ref, items_merged(items)?, promo_ref, reward)?), Vec::new()))
+}
+
+/// The order's lines and totals: the menu's, then each goodie bag's -- a
+/// bag is food at the store's default rate -- taxed together.
+fn finish(store: &MerchantCatalog, menu: Option<MenuPrice>, bags: Vec<(OrderLine, u64)>) -> PricedOrder {
+    let (mut lines, mut taxable_totals, mut food, age_restricted, loyalty_proof, menu_subtotal) = match menu {
+        Some(m) => {
+            let totals: Vec<(String, u64)> = m.priced.iter().zip(m.categories).map(|(line, category)| (category, line.total())).collect();
+            (m.lines, totals, m.food, m.age_restricted, m.loyalty_proof, Some(catalog_types::subtotal(&m.priced)))
+        }
+        None => (Vec::new(), Vec::new(), 0, false, Vec::new(), None),
+    };
+    for (line, price) in bags {
+        lines.push(line);
+        taxable_totals.push((String::new(), price));
+        food += price;
+    }
+    let taxable: Vec<TaxableLine> = taxable_totals.iter().map(|(category, total)| TaxableLine { category, total: *total }).collect();
+    let (order_total, tax_cents) = taxed(store, food, &taxable);
+    PricedOrder { lines, order_total, tax_cents, age_restricted, loyalty_proof, menu_subtotal }
+}
+
+/// One line per item and its choices, however the client listed them.
+fn items_merged(items: &[OrderItem]) -> ExternResult<Vec<OrderItem>> {
     let mut merged: Vec<OrderItem> = Vec::new();
     for item in items {
         if let Some(problem) = catalog_types::choices_problem(&item.selections) {
@@ -129,6 +183,10 @@ pub(crate) fn price_menu_order(catalog_ref: &ActionHash, store: &MerchantCatalog
     if choices > handshake_integrity_support::limits::MAX_ORDER_CHOICES {
         return Err(guest(format!("An order can have at most {} choices across its items.", handshake_integrity_support::limits::MAX_ORDER_CHOICES)));
     }
+    Ok(merged)
+}
+
+fn price_menu(catalog_ref: &ActionHash, merged: Vec<OrderItem>, promo_ref: Option<&ActionHash>, reward: Option<&PromoReward>) -> ExternResult<MenuPrice> {
     let mut lines = Vec::with_capacity(merged.len());
     let mut priced = Vec::with_capacity(merged.len());
     let mut categories = Vec::with_capacity(merged.len());
@@ -169,10 +227,7 @@ pub(crate) fn price_menu_order(catalog_ref: &ActionHash, store: &MerchantCatalog
         }
         None => order_total(&priced, promo.as_ref().map(|p| (&p.requirement, &p.reward)), loyalty_proof.len() as u32).ok_or(guest("This order doesn't meet the promo code's requirement."))?,
     };
-    let taxable: Vec<TaxableLine> = priced.iter().zip(&categories).map(|(line, category)| TaxableLine { category, total: line.total() }).collect();
-    let (order_total, tax_cents) = taxed(store, food, &taxable);
-    let menu_subtotal = priced.iter().map(|line| line.unit_price * u64::from(line.quantity)).sum();
-    Ok(PricedOrder { lines, order_total, tax_cents, age_restricted, loyalty_proof, menu_subtotal: Some(menu_subtotal) })
+    Ok(MenuPrice { lines, priced, categories, food, age_restricted, loyalty_proof })
 }
 
 /// How many options `selections` choose, nested ones included.
@@ -219,18 +274,18 @@ fn price_change_grace_secs() -> i64 {
 /// old price is stopped, and only the store can accept an order, so it
 /// can't be skipped. It runs on the store's own conductor and reads its
 /// menu's history from its own source chain, which holds every version it
-/// wrote -- so, unlike a DHT read, it can't be behind. A goodie bag's line
-/// is the bag itself, never outdated. The same goes for the promo: it must
+/// wrote -- so, unlike a DHT read, it can't be behind. A goodie bag's terms
+/// never change, so its line is never outdated. The same goes for the promo: it must
 /// still be live (validation can't tell a deactivated code from a live one
 /// either), or have stopped only after this order was placed, recently.
-pub(crate) fn ensure_priced_from_current_menu(order_ref: &ActionHash, lines: &[OrderLine], bag_claim_ref: Option<&ActionHash>, promo_ref: Option<&ActionHash>) -> ExternResult<()> {
+pub(crate) fn ensure_priced_from_current_menu(order_ref: &ActionHash, lines: &[OrderLine], promo_ref: Option<&ActionHash>) -> ExternResult<()> {
     // An order dated in the future would hold back the store's decisions
     // until then: none can be dated before the order.
     let placed = get(order_ref.clone(), GetOptions::default())?.ok_or(guest("order not found"))?.action().timestamp();
     if placed.as_micros() > sys_time()?.as_micros() + handshake_governance::clock_tolerance().as_micros() as i64 {
         return Err(guest("This order is dated in the future, so it can't be accepted. Decline it."));
     }
-    match outdated_item(order_ref, lines, bag_claim_ref, promo_ref)? {
+    match outdated_item(order_ref, lines, promo_ref)? {
         Some(name) => Err(guest(format!("{name} was priced from an outdated menu, so this order can't be accepted -- decline it"))),
         None => Ok(()),
     }
@@ -238,20 +293,22 @@ pub(crate) fn ensure_priced_from_current_menu(order_ref: &ActionHash, lines: &[O
 
 /// The name of the first item `ensure_priced_from_current_menu` would
 /// refuse the order over, if any.
-pub(crate) fn outdated_item(order_ref: &ActionHash, lines: &[OrderLine], bag_claim_ref: Option<&ActionHash>, promo_ref: Option<&ActionHash>) -> ExternResult<Option<String>> {
-    if bag_claim_ref.is_some() {
-        return Ok(None);
-    }
+pub(crate) fn outdated_item(order_ref: &ActionHash, lines: &[OrderLine], promo_ref: Option<&ActionHash>) -> ExternResult<Option<String>> {
     if let Some(promo_ref) = promo_ref {
         if promo_lapsed(order_ref, promo_ref)? {
             return Ok(Some("The promo code".into()));
         }
     }
-    // Each item at the version its line was priced at, and each choice
+    // Each menu item at the version its line was priced at, and each choice
     // group at its own.
-    let mut cited: Vec<(ActionHash, ActionHash)> = lines.iter().map(|line| (line.item_ref.clone(), line.priced_version.clone())).collect();
+    let bags: Vec<ActionHash> = crate::bags::bags_on(lines)?.into_iter().map(|(bag, _)| bag).collect();
+    let menu: Vec<&OrderLine> = lines.iter().filter(|line| !bags.contains(&line.item_ref)).collect();
+    if menu.is_empty() {
+        return Ok(None);
+    }
+    let mut cited: Vec<(ActionHash, ActionHash)> = menu.iter().map(|line| (line.item_ref.clone(), line.priced_version.clone())).collect();
     let item_count = cited.len();
-    for line in lines {
+    for line in menu {
         priced_groups(&line.selections, &mut cited);
     }
     let mut histories = my_item_versions(cited[..item_count].iter().map(|(item, _)| item.clone()).collect())?;

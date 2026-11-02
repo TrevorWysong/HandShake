@@ -8,7 +8,7 @@
 
 use crate::upkeep;
 use crate::stores::{closed_reason, current_catalog_version, ready_by};
-use crate::orders::{ensure_claim_confirmed, ensure_promo_usable, my_name, seal_note, AcceptOrderInput, DeclineOrderInput, record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
+use crate::orders::{ensure_promo_usable, my_name, seal_note, AcceptOrderInput, DeclineOrderInput, record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
 use crate::pricing::{ensure_current_terms, ensure_priced_from_current_menu, ensure_store_minimum, price_order, OrderItem};
 use crate::settlement;
 use crate::signals::RemoteSignal;
@@ -30,8 +30,6 @@ pub struct RequestPickupOrderInput {
     pub kitchen_notes: String,
     #[serde(default)]
     pub promo_code_ref: Option<ActionHash>,
-    #[serde(default)]
-    pub bag_claim_ref: Option<ActionHash>,
     /// The customer confirming their age, for age-restricted items.
     #[serde(default)]
     pub age_confirmed: bool,
@@ -58,9 +56,6 @@ pub fn request_pickup_order(input: RequestPickupOrderInput) -> ExternResult<Reco
         ensure_promo_usable(promo_ref, &input.catalog_ref)?;
         crate::promos::ensure_promo_allowed(promo_ref, &input.catalog_ref)?;
     }
-    if let Some(claim_ref) = &input.bag_claim_ref {
-        ensure_claim_confirmed(claim_ref)?;
-    }
     order_queues::ensure_order_rate()?;
 
     // The store as it is now: the terms this order is placed under.
@@ -68,11 +63,11 @@ pub fn request_pickup_order(input: RequestPickupOrderInput) -> ExternResult<Reco
     // The store's rewards program, and any reward chosen, priced in.
     let joining = crate::pricing::joining(&input.catalog_ref, input.reward)?;
     let reward = joining.as_ref().and_then(|j| j.reward.as_ref().map(|(_, benefit)| benefit));
-    let priced = price_order(&input.catalog_ref, &catalog, &input.items, input.promo_code_ref.as_ref(), input.bag_claim_ref.as_ref(), reward, input.order_total)?;
+    let priced = price_order(&input.catalog_ref, &catalog, &input.items, input.promo_code_ref.as_ref(), reward, false, input.order_total)?;
     ensure_store_minimum(&catalog, &priced)?;
     crate::pricing::ensure_age_rules(&priced, false, input.age_confirmed)?;
-    // Open now -- a goodie bag runs on its own pickup window instead.
-    if input.bag_claim_ref.is_none() {
+    // Open now -- goodie bags alone run on their own windows instead.
+    if priced.menu_subtotal.is_some() {
         if let Some(reason) = closed_reason(&catalog, requested_at.as_micros()) {
             return Err(guest(reason));
         }
@@ -96,7 +91,6 @@ pub fn request_pickup_order(input: RequestPickupOrderInput) -> ExternResult<Reco
         sealed_customer_name,
         sealed_wake,
         promo_code_ref: input.promo_code_ref,
-        bag_claim_ref: input.bag_claim_ref,
         loyalty_proof: priced.loyalty_proof,
         rewards: crate::pricing::join(&catalog_ref, joining)?,
         cancellation: None,
@@ -132,22 +126,22 @@ pub fn accept_pickup_order(input: AcceptOrderInput) -> ExternResult<Record> {
         return Err(guest("Only the order's store can accept it."));
     }
     crate::accounts::ensure_not_moved(&order.requester, "This customer")?;
-    ensure_priced_from_current_menu(&order_original_action, &order.lines, order.bag_claim_ref.as_ref(), order.promo_code_ref.as_ref())?;
+    ensure_priced_from_current_menu(&order_original_action, &order.lines, order.promo_code_ref.as_ref())?;
+    crate::bags::ensure_bags_left(&order_original_action, &order.lines)?;
     ensure_current_terms(&order_original_action, &order.catalog_ref, &order.catalog_version)?;
     crate::pricing::ensure_current_program(&order_original_action, &order.catalog_ref, order.rewards.as_ref())?;
     crate::promos::ensure_promo_left(&order_original_action, order.promo_code_ref.as_ref())?;
     crate::acceptance::ensure_acceptable(&order.requester, &order.catalog_ref, order.promo_code_ref.as_ref(), order.rewards.as_ref())?;
     let promo = order.promo_code_ref.clone();
     let rewards = order.rewards.clone();
-    if let Some(claim_ref) = &order.bag_claim_ref {
-        crate::claims::redeem_bag_claim(claim_ref)?;
-    }
+    let lines = order.lines.clone();
     let original = handshake_coordinator_support::original_action_of(order_original_action.clone())?;
     order.food_hold = settlement::required_hold(&original, HoldPurpose::Food, &order.requester, settlement::owes(&original, &HoldPurpose::Food, None)?)?;
     order.ready_by = Some(ready_by(&order.catalog_ref, input.prep_minutes)?);
     order.status = PickupStatus::MerchantConfirmed;
     let updated = update_version(&current, &EntryTypes::PickupOrder(order), LinkTypes::Version)?;
     crate::promos::record_promo_use(&original, promo.as_ref())?;
+    crate::bags::record_bag_sales(&original, &lines)?;
     crate::acceptance::record_member_order(&original, &updated, rewards.as_ref())?;
     written(updated)
 }

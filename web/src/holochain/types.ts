@@ -2,13 +2,13 @@
 // (`generated.ts`, by tools/typegen -- run `npm run typegen` after changing
 // a Rust type); only client-side shapes are written by hand here.
 import type { Record as ClientRecord } from "@holochain/client";
-import type { ActionHash, AgentPubKey, CatalogLocalSignal, DispatchLocalSignal, Profile } from "./generated";
+import type { ActionHash, AgentPubKey, DispatchLocalSignal, Profile } from "./generated";
 
 export * from "./generated";
 
-/// Every signal that can arrive on the app websocket, from any zome's
-/// `recv_remote_signal`.
-export type LocalSignal = DispatchLocalSignal | CatalogLocalSignal;
+/// Every signal that can arrive on the app websocket, from `dispatch`'s
+/// `recv_remote_signal` (the one zome that takes them).
+export type LocalSignal = DispatchLocalSignal;
 
 /// A profile paired with its agent and action -- assembled client-side.
 export interface ProfileWithAgent {

@@ -4,7 +4,7 @@
 // Each is re-checked against the live cart every render, so adding or
 // removing items changes what applies, and what it takes off.
 import { useMemo, useState } from "react";
-import { useCart } from "../../../store/cart";
+import { menuLines, useCart } from "../../../store/cart";
 import { myCard } from "../../../holochain/zomes/rewards";
 import { bytesToHex, hexToBytes } from "../../../holochain/decode";
 import { describeBlock, describeRequirement, evaluatePromo, isPromoEligible } from "../../../lib/storefront/promotions";
@@ -24,7 +24,9 @@ export function useDiscounts(storeInfo: CartStoreInfo | undefined, now: Date) {
   const menuItems = storeInfo?.menuItems ?? NO_ITEMS;
   const completedOrderCount = storeInfo?.completedOrderCount ?? 0;
   const itemName = itemNamer(menuItems);
-  const subtotal = cart.total();
+  // Promos and rewards are the menu's: goodie bags are already discounted.
+  const lines = useMemo(() => menuLines(cart.lines), [cart.lines]);
+  const subtotal = lines.reduce((sum, l) => sum + l.priceCents * l.quantity, 0);
 
   // The store's rewards program, and the reward in the bag as it offers it
   // now: a reward takes the place of any promo.
@@ -49,8 +51,8 @@ export function useDiscounts(storeInfo: CartStoreInfo | undefined, now: Date) {
   const [autoPromoDismissed, setAutoPromoDismissed] = useState(false);
   const nowUs = now.getTime() * 1000;
   const autoPromo = useMemo(
-    () => (autoPromoDismissed ? null : bestAutoApplyPromo(promoCodes, cart.lines, subtotal, completedOrderCount, nowUs)),
-    [autoPromoDismissed, promoCodes, cart.lines, subtotal, completedOrderCount, nowUs],
+    () => (autoPromoDismissed ? null : bestAutoApplyPromo(promoCodes, lines, subtotal, completedOrderCount, nowUs)),
+    [autoPromoDismissed, promoCodes, lines, subtotal, completedOrderCount, nowUs],
   );
   const dealPromo = promoCodes.find((p) => cart.promoHex === bytesToHex(p.hash) && !p.standing?.blocked) ?? null;
   const appliedPromo = chosenReward ? null : (manualPromo ?? dealPromo ?? autoPromo);
@@ -62,7 +64,7 @@ export function useDiscounts(storeInfo: CartStoreInfo | undefined, now: Date) {
     const match = promoCodes.find((p) => p.promo.code.toUpperCase() === typed && p.promo.active && (p.promo.expires_at === null || p.promo.expires_at > at));
     if (!match) return setPromoError(t("cart.promo.invalid"));
     if (match.standing?.blocked) return setPromoError(describeBlock(match.standing.blocked));
-    if (!isPromoEligible(match.promo.requirement, cart.lines, subtotal, completedOrderCount)) {
+    if (!isPromoEligible(match.promo.requirement, lines, subtotal, completedOrderCount)) {
       return setPromoError(t("cart.promo.notYet", { requirement: describeRequirement(match.promo.requirement, itemName) }));
     }
     setManualPromo(match);
@@ -78,8 +80,8 @@ export function useDiscounts(storeInfo: CartStoreInfo | undefined, now: Date) {
 
   // What it takes off the food, against the cart as it is now: a
   // requirement can stop being met, or a reward newly find its item.
-  const promoEvaluation = appliedPromo ? evaluatePromo(appliedPromo.promo, cart.lines, subtotal, completedOrderCount) : null;
-  const rewardDiscountCents = chosenReward ? rewardDiscount(chosenReward.benefit, cart.lines) : 0;
+  const promoEvaluation = appliedPromo ? evaluatePromo(appliedPromo.promo, lines, subtotal, completedOrderCount) : null;
+  const rewardDiscountCents = chosenReward ? rewardDiscount(chosenReward.benefit, lines) : 0;
   const discountCents = chosenReward ? rewardDiscountCents : (promoEvaluation?.effect.subtotalDiscountCents ?? 0);
   const promoNeedsItem = appliedPromo ? "FreeItem" in appliedPromo.promo.reward || "PercentOffItem" in appliedPromo.promo.reward : false;
   const promoAwaitingItem = !!appliedPromo && !!promoEvaluation?.eligible && promoNeedsItem && promoEvaluation.effect.itemEffects.length === 0;

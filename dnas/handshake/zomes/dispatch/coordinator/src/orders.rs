@@ -66,14 +66,6 @@ pub struct RequestDeliveryInput {
     /// rule (`matching::rank_bids`) -- or `false` to choose yourself.
     #[serde(default)]
     pub auto_match: bool,
-    /// `None` means this is a normal order, not a claimed goodie bag's
-    /// delivery. `Some` is set by the customer's own client immediately
-    /// after their `BagClaim` is confirmed (see `catalog::confirm_claim`'s
-    /// own doc comment) -- validated (real, `Confirmed`, belongs to this
-    /// requester, claimed for delivery) deterministically by
-    /// `validate_new_order`.
-    #[serde(default)]
-    pub bag_claim_ref: Option<ActionHash>,
     /// Wake tokens from the network's push relay, one for the store and
     /// one for the driver -- two, so the two can't tell they're the same
     /// person's. Sealed to each (docs/MOBILE.md); None without a relay.
@@ -244,17 +236,6 @@ pub(crate) fn ensure_promo_usable(promo_ref: &ActionHash, catalog_ref: &ActionHa
     Ok(())
 }
 
-pub(crate) fn ensure_claim_confirmed(claim_ref: &ActionHash) -> ExternResult<()> {
-    if let Ok(Ok(record)) = call_local::<_, Record>("catalog", "get_bag_claim", claim_ref.clone()) {
-        if let Some(claim) = decode_or::<catalog_types::BagClaim>(&record) {
-            if claim.status != catalog_types::BagClaimStatus::Confirmed {
-                return Err(guest("The store hasn't confirmed this goodie bag yet."));
-            }
-        }
-    }
-    Ok(())
-}
-
 #[hdk_extern]
 pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
     let requester = agent_info()?.agent_initial_pubkey;
@@ -275,9 +256,6 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         ensure_promo_usable(promo_ref, &input.catalog_ref)?;
         crate::promos::ensure_promo_allowed(promo_ref, &input.catalog_ref)?;
     }
-    if let Some(claim_ref) = &input.bag_claim_ref {
-        ensure_claim_confirmed(claim_ref)?;
-    }
     order_queues::ensure_order_rate()?;
 
     let merchant = input.merchant.clone();
@@ -290,7 +268,7 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
     // The store's rewards program, and any reward chosen, priced in.
     let joining = crate::pricing::joining(&input.catalog_ref, input.reward)?;
     let reward = joining.as_ref().and_then(|j| j.reward.as_ref().map(|(_, benefit)| benefit));
-    let priced = price_order(&input.catalog_ref, &catalog, &input.items, input.promo_code_ref.as_ref(), input.bag_claim_ref.as_ref(), reward, input.order_total)?;
+    let priced = price_order(&input.catalog_ref, &catalog, &input.items, input.promo_code_ref.as_ref(), reward, true, input.order_total)?;
     ensure_store_minimum(&catalog, &priced)?;
     crate::pricing::ensure_age_rules(&priced, true, false)?;
     let distance = handshake_types::distance_km(catalog.location, input.dropoff);
@@ -300,9 +278,9 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
             distance, catalog.max_delivery_radius_km
         )));
     }
-    // Open when it's for -- now, or a scheduled order's time. A goodie bag
-    // runs on its own pickup window, which the store set.
-    if input.bag_claim_ref.is_none() {
+    // Open when it's for -- now, or a scheduled order's time. Goodie bags
+    // alone run on their own windows, which the store set.
+    if priced.menu_subtotal.is_some() {
         let wanted_at = input.requested_delivery_time.unwrap_or(now).as_micros();
         if let Some(reason) = closed_reason(&catalog, wanted_at) {
             return Err(guest(reason));
@@ -341,7 +319,6 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         dropoff_preference: input.dropoff_preference,
         door_risk_accepted: input.dropoff_preference == DropoffPreference::LeaveAtDoor,
         priority: input.priority,
-        bag_claim_ref: input.bag_claim_ref,
         loyalty_proof: priced.loyalty_proof,
         rewards: crate::pricing::join(&catalog_ref, joining)?,
         cancellation: None,
@@ -426,16 +403,15 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
         return Err(guest("Only the order's store can accept it."));
     }
     crate::accounts::ensure_not_moved(&order.requester, "This customer")?;
-    ensure_priced_from_current_menu(&order_original_action, &order.lines, order.bag_claim_ref.as_ref(), order.promo_code_ref.as_ref())?;
+    ensure_priced_from_current_menu(&order_original_action, &order.lines, order.promo_code_ref.as_ref())?;
+    crate::bags::ensure_bags_left(&order_original_action, &order.lines)?;
     ensure_current_terms(&order_original_action, &order.catalog_ref, &order.catalog_version)?;
     crate::pricing::ensure_current_program(&order_original_action, &order.catalog_ref, order.rewards.as_ref())?;
     crate::promos::ensure_promo_left(&order_original_action, order.promo_code_ref.as_ref())?;
     crate::acceptance::ensure_acceptable(&order.requester, &order.catalog_ref, order.promo_code_ref.as_ref(), order.rewards.as_ref())?;
     let promo = order.promo_code_ref.clone();
     let rewards = order.rewards.clone();
-    if let Some(claim_ref) = &order.bag_claim_ref {
-        crate::claims::redeem_bag_claim(claim_ref)?;
-    }
+    let lines = order.lines.clone();
     let original = original_action_of(order_original_action.clone())?;
     order.food_hold = settlement::required_hold(&original, HoldPurpose::Food, &order.requester, settlement::owes(&original, &HoldPurpose::Food, None)?)?;
     // A store checks its driver in by setting aside their whole fee (its
@@ -466,6 +442,7 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
     let updated = update_version(&current, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)?;
     publish_to_open_anchor(&updated, &dropoff_geohash, sys_time()?)?;
     crate::promos::record_promo_use(&original, promo.as_ref())?;
+    crate::bags::record_bag_sales(&original, &lines)?;
     crate::acceptance::record_member_order(&original, &updated, rewards.as_ref())?;
     written(updated)
 }
@@ -573,8 +550,6 @@ pub struct NetworkTerms {
     /// The most an inline image may take, in bytes of its data URI.
     pub max_image_bytes: u64,
     pub goodie_bag_max_days: u64,
-    /// How long a new goodie bag holds a confirmed claim, by default.
-    pub default_bag_hold_minutes: u16,
     /// What listing a store sets aside, in minor units -- returned when it
     /// closes.
     pub store_listing_stake: u64,
@@ -634,7 +609,6 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         add_on_detour_km: handshake_governance::add_on_detour_km(),
         max_image_bytes: handshake_governance::max_image_bytes() as u64,
         goodie_bag_max_days: handshake_governance::goodie_bag_max_lifetime().as_secs() / 86_400,
-        default_bag_hold_minutes: handshake_governance::default_bag_hold_minutes(),
         store_listing_stake: handshake_governance::store_listing_stake(),
         appeals: !handshake_governance::arbiters().is_empty(),
         appeal_window_secs: handshake_governance::appeal_window().as_secs(),

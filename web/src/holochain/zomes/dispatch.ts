@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, AppealView, AppealsPage, Beacon, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PinSecret, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary, PromoStanding } from "../types";
+import type { ActionHash, AgentPubKey, AppealView, AppealsPage, Beacon, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PinSecret, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary, PromoStanding, BagStanding } from "../types";
 
 // --- orders ---
 
@@ -37,10 +37,6 @@ export async function requestDelivery(input: {
   /// Let the app choose a driver from the bids, by the network's rule
   /// (`rankBids`).
   auto_match?: boolean;
-  /// `null` for a normal cart order. Set only when this delivery redeems a
-  /// confirmed goodie-bag claim -- which the customer's conductor does on
-  /// its own (`dispatch::claims`).
-  bag_claim_ref?: ActionHash | null;
   /// Wake tokens from the network's push relay (lib/network/push.ts).
   wake_for_store?: string | null;
   wake_for_driver?: string | null;
@@ -55,7 +51,6 @@ export async function requestDelivery(input: {
     dropoff_preference: "HandToMe",
     door_risk_accepted: false,
     priority: false,
-    bag_claim_ref: null,
     ...input,
   });
 }
@@ -313,7 +308,6 @@ export async function requestPickupOrder(input: {
   /// A note for the kitchen -- sealed to the store.
   kitchen_notes?: string;
   promo_code_ref?: ActionHash | null;
-  bag_claim_ref?: ActionHash | null;
   /// The customer confirming their age, for age-restricted items.
   age_confirmed?: boolean;
   /// A wake token from the network's push relay (lib/network/push.ts).
@@ -324,7 +318,6 @@ export async function requestPickupOrder(input: {
   return callZome("dispatch", "request_pickup_order", {
     kitchen_notes: "",
     promo_code_ref: null,
-    bag_claim_ref: null,
     ...input,
   });
 }
@@ -552,4 +545,10 @@ export async function myPromoStanding(catalogRef: ActionHash): Promise<PromoStan
 /// How many orders the caller's store has accepted with a promo code.
 export async function myPromoUses(promo: ActionHash): Promise<number> {
   return callZome("dispatch", "my_promo_uses", promo);
+}
+
+/// How many of each goodie bag are left, and whether the caller has
+/// ordered one already -- in the order asked.
+export async function bagStandings(bags: ActionHash[]): Promise<BagStanding[]> {
+  return callZome("dispatch", "bag_standings", bags);
 }

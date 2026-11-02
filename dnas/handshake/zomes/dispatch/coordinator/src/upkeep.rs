@@ -1,15 +1,14 @@
 //! What an agent's own conductor does for them with no app open, on the
 //! conductor's scheduler (as `settlement` does for store payouts):
 //!
-//! - **A customer's orders.** A confirmed goodie-bag claim becomes its
-//!   order (`claims`), a recurring order fires when it's due, a
+//! - **A customer's orders.** A recurring order fires when it's due, a
 //!   scheduled order is placed with its store when it's due, and an order
 //!   its store never answers is cancelled once the store's window passes
 //!   (`Cancellation::StoreDidNotRespond`) -- so no customer waits on a
 //!   store that's offline.
 //! - **A store's new orders.** A store set to auto-accept accepts each one
-//!   as it arrives, declining any priced from an outdated menu. A goodie-bag
-//!   order, whose claim the store already confirmed, is accepted either way.
+//!   as it arrives, declining any priced from an outdated menu or with a
+//!   goodie bag it can no longer sell.
 //! - **A customer's driver.** For an order set to match automatically, the
 //!   best bid by the network's published rule is accepted once the bid
 //!   window has run (`matching::auto_match`).
@@ -124,13 +123,6 @@ pub(crate) fn tend_my_orders_soon() -> ExternResult<()> {
     schedule("tend_my_orders")
 }
 
-/// The same, for another zome on this cell: the catalog's `ClaimConfirmed`
-/// signal, so a confirmed claim becomes its order straight away.
-#[hdk_extern]
-pub fn schedule_order_upkeep(_: ()) -> ExternResult<()> {
-    tend_my_orders_soon()
-}
-
 /// Places the caller's due scheduled orders with their stores and cancels
 /// those their stores haven't answered in time, then runs again when the
 /// next one falls due.
@@ -159,8 +151,6 @@ fn tend_customer_orders() -> ExternResult<Option<Duration>> {
     }
     // What the app has seen of them: a store starting, or declining.
     let _ = crate::confirmations::tend_confirmations();
-    // Confirmed goodie-bag claims become their orders.
-    crate::claims::redeem_confirmed_claims()?;
     // Standing orders that are due fire too.
     if let Some(due) = crate::recurring::tend_templates(now)? {
         next = Some(next.map_or(due, |earliest| earliest.min(due)));
@@ -294,12 +284,14 @@ fn answer_store_orders() -> ExternResult<Answers> {
         // the customer's own check, and is declined as such.
         let open_now = closed_reason(&catalog, now).is_none();
         for entry in get_active_orders_for_store(store)? {
-            let Some(waiting) = WaitingOrder::from_entry(&entry) else { continue };
+            if WaitingOrder::from_entry(&entry).is_none() {
+                continue;
+            }
             answers.waiting += 1;
             // Past the window the store can't accept it; the customer's
             // conductor cancels it.
             let expired = now >= entry.record.action().timestamp().as_micros() + window;
-            if expired || !(catalog.auto_accept_orders || waiting.bag_order) {
+            if expired || !catalog.auto_accept_orders {
                 continue;
             }
             if isolated::<_, ()>("answer_one_order", AnswerInput { seen: SeenOrder::of(&entry), open_now }).is_none() {
@@ -330,9 +322,7 @@ pub fn answer_one_order(input: AnswerInput) -> ExternResult<()> {
 struct WaitingOrder {
     kind: OrderKind,
     lines: Vec<OrderLine>,
-    bag_claim_ref: Option<ActionHash>,
     promo_code_ref: Option<ActionHash>,
-    bag_order: bool,
     catalog_ref: ActionHash,
     /// The store terms it was placed under.
     catalog_version: ActionHash,
@@ -343,31 +333,32 @@ struct WaitingOrder {
 
 impl WaitingOrder {
     fn from_entry(entry: &OrderEntry) -> Option<Self> {
-        let (lines, bag_claim_ref, promo_code_ref, catalog_ref, catalog_version, rewards, requester) = match entry.kind {
+        let (lines, promo_code_ref, catalog_ref, catalog_version, rewards, requester) = match entry.kind {
             OrderKind::Delivery => {
                 let order = decode_or::<DeliveryOrder>(&entry.record).filter(|o| o.status == DeliveryStatus::Placed)?;
-                (order.lines, order.bag_claim_ref, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester)
+                (order.lines, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester)
             }
             OrderKind::Pickup => {
                 let order = decode_or::<PickupOrder>(&entry.record).filter(|o| o.status == PickupStatus::Placed)?;
-                (order.lines, order.bag_claim_ref, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester)
+                (order.lines, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester)
             }
         };
-        Some(Self { kind: entry.kind, bag_order: bag_claim_ref.is_some(), lines, bag_claim_ref, promo_code_ref, catalog_ref, catalog_version, rewards, requester })
+        Some(Self { kind: entry.kind, lines, promo_code_ref, catalog_ref, catalog_version, rewards, requester })
     }
 
     /// Accepts it, with the store's usual prep time -- or declines it if
-    /// the store is closed (a goodie bag runs on its own window), it
-    /// redeems a goodie bag whose hold lapsed, it was placed under the
-    /// store's earlier terms, or it's priced from an outdated menu.
+    /// the store is closed (goodie bags alone run on their own windows), a
+    /// goodie bag on it is sold out or gone, it was placed under the store's
+    /// earlier terms, or it's priced from an outdated menu.
     fn answer(&self, order_ref: &ActionHash, open_now: bool) -> ExternResult<()> {
-        let decline = if !open_now && !self.bag_order {
+        let bags_only = crate::bags::bags_on(&self.lines)?.len() == self.lines.len();
+        let decline = if !open_now && !bags_only {
             Some(DeclineReason::Closed)
-        } else if self.bag_claim_ref.as_ref().map(crate::claims::bag_hold_lapsed).transpose()?.unwrap_or(false) {
-            Some(DeclineReason::BagHoldLapsed)
+        } else if crate::bags::unavailable_bag(order_ref, &self.lines)?.is_some() {
+            Some(DeclineReason::BagUnavailable)
         } else if crate::pricing::terms_outdated(order_ref, &self.catalog_ref, &self.catalog_version)? || crate::pricing::rewards_outdated(order_ref, &self.catalog_ref, self.rewards.as_ref())? {
             Some(DeclineReason::TermsChanged)
-        } else if outdated_item(order_ref, &self.lines, self.bag_claim_ref.as_ref(), self.promo_code_ref.as_ref())?.is_some() {
+        } else if outdated_item(order_ref, &self.lines, self.promo_code_ref.as_ref())?.is_some() {
             Some(DeclineReason::OutdatedPrices)
         } else if crate::promos::promo_used_up(order_ref, self.promo_code_ref.as_ref())? {
             Some(DeclineReason::PromoUsedUp)

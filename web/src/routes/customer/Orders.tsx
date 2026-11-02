@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { TimeAgo } from "../../components/TimeAgo";
 import { Link, useNavigate } from "react-router-dom";
-import { Bike, ClipboardList, PackageOpen, Pause, Play, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
+import { Bike, ClipboardList, Pause, Play, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { getMyActiveOrders, getMyOrderHistory, listMyRecurringTemplates, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
-import { getCatalog, getMyBagClaims, getGoodieBag } from "../../holochain/zomes/catalog";
-import { decodeEntry, actionHash, bytesToHex } from "../../holochain/decode";
+import { getCatalog } from "../../holochain/zomes/catalog";
+import { decodeEntry, bytesToHex } from "../../holochain/decode";
 import { useCart } from "../../store/cart";
 import { useResource } from "../../lib/hooks/useResource";
 import { cartLinesFromOrder, fetchMenu } from "../../lib/storefront/menu";
@@ -16,7 +16,7 @@ import { StatusBadge, PickupStatusBadge } from "../../components/orders/OrderSta
 import { formatCents } from "../../lib/ui/format";
 import { describeRecurrence } from "../../lib/orders/recurrence";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import type { BagClaim, GoodieBag, MerchantCatalog, RecurringOrderTemplate, Timestamp } from "../../holochain/types";
+import type { MerchantCatalog, RecurringOrderTemplate, Timestamp } from "../../holochain/types";
 import { POLL } from "../../lib/network/poll";
 import { t as translate, useT, type MessageKey } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
@@ -57,7 +57,6 @@ function ActiveOrders() {
   if (rows === undefined) return <ListSkeleton />;
   return (
     <>
-      <PendingClaims />
       {rows.length === 0 ? (
         <EmptyState icon={<ClipboardList size={32} />} title={t("orders.emptyActive")} subtitle={t("orders.emptyActiveDetail")} />
       ) : (
@@ -168,42 +167,6 @@ function ReorderButton({ row }: { row: OrderRow }) {
     <Button variant="ghost" className="px-2.5 py-1.5 text-xs" loading={reordering.busy} onClick={reorder} aria-label={reordering.error ?? t("orders.reorder")} title={reordering.error ?? undefined}>
       <RotateCcw size={13} />
     </Button>
-  );
-}
-
-/// Claims the merchant hasn't confirmed yet. Once confirmed, a claim is
-/// turned into a real order by the customer's conductor (`dispatch::claims`)
-/// and shows up as an order instead.
-function PendingClaims() {
-  const t = useT();
-  const { data: claims } = useResource(
-    "customer-pending-claims",
-    async () => {
-      const pending = (await getMyBagClaims()).map((c) => ({ hash: actionHash(c.record), claim: decodeEntry<BagClaim>(c.record) })).filter((c) => c.claim.status === "Pending");
-      return Promise.all(
-        pending.map(async ({ hash, claim }) => ({
-          hex: bytesToHex(hash),
-          title: await getGoodieBag(claim.bag_ref)
-            .then((r) => decodeEntry<GoodieBag>(r).title)
-            .catch(() => translate("orders.goodieBag")),
-        })),
-      );
-    },
-    { pollMs: POLL.signalled, refreshOn: () => true },
-  );
-  if (!claims?.length) return null;
-  return (
-    <div className="mb-5">
-      <SectionLabel icon={<PackageOpen size={13} className="text-handshake-500" />} className="mb-2">{t("orders.pendingClaims")}</SectionLabel>
-      <div className="flex flex-col gap-2">
-        {claims.map((claim) => (
-          <Card key={claim.hex} className="p-3.5">
-            <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{claim.title}</p>
-            <p className="text-xs text-ink-400">{t("orders.waitingStoreConfirm")}</p>
-          </Card>
-        ))}
-      </div>
-    </div>
   );
 }
 

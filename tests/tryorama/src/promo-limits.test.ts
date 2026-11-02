@@ -57,7 +57,7 @@ await runScenario(async (scenario) => {
     return call(p, "dispatch")("create_raw_pickup_order_for_testing", {
       requester: p.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
       lines: [{ item_ref: stew, priced_version: stew, quantity: 1, selections: [] }],
-      order_total: PRICE - OFF, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref, bag_claim_ref: null,
+      order_total: PRICE - OFF, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref,
       loyalty_proof: [], cancellation: null, ready_by: null, food_hold: null, sealed_customer_name: null,
     });
   };

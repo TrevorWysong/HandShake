@@ -241,9 +241,6 @@ export interface CreateGoodieBagInput {
   pickup_window_end: Timestamp;
   supports_pickup: boolean;
   supports_delivery: boolean;
-  /// How long a confirmed claim is held for its customer to order it --
-  /// the network's default if left out.
-  hold_minutes?: number;
 }
 
 export async function createGoodieBag(input: CreateGoodieBagInput): Promise<HcRecord> {
@@ -267,7 +264,7 @@ export async function getGoodieBag(bagRef: ActionHash): Promise<HcRecord> {
   return callZome("catalog", "get_goodie_bag", bagRef);
 }
 
-/// The store's bags that can still be claimed. Bags live at most a week
+/// The store's bags that can still be ordered. Bags live at most a week
 /// (validation caps it), so this never reads a store's whole bag history.
 export async function listGoodieBagsForCatalog(catalogRef: ActionHash): Promise<BagView[]> {
   return callZome("catalog", "list_goodie_bags_for_catalog", catalogRef);
@@ -275,36 +272,6 @@ export async function listGoodieBagsForCatalog(catalogRef: ActionHash): Promise<
 
 export async function getNearbyGoodieBags(geohash: string, after: Timestamp | null = null): Promise<BagView[]> {
   return callZome("catalog", "get_nearby_goodie_bags", { geohash, after });
-}
-
-/// How a customer wants a claimed bag, in the clear -- the zome seals a
-/// delivery drop-off before storing the claim.
-export type FulfillmentInput = "Pickup" | { Delivery: { dropoff: GeoPoint; max_delivery_fee: number | null } };
-
-export async function claimGoodieBag(bagRef: ActionHash, fulfillment: FulfillmentInput): Promise<HcRecord> {
-  return callZome("catalog", "claim_goodie_bag", { bag_ref: bagRef, fulfillment });
-}
-
-export async function getBagClaim(claimRef: ActionHash): Promise<HcRecord> {
-  return callZome("catalog", "get_bag_claim", claimRef);
-}
-
-/// One of the caller's claims, with a delivery claim's drop-off opened.
-export interface MyClaim {
-  record: HcRecord;
-  dropoff: GeoPoint | null;
-}
-
-export async function getMyBagClaims(): Promise<MyClaim[]> {
-  return callZome("catalog", "get_my_bag_claims", null);
-}
-
-export async function listPendingClaimsForMerchant(catalogRef: ActionHash): Promise<HcRecord[]> {
-  return callZome("catalog", "list_pending_claims_for_merchant", catalogRef);
-}
-
-export async function confirmClaim(claimRef: ActionHash): Promise<HcRecord> {
-  return callZome("catalog", "confirm_claim", claimRef);
 }
 
 /// The most an order may cost to be left at the door, in cents -- `null`

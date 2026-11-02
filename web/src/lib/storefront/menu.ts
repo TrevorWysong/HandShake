@@ -1,6 +1,6 @@
 import { bytesEqual, bytesToHex, decodeEntry } from "../../holochain/decode";
-import { getBagClaim, getGoodieBag, getModifierGroups, listMenuItems, type MenuItemsPage } from "../../holochain/zomes/catalog";
-import type { ActionHash, BagClaim, GoodieBag, ModifierGroup, OrderLine, Selection, SelectionInput } from "../../holochain/types";
+import { getModifierGroups, listMenuItems, type MenuItemsPage } from "../../holochain/zomes/catalog";
+import type { ActionHash, ModifierGroup, OrderLine, Selection, SelectionInput } from "../../holochain/types";
 import type { MenuItem } from "../../holochain/types";
 import type { CartLine } from "../../store/cart";
 import { choiceLabels, linePrice, type Groups } from "./choices";
@@ -57,19 +57,11 @@ export function groupByCategory(rows: ItemRow[]): Map<string, ItemRow[]> {
   return grouped;
 }
 
-/// Display names for an order's items (either kind of order): the store's
-/// menu, plus -- for a goodie-bag order, whose one item ref is the bag
-/// rather than a menu item -- the bag's title.
-export async function fetchOrderItemNames(order: { catalog_ref: ActionHash; lines: OrderLine[]; bag_claim_ref: ActionHash | null }): Promise<Record<string, string>> {
-  const names = itemNamesByHex(await fetchMenu(order.catalog_ref).catch(() => []));
-  if (order.bag_claim_ref && order.lines[0]) {
-    const bag = await getBagClaim(order.bag_claim_ref)
-      .then((claim) => getGoodieBag(decodeEntry<BagClaim>(claim).bag_ref))
-      .then((record) => decodeEntry<GoodieBag>(record))
-      .catch(() => null);
-    if (bag) names[bytesToHex(order.lines[0].item_ref)] = `🎁 ${bag.title}`;
-  }
-  return names;
+/// The names of an order's dishes (either kind of order), from its store's
+/// menu -- what a customer rates. A goodie bag isn't one.
+export async function fetchOrderItemNames(order: { catalog_ref: ActionHash; lines: OrderLine[] }): Promise<Record<string, string>> {
+  const menu = itemNamesByHex(await fetchMenu(order.catalog_ref).catch(() => []));
+  return Object.fromEntries(order.lines.map((line) => bytesToHex(line.item_ref)).flatMap((hex) => (menu[hex] ? [[hex, menu[hex]]] : [])));
 }
 
 /// Choices as an order holds them, without the versions they were priced

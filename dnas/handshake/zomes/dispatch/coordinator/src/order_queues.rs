@@ -8,7 +8,7 @@
 use dispatch_integrity::*;
 use hdk::prelude::*;
 use handshake_coordinator_support::chain::mine;
-use handshake_coordinator_support::{decode_or, guest, original_action_of, resolve_latest};
+use handshake_coordinator_support::{decode_or, guest, resolve_latest};
 use std::cmp::Reverse;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -374,27 +374,27 @@ fn order_store(kind: OrderKind, record: &Record) -> Option<ActionHash> {
     }
 }
 
-/// The order (if any) the caller already placed redeeming `claim_ref` --
-/// what lets a confirmed goodie-bag claim be finalized exactly once. Every
-/// order is created by its requester, so this is a local chain read.
-#[hdk_extern]
-pub fn get_my_order_for_claim(claim_ref: ActionHash) -> ExternResult<Option<ActionHash>> {
-    // Compared by the claim's identity: an order may cite any version of it.
-    let claim_origin = original_action_of(claim_ref)?;
-    // An order redeeming it comes after the claim, on the caller's own clock.
-    let claimed_at = get(claim_origin.clone(), GetOptions::default())?.ok_or(guest("claim not found"))?.action().timestamp();
-    for (kind, record) in my_orders(Some(claimed_at))? {
-        let cited = match kind {
-            OrderKind::Delivery => record.entry().to_app_option::<DeliveryOrder>().ok().flatten().and_then(|o| o.bag_claim_ref),
-            OrderKind::Pickup => record.entry().to_app_option::<PickupOrder>().ok().flatten().and_then(|o| o.bag_claim_ref),
+/// Whether the caller has ordered `bag` (listed at `listed`), on an order
+/// that hasn't been cancelled or declined -- the customer's side of
+/// validation's once-a-bag rule, told first. Every order is created by its
+/// requester, so this reads their own chain; each such order's latest
+/// version, from the network.
+pub(crate) fn ordered_bag(bag: &ActionHash, listed: Timestamp) -> ExternResult<bool> {
+    for (kind, record) in my_orders(Some(listed))? {
+        let lines = match kind {
+            OrderKind::Delivery => decode_or::<DeliveryOrder>(&record).map(|o| o.lines),
+            OrderKind::Pickup => decode_or::<PickupOrder>(&record).map(|o| o.lines),
         };
-        if let Some(cited) = cited {
-            if original_action_of(cited)? == claim_origin {
-                return Ok(Some(record.action_address().clone()));
-            }
+        if !lines.is_some_and(|lines| lines.iter().any(|line| &line.item_ref == bag)) {
+            continue;
+        }
+        let latest = resolve_latest(record.action_address().clone())?;
+        let cancelled = decode_or::<DeliveryOrder>(&latest).map(|o| o.cancellation.is_some()).or_else(|| decode_or::<PickupOrder>(&latest).map(|o| o.cancellation.is_some()));
+        if cancelled == Some(false) {
+            return Ok(true);
         }
     }
-    Ok(None)
+    Ok(false)
 }
 
 // --- drivers ---

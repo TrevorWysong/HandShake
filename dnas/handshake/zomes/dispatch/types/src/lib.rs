@@ -200,9 +200,9 @@ pub enum DeclineReason {
     ItemsUnavailable,
     TooBusy,
     Closed,
-    /// It redeems a goodie bag whose hold ran out before the order came in
-    /// -- the bag went back on sale.
-    BagHoldLapsed,
+    /// A goodie bag on it was sold out, or its window long closed, by the
+    /// time the store could take it on.
+    BagUnavailable,
     /// Placed under the store's earlier terms -- its minimum order,
     /// delivery area or fee share -- which had since changed.
     TermsChanged,
@@ -271,7 +271,8 @@ pub struct DropoffDetails {
 /// One line of an order: an item, the exact version of it that was priced
 /// (the item as the customer saw it -- validation reads its price from
 /// there), what was chosen from its choice groups, and how many. The same
-/// item may be on several lines, each with different choices.
+/// item may be on several lines, each with different choices. A goodie bag
+/// is a line too: one of it, at its own price, with nothing to choose.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct OrderLine {
     /// The item's identity (its original action). For a goodie-bag order,
@@ -464,16 +465,6 @@ pub struct DeliveryOrder {
     /// it (`ledger_types::InHand`). Fixed when the order is placed.
     #[serde(default)]
     pub priority: bool,
-    /// `None` for an ordinary menu order (the default, and every order
-    /// written before this field existed). `Some` means this delivery
-    /// originated from a confirmed `catalog::BagClaim` (a goodie bag
-    /// claimed for delivery rather than pickup) -- `validate_new_order`
-    /// independently checks the referenced claim is genuinely `Confirmed`
-    /// and names this same `requester` as its customer, same trust tier
-    /// and same cross-crate-without-cross-zome-wasm-link pattern already
-    /// used for `promo_code_ref`/`PromoCode` above.
-    #[serde(default)]
-    pub bag_claim_ref: Option<ActionHash>,
     /// For a loyalty promo ("your 6th order here is 15% off"): the
     /// customer's own completions of earlier orders at this store, which
     /// validation counts. Empty otherwise.
@@ -784,11 +775,6 @@ pub struct PickupOrder {
     /// Same trust tier/validation as `DeliveryOrder.promo_code_ref`.
     #[serde(default)]
     pub promo_code_ref: Option<ActionHash>,
-    /// Same meaning and same trust tier as `DeliveryOrder.bag_claim_ref` --
-    /// `Some` when this pickup originated from a confirmed goodie-bag
-    /// claim rather than an ordinary menu order.
-    #[serde(default)]
-    pub bag_claim_ref: Option<ActionHash>,
     /// For a loyalty promo ("your 6th order here is 15% off"): the
     /// customer's own completions of earlier orders at this store, which
     /// validation counts. Empty otherwise.

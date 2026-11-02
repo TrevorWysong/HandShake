@@ -46,7 +46,7 @@ A store has a **response window** to accept a new order: the DNA property `store
 Some of this runs on people's own conductors through Holochain's scheduler, with no app open (`dispatch::upkeep`):
 
 - The **customer's** conductor places a scheduled order with its store when it's due, and cancels any order its store didn't answer in time.
-- A **store's** conductor, if the store has `auto_accept_orders` on, accepts new orders as they arrive and declines any priced from an outdated menu. Goodie-bag orders are always accepted, since the store already confirmed the claim.
+- A **store's** conductor, if the store has `auto_accept_orders` on, accepts new orders as they arrive and declines any priced from an outdated menu, or with a goodie bag it has sold out of.
 
 Each job runs right after the event that triggers it (placing an order, or the store's `OrderPlaced` signal), and from a once-a-minute sweep for anything a missed signal or a restart left behind.
 
@@ -54,7 +54,7 @@ Accepting is also the store's price check (`ensure_priced_from_current_menu`). V
 
 ## Writing zome code
 
-- **A zome call commits all its writes, or none.** One write that doesn't validate (yet) undoes every other write in the same call. Work that writes for many items, such as the scheduled sweeps over a person's orders, decides in the sweep and writes each item in a call of its own: `handshake_coordinator_support::isolated`. Settlement, upkeep, recurring orders and goodie-bag claims all work this way.
+- **A zome call commits all its writes, or none.** One write that doesn't validate (yet) undoes every other write in the same call. Work that writes for many items, such as the scheduled sweeps over a person's orders, decides in the sweep and writes each item in a call of its own: `handshake_coordinator_support::isolated`. Settlement, upkeep and recurring orders all work this way.
 - **A refusal is a sentence for people.** Refuse with `guest("…")` (`handshake_coordinator_support::guest`), a whole capitalised sentence; a lowercase one is a diagnostic the app shows as something having gone wrong. A value in it is a named format argument, and an amount is named `..._cents`, so the app can show it in the network's currency. Every refusal is translated: run `npm run refusals` in web/, then add the translation to `src/i18n/refusals.es.ts` (I18N.md).
 - **Never `query()` the caller's chain.** In Holochain 0.7 it loads the whole chain from the database -- every entry, when entries are asked for -- before applying any filter. Read with `handshake_coordinator_support::chain::mine(&[types])`, which walks back from the chain head through the index: `.latest()`, `.find(..)`, or `.since(t).records()` cost what they visit. A "once" rule is told first by reading back as far as validation reads (`.since` the moment the thing it's about came to be); a list of the caller's own things is read from a link from their own key.
 - **Update through `update_version`.** Read the current version with `resolve_version` (or `resolve_version_decoded`) and write the next with `update_version(&current, entry, LinkTypes::Version)`: each update is linked from its entry's original, tagged with its depth, so `resolve_latest` finds the current version in one read. Every integrity zome's first link type is `Version` (each asserts it at compile time).

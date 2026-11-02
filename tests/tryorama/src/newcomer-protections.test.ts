@@ -64,7 +64,7 @@ await runScenario(async (scenario) => {
     await call(fresh, "dispatch")<HcRecord>("create_raw_pickup_order_for_testing", {
       requester: fresh.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
       lines: [{ item_ref: stew, priced_version: stew, quantity: 1, selections: [] }],
-      order_total: PRICE - OFF, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: welcome, bag_claim_ref: null,
+      order_total: PRICE - OFF, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: welcome,
       loyalty_proof: [], rewards: null, cancellation: null, ready_by: null, food_hold: null, sealed_customer_name: null,
     }),
   );
@@ -84,7 +84,7 @@ await runScenario(async (scenario) => {
     await call(fresh, "dispatch")<HcRecord>("create_unlisted_pickup_order_for_testing", {
       requester: fresh.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
       lines: [{ item_ref: stew, priced_version: stew, quantity: 1, selections: [] }],
-      order_total: PRICE, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null, bag_claim_ref: null,
+      order_total: PRICE, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null,
       loyalty_proof: [], rewards: null, cancellation: null, ready_by: null, food_hold: null, sealed_customer_name: null,
     }),
   );
@@ -106,7 +106,7 @@ await runScenario(async (scenario) => {
     call(fresh, "dispatch")("create_raw_pickup_order_for_testing", {
       requester: fresh.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
       lines: [{ item_ref: stew, priced_version: stew, quantity: 1, selections: [] }],
-      order_total: PRICE, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null, bag_claim_ref: null,
+      order_total: PRICE, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null,
       loyalty_proof: [], rewards: null, cancellation: null, ready_by: null, food_hold: null, sealed_customer_name: null,
     });
   await assert.rejects(rawOrder(), /as many orders today/, "and the network refuses it too");

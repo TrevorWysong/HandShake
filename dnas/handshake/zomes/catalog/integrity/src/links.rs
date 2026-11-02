@@ -1,8 +1,7 @@
-//! Link validation. A store's menu, promo codes, goodie bags and claims are
-//! all read by walking links from the store (or its anchors); these rules
-//! make sure each link points at an entry that really belongs where it's
-//! linked -- otherwise anyone could, say, inject another store's items
-//! into a menu or attach a fake claim to someone's bag.
+//! Link validation. A store's menu, promo codes and goodie bags are all read
+//! by walking links from the store (or its anchors); these rules make sure
+//! each link points at an entry that really belongs where it's linked --
+//! otherwise anyone could, say, inject another store's items into a menu.
 
 use crate::*;
 use catalog_types::LISTING_TAG_PREFIX;
@@ -77,17 +76,6 @@ pub fn validate_create_link(link_type: LinkTypes, link: &TypedAction<CreateLinkD
             require(
                 author == entry_author && base == &AnyLinkableHash::from(bag.catalog_ref),
                 "a goodie bag may only be linked under its own catalog, by its author",
-            )
-        }
-        LinkTypes::BagToClaim | LinkTypes::CustomerToClaim => {
-            let Some(claim) = decode::<BagClaim>(&record) else { return invalid("target is not a BagClaim") };
-            let expected_base: AnyLinkableHash = match link_type {
-                LinkTypes::BagToClaim => claim.bag_ref.clone().into(),
-                _ => claim.customer.clone().into(),
-            };
-            require(
-                author == &claim.customer && base == &expected_base,
-                "a claim may only be linked by its customer, under its own bag or the customer",
             )
         }
     }

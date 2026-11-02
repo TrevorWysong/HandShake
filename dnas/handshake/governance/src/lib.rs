@@ -88,8 +88,6 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub min_redemption_cents: Option<u64>,
     #[serde(default)]
-    pub default_bag_hold_minutes: Option<u16>,
-    #[serde(default)]
     pub suggested_delivery_fees: Option<Vec<u64>>,
     #[serde(default)]
     pub store_listing_stake: Option<u64>,
@@ -400,12 +398,6 @@ pub fn default_delivery_subsidy_percent() -> u8 {
 /// The furthest any store may deliver.
 pub fn max_delivery_radius_km() -> f64 {
     setting(|p| p.max_delivery_radius_km, 50.0)
-}
-
-/// How long a new goodie bag holds a confirmed claim for its customer to
-/// order, until the store sets its own.
-pub fn default_bag_hold_minutes() -> u16 {
-    setting(|p| p.default_bag_hold_minutes, 30).max(1)
 }
 
 /// The longest a goodie bag may stay listed.

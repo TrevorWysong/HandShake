@@ -20,7 +20,7 @@ import { useT } from "../../i18n";
 
 interface Props {
   orderRef: ActionHash;
-  order: { catalog_ref: ActionHash; lines: OrderLine[]; bag_claim_ref: ActionHash | null };
+  order: { catalog_ref: ActionHash; lines: OrderLine[] };
   itemNames: Record<string, string>;
   /// A delivery's driver, to rate too.
   driver?: AgentPubKey | null;
@@ -44,10 +44,9 @@ export function RateOrder({ orderRef, order, itemNames, driver = null, selfOrder
   if (!rated) return null;
   const canRateStore = !rated.store && !selfOrder;
   const canRateDriver = !!driver && !rated.driver;
-  // A goodie bag isn't itemized -- its one line is the bag, not a menu
-  // item -- so there's nothing per-item to rate.
-  const canRateItems = !itemsRated && !selfOrder && !order.bag_claim_ref && order.lines.length > 0;
-  const items = [...new Set(order.lines.map((line) => bytesToHex(line.item_ref)))];
+  // The order's dishes -- a goodie bag isn't one.
+  const items = Object.keys(itemNames);
+  const canRateItems = !itemsRated && !selfOrder && items.length > 0;
   const ratedItems = Object.entries(itemRatings).filter(([, rating]) => rating > 0);
 
   if (!canRateStore && !canRateDriver) {
@@ -88,7 +87,7 @@ export function RateOrder({ orderRef, order, itemNames, driver = null, selfOrder
             <div className="flex flex-col gap-2">
               {items.map((hex) => (
                 <div key={hex} className="flex items-center justify-between">
-                  <span className="text-sm text-ink-700 dark:text-ink-300">{itemNames[hex] ?? t("order.item")}</span>
+                  <span className="text-sm text-ink-700 dark:text-ink-300">{itemNames[hex]}</span>
                   <StarRatingInput value={itemRatings[hex] ?? 0} onChange={(rating) => setItemRatings((prev) => ({ ...prev, [hex]: rating }))} size={16} />
                 </div>
               ))}

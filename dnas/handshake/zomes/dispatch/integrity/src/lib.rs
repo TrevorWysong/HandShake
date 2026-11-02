@@ -4,7 +4,7 @@
 //! concrete entry type rather than one generalized "Job".
 
 use attestation_types::{Leg, LegKind, ReceiptAttestation};
-use catalog_types::{BagClaim, BagClaimFulfillment, MenuItem, MerchantCatalog, PromoCode};
+use catalog_types::{MenuItem, MerchantCatalog, PromoCode};
 use hdi::prelude::*;
 use handshake_integrity_support::{classify, invalid, require, Checked};
 use handshake_types::GeoPoint;
@@ -25,7 +25,7 @@ mod recurring;
 mod order_queues;
 mod chain;
 use chain::order_types;
-use handshake_integrity_support::chain::{entries_created, entries_since};
+use handshake_integrity_support::chain::entries_since;
 pub use order_queues::{history_day, history_index_tag, parse_history_index_tag, QueueOwner, HISTORY_BUCKET_MICROS};
 pub use recurring::{RecurrenceRule, RecurringOrderTemplate, TemplateDetails};
 use bids::{validate_bid_update, validate_new_bid};
@@ -119,6 +119,10 @@ pub enum LinkTypes {
     /// The customer's confirmation that they saw their store start on the
     /// order, base = the order -- so the store sees it.
     OrderToConfirmation,
+    /// An order its store accepted with a goodie bag on it, base = the bag
+    /// (its original action) -- how the store counts the bags it has sold,
+    /// and customers see how many are left.
+    BagToOrder,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");

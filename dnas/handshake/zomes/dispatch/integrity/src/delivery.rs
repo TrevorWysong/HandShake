@@ -11,7 +11,7 @@ use crate::store_answer::{check_cancellation, CancelledFrom, OrderUpdate};
 use dispatch_types::lineage::{self, Version};
 use dispatch_types::CollectRequest;
 use handshake_integrity_support::beacon;
-use crate::checks::{check_bag_claim, check_order_rate, check_pricing, store_version, ClaimedFor, OrderPricing};
+use crate::checks::{check_order_rate, check_pricing, store_version, OrderPricing};
 use crate::claims::{resolve_original_creation, wrote_update_of};
 use attestation_types::dropoff_proof;
 
@@ -78,7 +78,6 @@ pub(crate) fn validate_new_order(order: &DeliveryOrder, author: &AgentPubKey, ac
         lines: &order.lines,
         order_total: order.order_total,
         promo_code_ref: order.promo_code_ref.as_ref(),
-        bag_claim_ref: order.bag_claim_ref.as_ref(),
         loyalty_proof: &order.loyalty_proof,
         rewards: order.rewards.as_ref(),
         prev_action,
@@ -94,11 +93,6 @@ pub(crate) fn validate_new_order(order: &DeliveryOrder, author: &AgentPubKey, ac
     }
     if let Some(reason) = check_order_rate(author, action_timestamp, prev_action)? {
         return Ok(ValidateCallbackResult::Invalid(reason));
-    }
-    if let Some(claim_ref) = &order.bag_claim_ref {
-        if let Some(reason) = check_bag_claim(claim_ref, &order.requester, ClaimedFor::Delivery, prev_action)? {
-            return Ok(ValidateCallbackResult::Invalid(reason));
-        }
     }
     Ok(ValidateCallbackResult::Valid)
 }
@@ -560,7 +554,6 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         && prior.dropoff_preference == order.dropoff_preference
         && prior.door_risk_accepted == order.door_risk_accepted
         && prior.priority == order.priority
-        && prior.bag_claim_ref == order.bag_claim_ref
         && prior.pin_commitment == order.pin_commitment
         && prior.sealed_pin == order.sealed_pin
         && prior.auto_match == order.auto_match;

@@ -5,7 +5,7 @@ use super::*;
 use crate::holds::{check_hold, terms_of, ExpectedHold};
 use dispatch_types::HoldPurpose;
 use crate::store_answer::{check_cancellation, check_ready_by, CancelledFrom, OrderUpdate};
-use crate::checks::{check_bag_claim, check_order_rate, check_pricing, store_version, ClaimedFor, OrderPricing};
+use crate::checks::{check_order_rate, check_pricing, store_version, OrderPricing};
 use crate::claims::resolve_original_creation;
 
 /// `PickupOrder`'s sibling of `validate_new_order` -- same shape, minus
@@ -44,7 +44,6 @@ pub(crate) fn validate_new_pickup_order(order: &PickupOrder, author: &AgentPubKe
         lines: &order.lines,
         order_total: order.order_total,
         promo_code_ref: order.promo_code_ref.as_ref(),
-        bag_claim_ref: order.bag_claim_ref.as_ref(),
         loyalty_proof: &order.loyalty_proof,
         rewards: order.rewards.as_ref(),
         prev_action,
@@ -60,11 +59,6 @@ pub(crate) fn validate_new_pickup_order(order: &PickupOrder, author: &AgentPubKe
     }
     if let Some(reason) = check_order_rate(author, action_timestamp, prev_action)? {
         return Ok(ValidateCallbackResult::Invalid(reason));
-    }
-    if let Some(claim_ref) = &order.bag_claim_ref {
-        if let Some(reason) = check_bag_claim(claim_ref, &order.requester, ClaimedFor::Pickup, prev_action)? {
-            return Ok(ValidateCallbackResult::Invalid(reason));
-        }
     }
     Ok(ValidateCallbackResult::Valid)
 }
@@ -163,8 +157,7 @@ pub(crate) fn validate_pickup_order_transition(
         && prior.kitchen_note == order.kitchen_note
         && prior.sealed_customer_name == order.sealed_customer_name
         && prior.sealed_wake == order.sealed_wake
-        && prior.promo_code_ref == order.promo_code_ref
-        && prior.bag_claim_ref == order.bag_claim_ref;
+        && prior.promo_code_ref == order.promo_code_ref;
     if !unchanged {
         return Ok(ValidateCallbackResult::Invalid(
             "a pickup order update may only change its status -- every other field must stay the same".into(),

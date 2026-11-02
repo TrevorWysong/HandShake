@@ -36,7 +36,7 @@ On a desktop the conductor runs while the app is open, and HandShake's duties ru
 Every deadline the network enforces is proved with drand time and validated, so a sleeping phone never makes anything *invalid*. At worst it makes something *late*:
 
 - A customer's report window, claims and appeals wait for them. Nothing is lost by opening the app later.
-- Automatic steps that run on the customer's conductor (redeeming a confirmed bag claim, settling their side) happen when they next open the app or are woken.
+- Automatic steps that run on the customer's conductor (settling their side) happen when they next open the app or are woken.
 - A store's response window and a driver's offers are the time-critical ones. That's why stores and drivers run in the foreground.
 
 ## Waking a closed app: a push relay that learns nothing
@@ -72,7 +72,7 @@ To notify a phone whose app is closed, the phone has to be woken through Apple's
 
 **Not woken (yet):**
 - A driver's bid on an order: drivers hold no token until they commit. A customer who matches automatically is matched when their app next runs.
-- Orders the customer's conductor places on its own (standing orders, goodie-bag claims): no app is there to give them tokens.
+- Orders the customer's conductor places on its own (standing orders): no app is there to give them tokens.
 
 ## Running the spike
 

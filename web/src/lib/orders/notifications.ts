@@ -105,8 +105,5 @@ export function notificationFor(signal: LocalSignal | LiveSignal): AppNotificati
     const hex = bytesToHex(signal.IssueReported);
     return { title: t("notify.issue.title"), body: t("notify.issue.body"), tag: `issue-${hex}`, route: "/merchant", urgent: true };
   }
-  if ("ClaimConfirmed" in signal) {
-    return { title: t("notify.claim.title"), body: t("notify.claim.body"), tag: `claim-${bytesToHex(signal.ClaimConfirmed)}`, route: "/customer/orders", urgent: false };
-  }
   return null;
 }

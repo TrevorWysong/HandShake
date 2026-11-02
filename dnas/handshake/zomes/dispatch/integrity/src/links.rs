@@ -78,6 +78,18 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
             let promo = handshake_integrity_support::original_creation(promo)?;
             require(&merchant == link.author && link.base == &AnyLinkableHash::from(promo), "a promo's use is counted by the order's store, under the promo the order cites")
         }
+        // Only the order's store records a bag it sold, under a bag the
+        // order has.
+        LinkTypes::BagToOrder => {
+            let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
+            if !matches!(record.action().data, ActionData::Create(_)) {
+                return invalid("a bag's sale links an order by its original action");
+            }
+            let order = decode::<DeliveryOrder>(&record).map(|o| (o.merchant, o.lines)).or_else(|| decode::<PickupOrder>(&record).map(|o| (o.merchant, o.lines)));
+            let Some((merchant, lines)) = order else { return invalid("a bag's sale links an order") };
+            let on_it = lines.iter().any(|line| link.base == &AnyLinkableHash::from(line.item_ref.clone()));
+            require(&merchant == link.author && on_it, "a goodie bag's sale is recorded by the order's store, under a bag on the order")
+        }
     }
 }
 
@@ -109,7 +121,7 @@ fn validate_open_order_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCal
 
 pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
     match link.link_type {
-        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder | LinkTypes::OrderToConfirmation => invalid("this dispatch link type can't be deleted"),
+        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder | LinkTypes::BagToOrder | LinkTypes::OrderToConfirmation => invalid("this dispatch link type can't be deleted"),
         LinkTypes::DriverToVerification => {
             let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
             require(record.action().author() == link.author, "only its verifier unlinks a verification")

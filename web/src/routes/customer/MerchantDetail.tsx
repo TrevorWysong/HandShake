@@ -18,7 +18,8 @@ import { StoreDeals } from "../../components/store/Deals";
 import { ItemSheet } from "../../components/store/ItemSheet";
 import { MenuItemCard } from "../../components/store/MenuItemCard";
 import { MenuCategoryNav } from "../../components/store/MenuCategoryNav";
-import { StoreBags, type BagRow } from "../../components/store/StoreBags";
+import { StoreBags } from "../../components/store/StoreBags";
+import { bagLine, type BagRow } from "../../lib/storefront/bags";
 import { StoreCartPanel } from "../../components/store/StoreCartPanel";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { fetchMenu, groupByCategory } from "../../lib/storefront/menu";
@@ -202,7 +203,7 @@ function StorePage({ hash }: { hash: string }) {
 
         {hash && <StoreRewardsStrip catalogHex={hash} />}
         {hash && <StoreDeals catalogHex={hash} menu={items ?? []} />}
-        <StoreBags bags={bags} />
+        <StoreBags bags={bags} onAdd={(row) => cart.addLine(catalogHash, catalog.owner, catalog.business_name, bagLine(row))} />
 
         {/* The menu: categories beside it and the cart beside that, as the window allows. */}
         <div className="mt-6 lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-8 2xl:grid-cols-[11rem_minmax(0,1fr)_18rem]">

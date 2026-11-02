@@ -1,9 +1,9 @@
 //! Coordinator zome for merchant catalogs: publishing a store and reading it
 //! back, here; its settings (`settings`), menu (`menu`, `modifiers`), own
-//! history (`versions`), promo codes (`promos`), goodie bags and their
-//! claims (`bags`), listing and geohash-anchor discovery ("restaurants near
-//! me", `listing`) -- the same anchor pattern drivers use to find open
-//! orders -- and moving a store to a new key or network (`moves`).
+//! history (`versions`), promo codes (`promos`), goodie bags (`bags`),
+//! listing and geohash-anchor discovery ("restaurants near me", `listing`)
+//! -- the same anchor pattern drivers use to find open orders -- and moving
+//! a store to a new key or network (`moves`).
 
 mod bags;
 mod listing;
@@ -12,7 +12,6 @@ mod modifiers;
 mod moves;
 mod promos;
 mod settings;
-mod signals;
 mod versions;
 pub use bags::*;
 pub use listing::*;
@@ -21,7 +20,6 @@ pub use modifiers::*;
 pub use moves::*;
 pub use promos::*;
 pub use settings::*;
-pub use signals::*;
 pub use versions::*;
 
 use catalog_integrity::*;
@@ -214,19 +212,12 @@ pub fn get_delivery_subsidy(catalog_ref: ActionHash) -> ExternResult<u8> {
 mod test_utils {
     use hdk::prelude::*;
     use catalog_integrity::{EntryTypes, LinkTypes, MerchantCatalog};
-    handshake_coordinator_support::raw_link_test_externs!(OwnerToCatalog, CatalogToMenuItem, GeohashToCatalog, CatalogToPromoCode, CatalogToBag, BagToClaim, CustomerToClaim, CatalogToLivePromo, CatalogToSuccessor, CatalogToPredecessor, CatalogToImport);
+    handshake_coordinator_support::raw_link_test_externs!(OwnerToCatalog, CatalogToMenuItem, GeohashToCatalog, CatalogToPromoCode, CatalogToBag, CatalogToLivePromo, CatalogToSuccessor, CatalogToPredecessor, CatalogToImport);
 
     /// Writes a store's move exactly as given -- what a modified client could.
     #[hdk_extern]
     pub fn create_raw_store_move_for_testing(moved: catalog_integrity::StoreSuccession) -> ExternResult<ActionHash> {
         create_entry(&EntryTypes::StoreSuccession(moved))
-    }
-
-    /// Writes a goodie-bag claim exactly as given, past the coordinator's
-    /// checks -- so a test can prove what validation refuses.
-    #[hdk_extern]
-    pub fn create_raw_bag_claim_for_testing(claim: catalog_integrity::BagClaim) -> ExternResult<ActionHash> {
-        create_entry(&EntryTypes::BagClaim(claim))
     }
 
     /// The anchor a store's listing sits under -- so a test can try forged

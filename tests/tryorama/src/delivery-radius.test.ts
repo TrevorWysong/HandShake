@@ -91,15 +91,6 @@ await runScenario(async (scenario) => {
   const bagRef = actionHash(bagRecord);
   await dhtSync(all, customer.cells[0].cell_id[0]);
 
-  const claimRecord = await catalogOf(customer)<HcRecord>("claim_goodie_bag", {
-    bag_ref: bagRef,
-    fulfillment: { Delivery: { dropoff: NYC, max_delivery_fee: 300 } },
-  });
-  const claimRef = actionHash(claimRecord);
-  await dhtSync(all, merchant.cells[0].cell_id[0]);
-  const confirmedClaim = actionHash(await catalogOf(merchant)<HcRecord>("confirm_claim", claimRef));
-  await dhtSync(all, customer.cells[0].cell_id[0]);
-
   await assert.rejects(
     dispatchOf(customer)("request_delivery", {
       merchant: merchant.agentPubKey,
@@ -108,12 +99,11 @@ await runScenario(async (scenario) => {
       order_total: 500,
       dropoff: NYC,
       max_delivery_fee: 300,
-      bag_claim_ref: confirmedClaim,
     }),
     /past this store's .*delivery radius/,
-    "a confirmed goodie-bag claim must still respect the merchant's delivery radius when finalized",
+    "a delivered goodie bag must still respect the store's delivery radius",
   );
-  console.log("[PASS] request_delivery rejects a confirmed goodie-bag claim's out-of-radius dropoff too");
+  console.log("[PASS] request_delivery rejects a goodie bag's out-of-radius dropoff too");
 
   // A catalog published before this field existed (or one that simply
   // omits it) should still work, defaulting to 8km -- never a hard
