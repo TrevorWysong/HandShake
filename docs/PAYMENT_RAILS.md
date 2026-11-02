@@ -62,6 +62,9 @@ Questions this adds for Net Zero/Unyt:
 8. **Integration licence:** may a third-party issuer service use `ham` and the app's zome API, and will the API be documented and versioned?
 9. **Ways in:** is a stablecoin (or any non-HOT) unit and bridge planned, or a partner selling HoloFuel for dollars, and when?
 10. **Value:** will HoloFuel's rate stay tied to HOT's market price, or move to a hosting-cost reference?
+11. **Identity:** can an app rely on "this agent is a verified HoloFuel member" as its own check -- verifying drivers and sellers, say -- instead of running its own?
+
+If Unyt or Net Zero covers money in, money out and identity checks, HandShake drops the card issuer and payouts it would run, most of the money-transmission licensing questions, and its own identity checks. What stays is HandShake's own: orders, holds, disputes and reputation on its ledger, plus a small issuer service with its own HoloFuel account that turns incoming payments into grants and redemptions into payments out.
 
 ## Findings, October 2026
 
