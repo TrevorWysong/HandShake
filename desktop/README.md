@@ -10,13 +10,16 @@ Closing the window keeps HandShake running from the menu bar or system tray, so 
 | --- | --- |
 | `network.json` | The network the app joins: its seed, its bootstrap and relay server, and its DNA properties. The bundle is packaged from this file (`npm run package -- --network ../desktop/network.json`) and the app's config reads it too, so the two can't disagree. |
 | `kangaroo.config.ts` | The app's identity (`appId`, name, version), its Holochain version and the binaries' SHA-256 hashes. |
-| `build.ts` | Lays those over a fresh copy of Kangaroo at a pinned commit, applies three fixes, and builds. |
+| `screens/` | HandShake's own start-up screens: setting up a password (or not), unlocking with it, and starting. Copied over Kangaroo's, with the same file names and the same calls into its preload (`window.electronAPI`), in the app's look. |
+| `build.ts` | Lays those over a fresh copy of Kangaroo at a pinned commit, applies its fixes, and builds. |
 
 Kangaroo is meant to be forked. Keeping only HandShake's own files here, with Kangaroo fetched at a pinned commit, keeps the repo small and makes updating Kangaroo a one-line change. The fixes `build.ts` applies:
 
 - **The network seed.** Kangaroo installs the hApp with one seed for every role. HandShake's bundle carries its own seeds, and an upgrade release has two roles on different seeds (docs/MIGRATION.md), so the override is removed.
 - **Updates.** Releases and the app's update checks point at this repo's GitHub, not Kangaroo's.
 - **The macOS update manifest**, which Kangaroo's script merges for Holochain's own launcher repo.
+- **Linux packages** need a homepage, which Kangaroo's `package.json` leaves out.
+- **Unsigned builds.** Without a certificate, an empty signing secret is unset rather than read as a path, and a macOS build is signed ad hoc -- whole, though anonymous -- so it opens rather than being reported "damaged".
 
 If a Kangaroo update changes what a fix touches, `build.ts` stops and says which one.
 
@@ -33,7 +36,7 @@ To try a build on your own machine, package the bundle, then `node desktop/build
 - **The servers.** `network.json` uses Holochain's public test server, which is fine for trying it out and is not for production: it has low bandwidth and no uptime guarantee. Point it at the network's own server (docs/DEPLOYMENT.md, `deploy/`) before anyone relies on it. Changing the server after people have installed splits them into separate networks, so do it with a new network seed and a breaking version bump.
 - **Signing, and updates.** Builds are unsigned until the repo has signing secrets. An unsigned build installs and runs, but **doesn't update itself**: an update anyone with release access could publish, unsigned, could replace the app on every machine. Each platform turns on self-updating once its build is signed (`desktop/kangaroo.config.ts`). Add the certificates as secrets of the repo's `release` environment (Settings → Environments → release), not as repository secrets: `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` and `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` for macOS, and `WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD` for Windows. The environment releases only from `main`, and each run waits for the owner's approval before it can read them.
 - **Who can release.** Only the repo's owner can push to `main`, create or move tags, or publish a release (rulesets), and a published release can't be changed (immutable releases): a new version is a new release. The release workflow writes only to drafts. Every action it runs is pinned to an exact commit, so a compromised action release can't slip in; Kangaroo's source is checked against a reviewed hash before it runs (`KANGAROO_TREE_SHA256` in `desktop/build.ts`, updated with `KANGAROO_COMMIT`), and its dependencies install exactly as its lockfile pins them. Pull requests from outside run CI only once the owner approves them. Keep two-factor sign-in on for the owner's account.
-  - **macOS** quarantines unsigned apps, so opening one takes `xattr -r -d com.apple.quarantine /Applications/HandShake.app`. Signing needs an Apple Developer account ($99 a year): set `macOSCodeSigning: true`, add the `APPLE_*` secrets Kangaroo's README lists, and bring over its certificate-import and notarize steps into `.github/workflows/desktop.yml`.
+  - **macOS** asks before opening an app from an unidentified developer: open it once, then allow it under System Settings → Privacy & Security → **Open Anyway**. (A build from before ad-hoc signing reads as "damaged"; `codesign --force --deep --sign - /Applications/HandShake.app` signs it ad hoc in place.) Signing needs an Apple Developer account ($99 a year): set `macOSCodeSigning: true`, add the `APPLE_*` secrets Kangaroo's README lists, and bring over its certificate-import and notarize steps into `.github/workflows/desktop.yml`.
   - **Windows** shows a SmartScreen warning ("More info", then "Run anyway"). Signing needs a certificate: set `windowsEVCodeSigning: true`, add the `AZURE_*` secrets, and bring over Kangaroo's signing step.
   - **Linux** needs nothing.
 - **The issuer.** Funds come from the issuer named in the properties. Its conductor has to run on the same network (seed and servers) as the app, or nobody can top up.

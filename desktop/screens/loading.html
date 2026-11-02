@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<!-- Starting without a password to ask for: the node's progress. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>HandShake</title>
+    <link rel="stylesheet" href="screens.css" />
+  </head>
+  <body>
+    <aside class="brand">
+      <div>
+        <img class="brand-mark" src="img/handshake.svg" alt="" />
+        <div class="brand-name" data-product-name>HandShake</div>
+        <div class="brand-version" data-version></div>
+      </div>
+      <p class="brand-tagline">Food from the places around you, straight from them, with no company in the middle.</p>
+      <div class="brand-foot">Runs on your own device, on Holochain.<br />Licensed under the Cryptographic Autonomy License.</div>
+    </aside>
+
+    <main>
+      <button class="close" id="close" type="button" aria-label="Close">×</button>
+      <section class="step progress" id="starting">
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="progress-message" id="progress-message" role="status">Starting…</p>
+      </section>
+    </main>
+
+    <script type="module">
+      import { closeButton, followProgress, showNameAndVersion } from "./screens.js";
+
+      showNameAndVersion();
+      closeButton();
+      followProgress();
+    </script>
+  </body>
+</html>
