@@ -46,7 +46,10 @@ A card issuer and a HoloFuel issuer are two rows on the same roster. Orders, esc
 The HoloFuel Network opened on 1 November 2026. **Decision unchanged: no HoloFuel code yet.** It's live for people, not yet for apps, and money paid to a restaurant in it has no way out.
 
 - **What launched.** The HoloFuel Network, operated by Net Zero FZC (assigned by Holo), runs inside Unyt's desktop app (v1.0.1, Mac/Windows/Linux). Joining takes 30-45 minutes: a keystore passphrase, identity verification with a government ID through Didit, and an invite code. HOT swaps 1:1 for HoloFuel, both ways, with no fee or spread, for at least six months (60 days' notice before closing). ([launch](https://netzero.zone/holofuel-launch.html), [parameters](https://netzero.zone/parameters))
-- **Nobody starts with credit.** General members' credit limit is zero, so HoloFuel comes only from swapping HOT or being paid. A HandShake customer would need HOT, or someone to sell them HoloFuel, before they could top up.
+- **Nobody starts with credit, and the only way in is HOT.** General members' credit limit is zero, so HoloFuel comes only from swapping HOT or being paid. A HandShake customer would need HOT, or someone to sell them HoloFuel, before they could top up -- not realistic for ordering food.
+- **More ways in look likely, through crypto.** The app's DNA already holds several units (HoloFuel and HOT are units 0 and 1) converted through a `ConversionTable` that Unyt's [pricing oracle](https://github.com/unytco/pricing_oracle) fills from market prices, and the HOT swap runs through a Raindex order book on Ethereum with a bridge service on Unyt's side ([raindex-orders](https://github.com/unytco/raindex-orders)). Unyt's roadmap mentions stablecoin-backed remittances. A stablecoin bridged the same way is the natural next unit, with dollars reaching it through ordinary exchanges -- an inference from the code, not an announcement.
+- **HoloFuel's dollar value follows HOT's market price for now.** The oracle prices both HF and HOT from HOT's price on Ethereum, so HoloFuel isn't yet the steady unit "mutual credit" suggests (see "Why mutual credit matters"). Prices in HandShake are in dollars, so a top-up would be converted at the moment it's made, and a seller's earnings held in HoloFuel would move with HOT.
+- **Joining checks ID, which suits HandShake.** Every member verifies a government ID through Didit. That's a cost to onboarding but a fraud defence HandShake would otherwise need (delivery apps verify drivers' IDs too), so it counts for HoloFuel, not against it.
 - **Earnings from food can't leave.** Only HoloFuel "earned through providing network utility ... via one of the authorized harvesting agreements" (hosting) swaps back to HOT. A restaurant or driver paid in HoloFuel could spend it with other members (the [Decent Directory](https://directory.holoventures.io/)) but couldn't swap it out, and there's still no fiat gateway. This is the deciding issue: sellers and drivers need dollars.
 - **Still no way for another app to integrate.**
   - [Unyt's docs](https://unyt.co/docs) cover using the app, configuring alliances and smart agreements (Rhai templates, [library](https://github.com/unytco/smart_agreement_library), GPL-3.0). Nothing on another hApp sending, receiving or checking payments.
@@ -57,7 +60,8 @@ The HoloFuel Network opened on 1 November 2026. **Decision unchanged: no HoloFue
 Questions this adds for Net Zero/Unyt:
 7. **Merchant earnings:** could a harvesting agreement, or another way out to HOT, cover HoloFuel earned by selling goods and services, not only hosting?
 8. **Integration licence:** may a third-party issuer service use `ham` and the app's zome API, and will the API be documented and versioned?
-9. **Onboarding:** can a member join with lighter identity checks for small amounts, or is the full Didit check required for everyone?
+9. **Ways in:** is a stablecoin (or any non-HOT) unit and bridge planned, or a partner selling HoloFuel for dollars, and when?
+10. **Value:** will HoloFuel's rate stay tied to HOT's market price, or move to a hosting-cost reference?
 
 ## Findings, October 2026
 
