@@ -2,9 +2,12 @@
 // OSRM-compatible API it chooses (its `services` setting): its own OSRM, or
 // OpenStreetMap Germany's public one in development. `{profile}` in its URL
 // picks the instance for how the driver gets around. Every request tells
-// that server where someone is and is going, so a network serious about
+// that server roughly where someone is and is going -- each point rounded
+// to about 100 m, sent only over https -- so a network serious about
 // privacy runs its own. With none, or no answer, there's no estimate: a
-// driver types their own ETA, and auto-bid passes the order by.
+// driver types their own ETA, and auto-bid passes the order by. A burst of
+// orders can't turn into a burst of requests: a few at a time, each asked
+// once in a while.
 import type { GeoPoint } from "../../holochain/types";
 import type { MessageKey } from "../../i18n";
 import { networkServices } from "../../store/network";
@@ -29,18 +32,62 @@ const TIMEOUT_MS = 8_000;
 const MAX_POINTS = 100;
 /// A duration past this is a broken answer, not a trip across town.
 const MAX_SECONDS = 12 * 3600;
+/// Requests at once, and how long an answer's reused.
+const MAX_IN_FLIGHT = 4;
+const REUSE_MS = 5 * 60_000;
+const MAX_REMEMBERED = 200;
 
+/// The service for a way of travelling: https only, or a dev machine's own.
 function baseUrl(mode: TravelMode): string | null {
-  const url = networkServices().routing_url;
-  return url ? url.replaceAll("{profile}", PROFILE[mode]).replace(/\/$/, "") : null;
+  const url = networkServices().routing_url?.replaceAll("{profile}", PROFILE[mode]).replace(/\/$/, "");
+  if (!url) return null;
+  try {
+    const { protocol, hostname } = new URL(url);
+    return protocol === "https:" || (protocol === "http:" && (hostname === "localhost" || hostname === "127.0.0.1")) ? url : null;
+  } catch {
+    return null;
+  }
 }
 
-const coordinates = (points: GeoPoint[]) => points.map((p) => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`).join(";");
+// Three decimals: about 100 m -- enough for a drive time, and no closer.
+const coordinates = (points: GeoPoint[]) => points.map((p) => `${p.lon.toFixed(3)},${p.lat.toFixed(3)}`).join(";");
 
-async function getJson(url: string): Promise<unknown> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS), credentials: "omit", referrerPolicy: "no-referrer" });
-  if (!res.ok) throw new Error(`routing: ${res.status}`);
-  return res.json();
+let inFlight = 0;
+const waiting: (() => void)[] = [];
+const remembered = new Map<string, { at: number; answer: Promise<unknown> }>();
+
+async function fetchJson(url: string): Promise<unknown> {
+  // A finished request hands its place straight to the next waiting.
+  if (inFlight < MAX_IN_FLIGHT) inFlight++;
+  else await new Promise<void>((go) => waiting.push(go));
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS), credentials: "omit", referrerPolicy: "no-referrer" });
+    if (!res.ok) throw new Error(`routing: ${res.status}`);
+    return await res.json();
+  } finally {
+    const next = waiting.shift();
+    if (next) next();
+    else inFlight--;
+  }
+}
+
+/// The answer for `url`: the same request within a few minutes shares one;
+/// a failed one isn't kept.
+function getJson(url: string): Promise<unknown> {
+  const now = Date.now();
+  const kept = remembered.get(url);
+  if (kept && now - kept.at < REUSE_MS) return kept.answer;
+  const answer = fetchJson(url);
+  remembered.delete(url);
+  remembered.set(url, { at: now, answer });
+  if (remembered.size > MAX_REMEMBERED) remembered.delete(remembered.keys().next().value!);
+  answer.catch(() => remembered.get(url)?.answer === answer && remembered.delete(url));
+  return answer;
+}
+
+/// Forgets every kept answer -- for tests.
+export function forgetRoutes() {
+  remembered.clear();
 }
 
 /// Minutes, from an answer's seconds -- or null for anything that isn't one.

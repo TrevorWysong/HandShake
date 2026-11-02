@@ -179,8 +179,8 @@ pub struct Services {
     /// Travel times by road, for drivers' ETAs and stores' delivery times:
     /// the base of an OSRM-compatible API (`/route/v1`, `/table/v1`), where
     /// `{profile}` stands for `car`, `bike` or `foot` -- one instance for
-    /// each, as OSRM runs. Unset, apps estimate nothing: drivers type their
-    /// ETAs.
+    /// each, as OSRM runs. https only (apps ignore anything else). Unset,
+    /// apps estimate nothing: drivers type their ETAs.
     #[serde(default)]
     pub routing_url: Option<String>,
     /// The push relay that wakes a closed app (docs/MOBILE.md, `push/`). Unset,
