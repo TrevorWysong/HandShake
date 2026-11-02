@@ -90,3 +90,18 @@ await runScenario(async (scenario) => {
   assert.equal(await call(merchant, "catalog")<boolean>("is_store_listed", store), true);
   console.log("[PASS] a store can be listed again, on a fresh stake");
 });
+
+// ===== A balance that can't cover the stake =====
+await runScenario(async (scenario) => {
+  const [merchant] = await setupPlayersWithProperties(scenario, 1, () => ({ store_listing_stake: STAKE, credit_limit_cents: 0 }));
+  await useTestCoordinators(merchant, ["catalog", "ledger"]);
+  const call = (zome: string) => retryingCaller(merchant.cells[0], zome);
+  await call("profiles")("create_profile", { display_name: "Mo", roles: ["Merchant"], created_at: Date.now() * 1000 });
+  await assert.rejects(
+    call("catalog")("publish_catalog", { business_name: "Mo's", location: ST_PETE }),
+    (e: Error) => e.message.includes(`Listing a store sets aside a ${STAKE} deposit from your balance, returned when you close it. Add funds to list it.`),
+    "the refusal names the deposit, not an order",
+  );
+  assert.equal(await call("ledger")<number>("get_balance", merchant.agentPubKey), 0, "and nothing's set aside");
+  console.log("[PASS] a store its owner can't back isn't listed, and the refusal says why");
+});

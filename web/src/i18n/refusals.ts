@@ -29,7 +29,7 @@ export const REFUSALS = {
   "refusal.have-the-store-scan-your-code-or": "Have the store scan your code, or confirm they've handed it over.",
   "refusal.it-isn-t-time-to-send-this": "It isn't time to send this order yet.",
   "refusal.keep-the-note-short": "Keep the note short.",
-  "refusal.listing-a-store-sets-aside-a-deposit": "Listing a store sets aside a deposit from your balance, returned when you close it. Add funds to list it.",
+  "refusal.listing-a-store-sets-aside-a-deposit": "Listing a store sets aside a {amount_cents} deposit from your balance, returned when you close it. Add funds to list it.",
   "refusal.no-driver-left-this-order-cooking": "No driver left this order cooking.",
   "refusal.no-such-appeal": "No such appeal.",
   "refusal.no-such-verification": "No such verification.",

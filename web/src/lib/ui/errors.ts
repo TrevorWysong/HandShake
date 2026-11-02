@@ -47,10 +47,24 @@ function translated(text: string): string | null {
   return null;
 }
 
+/// The refusal inside a failure: the innermost `Guest("...")`. A zome that
+/// calls another (`call`) gets the other's failure back wrapped in its own,
+/// escaped once more for each level -- `Host("... Guest(\"...\")")`.
+function guestText(raw: string): string | null {
+  let found: { depth: number; text: string } | null = null;
+  for (const match of raw.matchAll(/Guest\((\\*)"([\s\S]*?)(?<!\\)\1"\)/g)) {
+    const depth = match[1].length;
+    if (found && depth <= found.depth) continue;
+    let text = match[2];
+    for (let level = 0; level < depth; level++) text = text.replace(/\\([\\"])/g, "$1");
+    found = { depth, text: text.replace(/\\"/g, '"').replace(/\\n/g, " ") };
+  }
+  return found?.text ?? null;
+}
+
 export function describeError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  const guest = raw.match(/Guest\("((?:[^"\\]|\\.)*)"\)/);
-  if (!guest) return translated(raw) ?? raw;
-  const text = guest[1].replace(/\\"/g, '"').replace(/\\n/g, " ");
+  const text = guestText(raw);
+  if (text === null) return translated(raw) ?? raw;
   return translated(text) ?? (/^[a-z]/.test(text) ? t("error.unexpected", { detail: text }) : text);
 }
