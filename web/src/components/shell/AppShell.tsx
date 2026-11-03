@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
@@ -42,7 +43,8 @@ function AnimatedOutlet() {
 }
 
 export function AppShell() {
-  const { mode, setMode, profile, agentPubKey } = useSession();
+  const { mode: chosenMode, setMode, profile, agentPubKey } = useSession();
+  const { pathname } = useLocation();
   const cartCount = useCart((s) => s.lines.reduce((n, l) => n + l.quantity, 0));
   const navigate = useNavigate();
   const wide = useWideScreen();
@@ -63,6 +65,15 @@ export function AppShell() {
     roles.includes("Provider") && ("driver" as const),
     roles.includes("Merchant") && ("merchant" as const),
   ].filter(Boolean) as Mode[];
+  // A customer, driver or store page is that mode's, however it was reached
+  // -- a notification's link, the back button -- so its nav is the one shown;
+  // pages every mode shares (profile, wallet) keep the mode last used.
+  const routeMode = MODES.find((m) => pathname === `/${m}` || pathname.startsWith(`/${m}/`));
+  const mode = routeMode && availableModes.includes(routeMode) ? routeMode : chosenMode;
+  // Remember it, so those shared pages, and home, follow the mode last seen.
+  useEffect(() => {
+    if (mode !== chosenMode) setMode(mode);
+  }, [mode, chosenMode, setMode]);
 
   function switchMode(next: Mode) {
     setMode(next);
@@ -144,6 +155,8 @@ export function AppShell() {
     </div>
   );
 }
+
+const MODES: readonly Mode[] = ["customer", "driver", "merchant"];
 
 /// The places in the current mode, in the bottom bar or the sidebar.
 function ModeNav({ mode, cartCount, placement }: { mode: Mode; cartCount: number; placement: NavPlacement }) {

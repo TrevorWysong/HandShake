@@ -700,6 +700,7 @@ export const es: Catalog = {
   "store.reports": { one: "{count} aviso de repartidores", other: "{count} avisos de repartidores" },
   "store.minimum": "Mínimo {amount}",
   "store.bags": "Bolsas sorpresa disponibles aquí",
+  "store.orderAhead": "Programa una entrega para cuando abra",
   "store.bag.until": "Hasta las {time}",
   "store.bag.left": { one: "Queda {count}", other: "Quedan {count}" },
   "store.bag.ordered": "Pedida",

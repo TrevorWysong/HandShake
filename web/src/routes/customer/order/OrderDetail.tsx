@@ -184,9 +184,12 @@ export function OrderDetail() {
       <div className={live ? "lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start lg:gap-x-8" : "lg:mx-auto lg:max-w-2xl"}>
         <div className="min-w-0 lg:col-start-1">
           <motion.div variants={fadeSlideUp} className="mb-4 flex items-center justify-between">
-            <h1 className="flex items-baseline gap-1.5 text-xl font-black text-ink-900 dark:text-ink-50">
-              {t("order.heading")}<StatNumber className="text-xl">{formatCents(order.order_total)}</StatNumber>
-            </h1>
+            <div className="min-w-0">
+              <h1 className="flex items-baseline gap-1.5 text-xl font-black text-ink-900 dark:text-ink-50">
+                {t("order.heading")}<StatNumber className="text-xl">{formatCents(order.order_total)}</StatNumber>
+              </h1>
+              {store && <p className="truncate text-xs text-ink-400">{t("cart.from", { store: store.name })}</p>}
+            </div>
             <div className="flex items-center gap-1.5">
               {order.priority && (
                 <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">

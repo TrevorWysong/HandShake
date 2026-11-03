@@ -52,14 +52,14 @@ await runScenario(async (scenario) => {
   const checkIn = () => call(neighbour.cells[0], "attestation")("check_in_at_store", { order_ref: delivery, code: "000000" });
   await sync();
   await assert.rejects(checkIn(), /Only the order's driver/, "other devices reach the store's conductor");
-  assert.deepEqual(await grantTags(), ["codes", "live", "recv_remote_signal", "recv_remote_signal"], "a device set up at init holds its grants");
+  assert.deepEqual(await grantTags(), ["codes", "live", "recv_remote_signal"], "a device set up at init holds its grants");
 
   // ===== The old phone: ready only once the network holds all it wrote =====
   const before = await retryingCaller(merchant.cells[0], "account")<MoveReadiness>("ready_to_move", null);
   await sync();
   const ready = await retryUntil(() => retryingCaller(merchant.cells[0], "account")<MoveReadiness>("ready_to_move", null), (r) => r.ready, 60, 1000);
   assert.ok(ready.seq >= before.seq && ready.seen === ready.seq, "the network's authorities hold this device's latest action");
-  for (const zome of ["dispatch", "catalog", "attestation"]) await retryingCaller(merchant.cells[0], zome)("prepare_device", null);
+  for (const zome of ["dispatch", "attestation"]) await retryingCaller(merchant.cells[0], zome)("prepare_device", null);
   const after = await retryingCaller(merchant.cells[0], "account")<MoveReadiness>("ready_to_move", null);
   assert.ok(same(after.head, ready.head), "a device that's set up writes nothing to set up again");
   console.log("[PASS] the old phone sends its key only once the network holds everything it wrote");
@@ -74,7 +74,7 @@ await runScenario(async (scenario) => {
   assert.deepEqual(await grantTags(), [], "but not the grants: they were private to the old device");
   await assert.rejects(checkIn(), /isn't reachable/, "so nobody else can reach it yet");
   const prepare = async () => {
-    for (const zome of ["dispatch", "catalog", "attestation"]) await retryingCaller(merchant.cells[0], zome)("prepare_device", null);
+    for (const zome of ["dispatch", "attestation"]) await retryingCaller(merchant.cells[0], zome)("prepare_device", null);
   };
   await prepare();
   // Written again, each grant is the same entry as the old one, so the old

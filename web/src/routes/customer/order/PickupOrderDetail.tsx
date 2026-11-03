@@ -4,7 +4,8 @@ import { ChefHat } from "lucide-react";
 import { motion } from "framer-motion";
 import { cancelPickupOrder, getOrderPrivateDetails, getPickupOrder, reportPickupProblem, completePickup } from "../../../holochain/zomes/dispatch";
 import { fetchOrderItemNames } from "../../../lib/storefront/menu";
-import { decodeEntry, bytesEqual, hexToBytes, timestampOf } from "../../../holochain/decode";
+import { decodeEntry, bytesEqual, bytesToHex, hexToBytes, timestampOf } from "../../../holochain/decode";
+import { getCatalog } from "../../../holochain/zomes/catalog";
 import { myAgentPubKey } from "../../../holochain/client";
 import { PickupStatusTimeline, PickupStatusBadge } from "../../../components/orders/OrderStatus";
 import { Button, Card, Notice, Skeleton, StatNumber } from "../../../components/ui";
@@ -12,7 +13,7 @@ import { WaitingForStore } from "../../../components/orders/WaitingForStore";
 import { formatCents, formatClockTime } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useAction } from "../../../lib/hooks/useAction";
-import type { PickupOrder } from "../../../holochain/types";
+import type { MerchantCatalog, PickupOrder } from "../../../holochain/types";
 import { POLL, isOrderSignal } from "../../../lib/network/poll";
 import { OrderReceipt } from "../../../components/orders/OrderReceipt";
 import { OrderPointsBadge } from "../../../components/rewards/PendingPoints";
@@ -50,6 +51,8 @@ export function PickupOrderDetail() {
   // The kitchen note is sealed to the store; the zome opens it for us.
   const { data: details } = useResource(`pickup-order-details:${hash}`, () => getOrderPrivateDetails(orderRef));
   const { data: itemNames = {} } = useResource(order ? `pickup-order-items:${hash}` : null, () => fetchOrderItemNames(order!));
+  const storeHex = order ? bytesToHex(order.catalog_ref) : null;
+  const { data: storeName } = useResource(storeHex && `store-name:${storeHex}`, async () => decodeEntry<MerchantCatalog>(await getCatalog(order!.catalog_ref)).business_name);
 
   if (!order) {
     return (
@@ -86,9 +89,12 @@ export function PickupOrderDetail() {
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-10 pt-4">
       <motion.div variants={fadeSlideUp} className="mb-4 flex items-center justify-between">
-        <h1 className="flex items-baseline gap-1.5 text-xl font-black text-ink-900 dark:text-ink-50">
-          {t("pickup.heading")}<StatNumber className="text-xl">{formatCents(order.order_total)}</StatNumber>
-        </h1>
+        <div className="min-w-0">
+          <h1 className="flex items-baseline gap-1.5 text-xl font-black text-ink-900 dark:text-ink-50">
+            {t("pickup.heading")}<StatNumber className="text-xl">{formatCents(order.order_total)}</StatNumber>
+          </h1>
+          {storeName && <p className="truncate text-xs text-ink-400">{t("cart.from", { store: storeName })}</p>}
+        </div>
         <PickupStatusBadge status={order.status} />
       </motion.div>
 
