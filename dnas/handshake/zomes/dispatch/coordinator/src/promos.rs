@@ -45,11 +45,17 @@ pub struct PromoStanding {
 /// (as validation counts them: `dispatch_integrity::checks::earlier_orders`).
 fn my_orders() -> ExternResult<Vec<(ActionHash, Option<ActionHash>, Timestamp)>> {
     let types = [EntryType::try_from(UnitEntryTypes::DeliveryOrder)?, EntryType::try_from(UnitEntryTypes::PickupOrder)?];
-    let notes = [EntryType::try_from(UnitEntryTypes::OrderConfirmation)?, EntryType::try_from(UnitEntryTypes::DeclineNoted)?];
+    let confirmation = EntryType::try_from(UnitEntryTypes::OrderConfirmation)?;
+    let notes = [confirmation.clone(), EntryType::try_from(UnitEntryTypes::DeclineNoted)?];
     let (mut confirmed, mut declined, mut cancelled) = (Vec::new(), Vec::new(), Vec::new());
+    // Told apart by type: the two have the same fields, so either decodes
+    // as the other.
     for record in mine(&notes).records()? {
-        confirmed.extend(decode_or::<OrderConfirmation>(&record).map(|c| c.order));
-        declined.extend(decode_or::<DeclineNoted>(&record).map(|d| d.order));
+        if record.action().entry_type() == Some(&confirmation) {
+            confirmed.extend(decode_or::<OrderConfirmation>(&record).map(|c| c.order));
+        } else {
+            declined.extend(decode_or::<DeclineNoted>(&record).map(|d| d.order));
+        }
     }
     let mut orders = Vec::new();
     for record in mine(&types).records()? {

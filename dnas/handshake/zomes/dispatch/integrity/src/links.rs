@@ -64,7 +64,9 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
         // The customer's confirmation, under their order.
         LinkTypes::OrderToConfirmation => {
             let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
-            let ours = decode::<OrderConfirmation>(&record).is_some_and(|c| link.base == &AnyLinkableHash::from(c.order)) && record.action().author() == link.author;
+            // By its type: a `DeclineNoted` has the same fields, and decodes as one.
+            let confirmation = handshake_integrity_support::chain::creates_one_of(record.action(), &[UnitEntryTypes::OrderConfirmation.try_into()?]);
+            let ours = confirmation && decode::<OrderConfirmation>(&record).is_some_and(|c| link.base == &AnyLinkableHash::from(c.order)) && record.action().author() == link.author;
             require(ours, "a confirmation is linked by its customer, under its order")
         }
         // Only the order's store counts it, under the promo it cites.

@@ -5,7 +5,7 @@ import { listLivePromoCodes } from "../../holochain/zomes/catalog";
 import { myPromoStanding } from "../../holochain/zomes/dispatch";
 import { bytesToHex, decodeEntry, hexToBytes } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
-import { describeBlock, describeLimits, describeRequirement, describeReward } from "../../lib/storefront/promotions";
+import { blockedForGood, describeBlock, describeLimits, describeRequirement, describeReward } from "../../lib/storefront/promotions";
 import { itemNamer, type ItemRow } from "../../lib/storefront/menu";
 import { useCart } from "../../store/cart";
 import type { PromoCode, PromoStanding } from "../../holochain/types";
@@ -30,16 +30,18 @@ async function fetchDeals(catalogHex: string): Promise<Deal[]> {
 /// A store's live deals, as a row of tickets: what each takes off, its terms,
 /// and where the customer stands with it -- the way the big apps show
 /// "Deals for you". One the customer can use is added to their checkout
-/// with a tap; one they can't says why.
+/// with a tap; one they can't use yet says why; one they never can again
+/// isn't shown.
 export function StoreDeals({ catalogHex, menu }: { catalogHex: string; menu: ItemRow[] }) {
   const t = useT();
   const { data: deals } = useResource(`store-deals:${catalogHex}`, () => fetchDeals(catalogHex));
   const chosen = useCart((s) => s.promoHex);
   const choose = useCart((s) => s.choosePromo);
-  if (!deals || deals.length === 0) return null;
+  const open = deals?.filter((deal) => !blockedForGood(deal.standing?.blocked)) ?? [];
+  if (open.length === 0) return null;
   const itemName = itemNamer(menu);
   // The ones they can use first.
-  const sorted = [...deals].sort((a, b) => Number(!!a.standing?.blocked) - Number(!!b.standing?.blocked));
+  const sorted = [...open].sort((a, b) => Number(!!a.standing?.blocked) - Number(!!b.standing?.blocked));
   return (
     <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mt-6">
       <SectionLabel icon={<Tag size={13} className="text-handshake-500" />} className="mb-2">{t("deals.title")}</SectionLabel>

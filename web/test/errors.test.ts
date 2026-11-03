@@ -57,3 +57,20 @@ test("a zome's diagnostic says something went wrong, with the detail kept", () =
 test("anything else is left as it is", () => {
   assert.equal(describeError(new Error("The connection to your node dropped mid-request.")), "The connection to your node dropped mid-request.");
 });
+
+test("a write the network's rules refused says what was refused, without the trace", () => {
+  // As placing an order reported it: the order checked as a nested call saved.
+  const promo = new Error(`Wasm runtime error while working with Ribosome: RuntimeError: holochain::core::ribosome::host_fn::call:239: Host("Source chain error: InvalidCommit error: Validation failed while committing: that promo has been used as many times as it allows")`);
+  assert.equal(describeError(promo), "Not allowed: That promo has been used as many times as it allows.");
+  const direct = new Error(`Wasm runtime error while working with Ribosome: RuntimeError: Source chain error: InvalidCommit error: Validation failed while committing: a goodie bag is one to a line, with nothing to choose`);
+  assert.equal(describeError(direct), "Not allowed: A goodie bag is one to a line, with nothing to choose.");
+  inSpanish(() => assert.equal(describeError(promo), "No permitido: That promo has been used as many times as it allows."));
+});
+
+test("a failure that passes on its own says to try again, and no trace is ever shown", () => {
+  const behind = new Error(`Wasm runtime error while working with Ribosome: RuntimeError: holochain::core::ribosome::host_fn::call:239: Host("Source chain error: The commit could not be completed but may be retried: DepMissingFromDht([AnyDhtHash(uhCkk...)])")`);
+  assert.equal(describeError(behind), "The network is still catching up. Try again in a moment.");
+  const odd = new Error(`Wasm runtime error while working with Ribosome: RuntimeError: holochain::core::ribosome::host_fn::get:51: Host("KeystoreError")`);
+  assert.equal(describeError(odd), "Something went wrong. Try again.");
+  assert.equal(describeError(new Error("Couldn't reach the issuer.")), "Couldn't reach the issuer.", "plain words pass through");
+});
