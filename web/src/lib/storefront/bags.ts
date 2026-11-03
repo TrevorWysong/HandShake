@@ -24,12 +24,18 @@ export function bagLine({ hash, bag }: BagRow): CartLine {
   };
 }
 
-/// The bags `delivery` (or pickup) can't have at `nowMicros`, and why.
-export function bagProblems(lines: CartLine[], delivery: boolean, nowMicros: number): { line: CartLine; closed: boolean }[] {
-  return lines.flatMap((line) => {
+/// Why an order can't have a bag: it's the customer's own store's, its
+/// window has closed, or it isn't offered the way the order is had.
+export type BagProblem = { line: CartLine; reason: "own" | "closed" | "way" };
+
+/// The bags `delivery` (or pickup) can't have at `nowMicros` -- all of
+/// them, if the customer is the store's owner (`own`) -- and why.
+export function bagProblems(lines: CartLine[], delivery: boolean, nowMicros: number, own: boolean): BagProblem[] {
+  return lines.flatMap((line): BagProblem[] => {
     const bag = line.bag;
     if (!bag) return [];
-    const closed = bag.closes <= nowMicros;
-    return closed || !(delivery ? bag.delivery : bag.pickup) ? [{ line, closed }] : [];
+    if (own) return [{ line, reason: "own" }];
+    if (bag.closes <= nowMicros) return [{ line, reason: "closed" }];
+    return delivery ? (bag.delivery ? [] : [{ line, reason: "way" }]) : bag.pickup ? [] : [{ line, reason: "way" }];
   });
 }
