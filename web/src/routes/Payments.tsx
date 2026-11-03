@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChevronRight, CreditCard, ExternalLink, ShieldCheck } from "lucide-react";
 import type { Processor } from "../holochain/types";
-import { paymentsAgent } from "../holochain/paymentsAgent";
+import { paymentsAgent, type PaymentsAgent } from "../holochain/paymentsAgent";
 import { Button, Card, Field, Input, Notice, Skeleton } from "../components/ui";
 import { useResource } from "../lib/hooks/useResource";
 import { useAction } from "../lib/hooks/useAction";
@@ -47,8 +47,8 @@ const KEYS: Record<Exclude<Processor, "Test">, { dashboard: string; how: Message
 
 export function Payments() {
   const t = useT();
-  const agent = paymentsAgent();
-  const { data: connection, reload } = useResource(agent && "payments-connection", () => agent!.status());
+  const { data: agent } = useResource("payments-agent", paymentsAgent);
+  const { data: connection, reload } = useResource(agent ? "payments-connection" : null, () => agent!.status());
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-10 pt-4">
@@ -62,7 +62,9 @@ export function Payments() {
             <CreditCard size={16} className="text-handshake-600" /> {t("payments.gettingPaid")}
           </p>
           <p className="mb-4 text-xs text-ink-400">{t("payments.gettingPaidDetail")}</p>
-          {!agent ? (
+          {agent === undefined ? (
+            <Skeleton className="h-24" />
+          ) : agent === null ? (
             <Notice tone="warn">{t("payments.needsDesktop")}</Notice>
           ) : connection === undefined ? (
             <Skeleton className="h-24" />
@@ -72,7 +74,7 @@ export function Payments() {
               await reload();
             }} />
           ) : (
-            <Connect onConnected={() => reload()} />
+            <Connect agent={agent} onConnected={() => reload()} />
           )}
         </Card>
       </motion.div>
@@ -110,7 +112,7 @@ function Connected({ processor, account, live, onDisconnect }: { processor: Proc
   );
 }
 
-function Connect({ onConnected }: { onConnected: () => void }) {
+function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: () => void }) {
   const t = useT();
   const live = useTerms().live_payments;
   const processors = (["Stripe", "Square", "Clover", ...(live ? [] : ["Test" as const])] as const) satisfies readonly Processor[];
@@ -122,7 +124,7 @@ function Connect({ onConnected }: { onConnected: () => void }) {
 
   const connect = () =>
     action.run(async () => {
-      await paymentsAgent()!.connect(processor, Object.fromEntries(Object.entries(keys).map(([k, v]) => [k, v.trim()])));
+      await agent.connect(processor, Object.fromEntries(Object.entries(keys).map(([k, v]) => [k, v.trim()])));
       setKeys({});
       onConnected();
     });

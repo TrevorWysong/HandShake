@@ -2322,6 +2322,12 @@ export type PaymentDue =
          * asked for it.
          */
         resumes: ActionHash | null;
+        /**
+         * The store, when the order takes its deal for first orders: one
+         * card each, which the agent checks by its processor's card
+         * fingerprint (on-chain, a first order is one per account).
+         */
+        newcomer_deal: ActionHash | null;
       };
     }
   /**
@@ -2457,6 +2463,16 @@ export interface PaymentOffer {
    * The `PaymentAction` this answers, once the payer has done it.
    */
   resumes: ActionHash | null;
+}
+
+/**
+ * A payment the caller owes on an order: its leg, whom it pays, and
+ * exactly what the network has them hold.
+ */
+export interface PaymentOwed {
+  leg: PaymentLeg;
+  payee: AgentPubKey;
+  amount: number;
 }
 
 /**

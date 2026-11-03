@@ -10,10 +10,13 @@
 //
 // Every identity's installed app id starts with "seed-"; the onboarding
 // screen's dev identity picker lists them so you can sign in as anyone.
+// Stores and drivers are paid on the test processor, each by their own
+// payment agent (payments/), which `npm run dev:payments` keeps running.
 import { readFileSync, writeFileSync } from "node:fs";
 import { AppWebsocket, encodeHashToBase64, type ActionHash, type AdminWebsocket, type AgentPubKey, type CellId, type Record as HcRecord } from "@holochain/client";
 import { decode } from "@msgpack/msgpack";
-import { DEV_NETWORK, DNA_PATH, ISSUER_APP_ID, SERVED_HAPP, WS_OPTIONS, appInterfacePort, closeApp, connectAdmin, dnaHashOf, messageOf, rolesSettingsFor, type DevNetwork } from "./lib/devEnv.ts";
+import { devPaymentsAgent, type DevPaymentsAgent } from "./lib/payments.ts";
+import { DEV_NETWORK, DNA_PATH, SERVED_HAPP, WS_OPTIONS, appInterfacePort, closeApp, connectAdmin, dnaHashOf, messageOf, rolesSettingsFor, type DevNetwork } from "./lib/devEnv.ts";
 import { WORLD, type DeliveryStep, type Offset, type PickupStep, type WorldOrder, type WorldPerson, type WorldStore } from "./lib/world.ts";
 
 interface Point {
@@ -34,6 +37,8 @@ interface Agent {
   close: () => Promise<unknown>;
   /// Where their deliveries go: their first address, or the center.
   home?: Point;
+  /// Their payment agent, if they're paid by card (stores and drivers).
+  payments?: DevPaymentsAgent["agent"];
 }
 
 /// A store as seeded: where it is, and its menu's records by item name.
@@ -117,8 +122,22 @@ function itemOf(store: SeededStore, name: string) {
   return item;
 }
 
-/// A ledger amount: dollars, as cents.
-const dollars = (n: number) => Math.round(n * 100);
+/// The dev network's properties: reports close in five minutes, so its
+/// payments settle while you watch.
+const DEV_PROPERTIES = { report_window_secs: 300 };
+
+/// The test processor's card that always works, kept with whoever it pays.
+const TEST_CARD = { token: "tok_test_4242", save: true };
+
+/// `payer` offering their card for `leg` of an order.
+const offerCard = (payer: Agent, order: ActionHash, leg: unknown) => payer.call("dispatch", "offer_payment", { order, leg, payment: TEST_CARD, resumes: null });
+
+/// `step`, once `payees`' agents have held what's offered them.
+const once = (payees: Agent[], label: string, step: () => Promise<unknown>) =>
+  eventually(label, async () => {
+    for (const payee of payees) await payee.payments?.round();
+    await step();
+  }, 120, 500);
 
 async function createAgent(adminWs: AdminWebsocket, appPort: number, happBytes: Uint8Array, person: Pick<WorldPerson, "name">, network: DevNetwork, agentKey: AgentPubKey | null = null, appIdOverride: string | null = null): Promise<Agent> {
   agentKey ??= await adminWs.generateAgentPubKey();
@@ -267,11 +286,12 @@ async function seedDelivery(order: WorldOrder & { kind: "delivery" }, customer: 
         max_delivery_fee: 800,
         kitchen_notes: order.instructions ?? "",
         tip_cents: 300,
+        payment: TEST_CARD,
       }),
     ),
   );
   if (!reached(DELIVERY_STEPS, order.until, "Open")) return orderRef;
-  await eventually("store accepts", () => store.owner.call("dispatch", "accept_delivery_order", { order_original_action: orderRef }));
+  await once([store.owner], "store accepts", () => store.owner.call("dispatch", "accept_delivery_order", { order_original_action: orderRef }));
   if (!reached(DELIVERY_STEPS, order.until, "BidPlaced")) return orderRef;
   if (!assigned) throw new Error(`A delivery seeded as far as ${order.until} needs a driver`);
   const driver = assigned;
@@ -283,19 +303,22 @@ async function seedDelivery(order: WorldOrder & { kind: "delivery" }, customer: 
   if (!reached(DELIVERY_STEPS, order.until, "BidAccepted")) return orderRef;
   await eventually("accept bid", () => customer.call("dispatch", "accept_bid", { order_original_action: orderRef, bid_action: bidRef }));
   if (!reached(DELIVERY_STEPS, order.until, "MerchantConfirmed")) return orderRef;
-  // The driver commits, then the store starts cooking. A delivery they
-  // finished frees its place only once its money has settled, which their
-  // app does in its own time: settled here first, and waited for.
-  await eventually(
+  // The driver commits once the store holds their collateral and they hold
+  // their pay on the store's card; then the store starts cooking. A delivery
+  // they finished counts against their carry limit until it's ended, which
+  // their app does in its own time: done here first, and waited for.
+  await eventually("collateral offered", () => offerCard(driver, orderRef, { Collateral: { bid: bidRef } }));
+  await eventually("driver's pay offered", () => offerCard(store.owner, orderRef, { DriverPay: { bid: bidRef } }));
+  await once(
+    [store.owner, driver],
     "commit",
     async () => {
       for (const earlier of driverOrders.get(driver) ?? []) await driver.call("dispatch", "settle_order", earlier).catch(() => 0);
+      await driver.call("dispatch", "end_my_carries", null).catch(() => 0);
       await driver.call("dispatch", "commit_to_order", orderRef).catch((err) => {
         if (!/already committed/.test(messageOf(err))) throw err;
       });
     },
-    240,
-    500,
   );
   driverOrders.set(driver, [...(driverOrders.get(driver) ?? []), orderRef]);
   await stepOrDone("start cooking", () => store.owner.call("dispatch", "start_cooking", orderRef), /isn't waiting on the kitchen/);
@@ -324,11 +347,12 @@ async function seedPickup(order: WorldOrder & { kind: "pickup" }, customer: Agen
         catalog_ref: store.ref,
         items: items.map((i) => ({ item_ref: i.ref, quantity: 1 })),
         order_total: items.reduce((sum, i) => sum + i.price, 0),
+        payment: TEST_CARD,
       }),
     ),
   );
   if (!reached(PICKUP_STEPS, order.until, "MerchantConfirmed")) return orderRef;
-  await eventually("store accepts", () => store.owner.call("dispatch", "accept_pickup_order", { order_original_action: orderRef }));
+  await once([store.owner], "store accepts", () => store.owner.call("dispatch", "accept_pickup_order", { order_original_action: orderRef }));
   if (!reached(PICKUP_STEPS, order.until, "ReadyForPickup")) return orderRef;
   await eventually("mark ready", () => store.owner.call("dispatch", "mark_ready_for_pickup", orderRef));
   if (!reached(PICKUP_STEPS, order.until, "PickedUp")) return orderRef;
@@ -344,6 +368,7 @@ async function main() {
   const center = parseCenter();
   const adminWs = await connectAdmin();
   const agents: Agent[] = [];
+  const payments: DevPaymentsAgent[] = [];
   try {
     const existing = (await adminWs.listApps({})).filter((app) => app.installed_app_id.startsWith(SEED_PREFIX));
     if (existing.length > 0) {
@@ -354,30 +379,16 @@ async function main() {
     const appPort = await appInterfacePort(adminWs);
 
     console.log(`Seeding around ${center.lat.toFixed(4)}, ${center.lon.toFixed(4)}...`);
-    // The issuer comes first: the network's properties name it, and every
-    // identity -- seeded here or created in the app -- joins that network.
-    const issuerKey = await adminWs.generateAgentPubKey();
-    const network: DevNetwork = { properties: { issuers: [encodeHashToBase64(issuerKey)] }, builtDna: dnaHashOf(DNA_PATH) };
-    const issuer = await createAgent(adminWs, appPort, happBytes, { name: "HandShake Credits" }, network, issuerKey, ISSUER_APP_ID);
-    agents.push(issuer);
-    network.dnaHash = encodeHashToBase64(issuer.cellId[0]);
-    writeFileSync(DEV_NETWORK, `${JSON.stringify(network, null, 2)}\n`);
-    await issuer.call("ledger", "set_issuer_profile", {
-      name: "HandShake Credits (dev)",
-      description: "The dev network's issuer. Approve or decline cash-outs with `npm run issuer` in web/.",
-      contact: "",
-      payout_fee_cents: 25,
-      payout_fee_basis_points: 25,
-      min_payout_cents: dollars(5),
-      payout_days: 1,
-      recovery_wait_days: 7,
-    });
-    console.log("  ✓ HandShake Credits, the network's issuer");
-
+    const network: DevNetwork = { properties: DEV_PROPERTIES, builtDna: dnaHashOf(DNA_PATH) };
     const people = new Map<string, Agent>();
     for (const person of WORLD.people) {
       const agent = await createAgent(adminWs, appPort, happBytes, person, network);
       agents.push(agent);
+      // The network every identity joins, here or in the app.
+      if (!network.dnaHash) {
+        network.dnaHash = encodeHashToBase64(agent.cellId[0]);
+        writeFileSync(DEV_NETWORK, `${JSON.stringify(network, null, 2)}\n`);
+      }
       await agent.call("profiles", "create_profile", { display_name: person.name, roles: person.roles, created_at: now(), bio: person.bio ?? "", phone: "", avatar_data_uri: "" });
       const addresses = (person.addresses ?? []).map((a) => ({ ...a, point: near(center, a.at) }));
       for (const address of addresses) {
@@ -385,13 +396,12 @@ async function main() {
       }
       agent.home = addresses[0]?.point ?? center;
       people.set(person.slug, agent);
-      // Customers start with funds added through the issuer, as they would
-      // by card.
-      if (person.roles.includes("Requester")) {
-        await issuer.call("ledger", "issue_grant", { to: agent.key, amount: dollars(100), reference: `seed-topup-${person.slug}` });
-        await eventually(`${person.name} collecting their funds`, async () => {
-          if ((await agent.call<number>("ledger", "collect_grants", null)) === 0) throw new Error("not there yet");
-        });
+      // Stores and drivers are paid on the test processor.
+      if (person.roles.includes("Merchant") || person.roles.includes("Provider")) {
+        const agentPayments = await devPaymentsAgent(adminWs, agent.appId, (line) => console.log(`    ${line}`));
+        payments.push(agentPayments);
+        await agentPayments.agent.connect("Test", {});
+        agent.payments = agentPayments.agent;
       }
       console.log(`  ✓ ${person.name} (${person.roles.join(", ")})`);
     }
@@ -420,18 +430,10 @@ async function main() {
       console.log(`  ✓ ${store.name} -- open ${hours.opens}-${hours.closes} daily`);
     }
 
-    // A driver who's cashed out some of their earnings, paid.
-    const driver = personOf(people, "dana");
-    const earned = await driver.call<number>("ledger", "get_balance", driver.key);
-    if (earned >= dollars(5)) {
-      const cashOut = await driver.call<{ redemption: ActionHash }>("ledger", "cash_out", { issuer: issuerKey, amount: dollars(5), instructions: "" });
-      await eventually("the issuer paying Dana's cash-out", () => issuer.call("ledger", "decide_cash_out", { redemption: cashOut.redemption, outcome: { Paid: { reference: "po_seed_1" } } }));
-      console.log("  ✓ Dana cashed out $5.00, paid");
-    }
-
     console.log("\nSeeded. Sign in as anyone from the onboarding screen's \"Use an existing identity\" list.");
-    console.log("Cash-outs wait for the issuer: `npm run issuer` lists them, and pays or declines them.");
+    console.log("Stores and drivers are paid on the test processor: `npm run dev:payments` keeps their payment agents running.");
   } finally {
+    await Promise.all(payments.map((p) => p.close().catch(() => {})));
     await Promise.all(agents.map((a) => a.close().catch(() => {})));
     await adminWs.client.close();
   }

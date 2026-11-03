@@ -23,13 +23,10 @@ export const ADMIN_URL = `ws://localhost:${ADMIN_PORT}`;
 export const DNA_PATH = path.join(REPO, "dnas/handshake/workdir/handshake.dna");
 export const BUILT_HAPP = path.join(REPO, "workdir/handshake.happ");
 export const SERVED_HAPP = path.join(REPO, "web/public/handshake.happ");
-/// The dev network's DNA properties -- its issuer -- written by the seed and
+/// The dev network's DNA properties -- its short report window -- written by the seed and
 /// read by everything that installs an identity on it (the seed, the app's
 /// own onboarding), so they all join the same network. Absent outside dev.
 export const DEV_NETWORK = path.join(REPO, "web/public/dev-network.json");
-/// The dev network's issuer's app -- its own id, so it isn't one of the
-/// people the onboarding picker offers.
-export const ISSUER_APP_ID = "dev-issuer";
 
 /// Mirrors web/src/holochain/admin.ts's ROLE_NAME.
 export const ROLE_NAME = "handshake";
@@ -95,8 +92,8 @@ export function hashB64(hash: HoloHash): string {
 
 /// The dev network the seed set up, if any -- see seed.ts.
 export interface DevNetwork {
-  /// Its DNA properties: who its issuer is.
-  properties: { issuers: string[] };
+  /// Its DNA properties (`HandShakeDnaProperties`).
+  properties: Record<string, unknown>;
   /// The DNA hash of the bundle it was set up from, `uhC0k...`.
   builtDna: string;
   /// The network's own DNA hash -- the properties change it from builtDna's.
@@ -112,7 +109,7 @@ export function readDevNetwork(): DevNetwork | null {
 }
 
 /// The install-time settings that put an identity on `network` (none
-/// without one): its DNA properties, which name its issuer.
+/// without one): its DNA properties.
 export function rolesSettingsFor(network: DevNetwork | null): RoleSettingsMap | undefined {
   if (!network) return undefined;
   return { [ROLE_NAME]: { type: "provisioned", value: { membrane_proof: undefined, modifiers: { network_seed: undefined, properties: network.properties } } } };

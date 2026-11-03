@@ -16,6 +16,7 @@ import { Button, Card, EmptyState, Input, Notice, PresenceDot, SectionLabel, Ske
 import { OrderStatusTimeline } from "../../components/orders/OrderStatus";
 import { StarRating } from "../../components/StarRating";
 import { ChatPanel } from "../../components/orders/ChatPanel";
+import { DriverPayHeld, OrderPayments } from "../../components/payments/OrderPayments";
 import { HandoffStep } from "./HandoffStep";
 import { StoreCheckIn, StorePickup } from "./AtTheStore";
 import { averageRating, getRatingSummary, getReputationSummary } from "../../holochain/zomes/reputation";
@@ -418,6 +419,13 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
           <StatNumber tone="success" className="text-lg">{formatCents((row.bid?.price_offer ?? 0) + row.order.tip_cents)}</StatNumber>
         </div>
       </div>
+      {/* Their collateral, held by the store; their pay, held on its card. */}
+      {row.order.accepted_bid && BEFORE_PICKUP.includes(row.order.status) && (
+        <div className="mt-4 flex flex-col gap-2">
+          <OrderPayments order={row.hash} delivery />
+          <DriverPayHeld order={row.hash} bid={row.order.accepted_bid} me={myAgentPubKey()} />
+        </div>
+      )}
       <div className="mt-4">
         {row.order.status === "BidAccepted" && (
           <div className="flex flex-col gap-2">
