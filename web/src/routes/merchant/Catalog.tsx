@@ -7,7 +7,7 @@ import { useMerchantStores, useMyStores } from "../../store/merchantStores";
 import { useResource } from "../../lib/hooks/useResource";
 import { fetchMenu } from "../../lib/storefront/menu";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import { Skeleton } from "../../components/ui";
+import { Notice, Skeleton, Switch } from "../../components/ui";
 import { StarRating } from "../../components/StarRating";
 import { StoreSwitcher } from "../../components/store/StoreSwitcher";
 import { NewStoreForm } from "./NewStore";
@@ -23,6 +23,7 @@ import { StoreReviews } from "./catalog/StoreReviews";
 import type { MerchantCatalog as Catalog, ModifierGroup } from "../../holochain/types";
 import { useT } from "../../i18n";
 import { toast } from "../../store/toast";
+import { useAction } from "../../lib/hooks/useAction";
 
 /// The Menu tab: everything about the *currently selected* store (see
 /// `StoreSwitcher`/`merchantStores.ts`). Each store renders as its own keyed
@@ -66,6 +67,7 @@ function StoreCatalog({ storeHex, openDetailsOnArrival }: { storeHex: string; op
   const catalogRef = hexToBytes(storeHex);
   const { data, reload } = useResource(`store:${storeHex}`, () => fetchStore(catalogRef));
   const { data: rating } = useResource(`store-rating:${storeHex}`, () => getRatingSummary({ Store: catalogRef }));
+  const toggling = useAction();
 
   // The name, open state and details also show in the store switcher.
   async function reloadProfile() {
@@ -103,19 +105,22 @@ function StoreCatalog({ storeHex, openDetailsOnArrival }: { storeHex: string; op
       <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pt-4">
         <motion.div variants={fadeSlideUp} className="mb-1 flex items-center justify-between">
           <h1 className="text-xl font-black tracking-tight text-ink-900 dark:text-ink-50">{catalog.business_name}</h1>
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            animate={{ backgroundColor: catalog.is_open ? "#1c1916" : "#ff5a2b" }}
-            transition={{ duration: 0.2 }}
-            onClick={async () => {
-              await setCatalogOpen(catalogRef, !catalog.is_open);
-              await reloadProfile();
-            }}
-            className="rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-          >
-            {catalog.is_open ? t("hours.open") : t("hours.closed")} · {t("catalog.toggle")}
-          </motion.button>
+          {/* Taking orders right now, or not -- the store's own switch. */}
+          <div className="flex shrink-0 items-center gap-2.5 rounded-full bg-white py-1.5 pl-3.5 pr-1.5 shadow-[var(--shadow-card)] ring-1 ring-ink-100 dark:bg-ink-900 dark:ring-ink-800">
+            <span className={catalog.is_open ? "h-2 w-2 rounded-full bg-presence-500" : "h-2 w-2 rounded-full bg-ink-300 dark:bg-ink-600"} aria-hidden />
+            <span className="text-xs font-semibold text-ink-700 dark:text-ink-200">{catalog.is_open ? t("catalog.takingOrders") : t("catalog.notTakingOrders")}</span>
+            <Switch
+              checked={catalog.is_open}
+              disabled={toggling.busy}
+              label={t("catalog.takingOrders")}
+              onChange={(open) => toggling.run(async () => {
+                await setCatalogOpen(catalogRef, open);
+                await reloadProfile();
+              })}
+            />
+          </div>
         </motion.div>
+        {toggling.error && <Notice className="mb-2">{toggling.error}</Notice>}
         {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} />}
 
         <motion.div variants={fadeSlideUp}>

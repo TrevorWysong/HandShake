@@ -57,7 +57,8 @@ export function SplitAddressFields({
       <Field label={t("address.city")}>
         <Input maxLength={MAX_PLACE_CHARS} value={address.city} onChange={(e) => onAddressChange({ ...address, city: e.target.value })} />
       </Field>
-      <div className="grid grid-cols-2 gap-2">
+      {/* Bottom-aligned: a label that wraps doesn't push its box below its neighbour's. */}
+      <div className="grid grid-cols-2 items-end gap-2">
         <Field label={t("address.region")}>
           <Input maxLength={MAX_PLACE_CHARS} value={address.state} onChange={(e) => onAddressChange({ ...address, state: e.target.value })} />
         </Field>

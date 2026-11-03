@@ -147,7 +147,7 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
       </Field>
       <div>
         <p className="mb-1.5 text-xs font-semibold text-ink-500">{t("choicesEditor.how")}</p>
-        <div role="radiogroup" aria-label={t("choicesEditor.how")} className="grid gap-2 sm:grid-cols-3">
+        <div role="radiogroup" aria-label={t("choicesEditor.how")} className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {CHOICE_MODES.map((m) => (
             <button
               key={m.value}

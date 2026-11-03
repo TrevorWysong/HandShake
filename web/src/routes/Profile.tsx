@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronRight, Fingerprint, KeyRound, LogOut, Pencil, Radio, ShieldCheck, Store, Truck } from "lucide-react";
+import { ChevronRight, Fingerprint, KeyRound, LogOut, Pencil, ShieldCheck, Store, Truck, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import clsx from "clsx";
 import { encodeHashToBase64 } from "@holochain/client";
 import { useSession } from "../store/session";
 import { useMerchantStores, useMyStores } from "../store/merchantStores";
@@ -131,8 +132,9 @@ export function ProfilePage() {
           ) : profile?.avatar_data_uri ? (
             <img src={profile.avatar_data_uri} alt="" className="h-20 w-20 rounded-3xl object-cover shadow-xl" />
           ) : (
-            <div className="grid h-20 w-20 place-items-center rounded-3xl bg-ink-900 dark:bg-white text-handshake-400 dark:text-handshake-600 shadow-xl">
-              <Radio size={28} />
+            // No photo: their initials, as delivery apps show a person.
+            <div className="grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-handshake-400 to-handshake-600 text-2xl font-black tracking-tight text-white shadow-xl" aria-hidden>
+              {initialsOf(myName ?? profile?.display_name ?? "") || <User size={28} />}
             </div>
           )}
         </motion.div>
@@ -264,7 +266,8 @@ export function ProfilePage() {
         </Link>
       </motion.div>
 
-      <motion.div variants={fadeSlideUp} className="mb-4 grid grid-cols-2 gap-3">
+      {/* The wallet, beside a driver's deliveries -- alone, the full width. */}
+      <motion.div variants={fadeSlideUp} className={clsx("mb-4 grid gap-3", isDriver && "grid-cols-2")}>
         <Link to="/wallet" className="block rounded-2xl border border-ink-100 bg-white p-4 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 dark:border-ink-800 dark:bg-ink-900">
           <p className="flex items-center justify-between text-xs text-ink-400">
             {t("wallet.title")} <ChevronRight size={14} className="text-ink-300" />
@@ -358,4 +361,9 @@ export function ProfilePage() {
       )}
     </motion.div>
   );
+}
+
+/// A name's first two initials: "Sam Patel" is "SP".
+function initialsOf(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join("");
 }

@@ -6,7 +6,7 @@ import { BadgeCheck } from "lucide-react";
 import type { AgentPubKey, VerificationCheck } from "../holochain/types";
 import { driverVerification, getVerificationTerms, revokeVerification, verifyDriver } from "../holochain/zomes/dispatch";
 import { AccountCodeReader } from "../components/account/AccountCode";
-import { Button, Card, Checkbox, Field, Input } from "../components/ui";
+import { Button, Card, Checkbox, EmptyState, Field, Input } from "../components/ui";
 import { keyFingerprint } from "../lib/account/accountMove";
 import { formatDate } from "../lib/ui/format";
 import { useResource } from "../lib/hooks/useResource";
@@ -23,7 +23,7 @@ export default function VerifyPage() {
   const [driver, setDriver] = useState<AgentPubKey | null>(null);
   if (!terms || !me) return null;
   if (!terms.verifiers.some((v) => bytesEqual(v, me))) {
-    return <p className="p-6 text-sm text-ink-500">{t("verify.onlyVerifiers")}</p>;
+    return <EmptyState icon={<BadgeCheck size={32} />} title={t("verify.title")} subtitle={t("verify.onlyVerifiers")} />;
   }
   return (
     <div className="px-4 py-6">

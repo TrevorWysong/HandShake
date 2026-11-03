@@ -296,7 +296,8 @@ export function Cart() {
           )}
 
           <RewardsSection discounts={discounts} menuItems={menuItems} onBrowse={() => catalogRef && navigate(`/rewards/${bytesToHex(catalogRef)}/redeem`)} />
-          <PromoSection discounts={discounts} />
+          {/* Promo codes are the menu's: a cart of goodie bags has nothing for one. */}
+          {menu.length > 0 && <PromoSection discounts={discounts} />}
         </div>
 
         <div className="lg:sticky lg:top-6">
