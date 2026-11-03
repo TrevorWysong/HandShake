@@ -87,7 +87,7 @@ export function Cart() {
   // promo, and nothing scheduled for later.
   const menu = menuLines(cart.lines);
   const hasBags = menu.length < cart.lines.length;
-  const bagIssues = bagProblems(cart.lines, delivery, now.getTime() * 1000, !!agentPubKey && !!cart.merchant && bytesEqual(agentPubKey, cart.merchant));
+  const bagIssues = bagProblems(cart.lines, delivery, now.getTime() * 1000);
 
   const subtotalCents = cart.total();
   const tipCents = tipFor(subtotalCents, options.tipPercent, options.customTip);

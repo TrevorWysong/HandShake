@@ -195,7 +195,6 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.you-can-report-a-problem-once-the": "Puedes informar de un problema cuando la tienda diga que está listo.",
   "refusal.you-can-report-a-problem-once-you": "Puedes informar de un problema cuando tengas tu pedido.",
   "refusal.you-can-say-an-order-never-arrived": "Puedes decir que un pedido nunca llegó una vez que tu repartidor lo haya recogido y hasta que se entregue.",
-  "refusal.you-can-t-order-your-own-goodie": "No puedes pedir tu propia bolsa sorpresa.",
   "refusal.you-don-t-have-enough-points-for": "No tienes suficientes puntos para esa recompensa.",
   "refusal.you-ve-already-appealed-this-order": "Ya has apelado este pedido.",
   "refusal.you-ve-already-bid-on-this-order": "Ya has hecho una oferta para este pedido.",

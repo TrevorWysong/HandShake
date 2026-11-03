@@ -78,7 +78,6 @@ await runScenario(async (scenario) => {
     /pickup only/,
     "a pickup-only bag isn't delivered",
   );
-  await assert.rejects(pickup(merchant, [one(bread)], 660), /your own goodie bag/, "a store doesn't order its own bag");
   await assert.rejects(pickup(bo, [one(bread)], 600, { promo_code_ref: soup }), /apply to menu items/, "a promo is the menu's");
   console.log("[PASS] the customer's app turns away what validation would");
 
@@ -106,7 +105,6 @@ await runScenario(async (scenario) => {
   await assert.rejects(raw(cara, [line(pastries)], 660, 60), /each goodie bag once/, "a second of the same bag");
   await assert.rejects(raw(bo, [line(bread, 2)], 1320, 120), /one to a line/, "two of a bag on a line");
   await assert.rejects(raw(bo, [line(bread)], 300, 60), /order_total must be 660/, "a bag at less than its price");
-  await assert.rejects(raw(merchant, [line(bread)], 660, 60), /its own goodie bag/, "the store's own bag");
   const otherStore = actionHash(await call(bo, "catalog")<HcRecord>("publish_catalog", { business_name: "Bo's", location: ST_PETE }));
   await sync();
   await assert.rejects(
@@ -130,6 +128,15 @@ await runScenario(async (scenario) => {
   assert.deepEqual(standing, { left: 0, ordered: true }, "sold to Cara, and she has it");
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: boOrder }), /Pastry bag is sold out/, "the second order for the last bag");
   console.log("[PASS] accepting an order sells its bag, and a sold-out bag's order can't be accepted");
+
+  // ===== Its owner orders one like anyone =====
+  const own = actionHash(await retryUntilOk(() => pickup(merchant, [one(bread)], 660)));
+  await sync();
+  await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: own }));
+  await sync();
+  const [owned] = await retryUntil(() => call(merchant, "dispatch")<Standing[]>("bag_standings", [bread]), (s) => s[0].left === 1);
+  assert.deepEqual(owned, { left: 1, ordered: true }, "the owner has one, and one is left for everyone else");
+  console.log("[PASS] a store's owner can order their own bag, which takes one off sale");
 
   // ===== An order that came to nothing doesn't use up the bag =====
   const first = actionHash(await retryUntilOk(() => pickup(bo, [one(bread)], 660)));

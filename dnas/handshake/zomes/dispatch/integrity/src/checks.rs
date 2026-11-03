@@ -186,16 +186,15 @@ pub(crate) fn check_pricing(order: OrderPricing<'_>) -> ExternResult<Option<Stri
 }
 
 /// Why a goodie bag can't be on this order, if it can't: it's one of the
-/// bag, with nothing to choose, from the order's own store -- never its
-/// owner's own -- placed before the bag's window closes, for now, and had
-/// the way the bag allows. (Whether one is left is the store's to count.)
+/// bag, with nothing to choose, from the order's own store, placed before
+/// the bag's window closes, for now, and had the way the bag allows.
+/// (Whether one is left is the store's to count.) Its owner may order one
+/// like anyone -- once, and it's still one fewer for everyone else.
 fn bag_line_problem(order: &OrderPricing<'_>, line: &OrderLine, bag: &GoodieBag) -> Option<String> {
     let problem = if line.quantity != 1 || !line.selections.is_empty() {
         "a goodie bag is one to a line, with nothing to choose"
     } else if &bag.catalog_ref != order.catalog_ref {
         "a goodie bag is ordered from its own store"
-    } else if order.requester == &order.store.owner {
-        "a store can't order its own goodie bag"
     } else if order.scheduled || !bag.orderable_at(order.placed_at) {
         "a goodie bag is ordered for now, before its window closes"
     } else if !bag.supports(order.delivery) {
