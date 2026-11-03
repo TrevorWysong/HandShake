@@ -68,15 +68,10 @@ export async function readyToMove(): Promise<MoveReadiness> {
   return callZome("account", "ready_to_move", null);
 }
 
-/// Asks `issuer` to reissue the balance of the account the caller recovered.
-export async function requestReissue(issuer: AgentPubKey): Promise<void> {
-  return callZome("account", "request_reissue", issuer);
-}
-
 // --- moving to the next version of the network (docs/MIGRATION.md) ---
 
 /// Moves the caller's account to the next network and closes its chain here.
-export async function migrateOut(input: { network: Uint8Array; successor: AgentPubKey; issuer: AgentPubKey; parcel: string }): Promise<ActionHash> {
+export async function migrateOut(input: { network: Uint8Array; successor: AgentPubKey; parcel: string }): Promise<ActionHash> {
   return callZome("account", "migrate_out", input);
 }
 

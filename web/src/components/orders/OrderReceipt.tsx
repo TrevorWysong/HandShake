@@ -3,7 +3,7 @@ import { getOrderReceipt } from "../../holochain/zomes/dispatch";
 import { bytesToHex } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
 import { formatCents } from "../../lib/ui/format";
-import { portionLabel } from "../../lib/money/ledger";
+import { legLabel } from "../../lib/money/payments";
 import { Button, Card, SectionLabel, Skeleton } from "../ui";
 import { appLocale, useT } from "../../i18n";
 
@@ -74,9 +74,9 @@ export function OrderReceipt({ orderRef }: { orderRef: Uint8Array }) {
           {receipt.payments.map((payment) => (
             <div key={bytesToHex(payment.transaction)} className="flex justify-between gap-3 text-xs text-ink-500">
               <span>
-                {portionLabel(payment.leg)} <span className="font-mono text-ink-300" title={bytesToHex(payment.transaction)}>· {bytesToHex(payment.transaction).slice(0, 10)}</span>
+                {legLabel(payment.leg, true)} <span className="font-mono text-ink-300" title={bytesToHex(payment.transaction)}>· {bytesToHex(payment.transaction).slice(0, 10)}</span>
               </span>
-              <span className="tabular-nums">{formatCents(payment.amount_cents)}</span>
+              <span className="tabular-nums">{payment.charged_cents === null ? t("receipt.held", { amount: formatCents(payment.held_cents) }) : formatCents(payment.charged_cents)}</span>
             </div>
           ))}
           <p className="mt-1 text-[11px] text-ink-400">{t("receipt.verifiable")}</p>

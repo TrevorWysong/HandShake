@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, commitAndCook, currentBeacon, deliveryStatus, latestLedgerEntry, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { actionHash, commitAndCook, currentBeacon, deliveryStatus, netOn, retryUntil, retryUntilOk, settleAll, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
 
 const FOOD = 1000;
 const FEE = 400;
@@ -27,7 +27,7 @@ await runScenario(async (scenario) => {
     max_driver_changes: 1,
   }));
   const all = [customer, merchant, driver, other];
-  for (const p of all) await useTestCoordinators(p, ["dispatch", "ledger"]);
+  for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
   const call = (p: typeof customer, zome: string) => retryingCaller(p.cells[0], zome);
   const forced = (p: typeof customer, order: Uint8Array, cancellation: string, beacon: unknown) =>
@@ -115,22 +115,14 @@ await runScenario(async (scenario) => {
   // (Each app writes on its own too, so a write can lose the race for its
   // chain's head; retried.)
   await retryUntilOk(() => call(customer, "dispatch")("branch_order_for_testing", { version: cooking, next_status: "Cancelled", cancellation: "ByCustomer" }));
-  const release = await retryUntilOk(async () => call(other, "dispatch")<Uint8Array>("branch_order_for_testing", { version: cooking, next_status: "Open", release: true, beacon: await currentBeacon() }));
+  await retryUntilOk(async () => call(other, "dispatch")<Uint8Array>("branch_order_for_testing", { version: cooking, next_status: "Open", release: true, beacon: await currentBeacon() }));
   await sync();
-  const holds = await call(customer, "ledger")<{ hold: Uint8Array; payer: Uint8Array; purpose: string | Record<string, unknown> }[]>("holds_for_order", branched);
-  const driverPay = holds.find((h) => typeof h.purpose === "object" && "DriverPay" in h.purpose);
-  assert.ok(driverPay, "the customer set aside the driver's pay");
-  const last = await latestLedgerEntry(customer);
-  await assert.rejects(
-    call(customer, "ledger")("create_raw_ledger_entry_for_testing", {
-      kind: { Collect: { hold: driverPay.hold, portion: "Fee", basis: release } },
-      amount: CUSTOMER_SHARE,
-      balance: last.balance + CUSTOMER_SHARE,
-      in_hand: last.in_hand,
-      previous: last.hash,
-    }),
-    /isn't grounds/,
-    "a customer who cancelled can't take the driver's pay back on the driver's branch",
-  );
+  await settleAll(all, branched);
+  // The cancellation binds the customer whichever branch anyone settles on:
+  // they owe the food it cooked and their share of the fee of the driver
+  // they took -- once each -- and the driver is paid it from the store.
+  assert.equal(await netOn(customer, branched), -(FOOD + CUSTOMER_SHARE), "the customer pays for the food and their driver's share, once");
+  assert.equal(await netOn(other, branched), CUSTOMER_SHARE, "the driver is paid the customer's share of the fee");
+  assert.equal(await netOn(merchant, branched), FOOD, "the store keeps the food, and passes the driver's share on");
   console.log("[PASS] a customer's cancelling on one branch binds them on another");
 });

@@ -1,13 +1,12 @@
-import { Wallet, ShieldCheck, ArrowUpRight } from "lucide-react";
+import { CreditCard, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { getBalance } from "../../holochain/zomes/ledger";
+import { paymentProfileOf } from "../../holochain/zomes/payments";
 import { getReputationSummary } from "../../holochain/zomes/reputation";
 import { myAgentPubKey } from "../../holochain/client";
 import { bytesToHex } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
 import { Card, Skeleton, StatNumber } from "../../components/ui";
-import { formatCents } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { EarningsReport } from "./EarningsReport";
 import { useT } from "../../i18n";
@@ -18,7 +17,7 @@ export function Earnings() {
   const terms = useTerms();
   const me = myAgentPubKey();
   const meHex = bytesToHex(me);
-  const { data: balance } = useResource(`balance:${meHex}`, () => getBalance(me));
+  const { data: profile } = useResource(`payment-profile:${meHex}`, () => paymentProfileOf(me));
   // Driver-scoped: deliveries only, never completions at a store this
   // agent might also run.
   const { data: rep } = useResource(`driver-rep:${meHex}`, () => getReputationSummary({ Driver: me }));
@@ -30,23 +29,21 @@ export function Earnings() {
       </motion.h1>
 
       <motion.div variants={fadeSlideUp}>
+        {/* Where the money goes: straight to their own processor account. */}
         <Card className="mb-4 flex items-center gap-3 p-5">
-          <div className="grid h-11 w-11 place-items-center rounded-full bg-handshake-100 dark:bg-handshake-900/30 text-handshake-600">
-            <Wallet size={20} />
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-handshake-100 text-handshake-600 dark:bg-handshake-900/30">
+            <CreditCard size={20} />
           </div>
-          <div className="flex-1">
-            <p className="text-xs text-ink-400">{t("wallet.balance")}</p>
-            {balance === undefined ? <Skeleton className="mt-1 h-7 w-24" /> : <StatNumber className="text-2xl" tone={balance < 0 ? "danger" : "default"}>{formatCents(balance)}</StatNumber>}
-          </div>
-          {/* Cashing out, when there's something to cash out; the wallet otherwise. */}
-          <Link to="/wallet" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-handshake-500 px-3.5 py-2 text-xs font-semibold text-white">
-            {balance !== undefined && balance > 0 ? (
-              <>
-                <ArrowUpRight size={14} /> {t("wallet.cashOut")}
-              </>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("payments.gettingPaid")}</p>
+            {profile === undefined ? (
+              <Skeleton className="mt-1 h-4 w-40" />
             ) : (
-              t("wallet.title")
+              <p className="text-xs text-ink-400">{profile ? t("payments.paidInto", { processor: profile.processor }) : t("payments.notSetUp")}</p>
             )}
+          </div>
+          <Link to="/payments" className="shrink-0 rounded-full bg-handshake-500 px-3.5 py-2 text-xs font-semibold text-white">
+            {profile ? t("payments.manage") : t("payments.setUp")}
           </Link>
         </Card>
       </motion.div>

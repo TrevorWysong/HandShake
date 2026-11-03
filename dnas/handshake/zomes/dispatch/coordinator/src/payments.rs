@@ -472,6 +472,8 @@ pub fn payment_hold(input: PaymentHoldInput) -> ExternResult<Option<ActionHash>>
 /// what was charged of it once settled.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct OrderPayment {
+    /// The payee's hold -- the payment's reference.
+    pub hold: ActionHash,
     pub leg: PaymentLeg,
     pub payer: AgentPubKey,
     pub payee: AgentPubKey,
@@ -492,7 +494,7 @@ pub fn order_payments(order: ActionHash) -> ExternResult<Vec<OrderPayment>> {
             continue;
         }
         let charged = settlements.iter().find(|(_, author, s)| author == &payee && s.hold == hold_ref).map(|(_, _, s)| s.captured);
-        out.push(OrderPayment { leg: offer.leg, payer: context.payer, payee, held: hold.amount, charged });
+        out.push(OrderPayment { hold: hold_ref, leg: offer.leg, payer: context.payer, payee, held: hold.amount, charged });
     }
     Ok(out)
 }
@@ -506,6 +508,94 @@ pub fn food_given_back(order: ActionHash) -> ExternResult<bool> {
     let Some((_, merchant)) = crate::issues::parties_of(&order).ok() else { return Ok(false) };
     let Some((hold_ref, ..)) = holds_on(&order)?.into_iter().find(|(_, author, _, offer)| author == &merchant && offer.leg == PaymentLeg::Customer) else { return Ok(false) };
     Ok(settlements_on(&order)?.into_iter().any(|(_, author, s)| author == merchant && s.hold == hold_ref && !s.claims.iter().any(|c| c.part.portion == Portion::Food)))
+}
+
+// --- a party's history ---
+
+/// One part of a payment, as charged.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChargedPart {
+    pub part: Part,
+    pub amount: u64,
+}
+
+/// A payment the caller made or received: its order and leg, who paid
+/// whom, what was held and charged -- part by part once settled -- and
+/// when.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PaymentHistoryItem {
+    pub order: ActionHash,
+    /// The payee's hold -- the payment's reference.
+    pub hold: ActionHash,
+    pub leg: PaymentLeg,
+    pub payer: AgentPubKey,
+    pub payee: AgentPubKey,
+    pub held: u64,
+    pub charged: Option<u64>,
+    pub parts: Vec<ChargedPart>,
+    /// When it was settled -- or held, while it isn't.
+    pub at: Timestamp,
+}
+
+/// The most history the caller's screens read at once.
+const MAX_HISTORY_DAYS: u32 = 400;
+
+/// Every payment the caller made or received in the last `days`, newest
+/// first: for their earnings, their records, and seeing nobody skimmed.
+#[hdk_extern]
+pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
+    let me = me()?;
+    let since = Timestamp::from_micros(sys_time()?.as_micros() - i64::from(days.min(MAX_HISTORY_DAYS)) * 86_400_000_000);
+    let types = [EntryType::try_from(UnitEntryTypes::PaymentOffer)?, EntryType::try_from(UnitEntryTypes::PaymentHold)?];
+    let mut orders: Vec<ActionHash> = Vec::new();
+    for record in handshake_coordinator_support::chain::mine(&types).creates().since(since).records()? {
+        let order = match (decode_or::<PaymentOffer>(&record), decode_or::<PaymentHold>(&record)) {
+            (Some(offer), _) => Some(offer.order),
+            (None, Some(hold)) => get(hold.offer, GetOptions::default())?.and_then(|r| decode_or::<PaymentOffer>(&r)).map(|o| o.order),
+            _ => None,
+        };
+        if let Some(order) = order.filter(|o| !orders.contains(o)) {
+            orders.push(order);
+        }
+    }
+    let mut out = Vec::new();
+    for order in orders {
+        let settlements = settlements_on(&order)?;
+        let terms = get(order.clone(), GetOptions::default())?.and_then(|r| decode_or::<DeliveryOrder>(&r).map(|o| OrderTerms::of_delivery(&o)).or_else(|| decode_or::<PickupOrder>(&r).map(|o| OrderTerms::of_pickup(&o))));
+        let Some(terms) = terms else { continue };
+        for (hold_ref, payee, hold, offer) in holds_on(&order)? {
+            let Ok(Ok(context)) = leg_context(&order, &offer.leg) else { continue };
+            if context.payee != payee || (payee != me && context.payer != me) {
+                continue;
+            }
+            let held_at = get(hold_ref.clone(), GetOptions::default())?.map(|r| r.action().timestamp()).unwrap_or(since);
+            let settled = settlements.iter().find(|(_, author, s)| author == &payee && s.hold == hold_ref);
+            let (charged, parts, at) = match settled {
+                Some((settlement_ref, _, settlement)) => {
+                    let mut parts: Vec<ChargedPart> = Vec::new();
+                    for claim in settlement.claims.iter().filter(|c| c.part.portion != Portion::Food) {
+                        let bid = match &claim.part.purpose {
+                            HoldPurpose::DriverPay { bid } | HoldPurpose::Subsidy { bid } | HoldPurpose::Collateral { bid } => get(bid.clone(), GetOptions::default())?.and_then(|r| decode_or::<Bid>(&r)),
+                            HoldPurpose::Food => None,
+                        };
+                        let amount = dispatch_integrity::direct::part_share(&terms, &claim.part, bid.as_ref()).map_or(0, |(_, amount)| amount);
+                        parts.push(ChargedPart { part: claim.part.clone(), amount });
+                    }
+                    // The food is what the rest leaves: its settlement's refund is off it.
+                    if let Some(food) = settlement.claims.iter().find(|c| c.part.portion == Portion::Food) {
+                        let rest: u64 = parts.iter().map(|p| p.amount).sum();
+                        parts.push(ChargedPart { part: food.part.clone(), amount: settlement.captured.saturating_sub(rest) });
+                    }
+                    let at = get(settlement_ref.clone(), GetOptions::default())?.map(|r| r.action().timestamp()).unwrap_or(held_at);
+                    (Some(settlement.captured), parts, at)
+                }
+                None => (None, Vec::new(), held_at),
+            };
+            out.push(PaymentHistoryItem { order: order.clone(), hold: hold_ref, leg: offer.leg, payer: context.payer, payee, held: hold.amount, charged, parts, at });
+        }
+    }
+    out.sort_by(|a, b| b.at.cmp(&a.at));
+    Ok(out)
 }
 
 // --- a payer's view ---

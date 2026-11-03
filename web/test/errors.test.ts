@@ -22,15 +22,15 @@ test("a refusal reads as its sentence, in English as written", () => {
 });
 
 test("a refusal from a zome another one called reads as its sentence too", () => {
-  // The listing deposit's refusal, from the ledger, inside the catalog's call to it.
-  const nested = new Error(`Wasm runtime error while working with Ribosome: RuntimeError: holochain::core::ribosome::host_fn::call:239: Host("Wasm runtime error while working with Ribosome: RuntimeError: handshake_coordinator_support:14: Guest(\\"Not enough funds for this order.\\")")`);
-  assert.equal(describeError(nested), "Not enough funds for this order.");
+  // A payment's refusal, from dispatch, inside another zome's call to it.
+  const nested = new Error(`Wasm runtime error while working with Ribosome: RuntimeError: holochain::core::ribosome::host_fn::call:239: Host("Wasm runtime error while working with Ribosome: RuntimeError: handshake_coordinator_support:14: Guest(\\"That isn't a payment of yours.\\")")`);
+  assert.equal(describeError(nested), "That isn't a payment of yours.");
   const quoted = new Error(`RuntimeError: call:239: Host("RuntimeError: x:1: Guest(\\"The \\\\\\"Fries\\\\\\") are gone.\\")")`);
   assert.equal(describeError(quoted), 'The "Fries") are gone.');
   assert.equal(describeError(refused('The "Fries") are gone.')), 'The "Fries") are gone.', "an escaped quote and bracket don't end it");
-  const deposit = new Error(`RuntimeError: call:239: Host("RuntimeError: support:14: Guest(\\"Listing a store sets aside a 2000 deposit from your balance, returned when you close it. Add funds to list it.\\")")`);
-  assert.match(describeError(deposit), /^Listing a store sets aside a \D*20\.00\D* deposit from your balance, returned when you close it\. Add funds to list it\.$/);
-  inSpanish(() => assert.match(describeError(deposit), /^Publicar una tienda reserva un depósito de \D*20[.,]00\D* de tu saldo/));
+  const award = new Error(`RuntimeError: call:239: Host("RuntimeError: support:14: Guest(\\"You can ask for up to what the store kept: 2000.\\")")`);
+  assert.match(describeError(award), /^You can ask for up to what the store kept: \D*20\.00\D*\.$/);
+  inSpanish(() => assert.match(describeError(award), /^Puedes pedir como máximo lo que se quedó la tienda: \D*20[.,]00\D*\.$/));
 });
 
 test("in Spanish, a refusal is translated, its values filled back in", () => {
@@ -38,13 +38,12 @@ test("in Spanish, a refusal is translated, its values filled back in", () => {
     assert.equal(describeError(refused("This order isn't taking offers any more.")), "Este pedido ya no acepta ofertas.");
     assert.equal(describeError(refused("That code isn't right. 2 tries left.")), "Ese código no es correcto. Te quedan 2 intentos.");
     // An amount comes back in the network's currency, not as minor units.
-    assert.match(describeError(refused("You can cash out 2500 or more at once.")), /^Puedes retirar \D*25[.,]00\D* o más de una vez\.$/);
+    assert.match(describeError(refused("You can ask for up to what the store kept: 2500.")), /^Puedes pedir como máximo lo que se quedó la tienda: \D*25[.,]00\D*\.$/);
   });
 });
 
-test("the issuer's and the runtime's refusals are translated too, not only the zomes'", () => {
+test("the runtime's refusals are translated too, not only the zomes'", () => {
   inSpanish(() => {
-    assert.equal(describeError(new Error("Too many requests from here. Try again later.")), "Demasiadas solicitudes desde aquí. Inténtalo más tarde.");
     assert.equal(describeError(new Error("That isn't a code from HandShake's move to a new phone.")), "Ese no es un código del traslado de HandShake a un teléfono nuevo.");
   });
 });
@@ -72,5 +71,5 @@ test("a failure that passes on its own says to try again, and no trace is ever s
   assert.equal(describeError(behind), "The network is still catching up. Try again in a moment.");
   const odd = new Error(`Wasm runtime error while working with Ribosome: RuntimeError: holochain::core::ribosome::host_fn::get:51: Host("KeystoreError")`);
   assert.equal(describeError(odd), "Something went wrong. Try again.");
-  assert.equal(describeError(new Error("Couldn't reach the issuer.")), "Couldn't reach the issuer.", "plain words pass through");
+  assert.equal(describeError(new Error("Couldn't reach the store.")), "Couldn't reach the store.", "plain words pass through");
 });

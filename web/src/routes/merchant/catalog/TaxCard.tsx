@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { Download, Plus, Trash2 } from "lucide-react";
 import type { MerchantCatalog, TaxRate } from "../../../holochain/types";
-import { MAX_LABEL_CHARS } from "../../../holochain/types";
+import { MAX_LABEL_CHARS, MAX_TAX_BASIS_POINTS, MAX_TAX_RATES } from "../../../holochain/types";
 import { setTaxSettings } from "../../../holochain/zomes/catalog";
 import { Button, Card, Checkbox, Input, SectionLabel, Skeleton } from "../../../components/ui";
 import { bytesToHex } from "../../../holochain/decode";
@@ -18,9 +18,8 @@ import { percentLabel } from "../../../lib/storefront/tax";
 import { useT, type MessageKey } from "../../../i18n";
 import { useAction } from "../../../lib/hooks/useAction";
 
-/// The network's own bounds (`catalog_types::MAX_TAX_RATES`, `MAX_TAX_BASIS_POINTS`).
-const MAX_RATES = 8;
-const MAX_PERCENT = 50;
+/// The highest rate the network allows, as a percentage.
+const MAX_PERCENT = MAX_TAX_BASIS_POINTS / 100;
 
 interface DraftRate {
   name: string;
@@ -76,7 +75,7 @@ export function TaxCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCat
             </button>
           </div>
         ))}
-        {rates.length < MAX_RATES && (
+        {rates.length < MAX_TAX_RATES && (
           <Button variant="ghost" className="py-2 text-xs" onClick={() => setRates((prev) => [...prev, { name: "", percent: "" }])}>
             <Plus size={14} /> {rates.length === 0 ? t("taxEditor.add") : t("taxEditor.addAnother")}
           </Button>

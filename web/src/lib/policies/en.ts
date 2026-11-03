@@ -2,11 +2,17 @@
 // says the same rules, section for section and point for point
 // (test/policies.test.ts holds them to it); keep them in step when a rule
 // changes.
-import { HANDOFF_CODE_DIGITS, type NetworkTerms } from "../../holochain/types";
+import { HANDOFF_CODE_DIGITS, MAX_STORES_PER_OWNER, type NetworkTerms } from "../../holochain/types";
 import { formatCents } from "../ui/format";
 import { spoken, type PolicyChange, type PolicyContent, type PolicySection } from "./common";
 
 const changes: PolicyChange[] = [
+  {
+    version: "1.4",
+    date: "2026-11-03",
+    summary:
+      "Payments go straight between the people in an order, on their own card processors: the store holds the customer's card, the driver holds the store's card for their pay, and the store holds the driver's card as collateral. Each charges only what the network's rules say it's owed, and releases the rest. Credits, balances, issuers and cash-outs are gone. Listing a store needs no deposit, and one account can list up to ten stores. An arbiter's award is refunded to the customer's card by the store.",
+  },
   {
     version: "1.3",
     date: "2026-10-19",
@@ -37,35 +43,31 @@ function sections(t: NetworkTerms): PolicySection[] {
   return [
     {
       id: "payments",
-      title: "Payments and escrow",
-      summary: "Money is set aside at each step and moves only on proof or on the store's decision about the order. HandShake takes no fee.",
+      title: "Payments and holds",
+      summary: "Cards are held at each step and charged only on proof or on the store's decision about the order. HandShake takes no fee.",
       points: [
-        "When a store accepts your order, the price of the food is set aside from your balance. When you accept a driver's bid, their fee and your tip are set aside too.",
-        "The driver sets aside the value of the food when they commit to the order, before the store starts cooking it. That's their collateral: it's theirs again once the order is delivered.",
-        "When the store checks the driver in at its counter, it sets aside its share of their fee, and your share again in case it keeps them waiting.",
-        "Each part of a payment is decided once. Nobody can collect it twice or take back what's been paid.",
-        "Your balance is the arithmetic of your own signed ledger. Every entry is on the Transparency page.",
-        t.credit_limit_cents > 0
-          ? `This network lets a balance go up to ${formatCents(t.credit_limit_cents)} below zero.`
-          : "A balance can't go below zero on this network: you can only spend what you've deposited.",
+        "When you place an order, the store holds your card, on its own card processor, for the food, your share of the delivery fee at most, and your tip. Nothing is charged yet, and the store accepts your order only once the hold is in place.",
+        "When a driver commits to an order, before the store starts cooking it, the store holds the driver's card for the value of the food. That's their collateral: it's released once the order is delivered.",
+        "When a driver commits, they also hold the store's card for their fee and your tip, so they know they'll be paid before they set off.",
+        "Each hold is charged once, after the order is settled, for exactly what the network's rules say its holder is owed, and the rest is released. Nobody can charge a hold twice.",
+        "Every hold and charge is a signed record the order's people can check. Yours are on the Transparency page.",
+        "A hold lasts about a week on most cards, so an order can be scheduled at most five days ahead, and every order settles within a few days.",
         "There is no platform fee and no operator account. Stores, drivers and customers pay each other directly.",
       ],
     },
     {
-      id: "cash-out",
-      title: "Adding funds and cashing out",
-      summary: "Money comes in and goes out through this network's issuers. The network itself never holds anyone's money.",
+      id: "cards",
+      title: "Cards and getting paid",
+      summary: "Each store and driver is paid into their own Stripe, Square or Clover account. HandShake never holds anyone's money or card details.",
       points: [
-        "You add funds by paying one of the network's issuers, by card, which adds exactly that amount to your balance: adding funds is free. Your balance works like a gift card for the whole network.",
+        "Stores and drivers connect their own processor account by pasting its keys into HandShake on their own device. The keys stay in that device's keystore and never go on the network.",
+        "You type your card only into the processor's own form, in its own frame. HandShake never sees it: the app passes on a single-use token sealed to that store or driver alone.",
+        "You can let a store or driver keep your card with their processor, so next time it's one tap and repeat orders can be paid automatically. Only what the network says you owe is ever charged to it, and every charge has a signed record.",
+        "Each processor charges the store or driver it pays its usual fee on what's charged. Releasing a hold costs nothing, and customers pay no fees.",
         "Each store sets its own sales tax or VAT, as the seller. Checkout and your receipt show it: added to the price, or already included in it.",
-        "How much you can add by card grows with your account: a new account can add a little a day, and more as it orders. A card's first payment may ask your bank to confirm it's you.",
-        "If your balance is short at checkout, you pay the difference by card right there, and your order is placed as soon as it's paid. The card is saved with the issuer, never with HandShake, so next time it's one tap; you can also have your balance topped up automatically when it runs low.",
-        `To cash out, you ask an issuer to pay part of your balance to you outside the network. You can cash out ${formatCents(t.min_redemption_cents)} or more, up to what's in your balance; money held for orders and credit never can be.`,
-        "Each issuer publishes its cash-out fee, which covers its card and transfer costs, and how long payouts take; the app shows what you'll receive before you confirm.",
-        "You set up your payout account on your issuer's processor once, proving with your own key that it's yours. Your bank details never touch HandShake. A cash-out goes back to the cards you paid with first, and only what's left beyond that -- what you earned -- to your bank. A new account's first bank payout waits about a week.",
-        "If you dispute a card payment with your bank, the issuer pauses adding funds and cashing out on your account until the dispute is settled.",
-        "Your issuer records what it did with each cash-out, once: paid, with its payout reference, or declined. A declined cash-out comes back to your balance automatically.",
-        "Payout details you add are sealed so only that issuer can read them.",
+        "Your bank may ask you to confirm a payment is you. The app shows its check, in the processor's own form.",
+        "If a card is declined, you can try another on the same order. If a store doesn't hold your card in time, the order lapses and nothing is charged.",
+        "A dispute with your bank goes through the processor of whoever charged you, as with any card payment. The order's signed records are the evidence.",
       ],
     },
     {
@@ -94,7 +96,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       points: [
         "Choose the items and quantities that were missing or wrong, and add a note or photo if you like. The refund for each item is its share of what you actually paid, after any promo.",
         t.appeals
-          ? `The store accepts or declines each report. If you disagree with how it settled, you can appeal once, within ${spoken(t.appeal_window_secs)}, to one of the network's arbiters: the order itself picks which, both sides give their evidence to the arbiter alone, and the arbiter can award up to what the store kept. An award is paid to you out of the store's next cash-outs.`
+          ? `The store accepts or declines each report. If you disagree with how it settled, you can appeal once, within ${spoken(t.appeal_window_secs)}, to one of the network's arbiters: the order itself picks which, both sides give their evidence to the arbiter alone, and the arbiter can award up to what the store kept. The store refunds an award to your card.`
           : "The store accepts or declines each report, and its answer is final, as it would be if you'd ordered from it directly.",
         `The store's payment for the food waits until your window closes. Reports it accepts, or never answers, are refunded then; however late you report, the store gets at least ${spoken(t.answer_grace_secs)} to answer.`,
         "Your driver's pay doesn't wait for this window: what's inside a sealed bag isn't theirs to answer for.",
@@ -105,7 +107,7 @@ function sections(t: NetworkTerms): PolicySection[] {
           ? { who: "customers", good: "A store that ignores your report refunds it, and an arbiter can overrule one that declines unfairly.", bad: "You can appeal an order once, and the arbiter's ruling is final." }
           : { who: "customers", good: "A store that ignores your report refunds it.", bad: "A store can decline a report. Your review is how others find out if it does so unfairly." },
         t.appeals
-          ? { who: "stores", good: "You decide every refund first, and you give the arbiter your side of any appeal.", bad: "An arbiter's award comes out of your next cash-out." }
+          ? { who: "stores", good: "You decide every refund first, and you give the arbiter your side of any appeal.", bad: "You refund an arbiter's award to the customer's card." }
           : { who: "stores", good: "You decide every refund. Nobody can grant one over your answer.", bad: "You're paid for the food once the report window closes, not at the door, and reports you don't answer are refunded." },
       ],
     },
@@ -153,7 +155,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         `Drivers bid on your order with their fee and when they'd get it to you. ${spoken(t.bid_window_secs)} after the first bid, your app takes the best one.`,
         `The best bid is the lowest fee once each minute until delivery counts as ${formatCents(t.minute_value_cents)} and the driver's dropped orders count against them: a faster driver can win at a higher fee, and one who drops orders has to bid lower to win.`,
         "Bids over your fee cap, from a driver who left your order before, or from one who can't take another order right now, aren't chosen. Offers a driver lets lapse count against them like dropped orders.",
-        "A driver sees your exact address only once they've committed to your order, with their collateral set aside.",
+        "A driver sees your exact address only once they've committed to your order, with their collateral held.",
         "Choose \"I'll choose\" at checkout to see every bid and accept one yourself.",
         `Once chosen, a driver has ${spoken(t.offer_secs)} to commit, as on DoorDash. Drivers can have their app bid for them at their own rate, skipping stores other drivers report.`,
       ],
@@ -171,7 +173,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         `A driver who isn't at the store within ${spoken(t.pickup_grace_secs)} of when they're due is moved on by the store's app, and your order goes to another driver.`,
         `A driver can drop an order before picking it up. If the store had started cooking it, they answer for the food: if no other driver takes it on within ${spoken(t.replacement_window_secs)}, the order ends, you're refunded in full, and their collateral pays the store.`,
         `Each store sets how long it may keep a checked-in driver waiting past its ready time (${spoken(t.min_store_wait_secs)} to ${spoken(t.max_store_wait_secs)}; ${spoken(t.store_wait_secs)} if it doesn't), and you see it at checkout. Past that, the driver can call the store late and leave: the store pays their whole fee, your order goes to another driver, and you can cancel for a full refund.`,
-        "If your driver is late, or none has your order, you can collect it from the store yourself. The food costs the same, the store's share of the delivery fee comes back to you, and anything you set aside for a driver comes back too.",
+        "If your driver is late, or none has your order, you can collect it from the store yourself. The food costs the same, the store's share of the delivery fee comes back to you, and nothing is charged for a driver.",
         `If you choose to collect it and don't come within ${spoken(t.collection_window_secs)}, the store keeps the price of the food it made. If you cancel while a driver is on the way and nobody's late, you pay for the food and the driver's fee, as on any app.`,
         "Every deadline that costs someone else if it's claimed early (a driver leaving, a store moving a driver on, calling a store late, ending an order no driver came for, keeping the food of a customer who never came) is proved against a public time source run by independent organisations, so nobody can claim one early.",
         `An order can change drivers at most ${t.max_driver_changes} times. After that you can collect it or cancel it.`,
@@ -192,7 +194,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         "A driver bids on an order once. Their offer is their offer, so no one can fill an order's bids with their own.",
         "When a store confirms your goodie bag, it's held for you for the time the store set. If you haven't ordered it by then, it goes back on sale. Your app orders it the moment it's confirmed.",
         "A store can set a minimum order, and say it's busy, adding to its usual prep time. You see both before you order.",
-        `Listing a store sets aside a ${formatCents(t.store_listing_stake)} deposit, returned when it closes, so every store you can find is real.`,
+        `One account can list at most ${MAX_STORES_PER_OWNER} stores, and a store takes orders only once its processor account is connected, so the stores you can find are real businesses.`,
         "You claim a goodie bag once, review an order's store and driver once each, and report each item on an order once.",
         t.restricted_min_age
           ? `Age-restricted items, such as alcohol, are sold only to people ${t.restricted_min_age} or older, collected in person: you confirm your age when ordering, and the store checks your ID at the counter. They're never delivered.`
@@ -221,7 +223,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         "For each order, the store writes one outcome and one settlement of the food, and the network accepts no second of either. Every payment rests on them, so no two payments can contradict each other.",
         "The store can't take both the customer's money and the driver's collateral, can't refund more than the reports it cites are worth, and can't decide an order it cancelled went undelivered.",
         "Every decision is signed and public, and recorded against whoever it went against.",
-        ...(t.appeals ? ["An arbiter rules on an appeal once, awarding no more than was asked. The network's issuer, which holds the money behind every balance, pays the award out of the store's cash-outs."] : []),
+        ...(t.appeals ? ["An arbiter rules on an appeal once, awarding no more than was asked. The store's app refunds the award to the customer's card. The ruling is public, so a customer whose award isn't refunded has it as evidence for a dispute with their bank."] : []),
       ],
     },
     {
@@ -246,12 +248,12 @@ function sections(t: NetworkTerms): PolicySection[] {
       title: "Your account and getting it back",
       summary: "Your account is a key on your device. There's no company that can reset it, so these are the ways back in.",
       points: [
-        "Moving to a new phone: your old phone hands the account to the new one, with your balance, ratings and history. Your old phone can't spend after that.",
+        "Moving to a new phone: your old phone hands the account to the new one, with your ratings and history. Your old phone can't act for you after that.",
         "Losing your phone: your recovery phrase (twelve words you write down) or enough of your guardians (people you choose, who vouch for your new phone) bring your account back.",
-        "After a recovery, your balance is reissued to your new phone by the network's issuer, once your old phone has gone unused for the issuer's waiting period. That's so nobody holding your old phone can spend the same money twice.",
+        "After a recovery, a store or driver connects their processor account again on the new phone: its keys never leave the device they were pasted into. Holds and charges already made stand.",
         "Anyone with your recovery phrase can take over your account. Keep it on paper, never share it, and no one from HandShake will ever ask for it.",
         "Guardians can't touch your account on their own: only enough of them together, for a phone you're recovering onto. Your plan publishes their keys, never their names.",
-        "When the network moves to a new version, you move your account to it from the old app: your balance is carried over by the issuer, and your details, stores and ratings come with you. The old version stops working for your account once you move.",
+        "When the network moves to a new version, you move your account to it from the old app: your details, stores and ratings come with you. The old version stops working for your account once you move.",
       ],
     },
     {
@@ -276,8 +278,8 @@ function risks(t: NetworkTerms): string[] {
     "An order left at the door is delivered once it's left. If it's taken after that, the customer bears the loss, as with a parcel left without a signature.",
     "Nothing forces a store to answer a report about missing items before it settles the order; a store that settles early, or declines unfairly, answers to its reviews.",
     `A store could refuse to check a driver in, then collect that driver's collateral if they leave and no one else comes. The network can't tell a store that won't check drivers in from a driver who never arrived, so it sides with the store, the party with the most to lose. Drivers can report it; reports from drivers who've delivered for at least ${t.min_reporter_stores} different stores show on the store's record, and drivers' apps can skip reported stores.`,
-    "Balances are credits issued by this network's issuers. What a balance is worth outside HandShake depends on those issuers, not on HandShake.",
-    "If you lose your phone with no recovery phrase or guardians set up, your account and its balance can't be recovered by anyone. A phone found by someone else can still spend until you recover the account.",
+    "Payments are made on each store's and driver's own processor account, under its terms. A store or driver could charge a held card more than the network says they're owed; every rightful charge has a signed record, so anything beyond it is a clear case for a dispute with your bank.",
+    "If you lose your phone with no recovery phrase or guardians set up, your account can't be recovered by anyone. A phone found by someone else can still act as you until you recover the account.",
     "Everything you publish is permanent and copied across the network. Reviews, ratings and order records can't be deleted.",
     "Which store a customer key ordered from, and roughly where, is public. Using one identity for everything links those orders together.",
     "Reviews can't detect a store buying from itself under another identity to rate itself.",

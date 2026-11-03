@@ -33,6 +33,30 @@ export function readAccountCode(text: string): AgentPubKey | null {
   }
 }
 
+const MOVE_PREFIX = "handshake-move:";
+/// Holochain's prefix for a DNA hash.
+const DNA_PREFIX = [0x84, 0x2d, 0x24];
+
+/// The code a new version of the app shows for the previous one to move
+/// the account to it: its network, and its key there. The person trusts it
+/// as they trust the app they installed -- nobody else can point an
+/// account anywhere.
+export function moveCode(network: Uint8Array, agent: AgentPubKey): string {
+  return `${MOVE_PREFIX}${encodeHashToBase64(network)}.${encodeHashToBase64(agent)}`;
+}
+
+/// The network and key a move code names -- `null` for anything else.
+export function readMoveCode(text: string): { network: Uint8Array; successor: AgentPubKey } | null {
+  const [network, successor] = text.trim().replace(MOVE_PREFIX, "").split(".");
+  try {
+    const [n, a] = [decodeHashFromBase64(network ?? ""), decodeHashFromBase64(successor ?? "")];
+    const fits = (hash: Uint8Array, prefix: number[]) => hash.length === 39 && prefix.every((b, i) => hash[i] === b);
+    return fits(n, DNA_PREFIX) && fits(a, AGENT_PREFIX) ? { network: n, successor: a } : null;
+  } catch {
+    return null;
+  }
+}
+
 /// A short, readable fingerprint of a key, to compare on two screens.
 export function keyFingerprint(agent: AgentPubKey): string {
   const tail = encodeHashToBase64(agent).slice(-8);

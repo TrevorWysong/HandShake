@@ -2,20 +2,20 @@
 // no referee: the customer claims it, the store decides, and the money
 // follows that one decision.
 //
-// - Decided undelivered: the customer gets back the food, the fee and the
-//   tip; the store its share of the fee; and the driver's collateral pays
-//   the store for the food. Recorded against the driver.
+// - Decided undelivered: the customer pays nothing, the store pays the
+//   driver nothing, and the driver's collateral pays the store for the food.
+//   Recorded against the driver.
 // - A driver who turns up late can still complete it with proof; the store
 //   then decides it delivered, the driver is paid, and the claim is
 //   recorded against the customer.
 // - Only the order's store decides, once; *delivered* only on the order
 //   completed with proof, *undelivered* only on the customer's claim; and
-//   no one collects on a decision that doesn't entitle them -- so no two
+//   no one captures on a decision that doesn't entitle them -- so no two
 //   payouts can contradict each other.
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, latestLedgerEntry, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, netOn, paymentsOn, retryUntil, retryUntilOk, settleAll, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
 
 const FOOD = 1000;
 const FEE = 400;
@@ -33,21 +33,9 @@ interface Summary {
 await runScenario(async (scenario) => {
   const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({}));
   const all = [customer, merchant, driver];
-  for (const p of all) await useTestCoordinators(p, ["dispatch", "ledger"]);
+  for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
   const call = (p: typeof customer, zome: string) => retryingCaller(p.cells[0], zome);
-  const balance = (p: typeof customer) => call(p, "ledger")<number>("get_balance", p.agentPubKey);
-  /// `p` settling what it can on `order` until its balance is `expected`.
-  const settlesTo = (p: typeof customer, order: Uint8Array, expected: number) =>
-    retryUntil(
-      async () => {
-        await call(p, "dispatch")("settle_order", order).catch(() => 0);
-        return balance(p);
-      },
-      (b) => b === expected,
-      60,
-      1000,
-    );
   const summary = (target: object) => call(merchant, "reputation")<Summary>("get_reputation_summary", target);
 
   const now = Date.now() * 1000;
@@ -78,14 +66,11 @@ await runScenario(async (scenario) => {
   }
   const raw = (p: typeof customer, input: unknown) => call(p, "dispatch")("create_raw_outcome_for_testing", input);
   const latestVersion = async (ref: Uint8Array) => actionHash(await call(customer, "dispatch")<HcRecord>("get_order", ref));
-  type Hold = { hold: Uint8Array; purpose: string | object; shares: { portion: string; amount: number }[] };
-  const holdsOf = (ref: Uint8Array) => call(merchant, "ledger")<Hold[]>("holds_for_order", ref);
-  const holdFor = (holds: Hold[], purpose: string) => holds.find((h) => typeof h.purpose === "object" && purpose in h.purpose);
-  /// The store's share of the fee (its subsidy) on an order, if any.
-  const storeShare = async (ref: Uint8Array) => holdFor(await holdsOf(ref), "Subsidy")?.shares[0]?.amount ?? 0;
+  /// A leg's hold on an order -- the driver's pay, or their collateral.
+  const holdOn = async (ref: Uint8Array, leg: "DriverPay" | "Collateral") => (await paymentsOn(merchant, ref)).find((p) => typeof p.leg === "object" && leg in p.leg)!.hold;
+  const forgeSettlement = (p: typeof customer, input: unknown) => call(p, "dispatch")("create_raw_payment_record_for_testing", { Settlement: input });
 
   // ===== It never arrives =====
-  const [c0, m0, d0] = [await balance(customer), await balance(merchant), await balance(driver)];
   const lost = await outForDelivery();
   const pickedUp = await latestVersion(lost);
   await assert.rejects(call(merchant, "dispatch")("decide_not_delivered", lost), /hasn't said it never arrived/, "the store can't decide it undelivered unprompted");
@@ -101,24 +86,18 @@ await runScenario(async (scenario) => {
   await assert.rejects(raw(merchant, { order: lost, outcome: { NotDelivered: { claim } } }), /decided once/, "and the store decides once");
   console.log("[PASS] only the store decides an order never arrived, once, on the customer's claim");
 
-  // Nobody collects what this decision doesn't give them.
+  // Nobody captures what this decision doesn't give them.
   assert.ok((await call(customer, "dispatch")<{ not_delivered: boolean }>("get_order_decisions", lost)).not_delivered, "everyone sees the store's decision");
-  const holds = await holdsOf(lost);
-  const driverPay = holdFor(holds, "DriverPay")!;
-  const collateral = holdFor(holds, "Collateral")!;
-  const customerFee = driverPay.shares.find((share) => share.portion === "Fee")!.amount;
-  const forge = async (p: typeof customer, hold: Uint8Array, portion: string, amount: number) => {
-    const latest = await latestLedgerEntry(p);
-    return call(p, "ledger")("create_raw_ledger_entry_for_testing", { kind: { Collect: { hold, portion, basis: notDelivered } }, amount, balance: latest.balance + amount, in_hand: latest.in_hand, previous: latest.hash });
-  };
-  await assert.rejects(forge(driver, driverPay.hold, "Fee", customerFee), /isn't grounds/, "the driver can't take their fee on an order that never arrived");
-  // Refused either way: no grounds -- or, once the driver's app has
-  // forfeited it on the store's decision, already decided.
-  await assert.rejects(forge(driver, collateral.hold, "Collateral", FOOD), /isn't grounds|already been decided/, "nor their collateral back");
+  const [driverPay, collateral] = [await holdOn(lost, "DriverPay"), await holdOn(lost, "Collateral")];
+  const bid = (await paymentsOn(merchant, lost)).find((p) => typeof p.leg === "object" && "DriverPay" in p.leg)!.leg as { DriverPay: { bid: Uint8Array } };
+  const fee = { purpose: { DriverPay: bid.DriverPay }, portion: "Fee" };
+  await assert.rejects(forgeSettlement(driver, { hold: driverPay, claims: [{ part: fee, basis: notDelivered, via: null }], captured: FEE / 2 }), /isn't grounds/, "the driver can't take their fee on an order that never arrived");
+  await assert.rejects(forgeSettlement(driver, { hold: collateral, claims: [], captured: 0 }), /settled by whoever held it/, "nor release their own collateral");
 
-  await settlesTo(customer, lost, c0);
-  await settlesTo(driver, lost, d0 - FOOD);
-  await settlesTo(merchant, lost, m0 + FOOD);
+  await settleAll(all, lost);
+  assert.equal(await netOn(customer, lost), 0, "the customer pays nothing");
+  assert.equal(await netOn(driver, lost), -FOOD, "the driver's collateral pays for the food");
+  assert.equal(await netOn(merchant, lost), FOOD, "the store is paid for the food");
   console.log("[PASS] never arrived: the customer and store are made whole, and the driver's collateral pays for the food");
   const driverRecord = await retryUntil(() => summary({ Driver: driver.agentPubKey }), (s) => s.dispute_resolved_against_count === 1);
   assert.equal(driverRecord.total_collateral_forfeited, FOOD);
@@ -135,7 +114,6 @@ await runScenario(async (scenario) => {
   console.log("[PASS] reputation events are checked against the decisions and versions they cite");
 
   // ===== The driver turns up after all =====
-  const [c1, m1, d1] = [await balance(customer), await balance(merchant), await balance(driver)];
   const late = await outForDelivery();
   await call(customer, "dispatch")("claim_never_arrived", late);
   await sync();
@@ -147,10 +125,10 @@ await runScenario(async (scenario) => {
   await assert.rejects(call(merchant, "dispatch")("decide_not_delivered", late), /hasn't said it never arrived|already decided/, "delivered with proof, the store can't decide otherwise");
   // The store's app decides it delivered; the driver's paid on that, and
   // the store for the food once the report window has run.
-  const subsidy = await storeShare(late);
-  await settlesTo(driver, late, d1 + FEE + TIP);
-  await settlesTo(merchant, late, m1 + FOOD - subsidy);
-  await settlesTo(customer, late, c1 - FOOD - (FEE - subsidy) - TIP);
+  await settleAll(all, late);
+  assert.equal(await netOn(driver, late), FEE + TIP, "the driver is paid the whole fee and the tip");
+  assert.equal(await netOn(merchant, late), FOOD - FEE / 2, "the store, the food less its half of the fee");
+  assert.equal(await netOn(customer, late), -(FOOD + FEE / 2 + TIP), "the customer, the food, their half of the fee and the tip");
   console.log("[PASS] a driver who turns up late completes it with proof, and is paid");
   await retryUntil(() => summary({ Customer: customer.agentPubKey }), (s) => s.dispute_resolved_against_count === 1);
   console.log("[PASS] ...and the customer's claim is recorded against them");

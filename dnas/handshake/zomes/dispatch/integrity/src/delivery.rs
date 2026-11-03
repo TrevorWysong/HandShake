@@ -334,9 +334,10 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     }
 
     // The money behind each step, held by whoever it pays and cited by the
-    // step that needs it: the customer's payment when the store accepts,
-    // the driver's collateral when they commit, their pay when they pick it
-    // up. The two for a driver go with them.
+    // step that needs it: the customer's payment when the store accepts;
+    // the driver's collateral and their pay when they commit -- both
+    // before they set off, so whatever happens after, what's owed is held.
+    // The two for a driver go with them.
     let Some(terms) = terms_of(&order_original)? else { return Ok(Some("not an order".into())) };
     let bid_ref = if step.accepting { order.accepted_bid.clone() } else { prior.accepted_bid.clone() };
     let bid = match &bid_ref {
@@ -347,7 +348,7 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     let steps: [PaymentStep; 3] = [
         (step.store_accepting, false, &prior.customer_payment, &order.customer_payment, Some(PaymentLeg::Customer), "customer_payment"),
         (step.committing, true, &prior.collateral_payment, &order.collateral_payment, bid_ref.clone().map(|bid| PaymentLeg::Collateral { bid }), "collateral_payment"),
-        (step.picking_up, true, &prior.driver_payment, &order.driver_payment, bid_ref.clone().map(|bid| PaymentLeg::DriverPay { bid }), "driver_payment"),
+        (step.committing, true, &prior.driver_payment, &order.driver_payment, bid_ref.clone().map(|bid| PaymentLeg::DriverPay { bid }), "driver_payment"),
     ];
     for (this_step, for_driver, before, after, leg, field) in steps {
         if step.releasing && for_driver {

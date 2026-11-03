@@ -124,8 +124,11 @@ pub fn validate_profile(profile: &PaymentProfile) -> ExternResult<ValidateCallba
     if !processor_id(&profile.public_key, 200) {
         return invalid("a processor's public key is its letters, digits, '_' and '-'");
     }
+    if profile.processor == Processor::Test && (profile.live || handshake_governance::live_payments()) {
+        return invalid("the test processor moves no money: it's for test networks only");
+    }
     let account_ok = match profile.processor {
-        Processor::Stripe => profile.account.is_empty(),
+        Processor::Stripe | Processor::Test => profile.account.is_empty(),
         Processor::Square | Processor::Clover => processor_id(&profile.account, 64),
     };
     if !account_ok {

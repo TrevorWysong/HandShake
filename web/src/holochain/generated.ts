@@ -303,6 +303,14 @@ export interface CarryEnded {
 }
 
 /**
+ * One part of a payment, as charged.
+ */
+export interface ChargedPart {
+  part: Part;
+  amount: number;
+}
+
+/**
  * What an item reward says about one of the item's choice groups ("Size:
  * Medium", "Toppings: any two"): the options a line may have chosen in it
  * -- none listed, any -- and how many chosen units the reward pays for
@@ -634,8 +642,8 @@ export interface DeliveryOrder {
   collateral_payment: ActionHash | null;
   /**
    * The current driver's hold of their pay from the store
-   * (`Leg::DriverPay`), cited by their update picking the order up -- so
-   * no driver carries an order they aren't paid for. Gone with them.
+   * (`PaymentLeg::DriverPay`), cited by their update committing to the
+   * order -- so no driver sets off unpaid. Gone with them.
    */
   driver_payment: ActionHash | null;
   /**
@@ -1446,6 +1454,13 @@ export const MAX_PROGRAM_NAME_CHARS = 40;
 export const MAX_PROMO_CODE_CHARS = 40;
 
 /**
+ * The most uses a limit may set.
+ */
+export const MAX_PROMO_USES_PER_CUSTOMER = 1000;
+
+export const MAX_PROMO_USES_TOTAL = 1000000;
+
+/**
  * An issuer's reference for a grant (its payment's id).
  */
 export const MAX_REFERENCE_CHARS = 100;
@@ -1479,9 +1494,25 @@ export const MAX_SEALED_BYTES = 8192;
  */
 export const MAX_SEALED_GRANT_BYTES = 1024;
 
+/**
+ * The most stores one account may open. A store anyone can find is a
+ * network entry anyone can write; this bounds how many listings one
+ * account can fill a neighbourhood with, while leaving room for an owner
+ * with several locations. (Each store also needs a processor account its
+ * processor has checked before it can take an order.)
+ */
+export const MAX_STORES_PER_OWNER = 10;
+
 export const MAX_STREET_CHARS = 200;
 
 export const MAX_TAGLINE_CHARS = 120;
+
+export const MAX_TAX_BASIS_POINTS = 5000;
+
+/**
+ * The most tax rates a store may have, and the highest rate.
+ */
+export const MAX_TAX_RATES = 8;
 
 /**
  * Units a recurring order places each time.
@@ -2115,6 +2146,10 @@ export interface OrderOutcome {
  * what was charged of it once settled.
  */
 export interface OrderPayment {
+  /**
+   * The payee's hold -- the payment's reference.
+   */
+  hold: ActionHash;
   leg: PaymentLeg;
   payer: AgentPubKey;
   payee: AgentPubKey;
@@ -2313,6 +2348,29 @@ export type PaymentDue =
         amount: number;
       };
     };
+
+/**
+ * A payment the caller made or received: its order and leg, who paid
+ * whom, what was held and charged -- part by part once settled -- and
+ * when.
+ */
+export interface PaymentHistoryItem {
+  order: ActionHash;
+  /**
+   * The payee's hold -- the payment's reference.
+   */
+  hold: ActionHash;
+  leg: PaymentLeg;
+  payer: AgentPubKey;
+  payee: AgentPubKey;
+  held: number;
+  charged: number | null;
+  parts: ChargedPart[];
+  /**
+   * When it was settled -- or held, while it isn't.
+   */
+  at: Timestamp;
+}
 
 /**
  * A payee's authorization of an offer, on its own processor account --
@@ -2772,7 +2830,15 @@ export type Portion =
 /**
  * The card processor a payee is paid through.
  */
-export type Processor = "Stripe" | "Square" | "Clover";
+export type Processor =
+  | "Stripe"
+  | "Square"
+  | "Clover"
+  /**
+   * No processor at all: a stand-in for development and tests, whose
+   * payments move no money. Only ever on a test network.
+   */
+  | "Test";
 
 export interface Profile {
   /**

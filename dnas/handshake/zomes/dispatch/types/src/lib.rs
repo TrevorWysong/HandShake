@@ -500,8 +500,8 @@ pub struct DeliveryOrder {
     #[serde(default)]
     pub collateral_payment: Option<ActionHash>,
     /// The current driver's hold of their pay from the store
-    /// (`Leg::DriverPay`), cited by their update picking the order up -- so
-    /// no driver carries an order they aren't paid for. Gone with them.
+    /// (`PaymentLeg::DriverPay`), cited by their update committing to the
+    /// order -- so no driver sets off unpaid. Gone with them.
     #[serde(default)]
     pub driver_payment: Option<ActionHash>,
     /// The customer's handoff code's commitment, `sha256(pin || salt)` (see

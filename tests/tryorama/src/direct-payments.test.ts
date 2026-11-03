@@ -14,7 +14,6 @@ import {
   commitAndCook,
   handOff,
   heldBy,
-  holdOf,
   netOn,
   offerCard,
   paymentsOn,
@@ -70,19 +69,20 @@ await runScenario(async (scenario) => {
   await retryUntilOk(() => call(customer, "dispatch")("accept_bid", { order_original_action: order, bid_action: bid }));
   await sync();
   await assert.rejects(driver.cells[0].callZome({ zome_name: "dispatch", fn_name: "commit_to_order", payload: order }), /hasn't held your collateral/, "a driver commits only once the store holds their collateral");
-  await commitAndCook(driver, store, order, all);
-  assert.ok(await holdOf(store, order, { Collateral: { bid } }), "the store holds the driver's collateral");
-  console.log("[PASS] a driver commits once the store holds their collateral");
-
-  // ===== The driver's pay, held from the store's card =====
-  await handOff(driver, store, order, "MerchantHandoff", all);
-  await assert.rejects(driver.cells[0].callZome({ zome_name: "dispatch", fn_name: "pick_up_order", payload: order }), /hasn't paid you/, "a driver picks up only once their pay is held");
+  await offerCard(driver, order, { Collateral: { bid } });
+  await sync(driver);
+  await heldBy(store, order, { Collateral: { bid } }, all);
+  await assert.rejects(driver.cells[0].callZome({ zome_name: "dispatch", fn_name: "commit_to_order", payload: order }), /hasn't paid you/, "nor until their pay is held, from the store's card");
   await offerCard(store, order, { DriverPay: { bid } }, true);
   await sync(store);
   await heldBy(driver, order, { DriverPay: { bid } }, all);
+  await commitAndCook(driver, store, order, all);
+  console.log("[PASS] a driver sets off once the store holds their collateral and they hold their pay");
+
+  // ===== Picked up and delivered =====
+  await handOff(driver, store, order, "MerchantHandoff", all);
   await pickUp(driver, order);
   await sync(driver);
-  console.log("[PASS] a driver picks up once the store's card holds their pay");
 
   // ===== Delivered and settled: everyone exactly as owed =====
   await handOff(driver, customer, order, "CustomerHandoff", all);

@@ -17,13 +17,12 @@ import { useState } from "react";
 import { ArrowLeft, HeartHandshake, History, KeyRound, Smartphone } from "lucide-react";
 import type { AgentPubKey, PlanView, VouchView } from "../../holochain/types";
 import { bytesEqual, bytesToHex } from "../../holochain/decode";
-import { accountsForPhraseKey, arrive, arrivedFrom, latestActionOf, migrationsToMeOnPrevious, mySuccession, recoveryPlanOf, requestReissue, takeOver, vouchesForMe } from "../../holochain/zomes/account";
-import { hasPreviousNetwork } from "../../holochain/client";
-import { listIssuers } from "../../holochain/zomes/ledger";
+import { accountsForPhraseKey, arrive, arrivedFrom, latestActionOf, migrationsToMeOnPrevious, mySuccession, recoveryPlanOf, takeOver, vouchesForMe } from "../../holochain/zomes/account";
+import { hasPreviousNetwork, thisNetwork } from "../../holochain/client";
 import { canReceiveAccount, deviceRuntime } from "../../holochain/device";
 import { invitationFingerprint, sealedAccount } from "../../lib/account/deviceMove";
 import { catalogsOf, importStore, moveStore, previousStores } from "../../holochain/zomes/catalog";
-import { AccountCode, CodeCard, CodeReader } from "./AccountCode";
+import { AccountCode, CodeCard, CodeReader, MoveCode } from "./AccountCode";
 import { Button, Field, Input, Notice, Skeleton, Spinner, Textarea } from "../ui";
 import { adoptPredecessor, keyFingerprint, readPredecessor, type AccountPlace } from "../../lib/account/accountMove";
 import { describeError } from "../../lib/ui/errors";
@@ -214,6 +213,7 @@ function FromDevice() {
 /// records the arrival (docs/MIGRATION.md).
 function FromPreviousVersion({ me, onTaken }: { me: AgentPubKey; onTaken: (predecessor: AgentPubKey) => void }) {
   const t = useT();
+  const { data: network } = useResource("this-network", thisNetwork);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   usePolling(
@@ -235,7 +235,7 @@ function FromPreviousVersion({ me, onTaken }: { me: AgentPubKey; onTaken: (prede
     <>
       <h2 className="mb-1 text-lg font-bold">{t("restore.fromPrevious")}</h2>
       <p className="mb-4 text-sm text-ink-500">{t("restore.fromPreviousHow")}</p>
-      <AccountCode agent={me} note={t("restore.fromPreviousNote")} />
+      {network ? <MoveCode network={network} agent={me} note={t("restore.fromPreviousNote")} /> : <Skeleton className="mx-auto h-56 w-56" />}
       <p className="mt-4 flex items-center justify-center gap-2 text-xs text-ink-400">
         <Spinner className="h-3 w-3" /> {t("restore.waitingPrevious")}
       </p>
@@ -261,7 +261,6 @@ function FromPhrase({ me, onTaken }: { me: AgentPubKey; onTaken: (predecessor: A
       if (!account) throw new Error(t("restore.noAccount"));
       const head = await whereItStands(account.account);
       await takeOver({ predecessor: account.account, authority: { Phrase: { plan: account.plan, head, signature: key.sign(phraseMessage(account.account, me, head)) } } });
-      await askForReissue();
       onTaken(account.account);
     }, { stayBusy: true });
   }
@@ -302,8 +301,7 @@ function FromGuardians({ me, onTaken }: { me: AgentPubKey; onTaken: (predecessor
         if (best.vouches.length < best.plan.threshold) return;
         const head = await whereItStands(best.plan.account);
         await takeOver({ predecessor: best.plan.account, authority: { Guardians: { plan: best.plan.plan, head, vouches: best.vouches.map((v) => v.vouch) } } });
-        await askForReissue();
-        finish(best.plan.account);
+          finish(best.plan.account);
       } catch (err) {
         setError(describeError(err));
       }
@@ -355,20 +353,12 @@ async function whereItStands(account: AgentPubKey): Promise<Uint8Array> {
 
 const STANDING_ATTEMPTS = 15;
 
-/// Asks the network's issuers to reissue the recovered balance -- each one
-/// asked; only one pays (see the issuer service's recovery.ts).
-async function askForReissue() {
-  const issuers = await listIssuers().catch(() => []);
-  await Promise.allSettled(issuers.map((i) => requestReissue(i.issuer)));
-}
-
 /// The account's details, confirmed for this device: the name and phone it
 /// had (sealed to the old key, so carried only by a migration).
 function ConfirmDetails({ predecessor, place, recovered, onDone }: { predecessor: AgentPubKey; place: AccountPlace; recovered: boolean; onDone: () => void }) {
   const reconnect = useSession((s) => s.reconnect);
   const t = useT();
   const { data: known } = useResource(`predecessor:${place}:${bytesToHex(predecessor)}`, () => readPredecessor(predecessor, place));
-  const { data: issuers } = useResource("issuers", listIssuers);
   const [name, setName] = useState<string | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
   const action = useAction();
@@ -376,7 +366,6 @@ function ConfirmDetails({ predecessor, place, recovered, onDone }: { predecessor
   if (!known) return <Skeleton className="h-48 w-full" />;
   const shownName = name ?? known.name;
   const shownPhone = phone ?? known.phone;
-  const wait = issuers?.find((i) => i.profile)?.profile?.recovery_wait_days;
 
   function finish() {
     if (!known) return;
@@ -406,10 +395,8 @@ function ConfirmDetails({ predecessor, place, recovered, onDone }: { predecessor
       <Field label={t("onboarding.phone")} className="mb-3">
         <Input value={shownPhone} onChange={(e) => setPhone(e.target.value)} />
       </Field>
-      {recovered && (
-        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          {wait ? t("restore.reissueDays", { count: wait }) : t("restore.reissue")}
-        </p>
+      {recovered && (known.profile?.roles.includes("Merchant") || known.profile?.roles.includes("Provider")) && (
+        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{t("restore.reconnectPayments")}</p>
       )}
       {place === "previous" && (
         <p className="mb-3 rounded-lg bg-handshake-50 px-3 py-2 text-xs text-handshake-800">{t("restore.carried")}</p>

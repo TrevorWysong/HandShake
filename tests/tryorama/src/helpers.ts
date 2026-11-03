@@ -292,6 +292,7 @@ export async function settleAll(players: PlayerApp[], order: Uint8Array, rounds 
 
 /// One payment on an order, as `order_payments` reads it.
 export interface OrderPayment {
+  hold: Uint8Array;
   leg: PaymentLeg;
   payer: Uint8Array;
   payee: Uint8Array;
@@ -406,13 +407,15 @@ async function stepOrDone(step: () => Promise<unknown>, alreadyDone: RegExp): Pr
 /// app does its step on its own; this does them too, so a test needn't
 /// wait, and checks the order ends up cooking.
 export async function commitAndCook(driver: PlayerApp, store: PlayerApp, orderRef: Uint8Array, players: PlayerApp[]): Promise<void> {
-  // Their collateral, held by the store, before they commit.
+  // Their collateral held by the store, and their pay held from the
+  // store's card, before they commit.
   const bid = await acceptedBid(driver, orderRef);
   if (!(await holdOf(store, orderRef, { Collateral: { bid } }))) {
     await offerCard(driver, orderRef, { Collateral: { bid } });
     await dhtSync(players, driver.cells[0].cell_id[0]);
     await heldBy(store, orderRef, { Collateral: { bid } }, players);
   }
+  await driverPaid(store, driver, orderRef, players);
   // A driver's earlier deliveries count against their carry limit until
   // their app settles them, on its own schedule -- up to a minute on a slow
   // runner.
@@ -435,16 +438,14 @@ export async function commitAndCook(driver: PlayerApp, store: PlayerApp, orderRe
 /// Returns the pickup leg.
 export async function collectFromStore(driver: PlayerApp, store: PlayerApp, orderRef: Uint8Array, players: PlayerApp[]): Promise<Uint8Array> {
   const leg = await handOff(driver, store, orderRef, "MerchantHandoff", players);
-  await pickUp(driver, orderRef, store, players);
+  await pickUp(driver, orderRef);
   await dhtSync(players, driver.cells[0].cell_id[0]);
   return leg;
 }
 
 /// The driver picking up an order the store has handed over -- or finding
 /// their app already has.
-export async function pickUp(driver: PlayerApp, orderRef: Uint8Array, store?: PlayerApp, players?: PlayerApp[]): Promise<void> {
-  // Their pay, held from the store's card, before they pick it up.
-  if (store && players) await driverPaid(store, driver, orderRef, players);
+export async function pickUp(driver: PlayerApp, orderRef: Uint8Array): Promise<void> {
   await retryUntilOk(async () => {
     if ((await deliveryStatus(driver, orderRef)) === "PickedUp") return;
     await driver.cells[0].callZome({ zome_name: "dispatch", fn_name: "pick_up_order", payload: orderRef });

@@ -26,7 +26,7 @@ fn is_commit(record: &Record, driver: &AgentPubKey) -> bool {
 
 /// What `driver` has in hand, by their own chain from `chain_top` back
 /// over the carrying window.
-pub(crate) fn in_hand(driver: &AgentPubKey, chain_top: &ActionHash) -> ExternResult<InHand> {
+pub fn in_hand(driver: &AgentPubKey, chain_top: &ActionHash) -> ExternResult<InHand> {
     let top = must_get_action(chain_top.clone())?.hashed.content.timestamp();
     let since = Timestamp::from_micros(top.as_micros() - CARRY_WINDOW_MICROS);
     let order_type: ScopedEntryDefIndex = UnitEntryTypes::DeliveryOrder.try_into()?;

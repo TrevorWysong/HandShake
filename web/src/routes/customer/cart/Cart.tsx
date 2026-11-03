@@ -1,30 +1,29 @@
 // Checkout: what's in the bag, how it's to be fulfilled, its one discount,
-// what it comes to, and placing it -- paying any shortfall by card first.
+// what it comes to, and placing it -- the card it's paid with going to the
+// store with it.
 // Its parts live beside it: the delivery choices (`useDeliveryOptions`,
 // DeliverySections), the discount (`useDiscounts`, DiscountSections), the
 // money (`pricing`, CartTotals) and the bar that places it (CheckoutBar).
 // What's sent is checked again by the network: totals, discount, range,
-// hours and the hold on the balance.
+// hours, and what the store may hold on the card.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { Button, Checkbox, Notice } from "../../../components/ui";
-import { CardPaySheet } from "../../../components/money/CardPaySheet";
+import { PaySheet } from "../../../components/payments/PaySheet";
 import { ItemSheet } from "../../../components/store/ItemSheet";
 import { cartItems, menuLines, useCart } from "../../../store/cart";
 import { useSession } from "../../../store/session";
 import { useCustomerSettings } from "../../../store/roleSettings";
 import { useTerms } from "../../../store/network";
 import { createRecurringTemplate, requestDelivery, requestPickupOrder } from "../../../holochain/zomes/dispatch";
-import { getBalance, listIssuers } from "../../../holochain/zomes/ledger";
+import { paymentProfileOf } from "../../../holochain/zomes/payments";
 import { actionHash, bytesEqual, bytesToHex } from "../../../holochain/decode";
-import type { DropoffPreference, RecurrenceRule } from "../../../holochain/types";
-import { isPayable, MAX_CARD_PAYMENT_CENTS, MIN_CARD_PAYMENT_CENTS } from "../../../lib/money/issuerService";
+import type { DropoffPreference, PaymentInput, RecurrenceRule } from "../../../holochain/types";
 import { earnedFor, pointsEarned } from "../../../lib/rewards/rewards";
 import { storeStatus } from "../../../lib/storefront/storeHours";
 import { wakeTokensForOrder } from "../../../lib/network/push";
-import { POLL } from "../../../lib/network/poll";
 import { useAction } from "../../../lib/hooks/useAction";
 import { useClock } from "../../../lib/hooks/useClock";
 import { useResource } from "../../../lib/hooks/useResource";
@@ -58,9 +57,11 @@ export function Cart() {
 
   const catalogRef = cart.catalogRef;
   const { data: storeInfo } = useResource(catalogRef && `cart-store:${bytesToHex(catalogRef)}`, () => fetchCartStoreInfo(catalogRef!));
-  // What the order can draw on, and who a shortfall can be paid through by card.
-  const { data: balance } = useResource(agentPubKey && `balance:${bytesToHex(agentPubKey)}`, () => getBalance(agentPubKey!), { pollMs: POLL.signalled });
-  const { data: payIssuer } = useResource("card-issuer", async () => (await listIssuers()).find(isPayable) ?? null, { pollMs: POLL.slow });
+  // How the store is paid: its processor's card form. A store ordering from
+  // itself pays itself nothing.
+  const merchant = cart.merchant;
+  const { data: storeProfile } = useResource(merchant && `payment-profile:${bytesToHex(merchant)}`, () => paymentProfileOf(merchant!));
+  const ownStore = !!agentPubKey && !!merchant && bytesEqual(agentPubKey, merchant);
 
   const options = useDeliveryOptions();
   const discounts = useDiscounts(storeInfo, now);
@@ -73,8 +74,8 @@ export function Cart() {
   const [kitchenNotes, setKitchenNotes] = useState("");
   const [dropoffNotes, setDropoffNotes] = useState("");
   const [editing, setEditing] = useState<LineEdit | null>(null);
-  /// The card payment the order's waiting on, if any.
-  const [payingCents, setPayingCents] = useState<number | null>(null);
+  /// Choosing the card it's paid with.
+  const [paying, setPaying] = useState(false);
 
   const menuItems = storeInfo?.menuItems ?? NO_ITEMS;
   const itemOf = (itemRef: Uint8Array) => menuItems.find((row) => bytesEqual(row.hash, itemRef))?.item;
@@ -107,9 +108,6 @@ export function Cart() {
     minOrderCents: storeInfo?.minOrderCents ?? null,
     menuSubtotalCents: menu.reduce((sum, line) => sum + line.priceCents * line.quantity, 0),
     leaveAtDoorMaxCents: storeInfo?.leaveAtDoorMaxCents ?? null,
-    balanceCents: balance,
-    creditLimitCents: terms.credit_limit_cents,
-    card: { available: !!payIssuer, minCents: MIN_CARD_PAYMENT_CENTS, maxCents: MAX_CARD_PAYMENT_CENTS },
   });
   // The door only where the store allows it for an order this size.
   const dropoffPreference: DropoffPreference = options.chosenPreference === "LeaveAtDoor" && !price.doorAllowed ? "HandToMe" : options.chosenPreference;
@@ -137,13 +135,13 @@ export function Cart() {
   const orderFor = delivery && requestedDeliveryTime !== null ? new Date(requestedDeliveryTime / 1000) : now;
   const storeHours = storeInfo?.hours ? storeStatus(storeInfo.hours, orderFor) : null;
   const storeClosed = menu.length > 0 && storeHours !== null && !storeHours.open;
-  const shortUnpayable = price.shortfallCents > 0 && !price.payByCard;
+  const takesNoCards = !ownStore && storeProfile === null;
   const notes = [
     bagIssues.length > 0 && t("cart.bag.blocked"),
     storeInfo && storeInfo.busyExtraMinutes > 0 && t("cart.busy", { minutes: storeInfo.busyExtraMinutes }),
     price.shortOfMinimumCents > 0 && storeInfo?.minOrderCents != null && t("cart.minimum", { minimum: formatCents(storeInfo.minOrderCents), more: formatCents(price.shortOfMinimumCents) }),
     delivery && price.discountedSubtotalCents === 0 && t("cart.freeNoDelivery"),
-    shortUnpayable && t("cart.short", { amount: formatCents(price.shortfallCents) }),
+    takesNoCards && t("cart.noCards"),
     // Closed now, a delivery can be scheduled for when it opens (bags aside).
     storeClosed && (orderFor !== now ? t("cart.closedThen") : delivery && !hasBags ? t("cart.closedSchedule", { status: storeHours.label }) : storeHours.label),
   ].filter((note): note is string => !!note);
@@ -152,11 +150,13 @@ export function Cart() {
     storeClosed ||
     price.shortOfMinimumCents > 0 ||
     (ageRestricted && !ageConfirmed) ||
-    shortUnpayable ||
+    takesNoCards ||
+    (!ownStore && storeProfile === undefined) ||
     (delivery && (price.discountedSubtotalCents === 0 || maxFeeCents <= 0 || scheduleInvalid || (dropoffPreference === "LeaveAtDoor" && !options.doorRiskAccepted)));
 
-  // An order is placed once: it stays busy as the page moves on to it.
-  function placeOrder() {
+  // An order is placed once, with its card: it stays busy as the page
+  // moves on to it, where its payment is followed.
+  function placeOrder(payment: PaymentInput | null) {
     if (!cart.catalogRef || !cart.merchant) return;
     const [catalog_ref, merchant] = [cart.catalogRef, cart.merchant];
     const promo_code_ref = discounts.appliedPromo?.hash ?? null;
@@ -173,6 +173,7 @@ export function Cart() {
           reward,
           age_confirmed: ageRestricted && ageConfirmed,
           wake_for_store: wakeTokensForOrder().wake_for_store,
+          payment,
         });
         cart.clear();
         navigate(`/customer/pickup-orders/${bytesToHex(actionHash(record))}`);
@@ -197,6 +198,7 @@ export function Cart() {
         priority: options.priority,
         auto_match: options.autoMatch,
         ...wakeTokensForOrder(),
+        payment,
       });
       useCustomerSettings.getState().rememberCheckout({ tipPercent: options.tipPercent, feeCapCents: maxFeeCents, dropoffPreference, priority: options.priority, autoMatch: options.autoMatch });
       if (options.saveAsDefault) setSessionLocation(options.dropoff);
@@ -327,26 +329,24 @@ export function Cart() {
             notes={notes}
             disabled={blocked}
             placing={action.doing === "place"}
-            cardCents={price.payByCard ? price.cardChargeCents : null}
             kind={!delivery ? "pickup" : options.scheduled ? "scheduled" : "delivery"}
             totalCents={delivery ? price.estimatedTotalCents : price.orderTotalCents}
-            onPlace={placeOrder}
-            onPay={() => setPayingCents(price.cardChargeCents)}
+            onPlace={() => (ownStore ? placeOrder(null) : setPaying(true))}
           />
         </div>
       </div>
 
-      {payingCents !== null && payIssuer && agentPubKey && (
-        <CardPaySheet
-          issuer={payIssuer}
-          agent={agentPubKey}
-          amount={payingCents}
-          title={t("cart.pay", { amount: formatCents(payingCents) })}
-          subtitle={payingCents > price.shortfallCents ? t("cart.payShortMinimum", { minimum: formatCents(MIN_CARD_PAYMENT_CENTS) }) : t("cart.payShort")}
-          onClose={() => setPayingCents(null)}
-          onPaid={async () => {
-            setPayingCents(null);
-            await placeOrder();
+      {paying && storeProfile && (
+        <PaySheet
+          profile={storeProfile}
+          payee={cart.merchantName ?? t("cart.theStore")}
+          amountCents={price.holdCents}
+          title={t("cart.payTitle", { amount: formatCents(price.holdCents) })}
+          subtitle={delivery ? t("cart.paySubtitleDelivery") : t("cart.paySubtitlePickup")}
+          onClose={() => setPaying(false)}
+          onCard={async (card) => {
+            setPaying(false);
+            await placeOrder(card);
           }}
         />
       )}

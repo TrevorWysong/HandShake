@@ -9,7 +9,6 @@ import { Link, useNavigate } from "react-router-dom";
 import type { NetworkTerms } from "../holochain/types";
 import { POLICY_UPDATED, POLICY_VERSION, policyChanges, policyRisks, policySections, spoken, type Audience, type PolicySection } from "../lib/policies";
 import { appLocale, useT, type MessageKey } from "../i18n";
-import { formatCents } from "../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
 import { useTerms } from "../store/network";
 
@@ -164,7 +163,6 @@ function Terms({ index, terms }: { index: number; terms: NetworkTerms }) {
     [t("policies.terms.report"), spoken(terms.report_window_secs)],
     [t("policies.terms.claim"), spoken(terms.claim_grace_secs)],
     [t("policies.terms.carry"), String(terms.max_concurrent_deliveries)],
-    [t("policies.terms.credit"), terms.credit_limit_cents ? formatCents(terms.credit_limit_cents) : t("policies.terms.nothing")],
     [t("policies.terms.fee"), t("policies.terms.none")],
     ...(terms.appeals ? ([[t("policies.terms.appeal"), spoken(terms.appeal_window_secs)]] as [string, string][]) : []),
     [t("policies.terms.verified"), terms.drivers_verified ? t("policies.terms.yes") : t("policies.terms.no")],
