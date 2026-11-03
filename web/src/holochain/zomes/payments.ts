@@ -3,7 +3,7 @@
 // holds it on its own processor, asks for more, or declines it -- and later
 // captures exactly what it's owed. Amounts are always the network's.
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, OrderPayment, PaymentHistoryItem, PaymentInput, PaymentLeg, PaymentProfile, PaymentStanding } from "../types";
+import type { ActionHash, AgentPubKey, OrderPayment, PaymentHistoryItem, PaymentInput, PaymentLeg, PaymentOwed, PaymentProfile, PaymentStanding } from "../types";
 
 /// Offers a card for `leg` of `order`: a single-use token from the payee's
 /// processor's card form (or `null` for the card saved with them), sealed to
@@ -40,4 +40,10 @@ export async function paymentProfileOf(agent: AgentPubKey): Promise<PaymentProfi
 /// first, each charged part broken out once settled.
 export async function myPaymentHistory(days: number): Promise<PaymentHistoryItem[]> {
   return callZome("dispatch", "my_payment_history", days);
+}
+
+/// What the caller pays on `order` now, each for exactly what the network
+/// has held: the amounts a card form shows.
+export async function myPaymentsOwed(order: ActionHash): Promise<PaymentOwed[]> {
+  return callZome("dispatch", "my_payments_owed", order);
 }

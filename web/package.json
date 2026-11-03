@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:conductor": "node scripts/dev-conductor.ts",
+    "dev:payments": "node scripts/dev-payments.ts",
     "dev:reset": "node scripts/dev-conductor.ts --reset --seed",
     "backend": "node scripts/backend.ts",
     "seed": "node scripts/seed.ts",
@@ -17,8 +18,7 @@
     "lint": "oxlint",
     "test": "node --import tsx --test test/*.test.ts",
     "test:e2e": "playwright test",
-    "preview": "vite preview",
-    "issuer": "node scripts/issuer.ts"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@holochain/client": "^0.21.1",

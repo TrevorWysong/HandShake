@@ -31,6 +31,7 @@ import { OrderSummary } from "../../../components/orders/OrderLines";
 import { OrderIssues } from "../../../components/orders/OrderIssues";
 import { useT, type MessageKey } from "../../../i18n";
 import { HandoverCode } from "../../../components/orders/HandoverCode";
+import { OrderPayments } from "../../../components/payments/OrderPayments";
 
 // Chat is only valid once a driver is assigned (live_counterpart needs
 // order.accepted_bid to exist) and before the delivery's own terminal state.
@@ -222,6 +223,13 @@ export function OrderDetail() {
               {order.status === "Placed" && <NetworkReach action={orderRef} />}
             </Card>
           </motion.div>
+
+          {/* Their card, held by the store: confirming, or what it needs. */}
+          {order.status !== "Cancelled" && (
+            <motion.div variants={fadeSlideUp} className="mt-3">
+              <OrderPayments order={orderRef} delivery compact={order.status !== "Placed"} />
+            </motion.div>
+          )}
 
           {order.status === "Placed" && snapshot && (
             <motion.div variants={fadeSlideUp}>

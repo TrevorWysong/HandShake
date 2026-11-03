@@ -23,7 +23,7 @@ function step(label: string, cmd: string, cmdArgs: string[]) {
 }
 
 /// The DNA the dev network's identities run, if it's this build's: the seed
-/// installs everyone with the network's properties (its issuer roster),
+/// installs everyone with the network's properties,
 /// which gives a different hash from the bare build's. Recorded beside it in
 /// web/public/dev-network.json.
 function devNetworkDna(builtDna: string): string | null {

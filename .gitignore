@@ -13,6 +13,8 @@ node_modules
 .dev/
 # The dev network's properties, written by the seed (web/scripts/seed.ts)
 web/public/dev-network.json
+# The dev payment agents' address and token (web/scripts/dev-payments.ts)
+web/public/dev-payments.json
 
 # Tryorama runner logs
 tests/tryorama/.logs/

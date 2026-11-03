@@ -125,8 +125,8 @@ async function printStatus() {
   try {
     const cells = await handShakeCells(adminWs);
     const built = existsSync(DNA_PATH) ? dnaHashOf(DNA_PATH) : null;
-    // The seeded network's DNA carries its issuer in its properties, so its
-    // hash differs from the bare build's: an identity is current if it's on
+    // The seeded network's DNA carries its properties, so its hash differs
+    // from the bare build's: an identity is current if it's on
     // that network and the build hasn't changed since it was set up.
     const network = readDevNetwork();
     const current = network ? (network.builtDna === built ? network.dnaHash : null) : built;
@@ -141,7 +141,9 @@ async function main() {
   if (args.has("--reset")) {
     await stopRunningInstance();
     rmSync(CONDUCTOR_DIR, { recursive: true, force: true });
-    // Its issuer was on the wiped conductor: the seed makes a new network.
+    // Its identities were on the wiped conductor: the seed makes a new
+    // network, and the payment agents' keys and state go with them.
+    rmSync(path.join(DEV_DIR, "payments"), { recursive: true, force: true });
     rmSync(DEV_NETWORK, { force: true });
     console.log("Dev data wiped.");
   } else {

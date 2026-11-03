@@ -15,6 +15,7 @@
 // None of them take an amount or name a payment: script in the UI can only
 // ask the agent to do what the network already says is due. A runtime
 // without an agent leaves it undefined; the app then can't take payments.
+// In development the dev host stands in for the runtime (`devPayments.ts`).
 import type { Processor } from "./types";
 import { HOST } from "./host";
 
@@ -39,6 +40,8 @@ declare global {
 }
 
 /// The runtime's payment agent, where there is one.
-export function paymentsAgent(): PaymentsAgent | null {
-  return HOST === "launcher" ? (window.__HANDSHAKE_PAYMENTS__ ?? null) : null;
+export async function paymentsAgent(): Promise<PaymentsAgent | null> {
+  if (HOST === "launcher") return window.__HANDSHAKE_PAYMENTS__ ?? null;
+  if (__DEV_HOST__ && HOST === "dev") return (await import("./devPayments")).devPayments();
+  return null;
 }

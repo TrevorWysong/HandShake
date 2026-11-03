@@ -1,0 +1,19 @@
+{
+  "name": "handshake-payments",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A HandShake payee's payment agent: holds, charges and releases payments on the payee's own card processor, exactly as the network says is due.",
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@holochain/client": "^0.21.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "4.23.15",
+    "typescript": "~6.0.2"
+  }
+}

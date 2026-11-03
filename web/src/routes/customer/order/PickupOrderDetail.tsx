@@ -22,6 +22,7 @@ import { OrderIssues } from "../../../components/orders/OrderIssues";
 import { ChatPanel } from "../../../components/orders/ChatPanel";
 import { RateOrder } from "../../../components/orders/RateOrder";
 import { useT } from "../../../i18n";
+import { OrderPayments } from "../../../components/payments/OrderPayments";
 
 
 /// `OrderDetail`'s pickup sibling -- no bids, no driver, no live map, no
@@ -109,6 +110,13 @@ export function PickupOrderDetail() {
           <PickupStatusTimeline status={order.status} cancellation={order.cancellation} />
         </Card>
       </motion.div>
+
+      {/* Their card, held by the store: confirming, or what it needs. */}
+      {order.status !== "Cancelled" && (
+        <motion.div variants={fadeSlideUp} className="mt-3">
+          <OrderPayments order={orderRef} delivery={false} compact={order.status !== "Placed"} />
+        </motion.div>
+      )}
 
       {!selfOrder && order.status !== "PickedUp" && order.status !== "Cancelled" && (
         <motion.div variants={fadeSlideUp}>

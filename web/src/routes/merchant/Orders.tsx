@@ -37,6 +37,7 @@ import { NoStoreYet } from "../../components/store/NoStoreYet";
 import { Button, Card, Chip, ChipRow, EmptyState, Notice, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
 import { StatusBadge, PickupStatusBadge } from "../../components/orders/OrderStatus";
 import { ChatPanel } from "../../components/orders/ChatPanel";
+import { OrderPayments } from "../../components/payments/OrderPayments";
 import { bytesEqual } from "../../holochain/decode";
 import { formatCents, formatClockTime, formatDeadline, formatEta } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
@@ -286,7 +287,25 @@ function AnswerOrder({ row, windowSecs, now, defaultPrep, busy, onAdvance }: { r
 
 /// What the merchant can do next for an order they've accepted, or what
 /// they're waiting on.
-function ActiveActions({ row, busy, onAdvance }: { row: QueueRow; busy: boolean; onAdvance: (action: OrderAction) => void }) {
+/// A delivery's driver, until they've picked it up: the store pays them on
+/// its card.
+const PAYING_DRIVER = ["BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed", "DriverAtStore"];
+
+function ActiveActions(props: { row: QueueRow; busy: boolean; onAdvance: (action: OrderAction) => void }) {
+  const { row } = props;
+  return (
+    <>
+      {row.kind === "Delivery" && PAYING_DRIVER.includes(row.order.status) && (
+        <div className="mt-3">
+          <OrderPayments order={row.ref} delivery compact />
+        </div>
+      )}
+      <ActiveSteps {...props} />
+    </>
+  );
+}
+
+function ActiveSteps({ row, busy, onAdvance }: { row: QueueRow; busy: boolean; onAdvance: (action: OrderAction) => void }) {
   const minAge = useTerms().restricted_min_age;
   const t = useT();
   const button = (label: string, action: OrderAction) => (

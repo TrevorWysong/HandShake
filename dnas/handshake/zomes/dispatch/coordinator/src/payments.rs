@@ -206,6 +206,10 @@ pub enum PaymentDue {
         /// The action this offer answers: resume the authorization that
         /// asked for it.
         resumes: Option<ActionHash>,
+        /// The store, when the order takes its deal for first orders: one
+        /// card each, which the agent checks by its processor's card
+        /// fingerprint (on-chain, a first order is one per account).
+        newcomer_deal: Option<ActionHash>,
     },
     /// Capture `captured` of a hold -- releasing the rest; nothing, to
     /// release it all -- and record the claims.
@@ -281,7 +285,8 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
             },
             None => None,
         };
-        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes });
+        let newcomer_deal = if offer.leg == PaymentLeg::Customer { newcomer_deal(order)? } else { None };
+        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, newcomer_deal });
     }
     // Each of my holds, once nothing can change what it's owed.
     for (hold_ref, hold) in my_holds {
@@ -294,6 +299,20 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
         }
     }
     Ok(due)
+}
+
+/// The store, when `order` cites a version of a promo for first orders
+/// there.
+fn newcomer_deal(order: &ActionHash) -> ExternResult<Option<ActionHash>> {
+    let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
+    let (promo, store) = match (decode_or::<DeliveryOrder>(&record), decode_or::<PickupOrder>(&record)) {
+        (Some(o), _) => (o.promo_code_ref, o.catalog_ref),
+        (None, Some(o)) => (o.promo_code_ref, o.catalog_ref),
+        _ => return Ok(None),
+    };
+    let Some(promo) = promo else { return Ok(None) };
+    let first_only = get(promo, GetOptions::default())?.and_then(|r| decode_or::<catalog_types::PromoCode>(&r)).is_some_and(|p| p.limits.first_order_only);
+    Ok(first_only.then_some(store))
 }
 
 /// Awards against the caller's stores not yet refunded in full.
@@ -320,6 +339,15 @@ fn refunds_due(me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>> {
         }
     }
     Ok(due)
+}
+
+/// What `payee` charged of their hold `hold_ref` on `order` -- its
+/// settlement's capture, less what they've refunded from it for an
+/// arbiter's award -- or `None` while it isn't settled.
+pub(crate) fn charged_of(order: &ActionHash, payee: &AgentPubKey, hold_ref: &ActionHash, settlements: &[(ActionHash, AgentPubKey, PaymentSettlement)]) -> ExternResult<Option<u64>> {
+    let Some((settlement_ref, _, settlement)) = settlements.iter().find(|(_, author, s)| author == payee && &s.hold == hold_ref) else { return Ok(None) };
+    let refunded: u64 = refunds_on(order, payee)?.iter().filter(|r| &r.settlement == settlement_ref).map(|r| r.amount).sum();
+    Ok(Some(settlement.captured.saturating_sub(refunded)))
 }
 
 fn refunds_on(order: &ActionHash, author: &AgentPubKey) -> ExternResult<Vec<PaymentRefund>> {
@@ -493,7 +521,7 @@ pub fn order_payments(order: ActionHash) -> ExternResult<Vec<OrderPayment>> {
         if context.payee != payee {
             continue;
         }
-        let charged = settlements.iter().find(|(_, author, s)| author == &payee && s.hold == hold_ref).map(|(_, _, s)| s.captured);
+        let charged = charged_of(&order, &payee, &hold_ref, &settlements)?;
         out.push(OrderPayment { hold: hold_ref, leg: offer.leg, payer: context.payer, payee, held: hold.amount, charged });
     }
     Ok(out)
@@ -581,13 +609,15 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
                         let amount = dispatch_integrity::direct::part_share(&terms, &claim.part, bid.as_ref()).map_or(0, |(_, amount)| amount);
                         parts.push(ChargedPart { part: claim.part.clone(), amount });
                     }
-                    // The food is what the rest leaves: its settlement's refund is off it.
+                    // The food is what the rest leaves: its settlement's refund,
+                    // and any award refunded since, are off it.
+                    let charged = charged_of(&order, &payee, &hold_ref, &settlements)?.unwrap_or(settlement.captured);
                     if let Some(food) = settlement.claims.iter().find(|c| c.part.portion == Portion::Food) {
                         let rest: u64 = parts.iter().map(|p| p.amount).sum();
-                        parts.push(ChargedPart { part: food.part.clone(), amount: settlement.captured.saturating_sub(rest) });
+                        parts.push(ChargedPart { part: food.part.clone(), amount: charged.saturating_sub(rest) });
                     }
                     let at = get(settlement_ref.clone(), GetOptions::default())?.map(|r| r.action().timestamp()).unwrap_or(held_at);
-                    (Some(settlement.captured), parts, at)
+                    (Some(charged), parts, at)
                 }
                 None => (None, Vec::new(), held_at),
             };
@@ -596,6 +626,41 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
     }
     out.sort_by(|a, b| b.at.cmp(&a.at));
     Ok(out)
+}
+
+// --- what a payer owes ---
+
+/// A payment the caller owes on an order: its leg, whom it pays, and
+/// exactly what the network has them hold.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PaymentOwed {
+    pub leg: PaymentLeg,
+    pub payee: AgentPubKey,
+    pub amount: u64,
+}
+
+/// What the caller pays on `order`, now: the customer's leg, and for the
+/// driver the order has, their collateral (the driver's to pay) and their
+/// pay (the store's) -- each for exactly what the network has held, so an
+/// app shows the amount a card is held for, never one it worked out.
+#[hdk_extern]
+pub fn my_payments_owed(order: ActionHash) -> ExternResult<Vec<PaymentOwed>> {
+    let me = me()?;
+    let order = original_action_of(order)?;
+    let mut legs = vec![PaymentLeg::Customer];
+    let latest = handshake_coordinator_support::resolve_latest(order.clone())?;
+    if let Some(bid) = decode_or::<DeliveryOrder>(&latest).and_then(|o| o.accepted_bid) {
+        legs.push(PaymentLeg::DriverPay { bid: bid.clone() });
+        legs.push(PaymentLeg::Collateral { bid });
+    }
+    let mut owed = Vec::new();
+    for leg in legs {
+        let Ok(Ok(context)) = leg_context(&order, &leg) else { continue };
+        if context.payer == me && context.required > 0 {
+            owed.push(PaymentOwed { leg, payee: context.payee, amount: context.required });
+        }
+    }
+    Ok(owed)
 }
 
 // --- a payer's view ---
