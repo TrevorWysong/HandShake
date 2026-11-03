@@ -148,6 +148,8 @@ export function Browse() {
     return list;
   }, [rows, query, cuisine, sort, favoritesOnly, favoritesHex, now]);
 
+  const openCount = (count: number) => (count === 0 ? t("browse.noneOpen") : t("browse.openCount", { count }));
+
   return (
     <div className="px-4 pt-4">
       <AddressSwitcher />
@@ -193,7 +195,7 @@ export function Browse() {
 
       <h1 className="mb-1 text-xl font-black tracking-tight">{t("browse.title")}</h1>
       <p className="mb-4 text-xs text-ink-400">
-        {rows === undefined ? "…" : t("browse.openCount", { count: rows.length })}
+        {rows === undefined ? "…" : openCount(rows.filter((r) => storeStatus(r.catalog, now).open).length)}
       </p>
 
       {cuisines.length > 0 && (

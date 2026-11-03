@@ -130,7 +130,7 @@ function StorePage({ hash }: { hash: string }) {
         <div className="px-4 pt-4 lg:px-0 lg:pt-6">
           <Skeleton className="mb-2 h-7 w-2/3 max-w-sm" />
           <Skeleton className="mb-6 h-4 w-1/3 max-w-48" />
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Skeleton className="h-28 w-full" />
             <Skeleton className="h-28 w-full" />
           </div>
@@ -231,7 +231,7 @@ function StorePage({ hash }: { hash: string }) {
               <section key={category} id={categories[i].id} className="mt-6 scroll-mt-32 first:mt-4 lg:scroll-mt-6">
                 <h2 className="mb-3 text-lg font-bold tracking-tight text-ink-900 dark:text-ink-50">{category}</h2>
                 {/* One column on a phone; two on a tablet, or a wide screen with room beside the categories. */}
-                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                   {rows.map((row) => (
                     <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && !!status?.open} onAdd={() => addItem(row)} />
                   ))}

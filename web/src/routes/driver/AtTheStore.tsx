@@ -83,7 +83,7 @@ export function StoreCheckIn({ orderRef, onDone }: Props) {
       </button>
       <div className="flex items-center gap-2">
         <Input inputMode="numeric" maxLength={HANDOFF_CODE_DIGITS} placeholder={t("store.checkIn.type")} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, HANDOFF_CODE_DIGITS))} className="py-2 text-sm" />
-        <Button variant="secondary" className="px-4 py-2 text-xs" loading={action.busy} disabled={code.length !== HANDOFF_CODE_DIGITS} onClick={() => checkIn(code)}>
+        <Button variant="secondary" className="shrink-0 whitespace-nowrap px-4 py-2 text-xs" loading={action.busy} disabled={code.length !== HANDOFF_CODE_DIGITS} onClick={() => checkIn(code)}>
           {t("store.checkIn.button")}
         </Button>
       </div>

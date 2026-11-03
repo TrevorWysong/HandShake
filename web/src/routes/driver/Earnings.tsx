@@ -36,10 +36,17 @@ export function Earnings() {
           </div>
           <div className="flex-1">
             <p className="text-xs text-ink-400">{t("wallet.balance")}</p>
-            {balance === undefined ? <Skeleton className="mt-1 h-7 w-24" /> : <StatNumber className="text-2xl">{formatCents(balance)}</StatNumber>}
+            {balance === undefined ? <Skeleton className="mt-1 h-7 w-24" /> : <StatNumber className="text-2xl" tone={balance < 0 ? "danger" : "default"}>{formatCents(balance)}</StatNumber>}
           </div>
-          <Link to="/wallet" className="inline-flex items-center gap-1 rounded-full bg-handshake-500 px-3.5 py-2 text-xs font-semibold text-white">
-            <ArrowUpRight size={14} /> {t("wallet.cashOut")}
+          {/* Cashing out, when there's something to cash out; the wallet otherwise. */}
+          <Link to="/wallet" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-handshake-500 px-3.5 py-2 text-xs font-semibold text-white">
+            {balance !== undefined && balance > 0 ? (
+              <>
+                <ArrowUpRight size={14} /> {t("wallet.cashOut")}
+              </>
+            ) : (
+              t("wallet.title")
+            )}
           </Link>
         </Card>
       </motion.div>

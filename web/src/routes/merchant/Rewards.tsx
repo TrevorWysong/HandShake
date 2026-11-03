@@ -145,7 +145,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
         </div>
         <div className="min-w-0 lg:col-start-1 lg:row-start-1">
           <Section icon={Palette} title={t("rewardsAdmin.brand")}>
-            <div className="grid gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <Field label={t("rewardsAdmin.name")}>
                 <Input maxLength={40} value={draft.name} onChange={(e) => update((p) => ({ ...p, name: e.target.value }))} />
               </Field>
@@ -180,7 +180,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
           </Section>
 
           <Section icon={Sparkles} title={t("rewardsAdmin.earning")}>
-            <div className="grid gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div>
                 <div className="mb-1 flex items-baseline justify-between">
                   <span className="text-xs font-semibold text-ink-500">{t("rewardsAdmin.rate")}</span>
@@ -229,10 +229,13 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
                     </button>
                   </div>
                   <DayPicker days={hour.days} onChange={(days) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], days }))} />
-                  <div className="mt-2 grid grid-cols-3 gap-2">
+                  {/* Two times side by side, the multiplier beneath on a phone -- three abreast clips a time. */}
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
                     <Input type="time" value={clock(hour.start_minute)} onChange={(e) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], start_minute: minutes(e.target.value) }))} aria-label={t("rewardsAdmin.starts")} />
                     <Input type="time" value={clock(hour.end_minute)} onChange={(e) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], end_minute: minutes(e.target.value) || 1440 }))} aria-label={t("rewardsAdmin.ends")} />
-                    <MultiplierSelect options={[150, 200, 300, 500]} value={hour.percent} onChange={(percent) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], percent }))} />
+                    <div className="col-span-2 sm:col-span-1">
+                      <MultiplierSelect options={[150, 200, 300, 500]} value={hour.percent} onChange={(percent) => update((p) => withHour(p, i, { ...p.earn.happy_hours[i], percent }))} />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -315,7 +318,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
           </Section>
 
           <Section icon={Cake} title={t("rewardsAdmin.extras")}>
-            <div className="grid gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <Field label={t("rewardsAdmin.birthday")}>
                 <Input type="number" min={0} max={100000} value={draft.birthday_points} onChange={(e) => update((p) => ({ ...p, birthday_points: clamp(e.target.value, 0, 100000) }))} suffix="pts" />
               </Field>

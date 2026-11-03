@@ -41,6 +41,7 @@ export const es: Catalog = {
   "browse.nearbyRestaurant": "Restaurante cercano",
   "browse.title": "Restaurantes cerca de ti",
   "browse.openCount": { one: "{count} restaurante abierto cerca de ti ahora mismo.", other: "{count} restaurantes abiertos cerca de ti ahora mismo." },
+  "browse.noneOpen": "No hay nada abierto cerca de ti ahora mismo.",
   "browse.all": "Todos",
   "browse.favorites": "Favoritos",
   "browse.sort.relevance": "Relevancia",
@@ -1382,7 +1383,8 @@ export const es: Catalog = {
   "newStore.publish": "Publicar tienda",
 
   "switcher.many": "Tienda · {count} en total",
-  "catalog.toggle": "cambiar",
+  "catalog.takingOrders": "Aceptando pedidos",
+  "catalog.notTakingOrders": "Sin aceptar pedidos",
   "history.contested": { one: "Dijo que {count} pedido no llegó y sí había llegado", other: "Dijo que {count} pedidos no llegaron y sí habían llegado" },
   "account.protected": "Puedes recuperar tu cuenta",
   "account.unprotected": "Configura una forma de recuperarla",

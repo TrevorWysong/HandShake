@@ -26,7 +26,7 @@ export function StoreBags({ bags, onAdd }: { bags: BagRow[]; onAdd: (row: BagRow
       <SectionLabel icon={<PackageOpen size={13} className="text-handshake-500" />} className="mb-2">
         {t("store.bags")}
       </SectionLabel>
-      <div className="grid gap-2 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         {bags.map((row, i) => {
           const { bag } = row;
           const standing = standings?.[i];

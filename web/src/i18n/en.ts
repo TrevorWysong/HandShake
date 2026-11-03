@@ -46,6 +46,7 @@ export const en = {
   "browse.nearbyRestaurant": "Nearby restaurant",
   "browse.title": "Restaurants near you",
   "browse.openCount": { one: "{count} restaurant open near you right now.", other: "{count} restaurants open near you right now." },
+  "browse.noneOpen": "Nothing near you is open right now.",
   "browse.all": "All",
   "browse.favorites": "Favorites",
   "browse.sort.relevance": "Relevance",
@@ -1387,7 +1388,8 @@ export const en = {
   "newStore.publish": "Publish store",
 
   "switcher.many": "Store · {count} total",
-  "catalog.toggle": "toggle",
+  "catalog.takingOrders": "Taking orders",
+  "catalog.notTakingOrders": "Not taking orders",
   "history.contested": { one: "Said {count} order never arrived that had", other: "Said {count} orders never arrived that had" },
   "account.protected": "You can get your account back",
   "account.unprotected": "Set up a way back in",

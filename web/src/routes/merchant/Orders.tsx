@@ -181,7 +181,7 @@ function ActiveQueue({ stores, storeLabel, scope }: ListProps) {
   }
   return (
     // One list on a phone; a two-column board on a wide screen.
-    <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start">
       <AnimatePresence initial={false}>
         {rows.map((row) => (
           <motion.div key={row.hex} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
@@ -371,7 +371,7 @@ function OrderHistory({ stores, storeLabel, scope }: ListProps) {
   if (data === undefined) return <QueueSkeleton />;
   if (data.rows.length === 0) return <EmptyState icon={<ClipboardList size={32} />} title={t("merchantOrders.noOrders")} subtitle={t("merchantOrders.noOrdersDetail", { scope })} />;
   return (
-    <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start">
       {data.rows.map((row) => (
         <OrderCard key={row.hex} row={row} storeLabel={storeLabel(row.storeHex)} showTime>
           {mayHaveOpenIssues(row, terms, now) && <OrderIssues orderRef={row.ref} role="store" />}
