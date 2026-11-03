@@ -283,6 +283,7 @@ export const es: Catalog = {
   "receipt.paid": "Pagado",
   "receipt.verifiable": "Cada pago es una transacción en la red, firmada por ti. Cualquiera que la tenga puede comprobarla.",
   "lines.summary": { one: "Tu pedido ({count} artículo)", other: "Tu pedido ({count} artículos)" },
+  "lines.goodieBag": "Bolsa sorpresa",
   "common.show": "Mostrar",
   "common.hide": "Ocultar",
   "ledger.portion.Food": "Comida",

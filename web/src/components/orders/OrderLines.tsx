@@ -9,6 +9,7 @@ import { Card, Skeleton } from "../ui";
 import { useT } from "../../i18n";
 
 export function OrderLines({ orderRef, prices = false, className = "" }: { orderRef: Uint8Array; prices?: boolean; className?: string }) {
+  const t = useT();
   const { data: lines } = useResource(`order-lines:${bytesToHex(orderRef)}`, () => getOrderLines(orderRef));
   if (!lines) return <Skeleton className={`h-10 w-full ${className}`} />;
   return (
@@ -17,7 +18,10 @@ export function OrderLines({ orderRef, prices = false, className = "" }: { order
         <li key={i} className="flex items-start gap-2 text-sm">
           <span className="w-6 shrink-0 font-bold tabular-nums text-ink-900 dark:text-ink-50">{line.quantity}×</span>
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-ink-800 dark:text-ink-100">{line.name}</p>
+            <p className="font-semibold text-ink-800 dark:text-ink-100">
+              {line.name}
+              {line.goodie_bag && <span className="ml-1.5 whitespace-nowrap rounded-full bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-bold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">🎁 {t("lines.goodieBag")}</span>}
+            </p>
             {line.choices.length > 0 && (
               <ul className="mt-0.5 flex flex-col text-xs text-ink-500 dark:text-ink-400">
                 {line.choices.map((choice, j) => (

@@ -1541,6 +1541,10 @@ export interface LineView {
    * Each chosen option, in the order the item asks for them.
    */
   choices: string[];
+  /**
+   * Whether it's a goodie bag -- what's in it is the store's call.
+   */
+  goodie_bag: boolean;
 }
 
 /**
