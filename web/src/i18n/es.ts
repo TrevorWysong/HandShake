@@ -454,7 +454,7 @@ export const es: Catalog = {
   "rewardsAdmin.brand": "Marca",
   "rewardsAdmin.name": "Nombre del programa",
   "rewardsAdmin.pointsName": "Los puntos se llaman",
-  "rewardsAdmin.timeZone": "Zona horaria",
+  "rewardsAdmin.timeZoneNote": "En la zona horaria de tu tienda ({zone}), igual que los cumpleaños.",
   "rewardsAdmin.tagline": "Lema",
   "rewardsAdmin.taglineHint": "Cada tazón te acerca a uno gratis",
   "rewardsAdmin.colour": "Color de la tarjeta",
