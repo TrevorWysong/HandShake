@@ -21,10 +21,12 @@ export function CountUp({ value, className }: { value: number; className?: strin
     },
     [count, value],
   );
+  // The ref sits on a plain span: React calls it again for each new value,
+  // where a motion element binds the ref it was first given.
   return (
-    <motion.span ref={countTo} className={clsx("tabular-nums", className)}>
-      {text}
-    </motion.span>
+    <span ref={countTo} className={clsx("tabular-nums", className)}>
+      <motion.span>{text}</motion.span>
+    </span>
   );
 }
 
