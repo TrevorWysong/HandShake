@@ -775,6 +775,12 @@ pub fn complete_delivery(input: CompleteDeliveryInput) -> ExternResult<Record> {
     // Nothing is paid here: the money was set aside as the order went. The
     // store's conductor decides the order delivered on this update, and
     // each party collects from their own (`settlement`), told by its signal.
+    // A store that ordered from itself wrote the update, and nobody is told
+    // of their own change -- so it starts settling here, or the driver's pay
+    // would wait on its next regular sweep.
+    if merchant == agent_info()?.agent_initial_pubkey {
+        schedule("settle_soon")?;
+    }
 
     // Best-effort: reputation bumps are valuable but shouldn't block
     // delivery completion if they fail. One per role this order
