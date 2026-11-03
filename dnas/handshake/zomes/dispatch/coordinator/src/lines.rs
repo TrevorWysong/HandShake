@@ -20,6 +20,8 @@ pub struct LineView {
     pub unit_price_cents: u64,
     /// Each chosen option, in the order the item asks for them.
     pub choices: Vec<String>,
+    /// Whether it's a goodie bag -- what's in it is the store's call.
+    pub goodie_bag: bool,
 }
 
 /// An order's lines, described -- public, as the lines themselves are.
@@ -41,11 +43,11 @@ pub(crate) fn describe(lines: &[OrderLine]) -> ExternResult<Vec<LineView>> {
 
 fn describe_line(line: &OrderLine, pricer: &mut LinePricer) -> ExternResult<LineView> {
     let version = fetch(&line.priced_version)?;
-    let (name, unit_price_cents) = if let Some(item) = decode_or::<MenuItem>(&version) {
+    let (name, unit_price_cents, goodie_bag) = if let Some(item) = decode_or::<MenuItem>(&version) {
         let price = pricer.unit_price(&item, &line.selections)?.map_err(guest)?;
-        (item.name, price)
+        (item.name, price, false)
     } else if let Some(bag) = decode_or::<GoodieBag>(&version) {
-        (bag.title, bag.price_cents)
+        (bag.title, bag.price_cents, true)
     } else {
         return Err(guest("an order line isn't priced from an item"));
     };
@@ -53,7 +55,7 @@ fn describe_line(line: &OrderLine, pricer: &mut LinePricer) -> ExternResult<Line
     for selection in &line.selections {
         choices.extend(labels(selection)?);
     }
-    Ok(LineView { item_ref: line.item_ref.clone(), name, quantity: line.quantity, unit_price_cents, choices })
+    Ok(LineView { item_ref: line.item_ref.clone(), name, quantity: line.quantity, unit_price_cents, choices, goodie_bag })
 }
 
 /// What was chosen from one group, an entry per option: "2 x Extra shot",

@@ -288,6 +288,7 @@ export const en = {
   "receipt.paid": "Paid",
   "receipt.verifiable": "Each payment is a transaction on the network, signed by you. Anyone holding it can check it.",
   "lines.summary": { one: "Your order ({count} item)", other: "Your order ({count} items)" },
+  "lines.goodieBag": "Goodie bag",
   "common.show": "Show",
   "common.hide": "Hide",
   "ledger.portion.Food": "Food",
