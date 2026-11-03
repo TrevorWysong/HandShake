@@ -152,6 +152,7 @@ export const en = {
   "cart.freeNoDelivery": "A free order can't be delivered: your driver answers for what they carry. Choose pickup instead.",
   "cart.short": "Your balance is {amount} short for this order. Add funds in your wallet first.",
   "cart.closedThen": "The store isn't open at that time.",
+  "cart.closedSchedule": "{status}. Schedule it for later, under When.",
   "cart.payAndPlace": "Pay {amount} and place order",
   "cart.payAndSchedule": "Pay {amount} and schedule order",
   "cart.placePickup": "Place pickup order",
