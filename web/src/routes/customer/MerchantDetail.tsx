@@ -187,6 +187,8 @@ function StorePage({ hash }: { hash: string }) {
             <Clock size={12} />
             {status?.label}
           </span>
+          {/* Closed for now, but taking orders: one can be scheduled for when it opens. */}
+          {catalog.is_open && status && !status.open && <span className="font-semibold text-ink-500 dark:text-ink-300">{t("store.orderAhead")}</span>}
           {catalog.cuisine_type && <span>{catalog.cuisine_type}</span>}
           {catalog.busy_extra_minutes > 0 && <span className="font-semibold text-amber-600">{t("store.busy", { minutes: catalog.prep_minutes + catalog.busy_extra_minutes })}</span>}
           {record && record.late_count > 0 && <span className="font-semibold text-amber-600">{t("store.late", { count: record.late_count })}</span>}
@@ -233,7 +235,7 @@ function StorePage({ hash }: { hash: string }) {
                 {/* One column on a phone; two on a tablet, or a wide screen with room beside the categories. */}
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                   {rows.map((row) => (
-                    <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && !!status?.open} onAdd={() => addItem(row)} />
+                    <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && catalog.is_open} onAdd={() => addItem(row)} />
                   ))}
                 </div>
               </section>

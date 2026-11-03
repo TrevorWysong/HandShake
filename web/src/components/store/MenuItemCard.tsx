@@ -8,7 +8,8 @@ import { useT } from "../../i18n";
 
 /// One dish on a store's menu: what it is on the left, its photo on the
 /// right with the add button over its corner. The whole card adds it (or
-/// opens its choices) -- while it's available and the store's open.
+/// opens its choices) -- while it's available and the store takes orders,
+/// now or scheduled for when it opens.
 export function MenuItemCard({ row, rating, minAge, canAdd, onAdd }: { row: ItemRow; rating: ItemRatingSummary | undefined; minAge: number | null; canAdd: boolean; onAdd: () => void }) {
   const t = useT();
   const { item } = row;

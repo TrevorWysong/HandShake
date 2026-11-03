@@ -705,6 +705,7 @@ export const en = {
   "store.reports": { one: "{count} driver report", other: "{count} driver reports" },
   "store.minimum": "{amount} minimum",
   "store.bags": "Goodie bags available here",
+  "store.orderAhead": "Schedule a delivery for when it opens",
   "store.bag.until": "Until {time}",
   "store.bag.left": { one: "{count} left", other: "{count} left" },
   "store.bag.ordered": "Ordered",
