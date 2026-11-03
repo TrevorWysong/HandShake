@@ -114,9 +114,6 @@ fn bag_line(catalog_ref: &ActionHash, item: &OrderItem, bag: &GoodieBag, deliver
         return Err(guest(if delivery { format!("{} is pickup only.", bag.title) } else { format!("{} is delivery only.", bag.title) }));
     }
     let latest = resolve_latest(item.item_ref.clone())?;
-    if latest.action().author() == &agent_info()?.agent_initial_pubkey {
-        return Err(guest("You can't order your own goodie bag."));
-    }
     if let Some(standing) = crate::bags::bag_standings(vec![item.item_ref.clone()])?.first() {
         if standing.ordered {
             return Err(guest(format!("You've already ordered {}.", bag.title)));

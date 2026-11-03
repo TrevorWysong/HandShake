@@ -193,7 +193,6 @@ export const REFUSALS = {
   "refusal.you-can-report-a-problem-once-the": "You can report a problem once the store says it's ready.",
   "refusal.you-can-report-a-problem-once-you": "You can report a problem once you have your order.",
   "refusal.you-can-say-an-order-never-arrived": "You can say an order never arrived once your driver has picked it up, and until it's delivered.",
-  "refusal.you-can-t-order-your-own-goodie": "You can't order your own goodie bag.",
   "refusal.you-don-t-have-enough-points-for": "You don't have enough points for that reward yet.",
   "refusal.you-ve-already-appealed-this-order": "You've already appealed this order.",
   "refusal.you-ve-already-bid-on-this-order": "You've already bid on this order.",

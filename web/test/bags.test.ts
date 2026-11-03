@@ -26,10 +26,9 @@ test("a goodie bag is one to an order, and isn't a menu line", () => {
 
 test("checkout names a bag the order can't have", () => {
   const now = 9 * HOUR;
-  assert.deepEqual(bagProblems([pastries], false, now, false), [], "picked up, as it's offered");
-  assert.deepEqual(bagProblems([pastries], true, now, false).map((p) => p.reason), ["way"], "delivered: pickup only");
-  assert.deepEqual(bagProblems([pastries], false, 10 * HOUR, false).map((p) => p.reason), ["closed"], "its window has closed");
-  assert.deepEqual(bagProblems([pastries], false, now, true).map((p) => p.reason), ["own"], "never the store owner's own");
+  assert.deepEqual(bagProblems([pastries], false, now), [], "picked up, as it's offered");
+  assert.deepEqual(bagProblems([pastries], true, now).map((p) => p.closed), [false], "delivered: pickup only");
+  assert.deepEqual(bagProblems([pastries], false, 10 * HOUR).map((p) => p.closed), [true], "its window has closed");
   const both = bagLine({ hash: new Uint8Array([6]), bag: bag(true, true) });
-  assert.deepEqual(bagProblems([both], true, now, false), [], "offered both ways");
+  assert.deepEqual(bagProblems([both], true, now), [], "offered both ways");
 });
