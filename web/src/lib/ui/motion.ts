@@ -21,5 +21,4 @@ export const staggerContainer: Variants = {
 export const pageVariants: Variants = {
   initial: { opacity: 0, y: 6 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE } },
-  exit: { opacity: 0, y: -6, transition: { duration: 0.14, ease: EASE } },
 };

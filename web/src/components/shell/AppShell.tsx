@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import clsx from "clsx";
 import { Home, ClipboardList, ShoppingCart, User, Car, DollarSign, Sparkles, Gift } from "lucide-react";
 import { useSession, type Mode } from "../../store/session";
@@ -24,21 +24,18 @@ import { useWideScreen } from "../../lib/hooks/useMediaQuery";
 import { useT } from "../../i18n";
 
 
-/// Wraps whichever route is active in a short fade+rise so navigating
+/// Wraps whichever route is active in a short fade+rise, so navigating
 /// between screens (Browse -> cart, an order's detail page, switching
-/// modes) feels like one continuous app rather than a hard page swap --
-/// `mode="wait"` so the outgoing screen finishes leaving before the next
-/// one enters, `initial={false}` so the very first screen on load doesn't
-/// also play the enter animation (it's already there). Each screen starts
-/// at its top, as a page does -- once the last one has gone.
+/// modes) feels like one continuous app rather than a hard page swap. Only
+/// the arriving screen animates: the one leaving goes at once, so no screen
+/// can be left behind mid-exit -- invisible -- however it was left. Each
+/// screen starts at its top, as a page does.
 function AnimatedOutlet() {
   const location = useLocation();
   return (
-    <AnimatePresence mode="wait" initial={false} onExitComplete={() => window.scrollTo(0, 0)}>
-      <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" exit="exit">
-        <Outlet />
-      </motion.div>
-    </AnimatePresence>
+    <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" onAnimationStart={() => window.scrollTo(0, 0)}>
+      <Outlet />
+    </motion.div>
   );
 }
 
