@@ -4,6 +4,7 @@ import { Check, PackageOpen, Plus } from "lucide-react";
 import { bytesEqual, bytesToHex } from "../../holochain/decode";
 import { bagStandings } from "../../holochain/zomes/dispatch";
 import { useCart } from "../../store/cart";
+import { useSession } from "../../store/session";
 import type { BagRow } from "../../lib/storefront/bags";
 import { formatCents, formatClockTime } from "../../lib/ui/format";
 import { fadeSlideUp } from "../../lib/ui/motion";
@@ -14,10 +15,14 @@ import { useT } from "../../i18n";
 /// A store's goodie bags -- end-of-day surplus at a discount -- each added
 /// to the cart like an item, and had however the rest of the order is, if
 /// the bag allows it (checkout says when it doesn't). How many are left,
-/// and whether the customer has one already, come from the network.
-export function StoreBags({ bags, onAdd }: { bags: BagRow[]; onAdd: (row: BagRow) => void }) {
+/// and whether the customer has one already, come from the network. Its
+/// owner can't order their own (the network refuses it), so sees them as
+/// theirs.
+export function StoreBags({ bags, owner, onAdd }: { bags: BagRow[]; owner: Uint8Array; onAdd: (row: BagRow) => void }) {
   const t = useT();
   const lines = useCart((s) => s.lines);
+  const me = useSession((s) => s.agentPubKey);
+  const mine = !!me && bytesEqual(me, owner);
   const refs = bags.map((row) => row.hash);
   const { data: standings } = useResource(bags.length > 0 ? `bag-standings:${refs.map(bytesToHex).join(",")}` : null, () => bagStandings(refs));
 
@@ -34,7 +39,7 @@ export function StoreBags({ bags, onAdd }: { bags: BagRow[]; onAdd: (row: BagRow
           const standing = standings?.[i];
           const inCart = lines.some((line) => line.bag && bytesEqual(line.itemRef, row.hash));
           const only = bag.supports_pickup && bag.supports_delivery ? null : bag.supports_pickup ? t("cart.bag.pickupOnly") : t("cart.bag.deliveryOnly");
-          const unavailable = standing?.ordered ? t("store.bag.ordered") : standing?.left === 0 ? t("store.bag.soldOut") : null;
+          const unavailable = mine ? t("store.bag.yours") : standing?.ordered ? t("store.bag.ordered") : standing?.left === 0 ? t("store.bag.soldOut") : null;
           return (
             <div key={bytesToHex(row.hash)} className="flex items-center gap-3 rounded-2xl border border-ink-100 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
               {bag.photo_data_uri ? (
