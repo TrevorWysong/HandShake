@@ -10,6 +10,11 @@
 // named `..._cents`, in the network's currency). A zome's lowercase
 // message is a diagnostic, not a sentence for people: it's shown as
 // something having gone wrong, with the detail kept for support.
+//
+// A write the network's rules refused carries no Guest(...): its reason
+// follows "Validation failed while committing:", and is shown as what was
+// refused. One that only needs the network to catch up says to try again.
+// Any other runtime trace is never shown as it is.
 import { REFUSALS } from "../../i18n/refusals";
 import { t } from "../../i18n";
 import { formatCents } from "./format";
@@ -62,9 +67,29 @@ function guestText(raw: string): string | null {
   return found?.text ?? null;
 }
 
+/// Why the network's rules refused a write, as its rule says it --
+/// unescaped from however many calls it came back through.
+function validationText(raw: string): string | null {
+  const reason = raw.match(/Validation failed while committing: ([\s\S]*?)(?:\\*"\)|$)/)?.[1];
+  return reason ? reason.replace(/\\+(["\\])/g, "$1").trim() : null;
+}
+
+/// A failure that passes on its own: what a write rests on hasn't arrived
+/// yet, or this device's database was busy.
+const RETRYABLE = /may be retried|DepMissingFromDht|database is locked|timed out|Timeout/i;
+
+/// A runtime trace, not words for people.
+const TECHNICAL = /RuntimeError|Ribosome|Source chain error|WasmError|Host\(|Guest\(|\w+::\w+/;
+
+/// `text` as a sentence: capitalised, and ending in a full stop.
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1) + (/[.!?]$/.test(text) ? "" : ".");
+
 export function describeError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const text = guestText(raw);
-  if (text === null) return translated(raw) ?? raw;
-  return translated(text) ?? (/^[a-z]/.test(text) ? t("error.unexpected", { detail: text }) : text);
+  if (text !== null) return translated(text) ?? (/^[a-z]/.test(text) ? t("error.unexpected", { detail: text }) : text);
+  const refused = validationText(raw);
+  if (refused) return translated(sentence(refused)) ?? t("error.refused", { reason: sentence(refused) });
+  if (RETRYABLE.test(raw)) return t("error.retry");
+  return translated(raw) ?? (TECHNICAL.test(raw) ? t("error.generic") : raw);
 }

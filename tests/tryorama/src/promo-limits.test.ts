@@ -71,11 +71,20 @@ await runScenario(async (scenario) => {
   console.log("[PASS] a new-customers code works on a customer's first order here, and only that");
 
   // ===== Once per customer =====
-  await retryUntilOk(() => order(ana, once));
+  const used = actionHash(await retryUntilOk(() => order(ana, once)));
   assert.equal((await standing(ana, once)).uses, 1);
   await assert.rejects(order(ana, once), /as many times as it allows/);
   await assert.rejects(raw(ana, once), /as many times as it allows/, "the network refuses it too");
-  console.log("[PASS] a once-per-customer code works once");
+  // Still used once the store takes it on and the customer's app confirms
+  // so -- a confirmation isn't a decline, though the two look alike.
+  await sync();
+  await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: used }));
+  await sync();
+  const confirmation = await retryUntil(() => call(ana, "dispatch")<ActionHash | null>("confirm_what_i_saw", used), (hash) => hash !== null);
+  assert.ok(confirmation, "the customer's app confirms the store started");
+  const confirmed = await standing(ana, once);
+  assert.deepEqual([confirmed.uses, confirmed.blocked], [1, "UsedUp"], "confirmed, still used");
+  console.log("[PASS] a once-per-customer code works once, and stays used once the store takes the order on");
 
   // ===== Once a day =====
   await retryUntilOk(() => order(ben, daily));

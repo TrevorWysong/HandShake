@@ -167,6 +167,11 @@ export function describeLimits(promo: PromoCode, standing?: PromoStanding): stri
 }
 
 /// Why a customer can't use a promo now, in words.
+/// Whether a code is out of reach for good -- used up, sold out, or for
+/// newcomers they no longer are -- rather than for now (again tomorrow,
+/// once their card is verified).
+export const blockedForGood = (block: PromoBlock | null | undefined) => block === "UsedUp" || block === "SoldOut" || block === "FirstOrderOnly";
+
 export function describeBlock(block: PromoBlock): string {
   if (block === "FirstOrderOnly") return t("deals.block.first");
   if (block === "UsedUp") return t("deals.block.used");
