@@ -459,7 +459,7 @@ export const en = {
   "rewardsAdmin.brand": "Brand",
   "rewardsAdmin.name": "Program name",
   "rewardsAdmin.pointsName": "Points are called",
-  "rewardsAdmin.timeZone": "Time zone",
+  "rewardsAdmin.timeZoneNote": "In your store's time zone ({zone}), as are birthdays.",
   "rewardsAdmin.tagline": "Tagline",
   "rewardsAdmin.taglineHint": "Every bowl gets you closer to a free one",
   "rewardsAdmin.colour": "Card colour",

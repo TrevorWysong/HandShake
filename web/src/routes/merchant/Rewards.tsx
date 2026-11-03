@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Cake, Clock, Crown, Flame, Gift, Hourglass, Palette, Plus, Sparkles, Trash2, Users } from "lucide-react";
 import clsx from "clsx";
 import { programOf, programStats, saveProgram } from "../../holochain/zomes/rewards";
-import { getCatalog } from "../../holochain/zomes/catalog";
+import { deviceTimeZone, getCatalog } from "../../holochain/zomes/catalog";
 import { bytesEqual, bytesToHex, decodeEntry, hexToBytes } from "../../holochain/decode";
 import { useMerchantStores, useMyStores } from "../../store/merchantStores";
 import { useResource } from "../../lib/hooks/useResource";
@@ -80,7 +80,10 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
   const [previewPoints, setPreviewPoints] = useState(240);
   const action = useAction();
 
-  const draft = edited ?? (data ? (data.view?.program ?? starterProgram(catalogRef, data.store.business_name)) : null);
+  // Its happy hours, birthdays and points years run on the store's clock:
+  // the zone its hours are in, never one typed here.
+  const program = edited ?? (data ? (data.view?.program ?? starterProgram(catalogRef, data.store.business_name)) : null);
+  const draft = program && data ? { ...program, time_zone: data.store.time_zone || deviceTimeZone() } : null;
 
   if (!data || !draft) {
     return (
@@ -148,14 +151,9 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
               <Field label={t("rewardsAdmin.name")}>
                 <Input maxLength={40} value={draft.name} onChange={(e) => update((p) => ({ ...p, name: e.target.value }))} />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={t("rewardsAdmin.pointsName")}>
-                  <Input maxLength={20} value={draft.points_name} onChange={(e) => update((p) => ({ ...p, points_name: e.target.value }))} placeholder="points" />
-                </Field>
-                <Field label={t("rewardsAdmin.timeZone")}>
-                  <Input value={draft.time_zone} onChange={(e) => update((p) => ({ ...p, time_zone: e.target.value }))} />
-                </Field>
-              </div>
+              <Field label={t("rewardsAdmin.pointsName")}>
+                <Input maxLength={20} value={draft.points_name} onChange={(e) => update((p) => ({ ...p, points_name: e.target.value }))} placeholder="points" />
+              </Field>
               <Field label={t("rewardsAdmin.tagline")}>
                 <Input maxLength={120} value={draft.tagline} onChange={(e) => update((p) => ({ ...p, tagline: e.target.value }))} placeholder={t("rewardsAdmin.taglineHint")} />
               </Field>
@@ -215,7 +213,8 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
               <AddButton onClick={() => update((p) => ({ ...p, earn: { ...p.earn, item_bonuses: [...p.earn.item_bonuses, { item_ref: unusedItem(menu, p.earn.item_bonuses.map((b) => b.item_ref)), percent: 200 }] } }))}>{t("rewardsAdmin.addItemBoost")}</AddButton>
             )}
 
-            <SectionLabel className="mb-2 mt-5">{t("rewardsAdmin.happyHours")}</SectionLabel>
+            <SectionLabel className="mt-5">{t("rewardsAdmin.happyHours")}</SectionLabel>
+            <p className="mb-2 mt-0.5 text-xs text-ink-400">{t("rewardsAdmin.timeZoneNote", { zone: draft.time_zone.replace(/_/g, " ") })}</p>
             <div className="flex flex-col gap-3">
               {draft.earn.happy_hours.map((hour, i) => (
                 <div key={i} className="rounded-2xl bg-ink-50 p-3 dark:bg-ink-800/60">
