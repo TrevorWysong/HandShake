@@ -3,23 +3,23 @@
 //
 // - a driver at their limit can't take on another order: their app won't
 //   bid, a customer's won't accept them, and validation refuses their
-//   commitment (the ledger counts the orders in hand, entry to entry, like a
-//   balance);
+//   commitment (counted on their own chain: each commit takes an order into
+//   their hands, each record of one leaving them lets it go);
 // - a priority order goes to a driver with nothing else, and alone;
 // - a driver can't hide what they've taken on from customers;
-// - an order that never arrives frees its driver once they forfeit its
-//   collateral -- which their app does on the store's decision.
+// - an order that never arrives frees its driver once the store decides so
+//   -- their app records it leaving their hands.
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, agentAsLinkBase, collectFromStore, commitAndCook, latestLedgerEntry, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, agentAsLinkBase, collectFromStore, commitAndCook, heldBy, offerCard, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
 
 const FOOD = 1000;
 
 await runScenario(async (scenario) => {
   const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ max_concurrent_deliveries: 1 }));
   const all = [customer, merchant, driver];
-  for (const p of all) await useTestCoordinators(p, ["dispatch", "ledger"]);
+  for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
   const call = (p: typeof customer, zome: string) => retryingCaller(p.cells[0], zome);
   const load = () => call(customer, "dispatch")<{ orders: number; priority: boolean }>("get_driver_load", driver.agentPubKey);
@@ -69,18 +69,16 @@ await runScenario(async (scenario) => {
   await commitAndCook(driver, merchant, first, all);
   await collectFromStore(driver, merchant, first, all);
   await sync();
-  const inHand = await latestLedgerEntry(driver);
-  assert.deepEqual(inHand.in_hand, { orders: 1, priority: false }, "the driver's ledger counts the order in hand");
 
-  // A modified app committing to a second anyway: validation refuses it.
-  const forged = call(driver, "ledger")("create_raw_ledger_entry_for_testing", {
-    kind: { Hold: { order: second, purpose: { Collateral: { bid: secondBid } } } },
-    amount: FOOD,
-    balance: inHand.balance - FOOD,
-    in_hand: { orders: 2, priority: false },
-    previous: inHand.hash,
-  });
-  await assert.rejects(forged, /no more orders at once than the network allows/, "the network refuses a commitment past the limit");
+  // A modified app taking a second anyway -- the customer's accepting it
+  // past the app's check, the store holding the collateral -- and the driver
+  // committing: validation refuses it, counting their own chain.
+  await call(customer, "dispatch")("force_order_update_for_testing", { order_original_action: second, next_status: "BidAccepted", delivery_receipts: [], accepted_bid: secondBid });
+  await sync();
+  await offerCard(driver, second, { Collateral: { bid: secondBid } });
+  await sync();
+  await heldBy(merchant, second, { Collateral: { bid: secondBid } }, all);
+  await assert.rejects(driver.cells[0].callZome({ zome_name: "dispatch", fn_name: "commit_to_order", payload: second }), /no more orders at once than the network allows/, "the network refuses a commitment past the limit");
   console.log("[PASS] validation counts the orders in hand and refuses a commitment past the limit");
 
   // ===== Priority =====
@@ -88,23 +86,13 @@ await runScenario(async (scenario) => {
   await assert.rejects(bidOn(priority), /goes to a driver with no other orders/, "a priority order isn't bid on by a driver with others");
   console.log("[PASS] a priority order goes only to a driver with nothing else");
 
-  // ===== It never arrives: the driver forfeits, and is free again =====
+  // ===== It never arrives: the driver is free again =====
   await call(customer, "dispatch")("claim_never_arrived", first);
   await sync();
   await retryUntilOk(() => call(merchant, "dispatch")<Uint8Array>("decide_not_delivered", first));
   await sync();
-  const freed = await retryUntil(
-    async () => {
-      await call(driver, "dispatch")("settle_order", first).catch(() => 0);
-      return (await latestLedgerEntry(driver)).in_hand;
-    },
-    (hands) => hands.orders === 0,
-    60,
-    1000,
-  );
-  assert.deepEqual(freed, { orders: 0, priority: false }, "forfeiting the collateral settles the order in hand");
-  await retryUntil(load, (l) => l.orders === 0);
+  await retryUntil(load, (l) => l.orders === 0, 60, 1000);
   const priorityBid = await retryUntilOk(() => bidOn(priority));
   assert.ok(priorityBid, "with nothing else on, the driver can take the priority order");
-  console.log("[PASS] an order that never arrives frees its driver once they forfeit its collateral");
+  console.log("[PASS] an order that never arrives frees its driver once the store decides so");
 });

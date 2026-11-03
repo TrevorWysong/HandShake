@@ -159,6 +159,13 @@ pub struct TaxRate {
     pub basis_points: u16,
 }
 
+/// The most stores one account may open. A store anyone can find is a
+/// network entry anyone can write; this bounds how many listings one
+/// account can fill a neighbourhood with, while leaving room for an owner
+/// with several locations. (Each store also needs a processor account its
+/// processor has checked before it can take an order.)
+pub const MAX_STORES_PER_OWNER: usize = 10;
+
 /// The most tax rates a store may have, and the highest rate.
 pub const MAX_TAX_RATES: usize = 8;
 pub const MAX_TAX_BASIS_POINTS: u16 = 5_000;

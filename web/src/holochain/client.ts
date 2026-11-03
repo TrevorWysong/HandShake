@@ -243,6 +243,12 @@ export function onDirectSignal(handler: (signal: DirectSignal) => void): () => v
 
 let handShakeCell: Promise<CellId> | null = null;
 
+/// This network's DNA hash -- what a new version names to the previous one
+/// moving an account to it.
+export async function thisNetwork(): Promise<Uint8Array> {
+  return (await handShakeCellId())[0];
+}
+
 /// The "handshake" cell's id -- which network a direct signal goes out on.
 function handShakeCellId(): Promise<CellId> {
   handShakeCell ??= getAppWs()

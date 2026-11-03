@@ -2,8 +2,6 @@
   "abuse-limits": 324,
   "attestation": 415,
   "authorization": 201,
-  "balance-consistency": 219,
-  "cash-out": 160,
   "catalog-ref-drift": 186,
   "completion-gate": 201,
   "concurrent-deliveries": 291,
@@ -23,10 +21,7 @@
   "item-issues": 400,
   "item-ratings": 407,
   "late-orders": 300,
-  "ledger-rules": 399,
-  "ledger-transactions-list": 467,
   "link-validation": 345,
-  "listing-stakes": 192,
   "live": 300,
   "loyalty-rewards": 152,
   "matching": 275,
@@ -59,5 +54,6 @@
   "store-order-queues": 201,
   "storefront-details": 203,
   "wake": 380,
-  "warrants": 170
+  "warrants": 170,
+  "direct-payments": 450
 }

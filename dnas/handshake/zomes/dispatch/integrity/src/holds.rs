@@ -6,8 +6,9 @@
 //!
 //! - The store accepting cites its hold of the customer's payment.
 //! - The driver committing cites the store's hold of their collateral --
-//!   before the store cooks, so a driver who leaves it cooked has covered it.
-//! - The driver picking up cites their hold of their pay from the store.
+//!   before the store cooks, so a driver who leaves it cooked has covered it
+//!   -- and their own hold of their pay from the store, before they set
+//!   off, so whatever they're owed for the trip is held.
 
 use super::*;
 use dispatch_types::direct::PaymentLeg;

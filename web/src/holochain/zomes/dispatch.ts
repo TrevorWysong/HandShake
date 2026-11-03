@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, AppealView, AppealsPage, Beacon, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PinSecret, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary, PromoStanding, BagStanding } from "../types";
+import type { ActionHash, AgentPubKey, AppealView, AppealsPage, BagStanding, Beacon, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
 
 // --- orders ---
 
@@ -40,6 +40,8 @@ export async function requestDelivery(input: {
   /// Wake tokens from the network's push relay (lib/network/push.ts).
   wake_for_store?: string | null;
   wake_for_driver?: string | null;
+  /// The customer's card, offered to the store with the order.
+  payment?: PaymentInput | null;
 }): Promise<HcRecord> {
   return callZome("dispatch", "request_delivery", {
     kitchen_notes: "",
@@ -314,6 +316,8 @@ export async function requestPickupOrder(input: {
   wake_for_store?: string | null;
   /// A reward of the store's rewards program to spend points on (its id).
   reward?: number | null;
+  /// The customer's card, offered to the store with the order.
+  payment?: PaymentInput | null;
 }): Promise<HcRecord> {
   return callZome("dispatch", "request_pickup_order", {
     kitchen_notes: "",

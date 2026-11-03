@@ -43,12 +43,6 @@ export interface PriceInput {
   /// against; goodie bags are already discounted.
   menuSubtotalCents: number;
   leaveAtDoorMaxCents: number | null;
-  /// The customer's balance -- `undefined` until it's read.
-  balanceCents: number | undefined;
-  creditLimitCents: number;
-  /// Whether there's an issuer to pay a shortfall by card through, and the
-  /// least and most one card payment may be.
-  card: { available: boolean; minCents: number; maxCents: number };
 }
 
 export interface Price {
@@ -62,19 +56,15 @@ export interface Price {
   customerFeeShareCents: number;
   /// A delivery's worst case: the order, its tip, and the fee at its cap.
   estimatedTotalCents: number;
-  /// What placing it sets aside from the balance.
+  /// What the store holds on the customer's card for it -- exactly what
+  /// the network requires (`PaymentLeg::required`): a pickup's food, or a
+  /// delivery's worst case. What's charged is settled after.
   holdCents: number;
   /// How far the food falls short of the store's minimum (menu prices,
   /// before any promo).
   shortOfMinimumCents: number;
   /// Whether the store lets an order this size be left at the door.
   doorAllowed: boolean;
-  /// What the balance, down to the network's credit limit, can't cover.
-  shortfallCents: number;
-  /// What a card pays for the shortfall -- at least the least it may.
-  cardChargeCents: number;
-  /// Whether the shortfall is paid by card before the order is placed.
-  payByCard: boolean;
 }
 
 export function priceCheckout(input: PriceInput): Price {
@@ -89,8 +79,6 @@ export function priceCheckout(input: PriceInput): Price {
   const customerFeeShareCents = input.maxFeeCents - Math.floor((input.maxFeeCents * input.subsidyPercent) / 100);
   const estimatedTotalCents = orderTotalCents + input.tipCents + customerFeeShareCents;
   const holdCents = input.fulfillment === "Pickup" ? orderTotalCents : estimatedTotalCents;
-  const shortfallCents = input.balanceCents === undefined ? 0 : Math.max(0, holdCents - (input.balanceCents + input.creditLimitCents));
-  const cardChargeCents = Math.max(shortfallCents, input.card.minCents);
   return {
     discountedSubtotalCents,
     taxCents,
@@ -101,8 +89,5 @@ export function priceCheckout(input: PriceInput): Price {
     // Goodie bags alone aren't held to it.
     shortOfMinimumCents: input.minOrderCents != null && input.menuSubtotalCents > 0 ? Math.max(0, input.minOrderCents - input.menuSubtotalCents) : 0,
     doorAllowed: input.leaveAtDoorMaxCents == null || orderTotalCents <= input.leaveAtDoorMaxCents,
-    shortfallCents,
-    cardChargeCents,
-    payByCard: shortfallCents > 0 && input.card.available && cardChargeCents <= input.card.maxCents,
   };
 }

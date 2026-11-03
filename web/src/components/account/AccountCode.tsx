@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { Camera, Check, Copy, Keyboard } from "lucide-react";
 import type { AgentPubKey } from "../../holochain/types";
-import { accountCode, keyFingerprint, readAccountCode } from "../../lib/account/accountMove";
+import { accountCode, keyFingerprint, moveCode, readAccountCode, readMoveCode } from "../../lib/account/accountMove";
 import { QrSvg } from "../orders/HandoverCode";
 import { QrScanner } from "../QrScanner";
 import { Button, Input } from "../ui";
@@ -86,6 +86,17 @@ export function CodeReader({ accepts, onCode, prompt, refusal, placeholder }: { 
 /// A device's account code.
 export function AccountCode({ agent, note }: { agent: AgentPubKey; note: string }) {
   return <CodeCard code={accountCode(agent)} fingerprint={keyFingerprint(agent)} note={note} />;
+}
+
+/// The code a new version shows the previous one, to move the account to it.
+export function MoveCode({ network, agent, note }: { network: Uint8Array; agent: AgentPubKey; note: string }) {
+  return <CodeCard code={moveCode(network, agent)} fingerprint={keyFingerprint(agent)} note={note} />;
+}
+
+/// Reads a new version's move code, and hands over its network and key.
+export function MoveCodeReader({ onMove, prompt }: { onMove: (move: { network: Uint8Array; successor: AgentPubKey }) => void; prompt: string }) {
+  const t = useT();
+  return <CodeReader accepts={(code) => readMoveCode(code) !== null} onCode={(code) => onMove(readMoveCode(code)!)} prompt={prompt} refusal={t("code.notMove")} placeholder="handshake-move:uhC0k…" />;
 }
 
 /// Reads an account code, and hands over its key.

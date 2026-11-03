@@ -17,7 +17,7 @@ pub use links::catalog_geohash_path;
 // a direct dependency on this crate wouldn't work. Re-exported here so
 // nothing else in this crate or the coordinator crate (which imports via
 // `catalog_integrity::*`) needs to change.
-pub use catalog_types::{ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
+pub use catalog_types::{MAX_STORES_PER_OWNER, ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
 
 /// Precision used for the merchant-discovery anchor -- coarse (city-block
 /// scale), matching open orders' drop-off precision so both discovery paths
@@ -176,13 +176,6 @@ fn validate_menu_item_update(item: &MenuItem, author: &AgentPubKey, original: &A
     }
     validate_menu_item(item, author)
 }
-
-/// The most stores one account may open. A store anyone can find is a
-/// network entry anyone can write; this bounds how many listings one
-/// account can fill a neighbourhood with, while leaving room for an owner
-/// with several locations. (Each store also needs a processor account its
-/// processor has checked before it can take an order.)
-pub const MAX_STORES_PER_OWNER: usize = 10;
 
 /// A new store is within its owner's `MAX_STORES_PER_OWNER`: every store
 /// they've opened is on their own chain.

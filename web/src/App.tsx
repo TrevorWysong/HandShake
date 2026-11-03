@@ -15,7 +15,7 @@ import { OrderDetail } from "./routes/customer/order/OrderDetail";
 import { PickupOrderDetail } from "./routes/customer/order/PickupOrderDetail";
 import { DriverDashboard } from "./routes/driver/Dashboard";
 import { Earnings } from "./routes/driver/Earnings";
-import { Wallet } from "./routes/Wallet";
+import { Payments } from "./routes/Payments";
 import { MerchantOrders } from "./routes/merchant/Orders";
 import { MerchantCatalog } from "./routes/merchant/Catalog";
 import { MerchantRewards } from "./routes/merchant/Rewards";
@@ -187,7 +187,7 @@ export default function App() {
           <Route path="/merchant/stores/new" element={<Screen width="reading"><NewStore /></Screen>} />
           <Route path="/profile" element={<Screen width="reading"><ProfilePage /></Screen>} />
           <Route path="/transparency" element={<Screen width="reading"><Transparency /></Screen>} />
-          <Route path="/wallet" element={<Screen width="reading"><Wallet /></Screen>} />
+          <Route path="/payments" element={<Screen width="reading"><Payments /></Screen>} />
           <Route path="/policies" element={<Screen width="reading"><Policies /></Screen>} />
           <Route path="/account" element={<Screen width="reading"><AccountPage /></Screen>} />
           <Route path="/verify" element={<Screen width="reading"><VerifyPage /></Screen>} />

@@ -10,8 +10,6 @@ import { Button, Card, Field, Input, Notice } from "../../components/ui";
 import { SplitAddressFields } from "../../components/places/SplitAddressFields";
 import { EMPTY_SPLIT_ADDRESS, toCatalogAddress } from "../../lib/places/splitAddress";
 import { MAX_NAME_CHARS } from "../../holochain/types";
-import { formatCents } from "../../lib/ui/format";
-import { useTerms } from "../../store/network";
 import { useT } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
 
@@ -21,7 +19,6 @@ import { useAction } from "../../lib/hooks/useAction";
 /// `/merchant/stores/new` route). Each publish is a fully independent
 /// store: its own menu, promos, goodie bags, order queue and ratings.
 export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
-  const stake = useTerms().store_listing_stake;
   const t = useT();
   const navigate = useNavigate();
   const location = useSession((s) => s.location);
@@ -83,11 +80,7 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
           onAddressChange={setAddressDraft}
           streetLabel={t("newStore.pickupLocation")}
         />
-        {stake > 0 && (
-          <p className="text-xs leading-relaxed text-ink-400">
-            {t("newStore.stake", { amount: formatCents(stake) })}
-          </p>
-        )}
+        <p className="text-xs leading-relaxed text-ink-400">{t("newStore.getPaid")}</p>
         {action.error && <Notice>{action.error}</Notice>}
         <Button loading={action.busy} disabled={!businessName.trim()} onClick={publish}>
           {firstStore ? t("newStore.publishFirst") : t("newStore.publish")}

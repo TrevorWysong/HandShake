@@ -280,6 +280,9 @@ mod test_utils {
         /// Proof of the time, for the steps that need it.
         #[serde(default)]
         pub beacon: Option<handshake_types::Beacon>,
+        /// A bid to accept, past the app's checks (the driver's load).
+        #[serde(default)]
+        pub accepted_bid: Option<ActionHash>,
     }
 
     #[derive(Serialize, Deserialize, Debug)]
@@ -331,6 +334,9 @@ mod test_utils {
         order.delivery_receipts = input.delivery_receipts;
         if input.pickup_proof.is_some() {
             order.pickup_proof = input.pickup_proof;
+        }
+        if input.accepted_bid.is_some() {
+            order.accepted_bid = input.accepted_bid;
         }
         order.cancellation = input.cancellation;
         let updated = handshake_coordinator_support::update_version(&current, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)?;

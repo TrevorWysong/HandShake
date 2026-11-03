@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import clsx from "clsx";
-import { Home, ClipboardList, ShoppingCart, User, Car, DollarSign, Sparkles, Gift } from "lucide-react";
+import { Home, ClipboardList, ShoppingCart, User, Car, DollarSign, Gift } from "lucide-react";
 import { useSession, type Mode } from "../../store/session";
 import { useCart } from "../../store/cart";
 import { pageVariants } from "../../lib/ui/motion";
@@ -12,14 +12,9 @@ import { MerchantNav } from "./MerchantNav";
 import { Notifier } from "./Notifier";
 import { Toaster } from "./Toaster";
 import { ConnectionBanner } from "./ConnectionBanner";
-import { usePolling, useResource } from "../../lib/hooks/useResource";
-import { nextNetwork } from "../../lib/account/migration";
+import { usePolling } from "../../lib/hooks/useResource";
 import { POLL } from "../../lib/network/poll";
-import { collectIncoming } from "../../lib/money/wallet";
-import { topUpIfLow } from "../../lib/money/autoTopUp";
 import { reaffirmRecoveryPlan } from "../../holochain/zomes/account";
-import { bytesToHex } from "../../holochain/decode";
-import { useCustomerSettings } from "../../store/roleSettings";
 import { useWideScreen } from "../../lib/hooks/useMediaQuery";
 import { useT } from "../../i18n";
 
@@ -47,12 +42,6 @@ export function AppShell() {
   const wide = useWideScreen();
   const t = useT();
   const roles = profile?.roles ?? [];
-  // Funds an issuer added, and cash-outs it declined, land in the balance
-  // without anyone having to open the wallet.
-  usePolling(() => collectIncoming().catch(() => 0), { pollMs: POLL.unsignalled * 4 }, !!agentPubKey);
-  // And a balance that's run low is paid back up, for those who asked.
-  const autoTopUp = useCustomerSettings((s) => (agentPubKey ? !!s.autoTopUps[bytesToHex(agentPubKey)] : false));
-  usePolling(() => topUpIfLow(agentPubKey!).catch(() => false), { pollMs: POLL.slow }, autoTopUp);
   // Keeps the account's recovery plan close to where its chain stands, so a
   // recovery stays cheap to validate.
   usePolling(() => reaffirmRecoveryPlan().catch(() => false), { pollMs: POLL.upkeep, background: true }, !!agentPubKey);
@@ -64,7 +53,7 @@ export function AppShell() {
   ].filter(Boolean) as Mode[];
   // A customer, driver or store page is that mode's, however it was reached
   // -- a notification's link, the back button -- so its nav is the one shown;
-  // pages every mode shares (profile, wallet) keep the mode last used.
+  // pages every mode shares (profile, account) keep the mode last used.
   const routeMode = MODES.find((m) => pathname === `/${m}` || pathname.startsWith(`/${m}/`));
   const mode = routeMode && availableModes.includes(routeMode) ? routeMode : chosenMode;
   // Remember it, so those shared pages, and home, follow the mode last seen.
@@ -137,7 +126,6 @@ export function AppShell() {
 
         <Notifier />
         <ConnectionBanner />
-        <NewVersionBanner enabled={!!agentPubKey} />
         <main className="flex-1 pb-20 lg:px-6 lg:pt-4 lg:pb-12">
           <AnimatedOutlet />
         </main>
@@ -179,16 +167,3 @@ function ModeNav({ mode, cartCount, placement }: { mode: Mode; cartCount: number
   return <MerchantNav placement={placement} />;
 }
 
-/// A line under the header once a new version of HandShake is out
-/// (docs/MIGRATION.md): moving there is the person's to start, from Account &
-/// recovery.
-function NewVersionBanner({ enabled }: { enabled: boolean }) {
-  const { data: next } = useResource(enabled ? "next-network" : null, nextNetwork, { pollMs: POLL.slow });
-  const t = useT();
-  if (!next) return null;
-  return (
-    <NavLink to="/account" className="flex items-center justify-center gap-2 bg-handshake-500 px-4 py-2 text-xs font-semibold text-white">
-      <Sparkles size={13} /> {t("shell.newVersion")}
-    </NavLink>
-  );
-}

@@ -292,7 +292,7 @@ export function OrderDetail() {
                 <Bike size={20} className="text-handshake-600" />
                 <p className="text-sm text-handshake-700 dark:text-handshake-300">{t("order.pickedUp")}</p>
               </div>
-              {order.collateral_hold && (
+              {order.collateral_payment && (
                 <p className="flex items-start gap-2 text-xs text-handshake-700 dark:text-handshake-300">
                   <ShieldCheck size={14} className="mt-0.5 shrink-0" />
                   {t("order.collateral", { amount: formatCents(order.order_total) })}

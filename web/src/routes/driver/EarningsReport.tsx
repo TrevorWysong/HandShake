@@ -1,34 +1,24 @@
 // A driver's earnings by week or month -- deliveries, fees, tips, what
-// stores paid for keeping them waiting, collateral forfeited, cash-outs --
-// read from their own ledger on this device, with a CSV for their records.
+// stores paid for keeping them waiting, collateral forfeited -- from their
+// payment history, with a CSV for their records.
 import { useState } from "react";
 import { Download } from "lucide-react";
-import { listMyLedger } from "../../holochain/zomes/ledger";
-import { actionHash, decodeEntry, timestampOf } from "../../holochain/decode";
-import type { ActionHash, LedgerEntry } from "../../holochain/types";
+import { myPaymentHistory } from "../../holochain/zomes/payments";
+import { hexToBytes } from "../../holochain/decode";
 import { Card, Skeleton } from "../../components/ui";
-import { earned, earningsByPeriod, earningsCsv, type Grouping, type LedgerRow } from "../../lib/driving/earnings";
+import { earned, earningsByPeriod, earningsCsv, type Grouping } from "../../lib/driving/earnings";
 import { formatCents, fromMinorUnits } from "../../lib/ui/format";
 import { appLocale, useT } from "../../i18n";
 import { useResource } from "../../lib/hooks/useResource";
 
-/// Every entry on the caller's ledger, page by page.
-async function wholeLedger(): Promise<LedgerRow[]> {
-  const rows: LedgerRow[] = [];
-  let before: ActionHash | null = null;
-  for (;;) {
-    const page = await listMyLedger(before);
-    rows.push(...page.entries.map((r) => ({ hash: actionHash(r), entry: decodeEntry<LedgerEntry>(r), at: timestampOf(r) })));
-    if (!page.next_before) return rows;
-    before = page.next_before;
-  }
-}
+/// A year of history: what a report by month needs.
+const HISTORY_DAYS = 366;
 
 export function EarningsReport({ meHex }: { meHex: string }) {
   const [grouping, setGrouping] = useState<Grouping>("week");
   const t = useT();
-  const { data: rows } = useResource(`whole-ledger:${meHex}`, wholeLedger);
-  const periods = rows ? earningsByPeriod(rows, grouping).filter((p) => earned(p) + p.forfeited + p.cashedOut > 0) : undefined;
+  const { data: items } = useResource(`payment-history:${meHex}`, () => myPaymentHistory(HISTORY_DAYS));
+  const periods = items ? earningsByPeriod(items, hexToBytes(meHex), grouping).filter((p) => earned(p) + p.forfeited > 0) : undefined;
   const label = (start: number) =>
     grouping === "week"
       ? t("earnings.weekOf", { date: new Date(start).toLocaleDateString(appLocale(), { day: "numeric", month: "short" }) })
@@ -70,7 +60,6 @@ export function EarningsReport({ meHex }: { meHex: string }) {
                   {t("earnings.deliveries", { count: p.deliveries })} · {t("earnings.fees", { amount: formatCents(p.fees) })} · {t("earnings.tips", { amount: formatCents(p.tips) })}
                   {p.lateCover > 0 && ` · ${t("earnings.waiting", { amount: formatCents(p.lateCover) })}`}
                   {p.forfeited > 0 && ` · ${t("earnings.forfeited", { amount: formatCents(p.forfeited) })}`}
-                  {p.cashedOut > 0 && ` · ${t("earnings.cashedOut", { amount: formatCents(p.cashedOut) })}`}
                 </p>
               </li>
             ))}

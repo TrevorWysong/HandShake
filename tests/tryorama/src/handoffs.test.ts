@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, FULL_SIZE_PHOTO, latestLedgerEntry, pickUp, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, FULL_SIZE_PHOTO, pickUp, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
 
 const PHOTO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
@@ -151,17 +151,13 @@ await runScenario(async (scenario) => {
   assert.equal(evidence?.photo_data_uri, FULL_SIZE_PHOTO, "the customer sees the full photo of where it was left");
   console.log("[PASS] an order left at the door, as the customer chose, is delivered once it's left -- with a full-size photo");
 
-  // Three delivered: the driver's collateral for each comes back as each
-  // settles, which their conductor does on its own schedule. Settled here,
-  // rather than counting on that timing, before they take on a fourth.
+  // Three delivered: each leaves the driver's hands as their app records
+  // it, on its own schedule. Recorded here, rather than counting on that
+  // timing, before they take on a fourth.
   await retryUntil(
     async () => {
-      for (const ref of [order, confirmedPickup, door]) {
-        await call(merchant, "dispatch")("settle_order", ref).catch(() => 0);
-        await call(driver, "dispatch")("settle_order", ref).catch(() => 0);
-      }
-      await sync();
-      return (await latestLedgerEntry(driver)).in_hand.orders;
+      await call(driver, "dispatch")("end_my_carries", null);
+      return (await call(driver, "dispatch")<{ orders: number }>("my_hands", null)).orders;
     },
     (inHand) => inHand < 3,
     60,

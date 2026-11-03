@@ -15,9 +15,6 @@ const base: PriceInput = {
   subsidyPercent: 0,
   minOrderCents: null,
   leaveAtDoorMaxCents: null,
-  balanceCents: 100_000,
-  creditLimitCents: 0,
-  card: { available: true, minCents: 500, maxCents: 50_000 },
 };
 
 test("a tip is a share of the food before discounts, or what was typed", () => {
@@ -61,15 +58,4 @@ test("the store's minimum is on menu prices, and the door limit on the order", (
   assert.equal(priceCheckout({ ...base, minOrderCents: 1500, discountCents: 1000 }).shortOfMinimumCents, 0);
   assert.equal(priceCheckout({ ...base, leaveAtDoorMaxCents: 1999 }).doorAllowed, false);
   assert.equal(priceCheckout({ ...base, leaveAtDoorMaxCents: 2000 }).doorAllowed, true);
-});
-
-test("a shortfall is paid by card -- at least the card minimum, never past its maximum", () => {
-  const short = priceCheckout({ ...base, balanceCents: 2300 });
-  assert.equal(short.shortfallCents, 200);
-  assert.equal(short.cardChargeCents, 500, "the least a card may pay");
-  assert.equal(short.payByCard, true);
-  assert.equal(priceCheckout({ ...base, balanceCents: 2300, creditLimitCents: 200 }).shortfallCents, 0, "credit covers it");
-  assert.equal(priceCheckout({ ...base, balanceCents: 2300, card: { ...base.card, available: false } }).payByCard, false);
-  assert.equal(priceCheckout({ ...base, subtotalCents: 80_000, lines: [{ taxCategory: "", totalCents: 80_000 }], balanceCents: 0 }).payByCard, false, "past the card's most");
-  assert.equal(priceCheckout({ ...base, balanceCents: undefined }).shortfallCents, 0, "not read yet: nothing short");
 });

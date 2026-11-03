@@ -1,10 +1,16 @@
 // Las políticas en español: las mismas reglas que en.ts, sección por sección
 // y punto por punto (test/policies.test.ts lo comprueba).
-import { HANDOFF_CODE_DIGITS, type NetworkTerms } from "../../holochain/types";
+import { HANDOFF_CODE_DIGITS, MAX_STORES_PER_OWNER, type NetworkTerms } from "../../holochain/types";
 import { formatCents } from "../ui/format";
 import { spoken, type PolicyChange, type PolicyContent, type PolicySection } from "./common";
 
 const changes: PolicyChange[] = [
+  {
+    version: "1.4",
+    date: "2026-11-03",
+    summary:
+      "Los pagos van directamente entre las personas de un pedido, en sus propios procesadores de tarjetas: la tienda retiene la tarjeta del cliente, el repartidor retiene la de la tienda para su pago, y la tienda retiene la del repartidor como garantía. Cada uno cobra solo lo que las reglas de la red dicen que se le debe, y libera el resto. Ya no hay créditos, saldos, emisores ni retiros. Publicar una tienda no requiere depósito, y una cuenta puede publicar hasta diez tiendas. Lo que concede un árbitro lo reembolsa la tienda a la tarjeta del cliente.",
+  },
   {
     version: "1.3",
     date: "2026-10-19",
@@ -35,35 +41,31 @@ function sections(t: NetworkTerms): PolicySection[] {
   return [
     {
       id: "payments",
-      title: "Pagos y depósito",
-      summary: "El dinero se reserva en cada paso y solo se mueve con una prueba o con la decisión de la tienda sobre el pedido. HandShake no cobra comisión.",
+      title: "Pagos y retenciones",
+      summary: "Las tarjetas se retienen en cada paso y solo se cobran con una prueba o con la decisión de la tienda sobre el pedido. HandShake no cobra comisión.",
       points: [
-        "Cuando una tienda acepta tu pedido, el precio de la comida se reserva de tu saldo. Cuando aceptas la oferta de un repartidor, también se reservan su tarifa y tu propina.",
-        "El repartidor reserva el valor de la comida al comprometerse con el pedido, antes de que la tienda empiece a cocinar. Esa es su garantía: vuelve a ser suya cuando el pedido se entrega.",
-        "Cuando la tienda hace el check-in del repartidor en su mostrador, reserva su parte de la tarifa, y otra vez tu parte por si le hace esperar.",
-        "Cada parte de un pago se decide una sola vez. Nadie puede cobrarla dos veces ni recuperar lo que ya se pagó.",
-        "Tu saldo es la suma de tu propio registro firmado. Cada movimiento aparece en la página de Transparencia.",
-        t.credit_limit_cents > 0
-          ? `Esta red permite que un saldo baje hasta ${formatCents(t.credit_limit_cents)} por debajo de cero.`
-          : "En esta red un saldo no puede bajar de cero: solo puedes gastar lo que has ingresado.",
+        "Al hacer tu pedido, la tienda retiene tu tarjeta, en su propio procesador de tarjetas, por la comida, como mucho tu parte del envío, y tu propina. Aún no se cobra nada, y la tienda acepta tu pedido solo cuando la retención está hecha.",
+        "Cuando un repartidor se compromete con un pedido, antes de que la tienda empiece a cocinar, la tienda retiene su tarjeta por el valor de la comida. Esa es su garantía: se libera cuando el pedido se entrega.",
+        "Al comprometerse, el repartidor también retiene la tarjeta de la tienda por su tarifa y tu propina, así sabe que cobrará antes de salir.",
+        "Cada retención se cobra una sola vez, cuando el pedido se liquida, por exactamente lo que las reglas de la red dicen que se debe a quien la tiene, y el resto se libera. Nadie puede cobrar una retención dos veces.",
+        "Cada retención y cada cobro es un registro firmado que las personas del pedido pueden comprobar. Los tuyos están en la página de Transparencia.",
+        "Una retención dura alrededor de una semana en la mayoría de las tarjetas, así que un pedido puede programarse como mucho con cinco días de antelación, y todo pedido se liquida en pocos días.",
         "No hay comisión de plataforma ni cuenta de operador. Tiendas, repartidores y clientes se pagan directamente entre sí.",
       ],
     },
     {
-      id: "cash-out",
-      title: "Añadir fondos y retirar",
-      summary: "El dinero entra y sale a través de los emisores de esta red. La red en sí nunca guarda el dinero de nadie.",
+      id: "cards",
+      title: "Tarjetas y cobros",
+      summary: "Cada tienda y cada repartidor cobra en su propia cuenta de Stripe, Square o Clover. HandShake nunca guarda el dinero ni los datos de tarjeta de nadie.",
       points: [
-        "Añades fondos pagando con tarjeta a uno de los emisores de la red, que suma exactamente ese importe a tu saldo: añadir fondos es gratis. Tu saldo funciona como una tarjeta regalo para toda la red.",
+        "Las tiendas y los repartidores conectan su propia cuenta del procesador pegando sus claves en HandShake, en su propio dispositivo. Las claves se quedan en el almacén de claves de ese dispositivo y nunca van a la red.",
+        "Escribes tu tarjeta solo en el formulario del propio procesador, en su propio marco. HandShake nunca la ve: la app pasa un token de un solo uso sellado solo para esa tienda o ese repartidor.",
+        "Puedes dejar que una tienda o un repartidor guarde tu tarjeta en su procesador, así la próxima vez es un toque y los pedidos repetidos se pagan solos. Solo se le cobra lo que la red dice que debes, y cada cobro tiene un registro firmado.",
+        "Cada procesador cobra a la tienda o al repartidor al que paga su comisión habitual sobre lo cobrado. Liberar una retención no cuesta nada, y los clientes no pagan comisiones.",
         "Cada tienda fija su propio impuesto sobre ventas o IVA, como vendedora. El pago y tu recibo lo muestran: añadido al precio o ya incluido.",
-        "Lo que puedes añadir con tarjeta crece con tu cuenta: una cuenta nueva puede añadir un poco al día, y más a medida que pide. El primer pago con una tarjeta puede pedir a tu banco que confirme que eres tú.",
-        "Si a tu saldo le falta dinero al pagar, pagas la diferencia con tarjeta en ese momento, y tu pedido se hace en cuanto se paga. La tarjeta se guarda en el emisor, nunca en HandShake, así que la próxima vez es un toque; también puedes recargar el saldo automáticamente cuando baje.",
-        `Para retirar, pides a un emisor que te pague parte de tu saldo fuera de la red. Puedes retirar ${formatCents(t.min_redemption_cents)} o más, hasta lo que haya en tu saldo; el dinero reservado para pedidos y el crédito nunca se pueden retirar.`,
-        "Cada emisor publica su comisión de retiro, que cubre sus costes de tarjeta y transferencia, y cuánto tardan los pagos; la app te muestra lo que recibirás antes de confirmar.",
-        "Configuras tu cuenta de cobro en el procesador de tu emisor una sola vez, demostrando con tu propia clave que es tuya. Tus datos bancarios nunca pasan por HandShake. Un retiro vuelve primero a las tarjetas con las que pagaste, y solo lo que quede después, lo que ganaste, va a tu banco. El primer pago bancario de una cuenta nueva espera alrededor de una semana.",
-        "Si disputas un pago con tarjeta ante tu banco, el emisor pausa los ingresos y los retiros de tu cuenta hasta que se resuelva la disputa.",
-        "Tu emisor registra una sola vez qué hizo con cada retiro: pagado, con su referencia de pago, o rechazado. Un retiro rechazado vuelve a tu saldo automáticamente.",
-        "Los datos de cobro que añades se sellan para que solo ese emisor pueda leerlos.",
+        "Tu banco puede pedirte que confirmes que un pago es tuyo. La app muestra su comprobación, en el propio formulario del procesador.",
+        "Si rechazan una tarjeta, puedes probar otra en el mismo pedido. Si una tienda no retiene tu tarjeta a tiempo, el pedido caduca y no se cobra nada.",
+        "Una disputa con tu banco pasa por el procesador de quien te cobró, como con cualquier pago con tarjeta. Los registros firmados del pedido son la prueba.",
       ],
     },
     {
@@ -92,7 +94,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       points: [
         "Elige los artículos y cantidades que faltaban o eran incorrectos, y añade una nota o foto si quieres. El reembolso de cada artículo es su parte de lo que realmente pagaste, después de cualquier promoción.",
         t.appeals
-          ? `La tienda acepta o rechaza cada informe. Si no estás de acuerdo con cómo lo liquidó, puedes apelar una vez, en un plazo de ${spoken(t.appeal_window_secs)}, ante uno de los árbitros de la red: el propio pedido decide cuál, ambas partes dan sus pruebas solo al árbitro, y el árbitro puede conceder hasta lo que la tienda se quedó. Lo concedido se te paga con los próximos retiros de la tienda.`
+          ? `La tienda acepta o rechaza cada informe. Si no estás de acuerdo con cómo lo liquidó, puedes apelar una vez, en un plazo de ${spoken(t.appeal_window_secs)}, ante uno de los árbitros de la red: el propio pedido decide cuál, ambas partes dan sus pruebas solo al árbitro, y el árbitro puede conceder hasta lo que la tienda se quedó. La tienda reembolsa lo concedido a tu tarjeta.`
           : "La tienda acepta o rechaza cada informe, y su respuesta es definitiva, como lo sería si le hubieras pedido directamente.",
         `El pago a la tienda por la comida espera hasta que se cierra tu plazo. Los informes que acepta, o que nunca responde, se reembolsan entonces; por tarde que informes, la tienda tiene al menos ${spoken(t.answer_grace_secs)} para responder.`,
         "El pago a tu repartidor no espera a este plazo: lo que hay dentro de una bolsa cerrada no es responsabilidad suya.",
@@ -103,7 +105,7 @@ function sections(t: NetworkTerms): PolicySection[] {
           ? { who: "customers", good: "La tienda que ignora tu informe lo reembolsa, y un árbitro puede corregir a la que lo rechaza injustamente.", bad: "Solo puedes apelar un pedido una vez, y la decisión del árbitro es definitiva." }
           : { who: "customers", good: "La tienda que ignora tu informe lo reembolsa.", bad: "Una tienda puede rechazar un informe. Tu reseña es cómo los demás se enteran si lo hace injustamente." },
         t.appeals
-          ? { who: "stores", good: "Tú decides primero cada reembolso, y das tu versión al árbitro en cualquier apelación.", bad: "Lo que conceda un árbitro se descuenta de tu próximo retiro." }
+          ? { who: "stores", good: "Tú decides primero cada reembolso, y das tu versión al árbitro en cualquier apelación.", bad: "Reembolsas lo que conceda un árbitro a la tarjeta del cliente." }
           : { who: "stores", good: "Tú decides cada reembolso. Nadie puede concederlo por encima de tu respuesta.", bad: "Cobras la comida cuando se cierra el plazo de informes, no en la puerta, y los informes que no respondes se reembolsan." },
       ],
     },
@@ -154,7 +156,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         `Los repartidores pujan por tu pedido con su tarifa y cuándo te lo llevarían. ${spoken(t.bid_window_secs)} después de la primera oferta, tu app acepta la mejor.`,
         `La mejor oferta es la de tarifa más baja contando cada minuto hasta la entrega como ${formatCents(t.minute_value_cents)} y teniendo en cuenta los pedidos abandonados del repartidor: un repartidor más rápido puede ganar con una tarifa más alta, y uno que abandona pedidos tiene que pujar más bajo para ganar.`,
         "No se eligen las ofertas que superan tu tarifa máxima, las de un repartidor que ya dejó tu pedido, ni las de uno que ahora no puede aceptar otro. Las ofertas que un repartidor deja caducar cuentan en su contra como pedidos abandonados.",
-        "Un repartidor ve tu dirección exacta solo cuando se ha comprometido con tu pedido y ha reservado su garantía.",
+        "Un repartidor ve tu dirección exacta solo cuando se ha comprometido con tu pedido y su garantía está retenida.",
         "Elige «Elijo yo» al pagar para ver todas las ofertas y aceptar una tú.",
         `Una vez elegido, el repartidor tiene ${spoken(t.offer_secs)} para comprometerse, como en DoorDash. Los repartidores pueden dejar que su app puje por ellos a su propia tarifa, evitando tiendas de las que otros repartidores informan.`,
       ],
@@ -172,7 +174,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         `Si un repartidor no está en la tienda en un plazo de ${spoken(t.pickup_grace_secs)} desde cuando debía llegar, la app de la tienda lo aparta y tu pedido pasa a otro repartidor.`,
         `Un repartidor puede dejar un pedido antes de recogerlo. Si la tienda ya había empezado a cocinarlo, responde de la comida: si ningún otro repartidor lo acepta en ${spoken(t.replacement_window_secs)}, el pedido termina, se te reembolsa todo y su garantía paga a la tienda.`,
         `Cada tienda fija cuánto puede hacer esperar a un repartidor con check-in después de su hora de listo (de ${spoken(t.min_store_wait_secs)} a ${spoken(t.max_store_wait_secs)}; ${spoken(t.store_wait_secs)} si no lo fija), y lo ves al pagar. Pasado ese tiempo, el repartidor puede declarar que la tienda se retrasa e irse: la tienda le paga toda su tarifa, tu pedido pasa a otro repartidor y puedes cancelar con reembolso completo.`,
-        "Si tu repartidor se retrasa, o nadie tiene tu pedido, puedes recogerlo tú en la tienda. La comida cuesta lo mismo, te devuelven la parte del envío que pagaba la tienda, y también lo que reservaste para un repartidor.",
+        "Si tu repartidor se retrasa, o nadie tiene tu pedido, puedes recogerlo tú en la tienda. La comida cuesta lo mismo, te devuelven la parte del envío que pagaba la tienda, y no se cobra nada por un repartidor.",
         `Si eliges recogerlo y no vienes en ${spoken(t.collection_window_secs)}, la tienda se queda con el precio de la comida que preparó. Si cancelas mientras un repartidor está de camino y nadie se ha retrasado, pagas la comida y la tarifa del repartidor, como en cualquier app.`,
         "Cada plazo que perjudica a otro si se reclama antes de tiempo (un repartidor que se va, una tienda que aparta a un repartidor, declarar que una tienda se retrasa, terminar un pedido al que no vino ningún repartidor, quedarse la comida de un cliente que no vino) se demuestra con una fuente pública de tiempo gestionada por organizaciones independientes, así que nadie puede reclamarlo antes.",
         `Un pedido puede cambiar de repartidor como máximo ${t.max_driver_changes} veces. Después puedes recogerlo o cancelarlo.`,
@@ -195,7 +197,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         "Un repartidor puja por un pedido una sola vez. Su oferta es su oferta, así que nadie puede llenar las ofertas de un pedido con las suyas.",
         "Cuando una tienda confirma tu bolsa sorpresa, te la guarda el tiempo que fijó la tienda. Si no la has pedido para entonces, vuelve a la venta. Tu app la pide en cuanto se confirma.",
         "Una tienda puede fijar un pedido mínimo e indicar que tiene mucha demanda, sumando tiempo a su preparación habitual. Ves ambas cosas antes de pedir.",
-        `Publicar una tienda reserva un depósito de ${formatCents(t.store_listing_stake)}, que se devuelve al cerrarla, así que toda tienda que encuentras es real.`,
+        `Una cuenta puede publicar como mucho ${MAX_STORES_PER_OWNER} tiendas, y una tienda solo acepta pedidos cuando su cuenta del procesador está conectada, así que las tiendas que encuentras son negocios reales.`,
         "Reclamas una bolsa sorpresa una vez, reseñas a la tienda y al repartidor de un pedido una vez cada uno, e informas de cada artículo de un pedido una vez.",
         t.restricted_min_age
           ? `Los artículos con restricción de edad, como el alcohol, solo se venden a personas de ${t.restricted_min_age} años o más, y se recogen en persona: confirmas tu edad al pedir y la tienda comprueba tu identificación en el mostrador. Nunca se envían.`
@@ -224,7 +226,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         "Para cada pedido, la tienda escribe un resultado y una liquidación de la comida, y la red no acepta un segundo de ninguno. Todos los pagos se basan en ellos, así que ningún pago puede contradecir a otro.",
         "La tienda no puede quedarse a la vez con el dinero del cliente y con la garantía del repartidor, ni reembolsar más de lo que valen los informes que cita, ni decidir que no se entregó un pedido que ella canceló.",
         "Cada decisión está firmada y es pública, y queda registrada contra quien salió perjudicado.",
-        ...(t.appeals ? ["Un árbitro resuelve una apelación una sola vez y no concede más de lo pedido. El emisor de la red, que guarda el dinero que respalda cada saldo, paga lo concedido con los retiros de la tienda."] : []),
+        ...(t.appeals ? ["Un árbitro resuelve una apelación una sola vez y no concede más de lo pedido. La app de la tienda reembolsa lo concedido a la tarjeta del cliente. La resolución es pública, así que un cliente al que no se le reembolsa la tiene como prueba para una disputa con su banco."] : []),
       ],
     },
     {
@@ -249,12 +251,12 @@ function sections(t: NetworkTerms): PolicySection[] {
       title: "Tu cuenta y cómo recuperarla",
       summary: "Tu cuenta es una clave en tu dispositivo. No hay empresa que pueda restablecerla, así que estas son las formas de volver a entrar.",
       points: [
-        "Cambiar de teléfono: el teléfono antiguo traspasa la cuenta al nuevo, con tu saldo, valoraciones e historial. El antiguo ya no puede gastar después.",
+        "Cambiar de teléfono: el teléfono antiguo traspasa la cuenta al nuevo, con tus valoraciones e historial. El antiguo ya no puede actuar por ti después.",
         "Perder el teléfono: tu frase de recuperación (doce palabras que apuntas) o suficientes de tus guardianes (personas que eliges y que avalan tu nuevo teléfono) te devuelven la cuenta.",
-        "Tras una recuperación, el emisor de la red vuelve a emitir tu saldo en tu nuevo teléfono, cuando tu teléfono antiguo lleva sin usarse el periodo de espera del emisor. Así nadie con tu teléfono antiguo puede gastar el mismo dinero dos veces.",
+        "Tras una recuperación, una tienda o un repartidor conecta de nuevo su cuenta del procesador en el teléfono nuevo: sus claves nunca salen del dispositivo donde se pegaron. Las retenciones y cobros ya hechos se mantienen.",
         "Cualquiera con tu frase de recuperación puede quedarse con tu cuenta. Guárdala en papel, no la compartas nunca, y nadie de HandShake te la pedirá jamás.",
         "Los guardianes no pueden tocar tu cuenta por su cuenta: solo suficientes de ellos juntos, para un teléfono en el que estás recuperándola. Tu plan publica sus claves, nunca sus nombres.",
-        "Cuando la red pasa a una nueva versión, mueves tu cuenta a ella desde la app antigua: el emisor traslada tu saldo, y tus datos, tiendas y valoraciones vienen contigo. La versión antigua deja de funcionar para tu cuenta una vez te mueves.",
+        "Cuando la red pasa a una nueva versión, mueves tu cuenta a ella desde la app antigua: tus datos, tiendas y valoraciones vienen contigo. La versión antigua deja de funcionar para tu cuenta una vez te mueves.",
       ],
     },
     {
@@ -279,8 +281,8 @@ function risks(t: NetworkTerms): string[] {
     "Un pedido dejado en la puerta se considera entregado al dejarlo. Si alguien se lo lleva después, la pérdida es del cliente, como un paquete dejado sin firma.",
     "Nada obliga a una tienda a responder a un informe de artículos que faltan antes de liquidar el pedido; una tienda que liquida antes, o que rechaza injustamente, responde ante sus reseñas.",
     `Una tienda podría negarse a hacer el check-in de un repartidor y después quedarse con su garantía si se va y no viene otro. La red no puede distinguir una tienda que no hace el check-in de un repartidor que nunca llegó, así que se pone del lado de la tienda, la parte que más tiene que perder. Los repartidores pueden informar de ello; los informes de repartidores que han entregado para al menos ${t.min_reporter_stores} tiendas distintas aparecen en el historial de la tienda, y las apps de los repartidores pueden evitar las tiendas señaladas.`,
-    "Los saldos son créditos emitidos por los emisores de esta red. Lo que vale un saldo fuera de HandShake depende de esos emisores, no de HandShake.",
-    "Si pierdes el teléfono sin haber configurado una frase de recuperación ni guardianes, nadie puede recuperar tu cuenta ni su saldo. Un teléfono que encuentre otra persona aún puede gastar hasta que recuperes la cuenta.",
+    "Los pagos se hacen en la propia cuenta del procesador de cada tienda y repartidor, según sus condiciones. Una tienda o un repartidor podría cobrar de una tarjeta retenida más de lo que la red dice que se le debe; cada cobro legítimo tiene un registro firmado, así que cualquier exceso es un caso claro para una disputa con tu banco.",
+    "Si pierdes el teléfono sin haber configurado una frase de recuperación ni guardianes, nadie puede recuperar tu cuenta. Un teléfono que encuentre otra persona aún puede actuar como tú hasta que recuperes la cuenta.",
     "Todo lo que publicas es permanente y se copia por toda la red. Las reseñas, valoraciones y registros de pedidos no se pueden borrar.",
     "Es público a qué tienda pidió una clave de cliente, y aproximadamente dónde. Usar una sola identidad para todo vincula esos pedidos entre sí.",
     "Las reseñas no pueden detectar que una tienda se compre a sí misma con otra identidad para valorarse.",

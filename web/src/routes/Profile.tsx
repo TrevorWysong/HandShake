@@ -7,14 +7,12 @@ import { encodeHashToBase64 } from "@holochain/client";
 import { useSession } from "../store/session";
 import { useMerchantStores, useMyStores } from "../store/merchantStores";
 import { useResource } from "../lib/hooks/useResource";
-import { getBalance } from "../holochain/zomes/ledger";
 import { averageRating, getRatingSummary, getReputationSummary, getReviewsFor } from "../holochain/zomes/reputation";
 import { updateProfile, getMyName, getMyPhone, getProviderCredentialForProfile, registerProviderCredential } from "../holochain/zomes/profiles";
 import { bytesToHex, decodeEntry } from "../holochain/decode";
 import { Button, Card, Input, Notice, SectionLabel, Skeleton, StatNumber, Textarea } from "../components/ui";
 import { PhotoInput } from "../components/PhotoInput";
 import { StarRating } from "../components/StarRating";
-import { formatCents } from "../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
 import type { ProviderCredential, RatingSummary, Review } from "../holochain/types";
 import { HOST } from "../holochain/host";
@@ -38,7 +36,6 @@ export function ProfilePage() {
   const isMerchant = !!profile?.roles.includes("Merchant");
   const stores = useMyStores(isMerchant);
   const agentHex = agentPubKey ? bytesToHex(agentPubKey) : null;
-  const { data: balance } = useResource(agentHex && `balance:${agentHex}`, () => getBalance(agentPubKey!));
   // The phone is sealed to its owner, so it's read through the zome.
   const { data: phone = null, reload: reloadPhone } = useResource(agentHex && `phone:${agentHex}`, getMyPhone);
   const { data: myName = null, reload: reloadName } = useResource(agentHex && `name:${agentHex}`, getMyName);
@@ -266,13 +263,13 @@ export function ProfilePage() {
         </Link>
       </motion.div>
 
-      {/* The wallet, beside a driver's deliveries -- alone, the full width. */}
+      {/* Payments, beside a driver's deliveries -- alone, the full width. */}
       <motion.div variants={fadeSlideUp} className={clsx("mb-4 grid gap-3", isDriver && "grid-cols-2")}>
-        <Link to="/wallet" className="block rounded-2xl border border-ink-100 bg-white p-4 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 dark:border-ink-800 dark:bg-ink-900">
+        <Link to="/payments" className="block rounded-2xl border border-ink-100 bg-white p-4 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 dark:border-ink-800 dark:bg-ink-900">
           <p className="flex items-center justify-between text-xs text-ink-400">
-            {t("wallet.title")} <ChevronRight size={14} className="text-ink-300" />
+            {t("payments.title")} <ChevronRight size={14} className="text-ink-300" />
           </p>
-          {balance === undefined ? <Skeleton className="h-6 w-16 mt-1" /> : <StatNumber className="text-lg">{formatCents(balance)}</StatNumber>}
+          <p className="mt-1 text-sm font-semibold text-ink-900 dark:text-ink-50">{t("payments.tile")}</p>
         </Link>
         {isDriver && (
           <Card className="p-4">

@@ -28,6 +28,9 @@ pub enum Processor {
     Stripe,
     Square,
     Clover,
+    /// No processor at all: a stand-in for development and tests, whose
+    /// payments move no money. Only ever on a test network.
+    Test,
 }
 
 /// How a payee is paid: public, by design -- what any payer's app needs to

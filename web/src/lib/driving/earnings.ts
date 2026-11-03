@@ -1,16 +1,9 @@
-// A driver's earnings, from their own ledger -- every fee, tip and late
-// cover they collected, the collateral they forfeited, and what they cashed
-// out -- grouped by week or month. Read on this device, from records only
-// they wrote: there's no report anyone else keeps.
-import type { LedgerEntry } from "../../holochain/types";
-import { bytesToHex } from "../../holochain/decode";
-
-export interface LedgerRow {
-  hash: Uint8Array;
-  entry: LedgerEntry;
-  /// Microseconds since the epoch.
-  at: number;
-}
+// A driver's earnings, from their payment history -- every fee, tip and
+// late cover stores paid them, and the collateral they forfeited -- grouped
+// by week or month. The money itself went straight to their own processor
+// account; this is the record of what each store charged and why.
+import type { AgentPubKey, PaymentHistoryItem } from "../../holochain/types";
+import { bytesEqual } from "../../holochain/decode";
 
 export interface EarningsPeriod {
   /// The period's first day, local midnight, in milliseconds.
@@ -20,9 +13,8 @@ export interface EarningsPeriod {
   tips: number;
   /// What stores paid for keeping the driver waiting.
   lateCover: number;
-  /// Collateral conceded on orders that never arrived.
+  /// Collateral charged on orders that never arrived.
   forfeited: number;
-  cashedOut: number;
 }
 
 export type Grouping = "week" | "month";
@@ -36,54 +28,42 @@ export function periodStart(atMs: number, grouping: Grouping): number {
   return d.getTime();
 }
 
-/// Earnings by period, newest first.
-export function earningsByPeriod(rows: LedgerRow[], grouping: Grouping): EarningsPeriod[] {
-  // Holds the driver paid themselves: a collection from one is money back
-  // (a refund as a customer, collateral returned), not earnings.
-  const mine = new Map<string, LedgerRow>();
-  for (const row of rows) if ("Hold" in row.entry.kind) mine.set(bytesToHex(row.hash), row);
-
-  // A delivery's fee can come from two holds -- the customer's and, where
-  // the store pays part of it, the store's -- collected on one basis, the
-  // delivery: counted once.
-  const periods = new Map<number, EarningsPeriod & { delivered: Set<string> }>();
-  const period = (at: number) => {
-    const start = periodStart(at / 1000, grouping);
+/// Earnings by period, newest first, for the driver `me`.
+export function earningsByPeriod(items: PaymentHistoryItem[], me: AgentPubKey, grouping: Grouping): EarningsPeriod[] {
+  const periods = new Map<number, EarningsPeriod>();
+  const period = (atMicros: number) => {
+    const start = periodStart(atMicros / 1000, grouping);
     let p = periods.get(start);
-    if (!p) periods.set(start, (p = { start, deliveries: 0, fees: 0, tips: 0, lateCover: 0, forfeited: 0, cashedOut: 0, delivered: new Set() }));
+    if (!p) periods.set(start, (p = { start, deliveries: 0, fees: 0, tips: 0, lateCover: 0, forfeited: 0 }));
     return p;
   };
-  for (const row of rows) {
-    const kind = row.entry.kind;
-    if ("Collect" in kind) {
-      const hold = bytesToHex(kind.Collect.hold);
-      if (mine.has(hold)) continue;
-      const p = period(row.at);
-      if (kind.Collect.portion === "Fee") {
-        p.fees += row.entry.amount;
-        p.delivered.add(bytesToHex(kind.Collect.basis));
-      } else if (kind.Collect.portion === "Tip") p.tips += row.entry.amount;
-      else if (kind.Collect.portion === "LateCover") p.lateCover += row.entry.amount;
-    } else if ("Forfeit" in kind) {
-      period(row.at).forfeited += mine.get(bytesToHex(kind.Forfeit.hold))?.entry.amount ?? 0;
-    } else if ("Redeem" in kind) {
-      period(row.at).cashedOut += row.entry.amount;
+  for (const item of items) {
+    if (item.charged === null || item.charged === 0) continue;
+    const leg = item.leg;
+    if (typeof leg === "object" && "DriverPay" in leg && bytesEqual(item.payee, me)) {
+      const p = period(item.at);
+      p.deliveries += 1;
+      for (const { part, amount } of item.parts) {
+        if (part.portion === "Fee") p.fees += amount;
+        else if (part.portion === "Tip") p.tips += amount;
+        else if (part.portion === "LateCover") p.lateCover += amount;
+      }
+    } else if (typeof leg === "object" && "Collateral" in leg && bytesEqual(item.payer, me)) {
+      period(item.at).forfeited += item.charged;
     }
   }
-  return [...periods.values()]
-    .map(({ delivered, ...p }) => ({ ...p, deliveries: delivered.size }))
-    .sort((a, b) => b.start - a.start);
+  return [...periods.values()].sort((a, b) => b.start - a.start);
 }
 
 export const earned = (p: EarningsPeriod) => p.fees + p.tips + p.lateCover;
 
 /// The periods as CSV, for the driver's own records or their accountant.
 export function earningsCsv(periods: EarningsPeriod[], grouping: Grouping, minor: (cents: number) => string): string {
-  const header = [grouping === "week" ? "Week starting" : "Month", "Deliveries", "Fees", "Tips", "Late cover", "Earned", "Collateral forfeited", "Cashed out"];
+  const header = [grouping === "week" ? "Week starting" : "Month", "Deliveries", "Fees", "Tips", "Late cover", "Earned", "Collateral forfeited"];
   const day = (ms: number) => {
     const d = new Date(ms);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
-  const lines = periods.map((p) => [day(p.start), p.deliveries, minor(p.fees), minor(p.tips), minor(p.lateCover), minor(earned(p)), minor(p.forfeited), minor(p.cashedOut)].join(","));
+  const lines = periods.map((p) => [day(p.start), p.deliveries, minor(p.fees), minor(p.tips), minor(p.lateCover), minor(earned(p)), minor(p.forfeited)].join(","));
   return [header.join(","), ...lines].join("\n") + "\n";
 }

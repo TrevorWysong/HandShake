@@ -12,7 +12,7 @@ use handshake_types::GeoPoint;
 mod verification;
 mod confirmations;
 pub mod basis;
-mod carry;
+pub mod carry;
 pub mod payments;
 pub use dispatch_types::direct;
 mod appeals;

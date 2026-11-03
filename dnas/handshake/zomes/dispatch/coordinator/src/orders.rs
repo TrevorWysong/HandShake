@@ -624,10 +624,6 @@ pub fn pick_up_order(order_original_action: ActionHash) -> ExternResult<Record> 
     }
     let proof: Option<ActionHash> = call_local("attestation", "pickup_proof_for_order", order_original_action.clone())?.unwrap_or(None);
     order.pickup_proof = Some(proof.ok_or(guest("Have the store scan your code, or confirm they've handed it over."))?);
-    let bid = order.accepted_bid.clone().ok_or(guest("This order has no driver yet."))?;
-    let me = agent_info()?.agent_initial_pubkey;
-    let original = original_action_of(order_original_action.clone())?;
-    order.driver_payment = crate::payments::step_payment(&original, &PaymentLeg::DriverPay { bid }, &me, "The store hasn't paid you for this delivery yet. Ask them to confirm their card, then pick it up.")?;
     order.status = DeliveryStatus::PickedUp;
     let updated = update_version(&current, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)?;
     written(updated)

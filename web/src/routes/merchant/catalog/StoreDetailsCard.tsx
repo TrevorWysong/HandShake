@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Globe, Mail, MapPin, Pencil, Phone } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { closeListing, detailsOf, isStoreListed, reopenListing, setAutoAcceptOrders, setBusy, setDeliverySubsidyPercent, setLeaveAtDoorLimit, setMinimumOrder, updateCatalogDetails, setStoreWait } from "../../../holochain/zomes/catalog";
-import { formatCatalogAddress, formatCents, formatDistance, toMinorUnits, fromMinorUnits, currencySymbol } from "../../../lib/ui/format";
+import { formatCatalogAddress, formatDistance, toMinorUnits, fromMinorUnits, currencySymbol } from "../../../lib/ui/format";
 import { useT } from "../../../i18n";
 import { useResource } from "../../../lib/hooks/useResource";
 import { useAction } from "../../../lib/hooks/useAction";
@@ -352,12 +352,10 @@ function SubsidyEditor({ initial, onSave }: { initial: number; onSave: (percent:
   );
 }
 
-/// Whether customers can find the store, and the deposit that listing it
-/// sets aside -- returned when the listing closes. A closed listing keeps
-/// answering the orders it has; it just isn't offered to new customers.
+/// Whether customers can find the store. A closed listing keeps answering
+/// the orders it has; it just isn't offered to new customers.
 export function ListingCard({ catalogRef }: { catalogRef: Uint8Array }) {
   const t = useT();
-  const stake = useTerms().store_listing_stake;
   const { data: listed, reload } = useResource(`store-listed:${bytesToHex(catalogRef)}`, () => isStoreListed(catalogRef));
   const [confirming, setConfirming] = useState(false);
   const save = useAction();
@@ -372,7 +370,7 @@ export function ListingCard({ catalogRef }: { catalogRef: Uint8Array }) {
     <Card className="mb-4 p-4">
       <SectionLabel className="mb-1">{t("storeSettings.listing")}</SectionLabel>
       <p className="mb-3 text-xs leading-relaxed text-ink-400">
-        {listed ? t("storeSettings.listed", { amount: formatCents(stake) }) : t("storeSettings.unlisted", { amount: formatCents(stake) })}
+        {listed ? t("storeSettings.listed") : t("storeSettings.unlisted")}
       </p>
       {listed ? (
         confirming ? (

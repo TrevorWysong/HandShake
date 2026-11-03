@@ -12,7 +12,6 @@ import { ArrowLeft, ChevronRight, Gavel, HeartHandshake, KeyRound, QrCode, Shiel
 import type { PlanView } from "../../holochain/types";
 import { bytesToHex } from "../../holochain/decode";
 import { myRecoveryPlan, myWards } from "../../holochain/zomes/account";
-import { nextNetwork } from "../../lib/account/migration";
 import { AccountCode } from "../../components/account/AccountCode";
 import { Sheet } from "../../components/Sheet";
 import { Badge, Card, CardSection, Skeleton } from "../../components/ui";
@@ -44,7 +43,6 @@ export function AccountPage() {
   const navigate = useNavigate();
   const names = useGuardianNames((s) => s.names);
   // A new version of the network, once an issuer announces it (docs/MIGRATION.md).
-  const { data: next } = useResource("next-network", nextNetwork, { pollMs: POLL.slow });
   const { data: verification } = useResource("verification-terms", getVerificationTerms);
   const isVerifier = !!verification?.verifiers.some((v) => bytesToHex(v) === hex);
   // An arbiter has a docket; nobody else's ever has anything on it.
@@ -105,13 +103,12 @@ export function AccountPage() {
         </motion.div>
       )}
 
-      {next && (
-        <motion.div variants={fadeSlideUp}>
-          <CardSection divided title={t("account.newVersion")}>
-            <Row icon={<Sparkles size={18} />} title={t("account.upgrade")} detail={t("account.upgradeDetail")} onClick={() => setOpen("upgrade")} />
-          </CardSection>
-        </motion.div>
-      )}
+      {/* Moving to a new version: started from the code it shows. */}
+      <motion.div variants={fadeSlideUp}>
+        <CardSection divided title={t("account.newVersion")}>
+          <Row icon={<Sparkles size={18} />} title={t("account.upgrade")} detail={t("account.upgradeDetail")} onClick={() => setOpen("upgrade")} />
+        </CardSection>
+      </motion.div>
 
       <motion.div variants={fadeSlideUp}>
         <CardSection divided title={t("account.waysBack")}>
@@ -165,7 +162,7 @@ export function AccountPage() {
       {open === "phrase" && <PhraseSheet plan={plan ?? null} onClose={close} onSaved={saved} />}
       {open === "guardians" && <GuardiansSheet plan={plan ?? null} me={agentPubKey} onClose={close} onSaved={saved} />}
       {open === "move" && <MoveSheet onClose={close} />}
-      {open === "upgrade" && next && <UpgradeSheet me={agentPubKey} next={next} onClose={close} />}
+      {open === "upgrade" && <UpgradeSheet me={agentPubKey} onClose={close} />}
       {open === "help" && wards && <HelpRecoverSheet wards={wards} me={agentPubKey} onClose={close} />}
       {open === "code" && (
         <Sheet open onClose={close} title={t("account.code")} subtitle={t("account.codeSubtitle")}>

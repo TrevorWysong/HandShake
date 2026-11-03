@@ -1,41 +1,32 @@
-import { ArrowDownCircle, ArrowUpCircle, Lock, ShieldCheck } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Clock, ShieldCheck } from "lucide-react";
 import { TimeAgo } from "../components/TimeAgo";
 import { motion } from "framer-motion";
 import { useSession } from "../store/session";
-import { listMyLedger, getBalance } from "../holochain/zomes/ledger";
-import { decodeEntry, actionHash, bytesToHex, timestampOf } from "../holochain/decode";
+import { myPaymentHistory } from "../holochain/zomes/payments";
+import { bytesToHex } from "../holochain/decode";
 import { Card, Skeleton, StatNumber } from "../components/ui";
 import { formatCents } from "../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
 import { useResource } from "../lib/hooks/useResource";
-import type { LedgerEntry } from "../holochain/types";
-import { describeLedgerEntry } from "../lib/money/ledger";
+import { describePayment } from "../lib/money/payments";
 import { useT } from "../i18n";
 
-interface Row {
-  hash: Uint8Array;
-  entry: LedgerEntry;
-  at: number;
-}
+/// How far back the page reads.
+const HISTORY_DAYS = 90;
 
-/// The "no-skim" transparency dashboard: every entry on this agent's own
-/// ledger -- each hold, collection and deposit, with the balance it left
-/// them -- straight from their own signed chain, newest first. Each entry's
-/// balance follows from the one before it (validation checks), so this
-/// page is the whole account, not a report about it. There is no operator
-/// account anywhere in this system for a platform cut to go to.
+/// The "no-skim" transparency dashboard: every payment this agent made or
+/// received, newest first -- each held on the card of whoever paid, by
+/// whoever it paid, and captured only for what the network says they're
+/// owed. Every one is a signed record its order's parties can check. There
+/// is no operator account anywhere in this system for a platform cut to go
+/// to: each payment goes straight to the party it pays.
 export function Transparency() {
   const t = useT();
   const agentPubKey = useSession((s) => s.agentPubKey);
   const agentHex = agentPubKey ? bytesToHex(agentPubKey) : null;
-  const { data: balance } = useResource(agentHex && `balance:${agentHex}`, () => getBalance(agentPubKey!).catch(() => 0));
-  const { data: rows } = useResource<Row[]>(agentHex && `ledger:${agentHex}`, () =>
-    listMyLedger(null)
-      .then((page) => page.entries.map((r) => ({ hash: actionHash(r), entry: decodeEntry<LedgerEntry>(r), at: timestampOf(r) })))
-      .catch(() => []),
-  );
+  const { data: items } = useResource(agentHex && `payment-history:${agentHex}`, () => myPaymentHistory(HISTORY_DAYS).catch(() => []));
 
-  if (!agentPubKey || rows === undefined) {
+  if (!agentPubKey || items === undefined) {
     return (
       <div className="px-4 pb-10 pt-4">
         <Skeleton className="h-44 w-full rounded-3xl mb-5" />
@@ -50,8 +41,11 @@ export function Transparency() {
     );
   }
 
-  const totalReceived = rows.filter((r) => describeLedgerEntry(r.entry).direction === "in").reduce((sum, r) => sum + r.entry.amount, 0);
-  const totalPaid = rows.filter((r) => describeLedgerEntry(r.entry).direction === "out").reduce((sum, r) => sum + r.entry.amount, 0);
+  const rows = items.map((item) => ({ item, ...describePayment(item, agentPubKey) }));
+  const settled = rows.filter((r) => !r.pending);
+  const totalReceived = settled.filter((r) => r.direction === "in").reduce((sum, r) => sum + r.amount, 0);
+  const totalPaid = settled.filter((r) => r.direction === "out").reduce((sum, r) => sum + r.amount, 0);
+  const net = totalReceived - totalPaid;
   const flowTotal = totalReceived + totalPaid;
   const receivedShare = flowTotal > 0 ? (totalReceived / flowTotal) * 100 : 50;
 
@@ -84,12 +78,12 @@ export function Transparency() {
           <StatNumber tone="success" className="text-lg">{formatCents(totalReceived)}</StatNumber>
         </Card>
         <Card className="p-3 text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">{t("transparency.setAside")}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">{t("transparency.paid")}</p>
           <StatNumber className="text-lg">{formatCents(totalPaid)}</StatNumber>
         </Card>
         <Card className="p-3 text-center">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">{t("transparency.net")}</p>
-          <StatNumber tone={(balance ?? 0) >= 0 ? "success" : "danger"} className="text-lg">{formatCents(balance ?? 0)}</StatNumber>
+          <StatNumber tone={net >= 0 ? "success" : "danger"} className="text-lg">{formatCents(net)}</StatNumber>
         </Card>
       </motion.div>
 
@@ -120,24 +114,22 @@ export function Transparency() {
       ) : (
         <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="pb-6">
           <Card className="flex flex-col gap-3 p-4">
-            {rows.map((row) => {
-              const { label, direction } = describeLedgerEntry(row.entry);
-              const Icon = direction === "in" ? ArrowDownCircle : direction === "out" ? Lock : ArrowUpCircle;
+            {rows.map(({ item, label, direction, amount, pending }) => {
+              const Icon = pending ? Clock : direction === "in" ? ArrowDownCircle : ArrowUpCircle;
               return (
-                <motion.div variants={fadeSlideUp} key={bytesToHex(row.hash)} className="flex items-center gap-2.5">
-                  <Icon size={18} className={direction === "in" ? "shrink-0 text-presence-600" : "shrink-0 text-ink-400"} />
+                <motion.div variants={fadeSlideUp} key={bytesToHex(item.hold)} className="flex items-center gap-2.5">
+                  <Icon size={18} className={!pending && direction === "in" ? "shrink-0 text-presence-600" : "shrink-0 text-ink-400"} />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{label}</p>
                     <p className="text-xs text-ink-400">
-                      <TimeAgo at={row.at} /> · {t("transparency.balanceAfter", { amount: formatCents(row.entry.balance) })}
+                      <TimeAgo at={item.at} />
+                      {pending && ` · ${t("transparency.held")}`}
                     </p>
                   </div>
-                  {direction !== "none" && (
-                    <StatNumber tone={direction === "in" ? "success" : "default"} className="text-sm">
-                      {direction === "in" ? "+" : "−"}
-                      {formatCents(row.entry.amount)}
-                    </StatNumber>
-                  )}
+                  <StatNumber tone={!pending && direction === "in" ? "success" : "default"} className="text-sm">
+                    {direction === "in" ? "+" : "−"}
+                    {formatCents(amount)}
+                  </StatNumber>
                 </motion.div>
               );
             })}

@@ -83,7 +83,8 @@ fn without_driver(order: &mut DeliveryOrder) {
 
 /// The driver committing to an order whose customer accepted their bid,
 /// once the store holds their collateral -- the food's value, on their card
-/// (`PaymentLeg::Collateral`). Their app does it as soon as it's held
+/// (`PaymentLeg::Collateral`) -- and they hold their pay, on the store's
+/// (`PaymentLeg::DriverPay`). Their app does it as soon as both are held
 /// (`tend_my_deliveries`).
 #[hdk_extern]
 pub fn commit_to_order(order_ref: ActionHash) -> ExternResult<Record> {
@@ -96,8 +97,10 @@ pub fn commit_to_order(order_ref: ActionHash) -> ExternResult<Record> {
     if order.status != DeliveryStatus::BidAccepted {
         return Err(guest("You've already committed to this order."));
     }
-    let held = hold_for(&order_ref, &PaymentLeg::Collateral { bid: bid_ref }, &order.merchant)?;
+    let held = hold_for(&order_ref, &PaymentLeg::Collateral { bid: bid_ref.clone() }, &order.merchant)?;
     order.collateral_payment = Some(held.ok_or(guest("The store hasn't held your collateral yet. Confirm your card for it, then commit."))?);
+    let pay = hold_for(&order_ref, &PaymentLeg::DriverPay { bid: bid_ref }, &bid.bidder)?;
+    order.driver_payment = Some(pay.ok_or(guest("The store hasn't paid you for this delivery yet. You'll set off once it has."))?);
     order.status = DeliveryStatus::DriverEnRouteToMerchant;
     write(&version, order)
 }
@@ -682,12 +685,14 @@ pub fn get_store_steps_due(_: ()) -> ExternResult<Vec<StoreStepDue>> {
 /// proof of the time are its app's (`get_store_steps_due`). Returns when
 /// it next needs tending, if it will.
 pub(crate) fn tend_store_delivery(order_ref: &ActionHash, record: &Record, order: &DeliveryOrder, now: Timestamp) -> ExternResult<Option<Timestamp>> {
-    if order.status == DeliveryStatus::DriverEnRouteToMerchant {
-        // A driver the store saved its card with is paid by itself;
-        // otherwise the store confirms it when they check in.
+    // A driver the store saved its card with is paid by itself, as soon as
+    // the customer takes them; otherwise the store confirms it.
+    if order.status == DeliveryStatus::BidAccepted {
         if let Some(bid) = order.accepted_bid.clone() {
             let _ = crate::payments::offer_saved(order_ref, PaymentLeg::DriverPay { bid });
         }
+    }
+    if order.status == DeliveryStatus::DriverEnRouteToMerchant {
         call_own("start_cooking", order_ref);
         return Ok(Some(Timestamp::from_micros(now.as_micros().saturating_add(1_000_000))));
     }
@@ -746,6 +751,22 @@ pub(crate) fn end_carries() -> ExternResult<u32> {
         }
     }
     Ok(recorded)
+}
+
+/// Records, now, each order that's left the caller's hands (`end_carries`)
+/// -- for their screen, freeing them to take another without waiting for
+/// their app's next round.
+#[hdk_extern]
+pub fn end_my_carries(_: ()) -> ExternResult<u32> {
+    end_carries()
+}
+
+/// What the caller has in hand, as validation counts it when they commit
+/// to another order (`dispatch_integrity::carry`).
+#[hdk_extern]
+pub fn my_hands(_: ()) -> ExternResult<InHand> {
+    let info = agent_info()?;
+    dispatch_integrity::carry::in_hand(&info.agent_initial_pubkey, &info.chain_head.0)
 }
 
 /// Writes the caller's record of an order leaving their hands -- see
