@@ -30,7 +30,7 @@ await runScenario(async (scenario) => {
   await sync();
   const placeOrder = async () => {
     const order = actionHash(
-      await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity: 1 }], order_total: 2000, dropoff: ST_PETE, max_delivery_fee: null, tip_cents: 300 }),
+      await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity: 1 }], order_total: 2000, dropoff: ST_PETE, max_delivery_fee: 1_000, tip_cents: 300 }),
     );
     await sync();
     return order;

@@ -64,7 +64,7 @@ await runScenario(async (scenario) => {
 
   // --- Nobody withdraws another driver's bid. ---
   const order = actionHash(
-    await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: soupRef, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: null }),
+    await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: soupRef, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: 1_000 }),
   );
   await sync();
   await acceptOrder(merchant, order, all);

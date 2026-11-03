@@ -70,7 +70,7 @@ await runScenario(async (scenario) => {
       items: [{ item_ref: menuItemRef, quantity: 1 }],
       order_total: total,
       dropoff: ST_PETE,
-      max_delivery_fee: null,
+      max_delivery_fee: 1_000,
       promo_code_ref: promo,
     });
   await assert.rejects(deliver(loyaltyCodeRef, 850), /doesn't meet the promo code's requirement/, "a first-time customer hasn't earned a 5th-order discount");

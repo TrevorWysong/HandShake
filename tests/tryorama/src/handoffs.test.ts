@@ -47,7 +47,7 @@ await runScenario(async (scenario) => {
   async function toTheStore(extra: Record<string, unknown> = {}) {
     const ref = actionHash(
       await retryUntilOk(() =>
-        call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: null, ...extra }),
+        call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: 1_000, ...extra }),
       ),
     );
     await sync();
@@ -134,7 +134,7 @@ await runScenario(async (scenario) => {
 
   // ===== Left at the door =====
   await assert.rejects(
-    call(customer, "dispatch")("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: null, dropoff_preference: "LeaveAtDoor" }),
+    call(customer, "dispatch")("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: 1_000, dropoff_preference: "LeaveAtDoor" }),
     /accept that it's delivered once it's left/,
     "the door is the customer's choice, and their risk to accept",
   );
@@ -182,7 +182,7 @@ await runScenario(async (scenario) => {
   await sync();
   const pricey = actionHash(
     await retryUntilOk(() =>
-      call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: null, dropoff_preference: "LeaveAtDoor", door_risk_accepted: true }),
+      call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: 1_000, dropoff_preference: "LeaveAtDoor", door_risk_accepted: true }),
     ),
   );
   await sync();

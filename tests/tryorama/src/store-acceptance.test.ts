@@ -34,7 +34,7 @@ await runScenario(async (scenario) => {
     items: [{ item_ref: burgerV1, quantity: 1 }],
     order_total: 1000,
     dropoff: ST_PETE,
-    max_delivery_fee: null,
+    max_delivery_fee: 1_000,
   });
   const order = actionHash(placed);
   const { status: placedStatus, dropoff_geohash } = decodeEntry<{ status: string; dropoff_geohash: string }>(placed);

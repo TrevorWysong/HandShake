@@ -12,8 +12,6 @@ integrity:
       path: ../../../target/wasm32-unknown-unknown/release/dispatch_integrity.wasm
     - name: attestation_integrity
       path: ../../../target/wasm32-unknown-unknown/release/attestation_integrity.wasm
-    - name: ledger_integrity
-      path: ../../../target/wasm32-unknown-unknown/release/ledger_integrity.wasm
     - name: reputation_integrity
       path: ../../../target/wasm32-unknown-unknown/release/reputation_integrity.wasm
     - name: account_integrity
@@ -38,10 +36,6 @@ coordinator:
       path: ../../../target/wasm32-unknown-unknown/release/attestation.wasm
       dependencies:
         - name: attestation_integrity
-    - name: ledger
-      path: ../../../target/wasm32-unknown-unknown/release/ledger.wasm
-      dependencies:
-        - name: ledger_integrity
     - name: reputation
       path: ../../../target/wasm32-unknown-unknown/release/reputation.wasm
       dependencies:

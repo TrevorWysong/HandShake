@@ -53,7 +53,7 @@ await runScenario(async (scenario) => {
 
   const orderRecord = await dispatchOf(customer)<HcRecord>("request_delivery", {
     merchant: customer.agentPubKey, catalog_ref: catalogRef, items: [{ item_ref: menuItemRef, quantity: 1 }],
-    order_total: 600, dropoff: ST_PETE, max_delivery_fee: null,
+    order_total: 600, dropoff: ST_PETE, max_delivery_fee: 1_000,
   });
   const orderRef = actionHash(orderRecord);
   await dhtSync(all, customer.cells[0].cell_id[0]);
@@ -75,7 +75,7 @@ await runScenario(async (scenario) => {
   // through end to end without breaking the accept path).
   const orderRecord2 = await dispatchOf(customer)<HcRecord>("request_delivery", {
     merchant: customer.agentPubKey, catalog_ref: catalogRef, items: [{ item_ref: menuItemRef, quantity: 1 }],
-    order_total: 600, dropoff: ST_PETE, max_delivery_fee: null,
+    order_total: 600, dropoff: ST_PETE, max_delivery_fee: 1_000,
   });
   const orderRef2 = actionHash(orderRecord2);
   await dhtSync(all, customer.cells[0].cell_id[0]);

@@ -26,12 +26,12 @@ pub(crate) const MAX_ORDERS_READ: usize = 500;
 /// The caller's view of one of their orders: whether, and when, the store
 /// accepted it, and the reward it spent. An order the store never accepted
 /// -- cancelled first, or declined -- spends nothing and earns nothing.
-pub(crate) fn my_order_view(order: &ActionHash, placed_at: Timestamp) -> ExternResult<Option<(MemberOrderView, AgentPubKey)>> {
+pub(crate) fn my_order_view(order: &ActionHash, placed_at: Timestamp) -> ExternResult<Option<MemberOrderView>> {
     let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
     let Some(placed) = OrderForRewards::of(&record) else { return Ok(None) };
     let reward = placed.rewards.as_ref().and_then(|r| r.reward);
     let accepted = acceptance(order, &placed.merchant)?;
-    Ok(Some((MemberOrderView { order: order.clone(), placed_at, accepted, reward }, placed.merchant)))
+    Ok(Some(MemberOrderView { order: order.clone(), placed_at, accepted, reward }))
 }
 
 /// The store's acceptance of an order: its earliest update from `Placed`
@@ -96,11 +96,10 @@ pub(crate) fn card_for(catalog_ref: &ActionHash, orders: Vec<(ActionHash, Timest
     let program = program_of(catalog_ref.clone())?;
     let store_info = store(catalog_ref)?;
     let grants = grants_from(&store_info.owner, catalog_ref)?;
-    let me = me()?;
     let mut views = Vec::new();
     let mut reserved = 0u64;
     for (order, placed_at) in orders {
-        let Some((view, _)) = my_order_view(&order, placed_at)? else { continue };
+        let Some(view) = my_order_view(&order, placed_at)? else { continue };
         if view.accepted.is_none() {
             // Placed, not yet accepted: a reward it names is held for it.
             if let (Some(id), Some(cited)) = (view.reward, program_cited(&order)?) {
@@ -117,7 +116,7 @@ pub(crate) fn card_for(catalog_ref: &ActionHash, orders: Vec<(ActionHash, Timest
         return Ok(CardView { catalog_ref: catalog_ref.clone(), store_name: store_info.business_name, program, state: None, balance: 0, reserved, tier: 0, expires_at: None, pending: Vec::new(), pending_points: 0, history: Vec::new() });
     };
     let grants: Vec<(ActionHash, Timestamp, u32)> = theirs.iter().map(|g| (g.grant.clone(), g.at, g.payload.points)).collect();
-    let standing = standing(catalog_ref, &me, &store_info.owner, &view.program, views, grants)?;
+    let standing = standing(catalog_ref, &view.program, views, grants)?;
     // What each moved, as the rules played it.
     let mut history: Vec<PointsLine> = standing
         .log
@@ -192,18 +191,15 @@ pub fn order_points(order: ActionHash) -> ExternResult<Option<OrderPoints>> {
         return Ok(None);
     }
     let Some(program) = program_of(placed.catalog_ref.clone())? else { return Ok(None) };
-    let Some((view, merchant)) = my_order_view(&order, record.action().timestamp())? else { return Ok(None) };
+    let Some(view) = my_order_view(&order, record.action().timestamp())? else { return Ok(None) };
     if view.accepted.is_none() {
         return Ok(None);
     }
-    let (_, status) = order_events(&view, &merchant, sys_time()?)?;
+    let (_, status) = order_events(&view, sys_time()?)?;
     let Some((status, base)) = status else { return Ok(None) };
     // What it earns at the member's standing without it.
     let card = card_for(&placed.catalog_ref, my_orders()?.into_iter().filter(|(o, c, _)| c == &placed.catalog_ref && o != &order).map(|(o, _, at)| (o, at)).collect())?;
-    let mut rules = program.program.clone();
-    if !may_be_welcomed(&placed.requester)? {
-        rules.earn.welcome_bonus = 0;
-    }
+    let rules = program.program.clone();
     let points = step(&rules, card.state.as_ref(), Event::Earn { at: sys_time()?, base }).map_or(base, |(_, p)| p);
     Ok(Some(OrderPoints { order, catalog_ref: placed.catalog_ref, placed_at: record.action().timestamp(), points, status }))
 }

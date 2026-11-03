@@ -213,6 +213,9 @@ fn fire(template: &RecurringOrderTemplate, details: &TemplateDetails) -> ExternR
         // Accepted when the template was made (`create_recurring_template`).
         door_risk_accepted: template.dropoff_preference == DropoffPreference::LeaveAtDoor,
         priority: details.priority,
+        // Paid with the card the customer saved with the store when they
+        // made it a standing order; the store's app declines it without one.
+        payment: Some(crate::payments::PaymentInput { token: None, save: false }),
         // A standing order runs unattended.
         auto_match: true,
         wake_for_store: None,

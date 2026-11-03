@@ -49,7 +49,7 @@ await runScenario(async (scenario) => {
       items: [{ item_ref: itemA, quantity: 1 }],
       order_total: 1250,
       dropoff: ST_PETE,
-      max_delivery_fee: null,
+      max_delivery_fee: 1_000,
     }),
   );
   await sync();

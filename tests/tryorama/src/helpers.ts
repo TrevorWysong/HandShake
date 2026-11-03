@@ -89,10 +89,8 @@ export async function retryUntil<T>(fn: () => Promise<T>, done: (value: T) => bo
 
 /// DNA properties every test network runs with, beneath any a test sets: a
 /// report window short enough to wait out, so a store's payment for the
-/// food settles within a test; and no store listing stake, so a store
-/// starts at a zero balance like every account. A test of either sets its
-/// own.
-export const TEST_PROPERTIES = { report_window_secs: 2, store_listing_stake: 0 };
+/// food settles within a test. A test of it sets its own.
+export const TEST_PROPERTIES = { report_window_secs: 2 };
 
 /// The `RoleSettings` installing with `properties` (merged over
 /// `TEST_PROPERTIES`). Discovered against the real admin API: it's tagged
@@ -179,7 +177,6 @@ export async function useTestCoordinators(player: PlayerApp, zomes: string[], ce
 const WARM_UP: Record<string, (player: PlayerApp) => [string, unknown]> = {
   dispatch: () => ["get_network_terms", null],
   catalog: () => ["list_my_catalogs", null],
-  ledger: (player) => ["get_balance", player.agentPubKey],
   reputation: (player) => ["get_reputation_summary", { Driver: player.agentPubKey }],
   attestation: () => ["prepare_device", null],
   profiles: () => ["get_my_name", null],
@@ -223,9 +220,112 @@ export function agentAsLinkBase(agentPubKey: Uint8Array): Uint8Array {
   return retyped;
 }
 
+// --- paying ---
+
+/// A leg of an order's payment (`dispatch_types::direct::PaymentLeg`).
+export type PaymentLeg = "Customer" | { DriverPay: { bid: Uint8Array } } | { Collateral: { bid: Uint8Array } };
+
+/// A processor's single-use card token, as a payer's app gets one from the
+/// payee's card form -- any string will do: tests never reach a processor.
+export const TEST_CARD = "tok_test_visa";
+
+/// A payer offering a card for `leg` of `order` -- what their app does with
+/// the payee's card form.
+export async function offerCard(payer: PlayerApp, order: Uint8Array, leg: PaymentLeg, save = false): Promise<Uint8Array> {
+  return retryUntilOk(() => payer.cells[0].callZome<Uint8Array>({ zome_name: "dispatch", fn_name: "offer_payment", payload: { order, leg, payment: { token: TEST_CARD, save }, resumes: null } }));
+}
+
+/// A payee's payment agent, as tests play it: does everything
+/// `payments_due` says -- authorizes offers, settles holds, refunds awards
+/// -- with made-up processor references, as the real agent (`payments/`)
+/// does on a processor. Returns how many things it did.
+export async function payeeAgent(payee: PlayerApp): Promise<number> {
+  const call = <T>(fn_name: string, payload: unknown) => payee.cells[0].callZome<T>({ zome_name: "dispatch", fn_name, payload });
+  const due = await call<Record<string, Record<string, unknown>>[]>("payments_due", null);
+  let done = 0;
+  for (const item of due) {
+    if ("Authorize" in item) {
+      const offer = item.Authorize.offer as Uint8Array;
+      await call("record_hold", { offer, reference: `test_${Buffer.from(offer).toString("hex").slice(0, 24)}` });
+    } else if ("Settle" in item) {
+      await call("record_settlement", { hold: item.Settle.hold, claims: item.Settle.claims });
+    } else if ("Refund" in item) {
+      await call("record_refund", { settlement: item.Refund.settlement, ruling: item.Refund.ruling, amount: item.Refund.amount });
+    }
+    done += 1;
+  }
+  return done;
+}
+
+/// `payee`'s hold of `leg` on `order`, once their agent has made it --
+/// running it until it has.
+export async function heldBy(payee: PlayerApp, order: Uint8Array, leg: PaymentLeg, players: PlayerApp[]): Promise<void> {
+  await retryUntil(
+    async () => {
+      await payeeAgent(payee);
+      await dhtSync(players, payee.cells[0].cell_id[0]);
+      return payee.cells[0].callZome<Uint8Array | null>({ zome_name: "dispatch", fn_name: "payment_hold", payload: { order, leg } });
+    },
+    (hold) => hold !== null,
+    30,
+    500,
+  );
+}
+
+/// The store making its decisions on `order`, and every payee's agent
+/// settling what it can, until nothing's left to do -- what each party's app
+/// does on its own, run here so a test can check what everyone paid. A
+/// store's food settles once the report window runs (`TEST_PROPERTIES`), so
+/// this waits for it.
+export async function settleAll(players: PlayerApp[], order: Uint8Array, rounds = 20): Promise<void> {
+  for (let round = 0; round < rounds; round++) {
+    let done = 0;
+    for (const player of players) {
+      done += await player.cells[0].callZome<number>({ zome_name: "dispatch", fn_name: "settle_order", payload: order });
+      done += await payeeAgent(player);
+    }
+    await dhtSync(players, players[0].cells[0].cell_id[0]);
+    if (done === 0 && round > 2) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+/// One payment on an order, as `order_payments` reads it.
+export interface OrderPayment {
+  leg: PaymentLeg;
+  payer: Uint8Array;
+  payee: Uint8Array;
+  held: number;
+  charged: number | null;
+}
+
+/// Every payment held on `order`, as `player` reads it.
+export async function paymentsOn(player: PlayerApp, order: Uint8Array): Promise<OrderPayment[]> {
+  return player.cells[0].callZome<OrderPayment[]>({ zome_name: "dispatch", fn_name: "order_payments", payload: order });
+}
+
+/// What `player` paid (negative) and was paid (positive) on `order`: every
+/// settled payment's charge, from payer to payee.
+export async function netOn(player: PlayerApp, order: Uint8Array): Promise<number> {
+  let net = 0;
+  for (const p of await paymentsOn(player, order)) {
+    if (bytesEqual(p.payee, player.agentPubKey)) net += p.charged ?? 0;
+    if (bytesEqual(p.payer, player.agentPubKey)) net -= p.charged ?? 0;
+  }
+  return net;
+}
+
+/// The player whose key is `key`.
+function playerOf(players: PlayerApp[], key: Uint8Array): PlayerApp | undefined {
+  return players.find((p) => bytesEqual(p.agentPubKey, key));
+}
+
 /// The store accepting a delivery order -- what opens it to drivers -- then
-/// a sync, so drivers see it open. Retried until the store has the order.
+/// a sync, so drivers see it open. Its customer offers their card first if
+/// they haven't, and the store's agent holds it. Retried until the store has
+/// the order.
 export async function acceptOrder(store: PlayerApp, orderRef: Uint8Array, players: PlayerApp[]): Promise<HcRecord> {
+  await customerPaid(store, orderRef, players);
   const accepted = await retryUntilOk(() => store.cells[0].callZome<HcRecord>({ zome_name: "dispatch", fn_name: "accept_delivery_order", payload: { order_original_action: orderRef } }));
   await dhtSync(players, store.cells[0].cell_id[0]);
   return accepted;
@@ -276,23 +376,13 @@ export async function setupPlayersWithProperties(scenario: Scenario, count: numb
   return players;
 }
 
-/// The caller's latest ledger entry and its hash, or nulls before any --
-/// what a hand-built (forged) entry would have to chain from.
-/// The orders a driver has in hand, as their ledger carries it.
+/// The orders a driver has in hand (`InHand`).
 export interface InHand {
   orders: number;
   priority: boolean;
 }
 
 export const EMPTY_HANDS: InHand = { orders: 0, priority: false };
-
-export async function latestLedgerEntry(player: PlayerApp): Promise<{ hash: Uint8Array | null; balance: number; in_hand: InHand }> {
-  const page = await player.cells[0].callZome<{ entries: HcRecord[] }>({ zome_name: "ledger", fn_name: "list_my_ledger", payload: { before: null } });
-  const latest = page.entries[0];
-  if (!latest) return { hash: null, balance: 0, in_hand: EMPTY_HANDS };
-  const entry = decodeEntry<{ balance: number; in_hand: InHand }>(latest);
-  return { hash: actionHash(latest), balance: entry.balance, in_hand: entry.in_hand };
-}
 
 /// The order's status as `player` reads it.
 export async function deliveryStatus(player: PlayerApp, orderRef: Uint8Array): Promise<string> {
@@ -316,6 +406,13 @@ async function stepOrDone(step: () => Promise<unknown>, alreadyDone: RegExp): Pr
 /// app does its step on its own; this does them too, so a test needn't
 /// wait, and checks the order ends up cooking.
 export async function commitAndCook(driver: PlayerApp, store: PlayerApp, orderRef: Uint8Array, players: PlayerApp[]): Promise<void> {
+  // Their collateral, held by the store, before they commit.
+  const bid = await acceptedBid(driver, orderRef);
+  if (!(await holdOf(store, orderRef, { Collateral: { bid } }))) {
+    await offerCard(driver, orderRef, { Collateral: { bid } });
+    await dhtSync(players, driver.cells[0].cell_id[0]);
+    await heldBy(store, orderRef, { Collateral: { bid } }, players);
+  }
   // A driver's earlier deliveries count against their carry limit until
   // their app settles them, on its own schedule -- up to a minute on a slow
   // runner.
@@ -338,18 +435,61 @@ export async function commitAndCook(driver: PlayerApp, store: PlayerApp, orderRe
 /// Returns the pickup leg.
 export async function collectFromStore(driver: PlayerApp, store: PlayerApp, orderRef: Uint8Array, players: PlayerApp[]): Promise<Uint8Array> {
   const leg = await handOff(driver, store, orderRef, "MerchantHandoff", players);
-  await pickUp(driver, orderRef);
+  await pickUp(driver, orderRef, store, players);
   await dhtSync(players, driver.cells[0].cell_id[0]);
   return leg;
 }
 
 /// The driver picking up an order the store has handed over -- or finding
 /// their app already has.
-export async function pickUp(driver: PlayerApp, orderRef: Uint8Array): Promise<void> {
+export async function pickUp(driver: PlayerApp, orderRef: Uint8Array, store?: PlayerApp, players?: PlayerApp[]): Promise<void> {
+  // Their pay, held from the store's card, before they pick it up.
+  if (store && players) await driverPaid(store, driver, orderRef, players);
   await retryUntilOk(async () => {
     if ((await deliveryStatus(driver, orderRef)) === "PickedUp") return;
     await driver.cells[0].callZome({ zome_name: "dispatch", fn_name: "pick_up_order", payload: orderRef });
   });
+}
+
+/// The bid `player` reads as the order's accepted one.
+export async function acceptedBid(player: PlayerApp, orderRef: Uint8Array): Promise<Uint8Array> {
+  const record = await retryUntil(
+    () => player.cells[0].callZome<HcRecord>({ zome_name: "dispatch", fn_name: "get_order", payload: orderRef }),
+    (r) => decodeEntry<{ accepted_bid: Uint8Array | null }>(r).accepted_bid !== null,
+  );
+  const bid = decodeEntry<{ accepted_bid: Uint8Array | null }>(record).accepted_bid;
+  assert.ok(bid, "the order has a driver");
+  return bid;
+}
+
+/// `payee`'s hold of `leg` on `order`, if they've made it.
+export async function holdOf(payee: PlayerApp, order: Uint8Array, leg: PaymentLeg): Promise<Uint8Array | null> {
+  return payee.cells[0].callZome<Uint8Array | null>({ zome_name: "dispatch", fn_name: "payment_hold", payload: { order, leg } });
+}
+
+/// The order's customer offering their card if they haven't, and the
+/// store's agent holding it.
+export async function customerPaid(store: PlayerApp, orderRef: Uint8Array, players: PlayerApp[]): Promise<void> {
+  if (await holdOf(store, orderRef, "Customer")) return;
+  const record = await retryUntilOk(() => store.cells[0].callZome<HcRecord>({ zome_name: "dispatch", fn_name: "get_order", payload: orderRef }));
+  const requester = decodeEntry<{ requester: Uint8Array }>(record).requester;
+  if (bytesEqual(requester, store.agentPubKey)) return; // a store ordering from itself pays itself nothing
+  const customer = playerOf(players, requester);
+  assert.ok(customer, "the order's customer is a player");
+  const offered = await customer.cells[0].callZome<unknown>({ zome_name: "dispatch", fn_name: "my_payment", payload: { order: orderRef, leg: "Customer" } }).catch(() => null);
+  if (!offered) await offerCard(customer, orderRef, "Customer");
+  await dhtSync(players, customer.cells[0].cell_id[0]);
+  await heldBy(store, orderRef, "Customer", players);
+}
+
+/// The store offering its card for its driver's pay, and the driver's agent
+/// holding it.
+export async function driverPaid(store: PlayerApp, driver: PlayerApp, orderRef: Uint8Array, players: PlayerApp[]): Promise<void> {
+  const bid = await acceptedBid(driver, orderRef);
+  if (await holdOf(driver, orderRef, { DriverPay: { bid } })) return;
+  await offerCard(store, orderRef, { DriverPay: { bid } });
+  await dhtSync(players, store.cells[0].cell_id[0]);
+  await heldBy(driver, orderRef, { DriverPay: { bid } }, players);
 }
 
 /// The network's default time source (drand quicknet) -- what deadline

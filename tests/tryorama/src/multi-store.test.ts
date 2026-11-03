@@ -62,7 +62,7 @@ await runScenario(async (scenario) => {
       items: [{ item_ref: itemA, quantity: 1 }],
       order_total: 1250,
       dropoff: ST_PETE,
-      max_delivery_fee: null,
+      max_delivery_fee: 1_000,
     }),
     /owner of catalog_ref/,
     "a delivery order naming someone other than the store's owner must be rejected",
@@ -77,7 +77,7 @@ await runScenario(async (scenario) => {
       items: [{ item_ref: itemA, quantity: 1 }],
       order_total: 1250,
       dropoff: ST_PETE,
-      max_delivery_fee: null,
+      max_delivery_fee: 1_000,
     }),
   );
   const pickupB = actionHash(

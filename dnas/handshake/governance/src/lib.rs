@@ -8,10 +8,10 @@
 //! version that people move to.
 //!
 //! Every setting is optional, defaulting to the value below -- so a network
-//! states only what it changes. There is no one with special powers here
-//! other than the issuers who bring money into the ledger: orders settle on
+//! states only what it changes. There is no one with special powers here:
+//! money moves on each party's own card processor, and orders settle on
 //! proof, on the customer's claim, and on the store's decision (see
-//! `dispatch_types::issues`).
+//! `dispatch_types::issues` and `dispatch_types::direct`).
 //!
 //! `#[dna_properties]` (re-exported from `hdk_derive` via `hdi::prelude`)
 //! generates the `TryFromDnaProperties` impl that reads
@@ -29,23 +29,14 @@ use hdi::prelude::*;
 /// do.
 #[dna_properties]
 pub struct HandShakeDnaProperties {
-    /// Who may issue funds into the ledger (`ledger_integrity::IssuerGrant`)
-    /// -- the network's stand-in for a payment processor topping up an
-    /// account against a real card payment.
+    /// Whether payments are real: every payee's processor account must be
+    /// live. Unset, a test network -- every account in its processor's test
+    /// mode, so no real card is ever charged.
     #[serde(default)]
-    pub issuers: Vec<String>,
-    /// How far below zero any agent's balance may go, in minor units of the
-    /// currency. A production network sets this explicitly -- 0 means
-    /// everything is prepaid. Unset, it's a development allowance.
-    #[serde(default)]
-    pub credit_limit_cents: Option<u64>,
-    /// The most one issuer may issue in any 24 hours, in minor units -- so
-    /// a stolen issuer key mints at most this before the roster drops it.
-    /// Unset, `DEFAULT_ISSUER_DAILY_LIMIT_CENTS`.
-    #[serde(default)]
-    pub issuer_daily_limit_cents: Option<u64>,
+    pub live_payments: Option<bool>,
     /// The ISO 4217 code of the currency every amount is in, in its minor
-    /// units ("cents" for USD). Display only: the ledger is unit-agnostic.
+    /// units ("cents" for USD) -- every payee's processor account charges in
+    /// it.
     #[serde(default)]
     pub currency: Option<String>,
     #[serde(default)]
@@ -86,11 +77,7 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub max_daily_early_cancels: Option<u32>,
     #[serde(default)]
-    pub min_redemption_cents: Option<u64>,
-    #[serde(default)]
     pub suggested_delivery_fees: Option<Vec<u64>>,
-    #[serde(default)]
-    pub store_listing_stake: Option<u64>,
     #[serde(default)]
     pub pickup_grace_secs: Option<u64>,
     #[serde(default)]
@@ -139,7 +126,7 @@ pub struct HandShakeDnaProperties {
     pub restricted_min_age: Option<u8>,
     /// Who may verify drivers (`dispatch_types::DriverVerification`): the
     /// organisations the network trusts to check a driver's identity,
-    /// licence, insurance and record -- keys, like `issuers`.
+    /// licence, insurance and record -- agent keys, as strings (see above).
     #[serde(default)]
     pub verifiers: Vec<String>,
     /// Whether a driver needs a current verification to bid. Most places'
@@ -153,7 +140,7 @@ pub struct HandShakeDnaProperties {
     pub verification_days: Option<u32>,
     /// Who rules on appeals of a store's decision (`dispatch_types::Appeal`)
     /// -- people or organisations the network trusts to weigh both sides,
-    /// keys, like `issuers`. Unset, there's no appeal: the store's decision
+    /// agent keys, as strings. Unset, there's no appeal: the store's decision
     /// stands.
     #[serde(default)]
     pub arbiters: Vec<String>,
@@ -218,32 +205,13 @@ fn setting<T>(read: impl FnOnce(HandShakeDnaProperties) -> Option<T>, default: T
 
 // --- money ---
 
-/// The development allowance when a DNA doesn't set `credit_limit_cents`:
-/// enough to order freely in a demo. `web/scripts/package.ts` refuses to
-/// build a network bundle without an explicit limit.
-const DEVELOPMENT_CREDIT_LIMIT_CENTS: u64 = 1_000_000;
-
-/// How far below zero a balance may go.
-pub fn credit_limit_cents() -> u64 {
-    setting(|p| p.credit_limit_cents, DEVELOPMENT_CREDIT_LIMIT_CENTS)
+/// Whether this network's payments are real (see
+/// `HandShakeDnaProperties::live_payments`).
+pub fn live_payments() -> bool {
+    setting(|p| p.live_payments, false)
 }
 
-/// The most an issuer issues in 24 hours unless the network says otherwise:
-/// $20,000 -- room for a busy launch, while bounding what a stolen key mints.
-const DEFAULT_ISSUER_DAILY_LIMIT_CENTS: u64 = 2_000_000;
-
-/// The most one issuer may issue in any 24 hours (see
-/// `HandShakeDnaProperties::issuer_daily_limit_cents`).
-pub fn issuer_daily_limit_cents() -> u64 {
-    setting(|p| p.issuer_daily_limit_cents, DEFAULT_ISSUER_DAILY_LIMIT_CENTS)
-}
-
-/// Whether `agent` may issue funds -- see `HandShakeDnaProperties::issuers`. A
-/// DNA built without properties (`properties: ~`, the default outside
-/// production) has no issuers.
-pub fn is_issuer(agent: &AgentPubKey) -> ExternResult<bool> {
-    Ok(properties().is_some_and(|p| p.issuers.contains(&agent.to_string())))
-}
+// --- trusted roles ---
 
 /// Whether `agent` may verify drivers (see `HandShakeDnaProperties::verifiers`).
 pub fn is_verifier(agent: &AgentPubKey) -> bool {
@@ -283,13 +251,6 @@ pub fn require_verified_drivers() -> bool {
 /// The longest a driver verification lasts: a year unless the network says.
 pub fn verification_lifetime() -> Duration {
     Duration::from_secs(u64::from(setting(|p| p.verification_days, 365)) * 86_400)
-}
-
-/// The network's issuers, in the roster's order -- those whose keys parse.
-pub fn issuers() -> Vec<AgentPubKey> {
-    properties()
-        .map(|p| p.issuers.iter().filter_map(|key| AgentPubKeyB64::from_b64_str(key).ok()).map(AgentPubKey::from).collect())
-        .unwrap_or_default()
 }
 
 /// The map, address-search and routing services apps use (see `HandShakeDnaProperties::services`).
@@ -335,12 +296,6 @@ pub fn store_response_window() -> Duration {
 /// many a customer can have waiting on stores at once -- an order costs
 /// nothing until a store accepts it, so without a bound one identity could
 /// bury a store's queue.
-/// The least anyone may cash out at once, in minor units -- so cash-outs
-/// worth less than an issuer's cost of paying them aren't asked for. An
-/// issuer may set its own higher minimum (`IssuerProfile`).
-pub fn min_redemption_cents() -> u64 {
-    setting(|p| p.min_redemption_cents, 500).max(1)
-}
 
 pub fn max_pending_orders() -> u32 {
     setting(|p| p.max_pending_orders, 5).max(1)
@@ -349,15 +304,6 @@ pub fn max_pending_orders() -> u32 {
 /// See `HandShakeDnaProperties::max_daily_early_cancels`.
 pub fn max_daily_early_cancels() -> u32 {
     setting(|p| p.max_daily_early_cancels, 10).max(1)
-}
-
-/// What listing a store for customers to find sets aside, in minor units --
-/// returned when it closes. A store is a network entry anyone can write, so
-/// without a cost one identity could fill a neighbourhood's listings with
-/// fakes; with one, every listing is backed by money for as long as it's
-/// listed.
-pub fn store_listing_stake() -> u64 {
-    setting(|p| p.store_listing_stake, 2_000)
 }
 
 /// A new store's usual prep time, until it sets its own.
@@ -543,8 +489,13 @@ pub fn collection_window() -> Duration {
 /// their order. The store's app waits this long before settling the food's
 /// payment -- a store's own clock, so it's the store's word, made visible.
 pub fn report_window() -> Duration {
-    Duration::from_secs(setting(|p| p.report_window_secs, 2 * 3_600))
+    Duration::from_secs(setting(|p| p.report_window_secs, 2 * 3_600).min(MAX_REPORT_WINDOW_SECS))
 }
+
+/// The longest a report window may run, whatever a network sets: the store
+/// captures the customer's payment once it closes, and a card authorization
+/// lasts about seven days -- this leaves days to spare.
+const MAX_REPORT_WINDOW_SECS: u64 = 3 * 86_400;
 
 /// However late a report comes, the store has at least this long to answer
 /// it before its app settles the order -- never longer than the report

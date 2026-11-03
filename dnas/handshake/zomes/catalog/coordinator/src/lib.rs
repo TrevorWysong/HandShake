@@ -26,7 +26,7 @@ use catalog_integrity::*;
 use hdi::hash_path::path::Path;
 use hdk::prelude::*;
 use handshake_coordinator_support::chain::{my_current_version, my_versions};
-use handshake_coordinator_support::{call_local, decode_or, guest, next_page_cursor, resolve_latest, resolve_latest_decoded, resolve_links_to_records_with_original, resolve_version, resolve_version_decoded, update_version, written};
+use handshake_coordinator_support::{decode_or, guest, next_page_cursor, resolve_latest, resolve_latest_decoded, resolve_links_to_records_with_original, resolve_version, resolve_version_decoded, update_version, written};
 use handshake_integrity_support::contact::{email_problem, website_problem};
 use handshake_types::GeoPoint;
 

@@ -16,10 +16,10 @@
 //!   single line of keys.
 //!
 //! What it can't: stop a lost key that turns up again. Nothing on a
-//! peer-to-peer network can prove a key is gone, so a recovered account's
-//! money doesn't move on this zome's word -- an issuer reissues it, once,
-//! after a wait (see docs/RECOVERY.md); and everyone's app refuses to deal with
-//! a key whose account has moved on.
+//! peer-to-peer network can prove a key is gone, so everyone's app refuses
+//! to deal with a key whose account has moved on (see docs/RECOVERY.md).
+//! No money is at stake in a key: it lives in each person's own processor
+//! account, which a new key reconnects.
 
 pub use account_types::*;
 use hdi::prelude::*;
@@ -59,14 +59,8 @@ pub enum LinkTypes {
     SuccessorToSuccession,
     /// A migration's parcel, base = the successor it's sealed to.
     SuccessorToParcel,
-    /// A recovered account asking an issuer to reissue its balance, base =
-    /// the issuer.
-    IssuerToReissue,
-    /// An account moving to the next network, asking an issuer to carry its
-    /// balance there, base = the issuer.
-    IssuerToMigration,
-    /// The same, base = the successor -- how the new network's key finds
-    /// what was moved to it.
+    /// An account moving to the next network, base = its key there -- how
+    /// the new network's key finds what was moved to it.
     SuccessorToMigration,
     /// An account's arrival from the previous network, base = its author.
     AccountToArrival,
@@ -273,22 +267,6 @@ fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target: &A
         LinkTypes::SuccessorToParcel => decode::<Parcel>(&record).map(|p| vec![p.successor.into()]).unwrap_or_default(),
         LinkTypes::SuccessorToMigration => decode::<Migration>(&record).map(|m| vec![m.successor.into()]).unwrap_or_default(),
         LinkTypes::AccountToArrival => decode::<Arrival>(&record).map(|_| vec![author.clone().into()]).unwrap_or_default(),
-        LinkTypes::IssuerToMigration => {
-            let issuer = base.clone().into_agent_pub_key();
-            if decode::<Migration>(&record).is_none() || !issuer.map(|i| handshake_governance::is_issuer(&i)).transpose()?.unwrap_or(false) {
-                return invalid("a migration asks an issuer on the roster to carry its balance");
-            }
-            vec![base.clone()]
-        }
-        LinkTypes::IssuerToReissue => {
-            // Only by an issuer on the roster.
-            let recovered = decode::<Succession>(&record).is_some();
-            let issuer = base.clone().into_agent_pub_key();
-            if !recovered || !issuer.map(|i| handshake_governance::is_issuer(&i)).transpose()?.unwrap_or(false) {
-                return invalid("a recovered account asks an issuer on the roster to reissue it");
-            }
-            vec![base.clone()]
-        }
     };
     if bases.is_empty() {
         return invalid("an account link's target is not the entry its link type indexes");

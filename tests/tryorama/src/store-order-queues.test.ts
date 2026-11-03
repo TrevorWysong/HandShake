@@ -35,7 +35,7 @@ await runScenario(async (scenario) => {
     const kind = i % 2 === 0 ? "Delivery" : "Pickup";
     const record =
       kind === "Delivery"
-        ? await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity }], order_total: total, dropoff: ST_PETE, max_delivery_fee: null })
+        ? await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity }], order_total: total, dropoff: ST_PETE, max_delivery_fee: 1_000 })
         : await call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity }], order_total: total });
     placed.push({ kind, ref: actionHash(record), total });
   }

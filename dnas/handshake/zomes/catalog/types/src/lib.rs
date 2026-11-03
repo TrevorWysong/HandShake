@@ -380,27 +380,6 @@ pub struct GoodieBag {
     pub created_at: Timestamp,
 }
 
-/// The integrity zome these types belong to -- how another zome's
-/// validation recognises one of its links.
-pub const CATALOG_INTEGRITY_ZOME: &str = "catalog_integrity";
-
-/// What begins the tag of a store's listing link (`GeohashToCatalog`) -- and
-/// only of one: validation refuses it on any other catalog link, so a tag
-/// that starts with it is a listing.
-pub const LISTING_TAG_PREFIX: &[u8] = b"listing:";
-
-/// A store listing's link tag: the stake (`ledger_types::LedgerKind::Stake`)
-/// that backs it.
-pub fn listing_tag(stake: &ActionHash) -> Vec<u8> {
-    [LISTING_TAG_PREFIX, stake.get_raw_39()].concat()
-}
-
-/// The stake a listing's tag names, if it's a listing tag.
-pub fn listing_stake(tag: &[u8]) -> Option<ActionHash> {
-    let raw = tag.strip_prefix(LISTING_TAG_PREFIX)?;
-    ActionHash::try_from_raw_39(raw.to_vec()).ok()
-}
-
 impl MerchantCatalog {
     /// Whether an order placed under these terms gets more from the store
     /// than `current` would give it: a lower minimum, a wider delivery

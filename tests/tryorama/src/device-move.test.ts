@@ -47,7 +47,7 @@ await runScenario(async (scenario) => {
   // aren't its driver -- proves the call got there; "isn't reachable" means
   // it was refused at the door.
   const delivery = actionHash(
-    await retryUntilOk(() => call(customer.cells[0], "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 2000, dropoff: ST_PETE, max_delivery_fee: null })),
+    await retryUntilOk(() => call(customer.cells[0], "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 2000, dropoff: ST_PETE, max_delivery_fee: 1_000 })),
   );
   const checkIn = () => call(neighbour.cells[0], "attestation")("check_in_at_store", { order_ref: delivery, code: "000000" });
   await sync();

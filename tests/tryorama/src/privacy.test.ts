@@ -60,7 +60,7 @@ await runScenario(async (scenario) => {
     items: [{ item_ref: item, quantity: 1 }],
     order_total: 800,
     dropoff: home,
-    max_delivery_fee: null,
+    max_delivery_fee: 1_000,
     kitchen_notes: "Allergic to peanuts",
     dropoff_notes: "Gate code 4417",
   });
@@ -114,7 +114,7 @@ await runScenario(async (scenario) => {
     catalog_ref: store,
     items: [{ item_ref: item, quantity: 1 }],
     dropoff: home,
-    max_delivery_fee: null,
+    max_delivery_fee: 1_000,
     dropoff_notes: "Gate code 4417",
     recurrence: { Daily: { hour: 9, minute: 0 } },
     time_zone: "America/New_York",

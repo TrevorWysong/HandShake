@@ -193,7 +193,7 @@ await runScenario(async (scenario) => {
       items: [{ item_ref: itemRef, quantity: 1 }],
       order_total: 700,
       dropoff: ST_PETE,
-      max_delivery_fee: null,
+      max_delivery_fee: 1_000,
       kitchen_notes: "Extra salsa",
       dropoff_notes: "Ring the bell",
       dropoff_line2: "Apt 4B",

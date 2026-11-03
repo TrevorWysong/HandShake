@@ -177,9 +177,6 @@ pub fn accept_bid(input: AcceptBidInput) -> ExternResult<Record> {
     }
     order.status = DeliveryStatus::BidAccepted;
     order.accepted_bid = Some(input.bid_action.clone());
-    // The driver's pay -- the customer's share of the fee, and their tip --
-    // set aside in this same commit.
-    order.driver_pay_hold = crate::settlement::place_hold(&input.order_original_action, HoldPurpose::DriverPay { bid: input.bid_action.clone() })?;
     let updated = update_version(&order_record, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)?;
     crate::order_queues::enqueue_for_driver(&input.order_original_action, &updated, &winning_bid.bidder)?;
 

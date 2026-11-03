@@ -67,7 +67,7 @@ export async function lateOrderWorld(scenario: Scenario) {
   async function placed() {
     const ref = actionHash(
       await retryUntilOk(() =>
-        call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: FOOD, dropoff: ST_PETE, max_delivery_fee: null }),
+        call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: FOOD, dropoff: ST_PETE, max_delivery_fee: 1_000 }),
       ),
     );
     await sync();

@@ -9,9 +9,10 @@ pub use catalog_types::{Chosen, ChosenInput, Selection, SelectionInput};
 pub use handshake_types::{Beacon, PinSecret};
 use handshake_types::GeoPoint;
 
-mod direct;
+pub mod direct;
 mod issues;
 pub mod lineage;
+mod payments;
 mod settlement;
 
 /// How precisely a delivery's drop-off is published (`dropoff_geohash`): a
@@ -20,6 +21,7 @@ mod settlement;
 pub const DROPOFF_GEOHASH_PRECISION: usize = 6;
 pub use direct::*;
 pub use issues::*;
+pub use payments::*;
 pub use settlement::*;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -215,9 +217,6 @@ pub enum DeclineReason {
     /// or their tier doesn't reach -- points the store works out from its
     /// own records (`rewards_types`).
     RewardUnavailable,
-    /// Its promo code is for newcomers, and no issuer has vouched for the
-    /// customer's card -- so a fresh account can't farm it.
-    CardNotVerified,
     /// The customer has called off too many orders here before the store
     /// could answer them, lately.
     TooManyCancellations,
@@ -490,26 +489,21 @@ pub struct DeliveryOrder {
     /// collect it), plus `prep_minutes`. Set once, never changed after.
     #[serde(default)]
     pub ready_by: Option<Timestamp>,
-    /// The customer's hold for the food (`settlement::HoldPurpose::Food`),
-    /// cited by the store's update that accepts the order -- validation
-    /// won't let a store accept an order whose food isn't paid for. Never
-    /// changes after.
+    /// The store's hold of the customer's payment (`PaymentHold` on
+    /// `Leg::Customer`), cited by its update accepting the order -- so no
+    /// store accepts an order it isn't paid for. Never changes after.
     #[serde(default)]
-    pub food_hold: Option<ActionHash>,
-    /// The customer's hold for the current driver's pay -- their share of
-    /// the fee, and their tip (`HoldPurpose::DriverPay`) -- cited by their
-    /// update that accepts a bid, and gone with that driver.
+    pub customer_payment: Option<ActionHash>,
+    /// The store's hold of the current driver's collateral
+    /// (`Leg::Collateral`), cited by the driver's update committing to the
+    /// order -- before the store cooks it. Gone with that driver.
     #[serde(default)]
-    pub driver_pay_hold: Option<ActionHash>,
-    /// The store's hold for the current driver (`HoldPurpose::Subsidy`): its
-    /// share of their fee, and what it owes them if it keeps them waiting --
-    /// cited by its update checking them in.
+    pub collateral_payment: Option<ActionHash>,
+    /// The current driver's hold of their pay from the store
+    /// (`Leg::DriverPay`), cited by their update picking the order up -- so
+    /// no driver carries an order they aren't paid for. Gone with them.
     #[serde(default)]
-    pub subsidy_hold: Option<ActionHash>,
-    /// The current driver's collateral hold (`HoldPurpose::Collateral`),
-    /// cited by their update committing to the order.
-    #[serde(default)]
-    pub collateral_hold: Option<ActionHash>,
+    pub driver_payment: Option<ActionHash>,
     /// The customer's handoff code's commitment, `sha256(pin || salt)` (see
     /// `PinSecret`) -- 32 bytes. Fixed when the order is placed.
     pub pin_commitment: Vec<u8>,
@@ -799,10 +793,10 @@ pub struct PickupOrder {
     /// the order, never changed after. `None` until then.
     #[serde(default)]
     pub ready_by: Option<Timestamp>,
-    /// The customer's hold for the food, cited by the store's update that
-    /// accepts the order -- see `DeliveryOrder::food_hold`.
+    /// The store's hold of the customer's payment, cited by its update
+    /// accepting the order -- see `DeliveryOrder::customer_payment`.
     #[serde(default)]
-    pub food_hold: Option<ActionHash>,
+    pub customer_payment: Option<ActionHash>,
 }
 
 /// An order's part in its store's rewards program.

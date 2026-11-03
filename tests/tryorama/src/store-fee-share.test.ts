@@ -26,7 +26,7 @@ await runScenario(async (scenario) => {
   await sync();
 
   const order = actionHash(
-    await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity: 1 }], order_total: 600, dropoff: ST_PETE, max_delivery_fee: null, tip_cents: 100 }),
+    await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity: 1 }], order_total: 600, dropoff: ST_PETE, max_delivery_fee: 1_000, tip_cents: 100 }),
   );
   assert.equal(decodeEntry<{ delivery_subsidy_percent: number }>(await call(customer, "dispatch")<HcRecord>("get_order", order)).delivery_subsidy_percent, 50, "the order records the split it was placed under");
   await sync();

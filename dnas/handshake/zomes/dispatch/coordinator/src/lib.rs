@@ -51,6 +51,7 @@ mod matching;
 mod never_arrived;
 mod order_queues;
 mod orders;
+mod payments;
 mod pickup;
 mod pin;
 mod pricing;
@@ -72,6 +73,7 @@ pub use matching::{get_open_orders_near, rank_bids, RankedBid};
 pub use never_arrived::*;
 pub use order_queues::*;
 pub use orders::*;
+pub use payments::*;
 pub use pickup::*;
 pub use pricing::OrderItem;
 pub use reach::*;
@@ -104,7 +106,9 @@ mod test_utils {
         AppealToRuling,
         StoreOwnerToRuling,
         StoreOwnerToAppeal,
-        BagToOrder
+        BagToOrder,
+        OrderToPayment,
+        AgentToPaymentProfile
     );
 
     #[derive(Serialize, Deserialize, Debug)]
@@ -151,6 +155,32 @@ mod test_utils {
     #[hdk_extern]
     pub fn create_raw_settlement_for_testing(settlement: dispatch_integrity::ItemSettlement) -> ExternResult<ActionHash> {
         create_entry(&EntryTypes::ItemSettlement(settlement))
+    }
+
+    /// A payment record, exactly as given -- what a modified client could
+    /// write past every check `payments` makes.
+    #[derive(Serialize, Deserialize, Debug)]
+    pub enum RawPaymentRecord {
+        Profile(dispatch_integrity::PaymentProfile),
+        Offer(dispatch_integrity::PaymentOffer),
+        Hold(dispatch_integrity::PaymentHold),
+        Declined(dispatch_integrity::PaymentDeclined),
+        Settlement(dispatch_integrity::PaymentSettlement),
+        Refund(dispatch_integrity::PaymentRefund),
+        CarryEnded(dispatch_integrity::CarryEnded),
+    }
+
+    #[hdk_extern]
+    pub fn create_raw_payment_record_for_testing(record: RawPaymentRecord) -> ExternResult<ActionHash> {
+        create_entry(&match record {
+            RawPaymentRecord::Profile(r) => EntryTypes::PaymentProfile(r),
+            RawPaymentRecord::Offer(r) => EntryTypes::PaymentOffer(r),
+            RawPaymentRecord::Hold(r) => EntryTypes::PaymentHold(r),
+            RawPaymentRecord::Declined(r) => EntryTypes::PaymentDeclined(r),
+            RawPaymentRecord::Settlement(r) => EntryTypes::PaymentSettlement(r),
+            RawPaymentRecord::Refund(r) => EntryTypes::PaymentRefund(r),
+            RawPaymentRecord::CarryEnded(r) => EntryTypes::CarryEnded(r),
+        })
     }
 
     use dispatch_integrity::{Bid, Cancellation, DeliveryOrder, DeliveryStatus, EntryTypes, PickupOrder, PickupStatus};
@@ -332,9 +362,8 @@ mod test_utils {
         order.cancellation = input.cancellation;
         if input.release {
             order.accepted_bid = None;
-            order.driver_pay_hold = None;
-            order.subsidy_hold = None;
-            order.collateral_hold = None;
+            order.collateral_payment = None;
+            order.driver_payment = None;
         }
         if input.beacon.is_some() {
             order.beacon = input.beacon;
@@ -356,9 +385,8 @@ mod test_utils {
     pub fn release_raw_for_testing(input: RawReleaseInput) -> ExternResult<ActionHash> {
         let (current, mut order): (_, DeliveryOrder) = handshake_coordinator_support::resolve_version_decoded(input.order_original_action, "DeliveryOrder")?;
         order.accepted_bid = None;
-        order.driver_pay_hold = None;
-        order.subsidy_hold = None;
-        order.collateral_hold = None;
+        order.collateral_payment = None;
+        order.driver_payment = None;
         order.beacon = input.beacon;
         order.status = DeliveryStatus::Open;
         handshake_coordinator_support::update_version(&current, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)
@@ -379,11 +407,11 @@ mod test_utils {
     #[hdk_extern]
     pub fn force_pickup_update_for_testing(input: ForcePickupUpdateInput) -> ExternResult<Record> {
         let (current, mut order): (_, PickupOrder) = handshake_coordinator_support::resolve_version_decoded(input.order_original_action.clone(), "PickupOrder")?;
-        // Accepting cites the customer's food hold, as the real acceptance
-        // does -- these tests are about the other rules.
+        // Accepting cites the store's hold of the customer's payment, as the
+        // real acceptance does -- these tests are about the other rules.
         if order.status == PickupStatus::Placed && input.next_status == PickupStatus::MerchantConfirmed {
             let original = handshake_coordinator_support::original_action_of(input.order_original_action)?;
-            order.food_hold = crate::settlement::find_hold(&original, &dispatch_integrity::HoldPurpose::Food, &order.requester)?;
+            order.customer_payment = crate::payments::hold_for(&original, &dispatch_integrity::PaymentLeg::Customer, &order.merchant)?;
         }
         order.status = input.next_status;
         order.cancellation = input.cancellation;

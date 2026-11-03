@@ -39,7 +39,7 @@ await runScenario(async (scenario) => {
       items: [{ item_ref: menuItemRef, quantity: 1 }],
       order_total: 1000,
       dropoff: ST_PETE,
-      max_delivery_fee: null,
+      max_delivery_fee: 1_000,
     };
     if (dropoffPreference !== undefined) input.dropoff_preference = dropoffPreference;
     return dispatchOf(customer)<HcRecord>("request_delivery", input);

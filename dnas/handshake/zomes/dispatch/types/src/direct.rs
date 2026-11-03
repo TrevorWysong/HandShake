@@ -17,7 +17,7 @@
 //! it on the same grounds its recipient could collect it (`entitlement`).
 //! A leg only gathers parts by who pays them now:
 //!
-//! | Part | Recipient | Leg it's captured on |
+//! | Part | Recipient | PaymentLeg it's captured on |
 //! |---|---|---|
 //! | Food | store | Customer |
 //! | Driver pay: fee, tip | driver | Customer (the store passes it on) and Driver pay |
@@ -34,7 +34,7 @@ use hdi::prelude::*;
 
 /// One card authorization an order needs.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub enum Leg {
+pub enum PaymentLeg {
     /// The customer's, on the store's account.
     Customer,
     /// The store's, on the account of the driver behind `bid`.
@@ -51,12 +51,12 @@ pub struct Part {
     pub portion: Portion,
 }
 
-impl Leg {
+impl PaymentLeg {
     /// The bid a leg is for, if it's a driver's.
     pub fn bid(&self) -> Option<&ActionHash> {
         match self {
-            Leg::Customer => None,
-            Leg::DriverPay { bid } | Leg::Collateral { bid } => Some(bid),
+            PaymentLeg::Customer => None,
+            PaymentLeg::DriverPay { bid } | PaymentLeg::Collateral { bid } => Some(bid),
         }
     }
 
@@ -64,9 +64,9 @@ impl Leg {
     /// leg's own, where it has one.
     pub fn parties(&self, terms: &OrderTerms, bid: Option<&Bid>) -> Option<(AgentPubKey, AgentPubKey)> {
         match (self, bid) {
-            (Leg::Customer, None) => Some((terms.requester.clone(), terms.merchant.clone())),
-            (Leg::DriverPay { .. }, Some(bid)) if terms.delivery => Some((terms.merchant.clone(), bid.bidder.clone())),
-            (Leg::Collateral { .. }, Some(bid)) if terms.delivery => Some((bid.bidder.clone(), terms.merchant.clone())),
+            (PaymentLeg::Customer, None) => Some((terms.requester.clone(), terms.merchant.clone())),
+            (PaymentLeg::DriverPay { .. }, Some(bid)) if terms.delivery => Some((terms.merchant.clone(), bid.bidder.clone())),
+            (PaymentLeg::Collateral { .. }, Some(bid)) if terms.delivery => Some((bid.bidder.clone(), terms.merchant.clone())),
             _ => None,
         }
     }
@@ -74,11 +74,11 @@ impl Leg {
     /// Whether `part` is captured on this leg.
     pub fn includes(&self, part: &Part) -> bool {
         match (self, &part.purpose, part.portion) {
-            (Leg::Customer, HoldPurpose::Food, Portion::Food) => true,
-            (Leg::Customer, HoldPurpose::DriverPay { .. }, Portion::Fee | Portion::Tip) => true,
-            (Leg::DriverPay { bid }, HoldPurpose::DriverPay { bid: b }, Portion::Fee | Portion::Tip) => bid == b,
-            (Leg::DriverPay { bid }, HoldPurpose::Subsidy { bid: b }, Portion::Fee | Portion::LateCover) => bid == b,
-            (Leg::Collateral { bid }, HoldPurpose::Collateral { bid: b }, Portion::Collateral) => bid == b,
+            (PaymentLeg::Customer, HoldPurpose::Food, Portion::Food) => true,
+            (PaymentLeg::Customer, HoldPurpose::DriverPay { .. }, Portion::Fee | Portion::Tip) => true,
+            (PaymentLeg::DriverPay { bid }, HoldPurpose::DriverPay { bid: b }, Portion::Fee | Portion::Tip) => bid == b,
+            (PaymentLeg::DriverPay { bid }, HoldPurpose::Subsidy { bid: b }, Portion::Fee | Portion::LateCover) => bid == b,
+            (PaymentLeg::Collateral { bid }, HoldPurpose::Collateral { bid: b }, Portion::Collateral) => bid == b,
             _ => false,
         }
     }
@@ -93,13 +93,13 @@ impl Leg {
             return Some(0);
         }
         Some(match (self, bid) {
-            (Leg::Customer, _) if terms.delivery => {
+            (PaymentLeg::Customer, _) if terms.delivery => {
                 let (_, customer_share) = split_delivery_fee(terms.fee_cap?, terms.delivery_subsidy_percent);
                 terms.order_total + customer_share + terms.tip_cents
             }
-            (Leg::Customer, _) => terms.order_total,
-            (Leg::DriverPay { .. }, Some(bid)) => bid.price_offer + terms.tip_cents,
-            (Leg::Collateral { .. }, Some(bid)) => bid.collateral,
+            (PaymentLeg::Customer, _) => terms.order_total,
+            (PaymentLeg::DriverPay { .. }, Some(bid)) => bid.price_offer + terms.tip_cents,
+            (PaymentLeg::Collateral { .. }, Some(bid)) => bid.collateral,
             _ => return None,
         })
     }
@@ -333,10 +333,10 @@ mod tests {
     /// Each party's net, paid directly: each leg's payee captures the parts
     /// it gathers -- never more than the leg authorizes.
     fn direct(terms: &OrderTerms, bids: &[(ActionHash, Bid)], bases: &[Basis], checks: bool) -> BTreeMap<AgentPubKey, i64> {
-        let mut legs = vec![(Leg::Customer, None)];
+        let mut legs = vec![(PaymentLeg::Customer, None)];
         for (hash, bid) in bids {
-            legs.push((Leg::DriverPay { bid: hash.clone() }, Some(bid.clone())));
-            legs.push((Leg::Collateral { bid: hash.clone() }, Some(bid.clone())));
+            legs.push((PaymentLeg::DriverPay { bid: hash.clone() }, Some(bid.clone())));
+            legs.push((PaymentLeg::Collateral { bid: hash.clone() }, Some(bid.clone())));
         }
         let all = parts(terms, bids);
         let mut net = BTreeMap::new();
@@ -366,29 +366,29 @@ mod tests {
     fn each_leg_authorizes_what_its_payee_could_ever_take() {
         let t = terms();
         let (_, dana) = &bids()[0];
-        assert_eq!(Leg::Customer.required(&t, None), Some(2000 + 400 + 300), "food, half the $8 cap, and the tip");
-        assert_eq!(Leg::DriverPay { bid: hash(31) }.required(&t, Some(dana)), Some(600 + 300), "the whole fee and the tip");
-        assert_eq!(Leg::Collateral { bid: hash(31) }.required(&t, Some(dana)), Some(2000), "the food's value");
-        assert_eq!(Leg::Customer.required(&OrderTerms { delivery: false, tip_cents: 0, fee_cap: None, ..t.clone() }, None), Some(2000), "a pickup: the food");
-        assert_eq!(Leg::Customer.required(&OrderTerms { fee_cap: None, ..t.clone() }, None), None, "a delivery with no cap can't be paid directly");
-        assert_eq!(Leg::Customer.required(&OrderTerms { merchant: agent(1), ..t.clone() }, None), Some(0), "a store ordering from itself");
-        assert_eq!(Leg::DriverPay { bid: hash(31) }.required(&t, None), None, "a driver's leg needs their bid");
-        assert_eq!(Leg::DriverPay { bid: hash(31) }.required(&OrderTerms { delivery: false, ..t }, Some(dana)), None, "a pickup has no driver");
+        assert_eq!(PaymentLeg::Customer.required(&t, None), Some(2000 + 400 + 300), "food, half the $8 cap, and the tip");
+        assert_eq!(PaymentLeg::DriverPay { bid: hash(31) }.required(&t, Some(dana)), Some(600 + 300), "the whole fee and the tip");
+        assert_eq!(PaymentLeg::Collateral { bid: hash(31) }.required(&t, Some(dana)), Some(2000), "the food's value");
+        assert_eq!(PaymentLeg::Customer.required(&OrderTerms { delivery: false, tip_cents: 0, fee_cap: None, ..t.clone() }, None), Some(2000), "a pickup: the food");
+        assert_eq!(PaymentLeg::Customer.required(&OrderTerms { fee_cap: None, ..t.clone() }, None), None, "a delivery with no cap can't be paid directly");
+        assert_eq!(PaymentLeg::Customer.required(&OrderTerms { merchant: agent(1), ..t.clone() }, None), Some(0), "a store ordering from itself");
+        assert_eq!(PaymentLeg::DriverPay { bid: hash(31) }.required(&t, None), None, "a driver's leg needs their bid");
+        assert_eq!(PaymentLeg::DriverPay { bid: hash(31) }.required(&OrderTerms { delivery: false, ..t }, Some(dana)), None, "a pickup has no driver");
     }
 
     #[test]
     fn a_leg_gathers_exactly_its_own_parts() {
         let dana = hash(31);
         let part = |purpose: HoldPurpose, portion: Portion| Part { purpose, portion };
-        assert!(Leg::Customer.includes(&part(HoldPurpose::Food, Portion::Food)));
-        assert!(Leg::Customer.includes(&part(HoldPurpose::DriverPay { bid: dana.clone() }, Portion::Tip)), "the store passes the tip on");
-        assert!(!Leg::Customer.includes(&part(HoldPurpose::Subsidy { bid: dana.clone() }, Portion::Fee)), "the store's own share is the store's to pay");
-        assert!(!Leg::Customer.includes(&part(HoldPurpose::Collateral { bid: dana.clone() }, Portion::Collateral)));
-        assert!(Leg::DriverPay { bid: dana.clone() }.includes(&part(HoldPurpose::Subsidy { bid: dana.clone() }, Portion::LateCover)));
-        assert!(!Leg::DriverPay { bid: dana.clone() }.includes(&part(HoldPurpose::DriverPay { bid: hash(41) }, Portion::Fee)), "another driver's pay");
-        assert!(!Leg::DriverPay { bid: dana.clone() }.includes(&part(HoldPurpose::Food, Portion::Food)));
-        assert!(Leg::Collateral { bid: dana.clone() }.includes(&part(HoldPurpose::Collateral { bid: dana.clone() }, Portion::Collateral)));
-        assert!(!Leg::Collateral { bid: dana }.includes(&part(HoldPurpose::Collateral { bid: hash(41) }, Portion::Collateral)));
+        assert!(PaymentLeg::Customer.includes(&part(HoldPurpose::Food, Portion::Food)));
+        assert!(PaymentLeg::Customer.includes(&part(HoldPurpose::DriverPay { bid: dana.clone() }, Portion::Tip)), "the store passes the tip on");
+        assert!(!PaymentLeg::Customer.includes(&part(HoldPurpose::Subsidy { bid: dana.clone() }, Portion::Fee)), "the store's own share is the store's to pay");
+        assert!(!PaymentLeg::Customer.includes(&part(HoldPurpose::Collateral { bid: dana.clone() }, Portion::Collateral)));
+        assert!(PaymentLeg::DriverPay { bid: dana.clone() }.includes(&part(HoldPurpose::Subsidy { bid: dana.clone() }, Portion::LateCover)));
+        assert!(!PaymentLeg::DriverPay { bid: dana.clone() }.includes(&part(HoldPurpose::DriverPay { bid: hash(41) }, Portion::Fee)), "another driver's pay");
+        assert!(!PaymentLeg::DriverPay { bid: dana.clone() }.includes(&part(HoldPurpose::Food, Portion::Food)));
+        assert!(PaymentLeg::Collateral { bid: dana.clone() }.includes(&part(HoldPurpose::Collateral { bid: dana.clone() }, Portion::Collateral)));
+        assert!(!PaymentLeg::Collateral { bid: dana }.includes(&part(HoldPurpose::Collateral { bid: hash(41) }, Portion::Collateral)));
     }
 
     /// Every kind of basis, for both drivers.

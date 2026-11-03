@@ -11,6 +11,10 @@ use handshake_types::GeoPoint;
 
 mod verification;
 mod confirmations;
+pub mod basis;
+mod carry;
+pub mod payments;
+pub use dispatch_types::direct;
 mod appeals;
 mod bids;
 mod holds;
@@ -38,7 +42,7 @@ use links::{validate_create_link, validate_delete_link, OpLinkFields};
 // The entry structs live in dispatch_types so other integrity zomes can
 // decode them -- see that crate's doc comment. Re-exported here so the
 // coordinator crate imports everything via `dispatch_integrity::*`.
-pub use dispatch_types::{Appeal, AppealAnswer, Ruling, OrderConfirmation, DeclineNoted, DriverVerification, VerificationCheck, lineage, DropoffShare, LinePricer, Chosen, ChosenInput, OrderItem, Selection, SelectionInput, CollectRequest, claimed_value, CarryRefusal, InHand, PinSecret, DROPOFF_GEOHASH_PRECISION, IssueEvidence, IssueKind, IssueLine, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome, hold_terms, required_collateral, split_delivery_fee, Bid, BidStatus, Cancellation, DeclineReason, DeliveryOrder, DeliveryStatus, DropoffDetails, DropoffPreference, HoldPurpose, OrderLine, OrderRewards, OrderTerms, PickupOrder, PickupStatus, Portion, RequiredAuthor};
+pub use dispatch_types::{CarryEnded, Claim, DeclineCode, PaymentLeg, Part, PaymentAction, PaymentDeclined, PaymentHold, PaymentOffer, PaymentProfile, PaymentRefund, PaymentSettlement, Processor, Appeal, AppealAnswer, Ruling, OrderConfirmation, DeclineNoted, DriverVerification, VerificationCheck, lineage, DropoffShare, LinePricer, Chosen, ChosenInput, OrderItem, Selection, SelectionInput, CollectRequest, claimed_value, CarryRefusal, InHand, PinSecret, DROPOFF_GEOHASH_PRECISION, IssueEvidence, IssueKind, IssueLine, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome, hold_terms, required_collateral, split_delivery_fee, Bid, BidStatus, Cancellation, DeclineReason, DeliveryOrder, DeliveryStatus, DropoffDetails, DropoffPreference, HoldPurpose, OrderLine, OrderRewards, OrderTerms, PickupOrder, PickupStatus, Portion, RequiredAuthor};
 
 // Built once per write and dropped -- boxing the large order would only
 // add an allocation.
@@ -62,6 +66,16 @@ pub enum EntryTypes {
     Ruling(Ruling),
     OrderConfirmation(OrderConfirmation),
     DeclineNoted(DeclineNoted),
+    // Paying directly -- see `payments`.
+    PaymentProfile(PaymentProfile),
+    PaymentOffer(PaymentOffer),
+    PaymentHold(PaymentHold),
+    PaymentAction(PaymentAction),
+    PaymentDeclined(PaymentDeclined),
+    PaymentSettlement(PaymentSettlement),
+    PaymentRefund(PaymentRefund),
+    /// An order leaving its driver's hands -- see `carry`.
+    CarryEnded(CarryEnded),
 }
 
 #[hdk_link_types]
@@ -123,6 +137,12 @@ pub enum LinkTypes {
     /// (its original action) -- how the store counts the bags it has sold,
     /// and customers see how many are left.
     BagToOrder,
+    /// An order's payment records -- offers, holds, actions, declines,
+    /// settlements, refunds -- base = the order, so each party finds the
+    /// other's.
+    OrderToPayment,
+    /// How an agent is paid (`PaymentProfile`), base = the agent.
+    AgentToPaymentProfile,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -171,6 +191,14 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Ruling(ruling) => appeals::validate_ruling(&ruling, action.author(), action.prev_action()),
             EntryTypes::OrderConfirmation(c) => confirmations::validate_confirmation(&c, action.author(), action.prev_action()),
             EntryTypes::DeclineNoted(d) => confirmations::validate_decline_noted(&d, action.author(), action.prev_action()),
+            EntryTypes::PaymentProfile(profile) => payments::validate_profile(&profile),
+            EntryTypes::PaymentOffer(offer) => payments::validate_offer(&offer, action.author(), action.prev_action()),
+            EntryTypes::PaymentHold(hold) => payments::validate_hold(&hold, action.author(), action.prev_action()),
+            EntryTypes::PaymentAction(a) => payments::validate_action(&a, action.author()),
+            EntryTypes::PaymentDeclined(d) => payments::validate_declined(&d, action.author()),
+            EntryTypes::PaymentSettlement(settlement) => payments::validate_settlement(&settlement, action.author(), action.prev_action()),
+            EntryTypes::PaymentRefund(refund) => payments::validate_refund(&refund, action.author(), action.prev_action()),
+            EntryTypes::CarryEnded(ended) => carry::validate_carry_ended(&ended, action.author(), action.prev_action()),
         },
         Checked::Update { entry, action } => match entry {
             EntryTypes::DeliveryOrder(order) => validate_order_transition(&order, action.author(), &action.original_action_address, action.timestamp(), action.prev_action()),
@@ -182,6 +210,18 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             }
             EntryTypes::Appeal(_) | EntryTypes::AppealAnswer(_) | EntryTypes::Ruling(_) => Ok(ValidateCallbackResult::Invalid("an appeal, its answer and its ruling are a permanent record".into())),
             EntryTypes::OrderConfirmation(_) | EntryTypes::DeclineNoted(_) => Ok(ValidateCallbackResult::Invalid("a customer's confirmations are a permanent record".into())),
+            // A payee changes processors, or keys, by updating its profile.
+            EntryTypes::PaymentProfile(profile) => {
+                let original = must_get_action(action.original_action_address.clone())?;
+                if original.hashed.content.author() != action.author() {
+                    return Ok(ValidateCallbackResult::Invalid("only its own agent changes how they're paid".into()));
+                }
+                payments::validate_profile(&profile)
+            }
+            EntryTypes::PaymentOffer(_) | EntryTypes::PaymentHold(_) | EntryTypes::PaymentAction(_) | EntryTypes::PaymentDeclined(_) | EntryTypes::PaymentSettlement(_) | EntryTypes::PaymentRefund(_) => {
+                Ok(ValidateCallbackResult::Invalid("a payment's records are permanent".into()))
+            }
+            EntryTypes::CarryEnded(_) => Ok(ValidateCallbackResult::Invalid("a carry's end is a permanent record".into())),
             EntryTypes::DriverVerification(_) => {
                 Ok(ValidateCallbackResult::Invalid("a verification is renewed with a new one, not changed".into()))
             }

@@ -33,7 +33,7 @@ await runScenario(async (scenario) => {
     catalog_ref: catalogRef,
     items: [{ item_ref: itemRef, quantity: 1 }],
     dropoff: ST_PETE,
-    max_delivery_fee: null,
+    max_delivery_fee: 1_000,
     time_zone: "UTC",
   };
 
