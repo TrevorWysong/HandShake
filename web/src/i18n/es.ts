@@ -147,6 +147,7 @@ export const es: Catalog = {
   "cart.freeNoDelivery": "Un pedido gratuito no se puede enviar: el repartidor responde de lo que lleva. Elige recogida.",
   "cart.short": "A tu saldo le faltan {amount} para este pedido. Añade fondos en tu cartera primero.",
   "cart.closedThen": "La tienda no está abierta a esa hora.",
+  "cart.closedSchedule": "{status}. Prográmalo para más tarde, en Cuándo.",
   "cart.payAndPlace": "Pagar {amount} y hacer el pedido",
   "cart.payAndSchedule": "Pagar {amount} y programar el pedido",
   "cart.placePickup": "Hacer pedido para recoger",

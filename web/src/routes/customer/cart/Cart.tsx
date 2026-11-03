@@ -144,7 +144,8 @@ export function Cart() {
     price.shortOfMinimumCents > 0 && storeInfo?.minOrderCents != null && t("cart.minimum", { minimum: formatCents(storeInfo.minOrderCents), more: formatCents(price.shortOfMinimumCents) }),
     delivery && price.discountedSubtotalCents === 0 && t("cart.freeNoDelivery"),
     shortUnpayable && t("cart.short", { amount: formatCents(price.shortfallCents) }),
-    storeClosed && (orderFor === now ? storeHours.label : t("cart.closedThen")),
+    // Closed now, a delivery can be scheduled for when it opens (bags aside).
+    storeClosed && (orderFor !== now ? t("cart.closedThen") : delivery && !hasBags ? t("cart.closedSchedule", { status: storeHours.label }) : storeHours.label),
   ].filter((note): note is string => !!note);
   const blocked =
     bagIssues.length > 0 ||
