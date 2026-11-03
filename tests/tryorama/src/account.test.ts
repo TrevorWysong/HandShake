@@ -5,7 +5,7 @@
 // modified client would.
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
-import { agentAsLinkBase, phraseKey, phraseMessage, retryUntil, retryUntilOk, setupPlayersWithProperties, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { phraseKey, phraseMessage, retryUntil, setupPlayersWithProperties, useTestCoordinators, retryingCaller } from "./helpers.js";
 
 interface PlanView {
   plan: Uint8Array;
@@ -24,22 +24,15 @@ interface SuccessionView {
 const same = (a: Uint8Array | null | undefined, b: Uint8Array) => !!a && Buffer.from(a).equals(Buffer.from(b));
 
 await runScenario(async (scenario) => {
-  const [issuer, alice, bob, carol, dana, erin, hank] = await setupPlayersWithProperties(scenario, 7, (keys) => ({ issuers: [keys[0]], credit_limit_cents: 0 }));
-  const all = [issuer, alice, bob, carol, dana, erin, hank];
-  for (const p of all) await useTestCoordinators(p, ["account", "ledger"]);
+  const [frank, alice, bob, carol, dana, erin, hank] = await setupPlayersWithProperties(scenario, 7, () => ({}));
+  const all = [frank, alice, bob, carol, dana, erin, hank];
+  for (const p of all) await useTestCoordinators(p, ["account"]);
   const sync = () => dhtSync(all, alice.cells[0].cell_id[0]);
   const account = (p: typeof alice) => retryingCaller(p.cells[0], "account");
-  const ledger = (p: typeof alice) => retryingCaller(p.cells[0], "ledger");
-  const balance = (p: typeof alice) => ledger(p)<number>("get_balance", p.agentPubKey);
-  const fund = async (p: typeof alice, amount: number, reference: string) => {
-    await ledger(issuer)("issue_grant", { to: p.agentPubKey, amount, reference });
-    await sync();
-    await retryUntilOk(() => ledger(p)<number>("collect_grants", null).then((n) => (n > 0 ? n : Promise.reject(new Error("not yet")))));
-  };
 
   // ===== A plan is the account's own, and sound =====
   const rawPlan = (p: typeof alice, plan: unknown) => account(p)("create_raw_plan_for_testing", plan);
-  const guardians = [bob.agentPubKey, carol.agentPubKey, issuer.agentPubKey];
+  const guardians = [bob.agentPubKey, carol.agentPubKey, frank.agentPubKey];
   await assert.rejects(rawPlan(dana, { phrase_key: null, guardians: [dana.agentPubKey], threshold: 1 }), /a guardian is someone else/);
   await assert.rejects(rawPlan(dana, { phrase_key: null, guardians: [bob.agentPubKey, bob.agentPubKey], threshold: 1 }), /each guardian once/);
   await assert.rejects(rawPlan(dana, { phrase_key: null, guardians, threshold: 4 }), /between one and all/);
@@ -50,7 +43,6 @@ await runScenario(async (scenario) => {
 
   // ===== Recovery by phrase =====
   const phrase = phraseKey();
-  await fund(dana, 2500, "dana-1");
   const firstPlan = await account(dana)<PlanView>("set_recovery_plan", { phrase_key: phrase.key, guardians, threshold: 2 });
   await sync();
   const accounts = await retryUntil(() => account(erin)<PlanView[]>("accounts_for_phrase_key", phrase.key), (list) => list.length === 1);
@@ -70,26 +62,12 @@ await runScenario(async (scenario) => {
     /one account/,
     "even forged",
   );
-  assert.equal(await balance(erin), 0, "a recovered account's money isn't moved on the phrase's word");
   await sync();
   const moved = await retryUntil(() => account(carol)<SuccessionView[]>("successions_of", dana.agentPubKey), (list) => list.length === 1);
   assert.ok(same(moved[0].successor, erin.agentPubKey) && moved[0].kind === "Phrase", "everyone sees Dana's account recovered onto Erin's key");
   const line = await account(carol)<Uint8Array[]>("lineage", erin.agentPubKey);
   assert.ok(line.length === 1 && same(line[0], dana.agentPubKey), "and Erin's key carries Dana's history");
-  const since = (who: typeof alice) => account(carol)<number | null>("account_since", who.agentPubKey);
-  assert.equal(await since(erin), await since(dana), "and her account's age: a recovery doesn't make it new");
   console.log("[PASS] the recovery phrase's signature, for this key and this account, recovers it");
-
-  // An issuer reissues it -- asked only by the recovering key.
-  await account(erin)("request_reissue", issuer.agentPubKey);
-  await sync();
-  const reissue = await retryUntil(() => account(issuer)<{ requests: { predecessor: Uint8Array; successor: Uint8Array }[] }>("get_reissue_requests", { after: null }).then((p) => p.requests), (r) => r.length === 1);
-  assert.ok(same(reissue[0].predecessor, dana.agentPubKey) && same(reissue[0].successor, erin.agentPubKey));
-  const standing = await ledger(issuer)<{ balance: number }>("standing_at", { agent: dana.agentPubKey, head });
-  assert.deepEqual(standing, { balance: 2500 }, "where the account's ledger stood");
-  await assert.rejects(account(bob)("request_reissue", issuer.agentPubKey), /hasn't recovered an account/, "only a recovering key asks");
-  await assert.rejects(account(erin)("test_create_link", { link_type: "IssuerToReissue", base: agentAsLinkBase(carol.agentPubKey), target: (await account(erin)<SuccessionView>("my_succession", null)).succession }), /issuer on the roster/, "only an issuer reissues");
-  console.log("[PASS] a recovered account asks an issuer to reissue its balance");
 
   // ===== Recovery by guardians =====
   await assert.rejects(account(alice)("vouch", { account: dana.agentPubKey, successor: hank.agentPubKey }), /aren't one of this account's guardians/);

@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, handOff, retryUntil, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, handOff, netOn, settleAll, ST_PETE, testApp, retryingCaller } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, driver] = await scenario.addPlayersWithApps([
@@ -19,7 +19,6 @@ await runScenario(async (scenario) => {
   const profilesOf = (p: typeof customer) => retryingCaller(p.cells[0], "profiles");
   const catalogOf = (p: typeof customer) => retryingCaller(p.cells[0], "catalog");
   const dispatchOf = (p: typeof customer) => retryingCaller(p.cells[0], "dispatch");
-  const ledgerOf = (p: typeof customer) => retryingCaller(p.cells[0], "ledger");
 
   const now = Date.now() * 1000;
   await profilesOf(customer)("create_profile", { display_name: "Cara Customer", roles: ["Requester", "Merchant"], created_at: now });
@@ -69,17 +68,18 @@ await runScenario(async (scenario) => {
 
     await dispatchOf(customer)("complete_delivery", { order_original_action: orderRef });
     await dhtSync(both, customer.cells[0].cell_id[0]);
+    await settleAll(both, orderRef);
+    return orderRef;
   }
 
   // Default 50/50 split on a $5.00 bid + $1.00 tip: merchant covers $2.50,
   // customer covers $2.50 + $1.00 tip = $3.50. Driver gets the full $6.00.
-  await driveToDelivered(500);
-  const driverBalance1 = await retryUntil(() => ledgerOf(driver)<number>("get_balance", driver.agentPubKey), (b) => b === 600, 120, 1000);
+  const first = await driveToDelivered(500);
+  const driverBalance1 = await netOn(driver, first);
   assert.equal(driverBalance1, 600, "driver should be paid the full $5.00 bid + $1.00 tip regardless of the split");
-  const customerBalance1 = await retryUntil(() => ledgerOf(customer)<number>("get_balance", customer.agentPubKey), (b) => b === -600, 120, 1000);
-  // Customer is both requester and merchant here, so both settlement legs
-  // hit the same balance: -250 (merchant's half) + -(250+100) (customer's
-  // half + tip) = -600.
+  const customerBalance1 = await netOn(customer, first);
+  // Customer is both requester and merchant here, so they pay the driver
+  // both halves of the fee and the tip, from the store's card: -600.
   assert.equal(customerBalance1, -600, "combined requester+merchant balance should reflect both settlement legs, net -$6.00");
   console.log("[PASS] default 50/50 split applies automatically on a bid, without the merchant ever calling set_delivery_subsidy_percent");
 
@@ -88,8 +88,7 @@ await runScenario(async (scenario) => {
   // bid turns out to be, not a flat capped dollar amount.
   await catalogOf(customer)("set_delivery_subsidy_percent", { original_action: catalogRef, delivery_subsidy_percent: 100 });
   await dhtSync(both, customer.cells[0].cell_id[0]);
-  await driveToDelivered(200);
-  const driverBalance2 = await retryUntil(() => ledgerOf(driver)<number>("get_balance", driver.agentPubKey), (b) => b === 600 + 300, 120, 1000);
-  assert.equal(driverBalance2, 600 + 300, "driver's second delivery should add exactly $2.00 fee + $1.00 tip = $3.00 to their running balance");
+  const second = await driveToDelivered(200);
+  assert.equal(await netOn(driver, second), 300, "driver's second delivery pays exactly $2.00 fee + $1.00 tip = $3.00");
   console.log("[PASS] a merchant raising their share to 100% covers the entire delivery fee, customer pays only the tip");
 });

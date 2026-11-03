@@ -2,12 +2,12 @@
 // actually pays the merchant for the food (`order_total`), not just the
 // driver for delivering it. Uses three genuinely distinct agents (not the
 // usual customer-doubles-as-merchant convention) specifically so this
-// exercises the real cross-agent ledger transaction, not the from==to
-// no-op skip added alongside it.
+// exercises real cross-agent payments, not the payer==payee case that
+// needs no payment at all.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, handOff, retryUntil, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, handOff, ST_PETE, testApp, retryingCaller, netOn, settleAll } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, merchant, driver] = await scenario.addPlayersWithApps([
@@ -21,7 +21,6 @@ await runScenario(async (scenario) => {
   const profilesOf = (p: typeof customer) => retryingCaller(p.cells[0], "profiles");
   const catalogOf = (p: typeof customer) => retryingCaller(p.cells[0], "catalog");
   const dispatchOf = (p: typeof customer) => retryingCaller(p.cells[0], "dispatch");
-  const ledgerOf = (p: typeof customer) => retryingCaller(p.cells[0], "ledger");
 
   const now = Date.now() * 1000;
   await profilesOf(customer)("create_profile", { display_name: "Cara Customer", roles: ["Requester"], created_at: now });
@@ -70,13 +69,14 @@ await runScenario(async (scenario) => {
   await dispatchOf(customer)("complete_delivery", { order_original_action: orderRef });
   await dhtSync(all, customer.cells[0].cell_id[0]);
 
-  const merchantBalance = await retryUntil(() => ledgerOf(merchant)<number>("get_balance", merchant.agentPubKey), (b) => b === 600, 120, 1000);
+  await settleAll(all, orderRef);
+  const merchantBalance = await netOn(merchant, orderRef);
   assert.equal(merchantBalance, 600, "merchant should now actually be paid order_total ($6.00) for the food");
 
-  const driverBalance = await retryUntil(() => ledgerOf(driver)<number>("get_balance", driver.agentPubKey), (b) => b === 600, 120, 1000);
+  const driverBalance = await netOn(driver, orderRef);
   assert.equal(driverBalance, 600, "driver should still be paid the full $5.00 bid + $1.00 tip, unaffected by the new order-total settlement");
 
-  const customerBalance = await retryUntil(() => ledgerOf(customer)<number>("get_balance", customer.agentPubKey), (b) => b === -1200, 120, 1000);
+  const customerBalance = await netOn(customer, orderRef);
   assert.equal(customerBalance, -1200, "customer should be debited both legs: $6.00 for food + $6.00 for delivery fee/tip");
 
   console.log("[PASS] complete_delivery now settles order_total to a genuinely distinct merchant, alongside the existing delivery-fee/tip settlement to the driver");

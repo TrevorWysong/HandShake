@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, FULL_SIZE_PHOTO, pickUp, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, FULL_SIZE_PHOTO, pickUp, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller, customerPaid } from "./helpers.js";
 
 const PHOTO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
@@ -182,6 +182,7 @@ await runScenario(async (scenario) => {
     ),
   );
   await sync();
+  await customerPaid(merchant, pricey, all);
   await retryUntil(
     () => call(merchant, "dispatch")("accept_delivery_order", { order_original_action: pricey }).then(() => "accepted", (e: Error) => e.message),
     (outcome) => /over your limit/.test(outcome),

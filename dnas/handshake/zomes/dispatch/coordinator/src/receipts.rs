@@ -1,8 +1,9 @@
 //! Itemized receipts for a customer's completed orders, built from what the
 //! network holds rather than what an app remembers: each line at the exact
 //! version of its item the order was priced from (the price actually paid),
-//! the fee split the order was placed under, and the ledger transactions
-//! that paid it -- so a receipt can be checked against the DHT.
+//! the fee split the order was placed under, and the holds that paid it,
+//! with what each payee charged -- so a receipt can be checked against the
+//! DHT.
 
 use crate::stores::current_catalog;
 use dispatch_integrity::*;
@@ -144,7 +145,7 @@ fn my_payments(order_ref: &ActionHash) -> ExternResult<Vec<ReceiptPayment>> {
         if payer.as_ref() != Some(&me) {
             continue;
         }
-        let charged = settlements.iter().find(|(_, author, s)| author == &payee && s.hold == hold_ref).map(|(_, _, s)| s.captured);
+        let charged = crate::payments::charged_of(&order, &payee, &hold_ref, &settlements)?;
         out.push(ReceiptPayment { leg: offer.leg, payee, held_cents: hold.amount, charged_cents: charged, transaction: hold_ref });
     }
     Ok(out)

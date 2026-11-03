@@ -1,11 +1,11 @@
 // Proves receipts: a completed order's receipt lists each item at the
 // price it was ordered at (not today's), the promo, the total, and the
-// ledger entry that paid it -- and only the customer gets one, only
-// once the order is complete.
+// store's hold that paid it, with what it charged -- and only the customer
+// gets one, only once the order is complete.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, retryUntilOk, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, holdOf, retryUntilOk, settleAll, ST_PETE, testApp, retryingCaller, customerPaid } from "./helpers.js";
 
 interface Receipt {
   store_name: string;
@@ -16,7 +16,7 @@ interface Receipt {
   delivery_fee_cents: number;
   tip_cents: number;
   total_cents: number;
-  payments: { leg: string; amount_cents: number; transaction: Uint8Array }[];
+  payments: { leg: unknown; payee: Uint8Array; held_cents: number; charged_cents: number | null; transaction: Uint8Array }[];
 }
 
 await runScenario(async (scenario) => {
@@ -44,6 +44,7 @@ await runScenario(async (scenario) => {
   const receipt = () => call(customer, "dispatch")<Receipt>("get_order_receipt", order);
   await assert.rejects(receipt(), /a receipt is for a collected order/, "no receipt before the order's complete");
 
+  await customerPaid(merchant, order, both);
   await call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order });
   await call(merchant, "dispatch")("mark_ready_for_pickup", order);
   await sync();
@@ -51,6 +52,7 @@ await runScenario(async (scenario) => {
   // The price goes up afterwards; the receipt keeps what was paid.
   await call(merchant, "catalog")("update_menu_item", { original_action: soupRef, item: { ...soup, price_cents: 1500 } });
   await sync();
+  await settleAll(both, order);
 
   const r = await receipt();
   assert.equal(r.store_name, "Mo's");
@@ -58,11 +60,11 @@ await runScenario(async (scenario) => {
   assert.deepEqual(r.lines, [{ item_ref: soupRef, name: "Soup", quantity: 2, unit_price_cents: 1000, total_cents: 2000, choices: [] }], "each item at the price it was ordered at");
   assert.deepEqual([r.subtotal_cents, r.discount_cents, r.delivery_fee_cents, r.tip_cents, r.total_cents], [2000, 200, 0, 0, 1800]);
   assert.equal(r.payments.length, 1);
-  assert.deepEqual([r.payments[0].leg, r.payments[0].amount_cents], ["Food", 1800], "the payment that settled it");
-  // The receipt cites the customer's own ledger entry that paid it.
-  const ledger = await call(customer, "ledger")<{ entries: HcRecord[] }>("list_my_ledger", { before: null });
-  assert.ok(ledger.entries.some((e) => Buffer.from(actionHash(e)).equals(Buffer.from(r.payments[0].transaction))), "the cited payment is on the customer's own ledger");
-  console.log("[PASS] a completed order's receipt lists what was paid, at the prices paid, and the transaction that paid it");
+  assert.deepEqual([r.payments[0].leg, r.payments[0].held_cents, r.payments[0].charged_cents], ["Customer", 1800, 1800], "the payment that settled it, held and charged");
+  assert.ok(Buffer.from(r.payments[0].payee).equals(Buffer.from(merchant.agentPubKey)), "paid to the store");
+  // The receipt cites the store's hold of the customer's card.
+  assert.ok(Buffer.from(r.payments[0].transaction).equals(Buffer.from((await holdOf(merchant, order, "Customer"))!)), "the cited payment is the store's hold");
+  console.log("[PASS] a completed order's receipt lists what was paid, at the prices paid, and the hold that paid it");
 
   await assert.rejects(call(merchant, "dispatch")("get_order_receipt", order), /Only the order's customer has a receipt/);
   console.log("[PASS] only the customer gets a receipt");

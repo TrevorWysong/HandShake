@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, decodeEntry, retryUntil, retryUntilOk, ST_PETE, testApp, retryingCaller, useTestCoordinators } from "./helpers.js";
+import { actionHash, decodeEntry, retryUntil, retryUntilOk, ST_PETE, testApp, retryingCaller, useTestCoordinators, customerPaid } from "./helpers.js";
 
 interface Standing {
   left: number;
@@ -122,16 +122,19 @@ await runScenario(async (scenario) => {
     /recorded by the order's store/,
     "a customer can't record a sale",
   );
+  await customerPaid(merchant, order, all);
   await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order }));
   await sync();
   const [standing] = await retryUntil(() => call(cara, "dispatch")<Standing[]>("bag_standings", [pastries]), (s) => s[0].left === 0);
   assert.deepEqual(standing, { left: 0, ordered: true }, "sold to Cara, and she has it");
+  await customerPaid(merchant, boOrder, all);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: boOrder }), /Pastry bag is sold out/, "the second order for the last bag");
   console.log("[PASS] accepting an order sells its bag, and a sold-out bag's order can't be accepted");
 
   // ===== Its owner orders one like anyone =====
   const own = actionHash(await retryUntilOk(() => pickup(merchant, [one(bread)], 660)));
   await sync();
+  await customerPaid(merchant, own, all);
   await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: own }));
   await sync();
   const [owned] = await retryUntil(() => call(merchant, "dispatch")<Standing[]>("bag_standings", [bread]), (s) => s[0].left === 1);

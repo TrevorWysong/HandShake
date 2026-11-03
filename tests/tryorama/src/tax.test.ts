@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { ST_PETE, actionHash, decodeEntry, retryUntilOk, testApp, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { ST_PETE, actionHash, decodeEntry, retryUntilOk, testApp, useTestCoordinators, retryingCaller, customerPaid } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, merchant] = await scenario.addPlayersWithApps([testApp, testApp]);
@@ -89,6 +89,7 @@ await runScenario(async (scenario) => {
   console.log("[PASS] with VAT in the prices, the customer pays the price shown, and the VAT in it is recorded");
 
   // ===== The receipt =====
+  await customerPaid(merchant, order, all);
   await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order }));
   await call(merchant, "dispatch")("mark_ready_for_pickup", order);
   await sync();

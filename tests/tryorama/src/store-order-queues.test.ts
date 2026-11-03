@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, bytesEqual, decodeEntry, retryUntilOk, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, bytesEqual, decodeEntry, retryUntilOk, ST_PETE, testApp, retryingCaller, customerPaid } from "./helpers.js";
 
 type StoreOrder = { kind: "Delivery" | "Pickup"; original_action: Uint8Array; record: HcRecord };
 type HistoryPage = { orders: StoreOrder[]; next_before: number | null };
@@ -54,6 +54,7 @@ await runScenario(async (scenario) => {
 
   // The merchant cancels a delivery; the customer completes a pickup.
   await call(merchant, "dispatch")("decline_order", { order_original_action: placed[0].ref, reason: "TooBusy" });
+  await customerPaid(merchant, placed[1].ref, all);
   await call(merchant, "dispatch")("accept_pickup_order", { order_original_action: placed[1].ref });
   await call(merchant, "dispatch")("mark_ready_for_pickup", placed[1].ref);
   await sync();

@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { ActionHash, Record as HcRecord } from "@holochain/client";
-import { ST_PETE, actionHash, bytesEqual, retryUntil, retryUntilOk, retryingCaller, testApp, useTestCoordinators } from "./helpers.js";
+import { ST_PETE, actionHash, bytesEqual, retryUntil, retryUntilOk, retryingCaller, testApp, useTestCoordinators, customerPaid } from "./helpers.js";
 
 const PRICE = 1000;
 const OFF = 100;
@@ -58,7 +58,7 @@ await runScenario(async (scenario) => {
       requester: p.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
       lines: [{ item_ref: stew, priced_version: stew, quantity: 1, selections: [] }],
       order_total: PRICE - OFF, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref,
-      loyalty_proof: [], cancellation: null, ready_by: null, food_hold: null, sealed_customer_name: null,
+      loyalty_proof: [], cancellation: null, ready_by: null, customer_payment: null, sealed_customer_name: null,
     });
   };
   const standing = (p: typeof ana, which: ActionHash) => call(p, "dispatch")<Standing[]>("my_promo_standing", store).then((list) => list.find((s) => bytesEqual(s.promo, which))!);
@@ -78,6 +78,7 @@ await runScenario(async (scenario) => {
   // Still used once the store takes it on and the customer's app confirms
   // so -- a confirmation isn't a decline, though the two look alike.
   await sync();
+  await customerPaid(merchant, used, all);
   await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: used }));
   await sync();
   const confirmation = await retryUntil(() => call(ana, "dispatch")<ActionHash | null>("confirm_what_i_saw", used), (hash) => hash !== null);
@@ -114,7 +115,11 @@ await runScenario(async (scenario) => {
   const orders = [];
   for (const p of [ana, ben, cal]) orders.push(actionHash(await retryUntilOk(() => order(p, capped))));
   await sync();
-  for (const o of orders.slice(0, 2)) await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: o }));
+  for (const o of orders.slice(0, 2)) {
+    await customerPaid(merchant, o, all);
+    await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: o }));
+  }
+  await customerPaid(merchant, orders[2], all);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: orders[2] }), /used as many times as it allows/, "the third isn't accepted");
   await sync();
   const left = await retryUntil(() => standing(cal, capped), (s) => s.remaining === 0);

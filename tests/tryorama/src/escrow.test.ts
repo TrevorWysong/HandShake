@@ -1,15 +1,16 @@
-// Proves escrow end to end, with the customer, store and driver all
-// different agents: each step of a delivery sets aside what its author owes
-// for it, in the same commit (and the next step can't happen without it);
-// nothing moves to anyone until the customer confirms the delivery, and then
-// each party's own conductor collects what it's owed. A cancellation hands
-// back what nobody earned: everything before the store accepts; once a
-// driver is assigned, the driver keeps the customer's share of the fee, and
-// once the store is cooking, the store keeps the food.
+// Proves holds end to end, with the customer, store and driver all
+// different agents: each step of a delivery needs the hold its payee makes
+// on its payer's card -- the store holds the customer's, the store holds the
+// driver's collateral, the driver holds the store's for their pay -- and
+// nothing is charged until the customer confirms the delivery; then each
+// payee charges what it's owed and releases the rest. A cancellation
+// charges only what somebody earned: nothing before the store accepts; once
+// a driver is paid for, the customer's share of their fee; and once the
+// store is cooking, the food too.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, handOff, retryUntil, retryUntilOk, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, driverPaid, handOff, netOn, paymentsOn, payeeAgent, retryUntilOk, settleAll, ST_PETE, testApp, retryingCaller } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, merchant, driver] = await scenario.addPlayersWithApps([testApp, testApp, testApp]);
@@ -17,8 +18,9 @@ await runScenario(async (scenario) => {
   await scenario.shareAllAgents();
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
   const call = (p: typeof customer, zome: string) => retryingCaller(p.cells[0], zome);
-  const balance = (p: typeof customer) => call(p, "ledger")<number>("get_balance", p.agentPubKey);
-  const settled = (p: typeof customer, expected: number) => retryUntil(() => balance(p), (b) => b === expected, 120, 1000);
+  /// What's held on `order`, leg by leg.
+  const held = async (order: Uint8Array) => Object.fromEntries((await paymentsOn(customer, order)).map((p) => [typeof p.leg === "string" ? p.leg : Object.keys(p.leg)[0], p.held]));
+  const nets = async (order: Uint8Array) => [await netOn(customer, order), await netOn(merchant, order), await netOn(driver, order)];
 
   const now = Date.now() * 1000;
   await call(customer, "profiles")("create_profile", { display_name: "", roles: ["Requester"], created_at: now });
@@ -45,57 +47,52 @@ await runScenario(async (scenario) => {
 
   // --- A delivery, step by step. ---
   const order = await placeOrder();
-  assert.equal(await balance(customer), -2000, "placing the order holds the food");
+  assert.deepEqual(await held(order), {}, "placing the order holds nothing until the store's agent holds the card");
   await assignDriver(order);
-  assert.equal(await balance(customer), -(2000 + 250 + 300), "accepting a bid holds the customer's half of the fee and the tip");
+  assert.deepEqual(await held(order), { Customer: 2000 + 500 + 300 }, "the store holds the food, the customer's share of the fee at their cap, and the tip");
   await commitAndCook(driver, merchant, order, all);
-  assert.equal(await balance(driver), -2000, "committing holds the driver's collateral, the value of the food");
-  assert.equal(await balance(merchant), 0, "the store holds nothing until it checks the driver in");
+  assert.deepEqual(await held(order), { Customer: 2800, Collateral: 2000, DriverPay: 500 + 300 }, "committing needs the driver's collateral held by the store, and their bid and the tip held by them on the store's card");
   await collectFromStore(driver, merchant, order, all);
-  assert.equal(await balance(merchant), -(250 + 250), "checking the driver in holds the store's half of the fee, and the customer's half again in case it keeps them waiting");
   await sync();
-  for (const p of all) assert.equal(await call(p, "dispatch")<number>("settle_order", order), 0, "nothing is owed to anyone before the customer has the order");
-  console.log("[PASS] each step holds what its author owes, and nothing moves before the delivery");
+  for (const p of all) {
+    assert.equal(await call(p, "dispatch")<number>("settle_order", order), 0, "nothing is owed to anyone before the customer has the order");
+    assert.equal(await payeeAgent(p), 0, "so nothing is charged");
+  }
+  console.log("[PASS] each step needs its hold, and nothing is charged before the delivery");
 
   await handOff(driver, customer, order, "CustomerHandoff", all);
   await retryUntilOk(() => call(customer, "dispatch")("complete_delivery", { order_original_action: order }));
   await sync();
-  assert.equal(await settled(driver, 500 + 300), 500 + 300, "the driver collects the whole fee and the tip, and their collateral back");
-  assert.equal(await settled(merchant, 2000 - 250), 2000 - 250, "the store collects the food");
-  assert.equal(await balance(customer), -(2000 + 250 + 300));
-  console.log("[PASS] once the customer confirms, each party's conductor collects what it's owed");
+  await settleAll(all, order);
+  assert.deepEqual(await nets(order), [-(2000 + 250 + 300), 2000 - 250, 500 + 300], "the customer pays the food, half the fee and the tip; the driver is paid the whole fee and the tip, and their collateral released");
+  console.log("[PASS] once the customer confirms, each payee charges what it's owed");
 
-  // --- A customer cancelling before the store accepts gets everything back. ---
-  const [customerBefore, merchantBefore] = [await balance(customer), await balance(merchant)];
+  // --- A customer cancelling before the store accepts pays nothing. ---
   const early = await placeOrder();
-  assert.equal(await balance(customer), customerBefore - 2000);
   await call(customer, "dispatch")("cancel_order", early);
   await sync();
-  // The store's conductor waives the food; the customer's collects it back.
-  assert.equal(await settled(customer, customerBefore), customerBefore, "the food comes back");
-  assert.equal(await balance(merchant), merchantBefore, "the store gets nothing");
-  console.log("[PASS] cancelling before the store accepts returns everything");
+  await settleAll(all, early);
+  assert.deepEqual(await nets(early), [0, 0, 0], "nothing is charged");
+  console.log("[PASS] cancelling before the store accepts charges nothing");
 
   // --- With a driver assigned but nothing cooking, only the driver's fee is owed. ---
-  const [c0, m0, d0] = [await balance(customer), await balance(merchant), await balance(driver)];
   const assigned = await placeOrder();
   await assignDriver(assigned);
+  // A store paying its driver as soon as they're assigned (its card saved with them).
+  await driverPaid(merchant, driver, assigned, all);
   await retryUntilOk(() => call(customer, "dispatch")("cancel_order", assigned));
   await sync();
-  assert.equal(await settled(customer, c0 - 250), c0 - 250, "the food and the tip come back: the store hadn't started");
-  assert.equal(await settled(driver, d0 + 250), d0 + 250, "the driver keeps the customer's half of the fee");
-  assert.equal(await balance(merchant), m0, "the store is owed nothing");
+  await settleAll(all, assigned);
+  assert.deepEqual(await nets(assigned), [-250, 0, 250], "the driver is paid the customer's half of the fee, passed on by the store; the food and the tip are released");
   console.log("[PASS] cancelling before the store cooks costs only the driver's fee");
 
   // --- Once it's cooking, the store keeps the food too. ---
-  const [c1, m1, d1] = [await balance(customer), await balance(merchant), await balance(driver)];
   const late = await placeOrder();
   await assignDriver(late);
   await commitAndCook(driver, merchant, late, all);
   await retryUntilOk(() => call(customer, "dispatch")("cancel_order", late));
   await sync();
-  assert.equal(await settled(merchant, m1 + 2000), m1 + 2000, "the store keeps the food");
-  assert.equal(await settled(driver, d1 + 250), d1 + 250, "the driver keeps the customer's half of the fee, and their collateral comes back");
-  assert.equal(await settled(customer, c1 - 2000 - 250), c1 - 2000 - 250, "the tip comes back to the customer");
-  console.log("[PASS] a late cancellation pays the store and driver for what they'd committed, and returns the rest");
+  await settleAll(all, late);
+  assert.deepEqual(await nets(late), [-(2000 + 250), 2000, 250], "the store keeps the food, the driver the customer's half of the fee and their collateral back; the tip is released");
+  console.log("[PASS] a late cancellation pays the store and driver for what they'd committed, and releases the rest");
 });

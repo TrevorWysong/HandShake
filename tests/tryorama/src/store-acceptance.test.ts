@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, commitAndCook, decodeEntry, ST_PETE, testApp, useTestCoordinators, waitForSignal, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, commitAndCook, decodeEntry, ST_PETE, testApp, useTestCoordinators, waitForSignal, retryingCaller, customerPaid } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, merchant, driver] = await scenario.addPlayersWithApps([testApp, testApp, testApp]);
@@ -90,6 +90,7 @@ await runScenario(async (scenario) => {
     /Placed -> MerchantConfirmed requires author role Merchant/,
     "even by writing the update directly",
   );
+  await customerPaid(merchant, pickup, all);
   await call(merchant, "dispatch")("accept_pickup_order", { order_original_action: pickup });
   await sync();
   await assert.rejects(call(customer, "dispatch")("mark_ready_for_pickup", pickup), /requires author role Merchant/, "or say it's ready");
@@ -116,6 +117,7 @@ await runScenario(async (scenario) => {
     }),
   );
   await sync();
+  await customerPaid(merchant, pinned, all);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: pinned }), /Burger was priced from an outdated menu/, "the store refuses it");
   await call(merchant, "dispatch")("decline_pickup_order", { order_original_action: pinned, reason: "OutdatedPrices" });
   assert.equal(await status(merchant, "get_pickup_order", pinned), "Cancelled");

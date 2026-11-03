@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, type Scenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, commitAndCook, currentBeacon, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { actionHash, bytesEqual, commitAndCook, currentBeacon, netOn, paymentsOn, payeeAgent, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller, customerPaid } from "./helpers.js";
 
 export const FOOD = 1000;
 export const FEE = 400;
@@ -41,18 +41,26 @@ export async function lateOrderWorld(scenario: Scenario) {
   for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
   const call = (p: typeof customer, zome: string) => retryingCaller(p.cells[0], zome);
-  const balance = (p: typeof customer) => call(p, "ledger")<number>("get_balance", p.agentPubKey);
+  /// What `p` paid and was paid on `order`, once every party's app has
+  /// settled what it can -- as each does on its own.
   const settlesTo = (p: typeof customer, order: Uint8Array, expected: number, why: string) =>
     retryUntil(
       async () => {
-        await call(p, "dispatch")("settle_order", order).catch(() => 0);
-        return balance(p);
+        for (const q of all) {
+          await call(q, "dispatch")("settle_order", order).catch(() => 0);
+          await payeeAgent(q).catch(() => 0);
+        }
+        await sync();
+        return netOn(p, order);
       },
       (b) => b === expected,
       180,
       1000,
     ).then((b) => assert.equal(b, expected, why));
   const timing = (order: Uint8Array) => call(customer, "dispatch")<OrderTiming>("get_order_timing", order);
+  /// What's held on `order` from `payer`'s card, and whether it's been charged.
+  const heldFrom = async (order: Uint8Array, payer: typeof customer) =>
+    (await paymentsOn(customer, order)).filter((p) => bytesEqual(p.payer, payer.agentPubKey)).map((p) => ({ leg: typeof p.leg === "string" ? p.leg : Object.keys(p.leg)[0], held: p.held, charged: p.charged }));
 
   const now = Date.now() * 1000;
   await call(customer, "profiles")("create_profile", { display_name: "", roles: ["Requester"], created_at: now });
@@ -71,6 +79,7 @@ export async function lateOrderWorld(scenario: Scenario) {
       ),
     );
     await sync();
+    await customerPaid(merchant, ref, all);
     await retryUntilOk(() => call(merchant, "dispatch")("accept_delivery_order", { order_original_action: ref, prep_minutes: PREP_MINUTES }));
     await sync();
     return ref;
@@ -89,5 +98,5 @@ export async function lateOrderWorld(scenario: Scenario) {
     await sync();
   }
 
-  return { customer, merchant, first, second, store, call, sync, balance, settlesTo, timing, placed, driving, drop };
+  return { customer, merchant, first, second, all, store, call, sync, settlesTo, heldFrom, timing, placed, driving, drop };
 }

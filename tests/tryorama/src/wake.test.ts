@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord, Signal } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, retryUntil, retryUntilOk, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, retryUntil, retryUntilOk, ST_PETE, testApp, retryingCaller, customerPaid } from "./helpers.js";
 
 /// Every wake token `ws`'s app is handed, as they come.
 function wakesHeardBy(ws: { on: (evt: "signal", cb: (s: Signal) => void) => () => void }): string[] {
@@ -41,6 +41,7 @@ await runScenario(async (scenario) => {
     await dispatchOf(customer)<HcRecord>("request_pickup_order", { merchant: store.agentPubKey, catalog_ref: catalog, items: [{ item_ref: item, quantity: 1 }], order_total: 900, wake_for_store: "wake-pickup-store" }),
   );
   await dhtSync(all, customer.cells[0].cell_id[0]);
+  await customerPaid(store, pickup, all);
   await retryUntilOk(() => dispatchOf(store)("accept_pickup_order", { order_original_action: pickup }));
   await retryUntil(async () => heard.store, (tokens) => tokens.includes("wake-pickup-store"));
   assert.ok(heard.store.includes("wake-pickup-store"), "accepting the order hands the store's app its token for the customer");
