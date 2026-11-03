@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, handOff, retryUntil, ST_PETE, testApp, retryingCaller, useTestCoordinators } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, handOff, ST_PETE, testApp, retryingCaller, useTestCoordinators, netOn, settleAll } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, driver] = await scenario.addPlayersWithApps([
@@ -232,9 +232,9 @@ await runScenario(async (scenario) => {
   await dhtSync(both, customer.cells[0].cell_id[0]);
 
   await dispatchOf(customer)("complete_delivery", { order_original_action: orderRef });
-  const ledgerOf = (p: typeof customer) => retryingCaller(p.cells[0], "ledger");
   await dhtSync(both, customer.cells[0].cell_id[0]);
-  const driverBalance = await retryUntil(() => ledgerOf(driver)<number>("get_balance", driver.agentPubKey), (b) => b === 400 + 150, 120, 1000);
+  await settleAll(both, orderRef);
+  const driverBalance = await netOn(driver, orderRef);
   assert.equal(driverBalance, 400 + 150, "driver's payout must include the tip on top of the bid's price_offer");
   console.log("[PASS] complete_delivery pays the driver price_offer + tip_cents, confirming the tip is real money, not just a stored field");
 

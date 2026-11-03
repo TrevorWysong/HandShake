@@ -30,7 +30,7 @@ interface Item {
 const same = (a: Uint8Array | null | undefined, b: Uint8Array) => !!a && Buffer.from(a).equals(Buffer.from(b));
 
 await runScenario(async (scenario) => {
-  const [alice, bob, carol] = await setupPlayersWithProperties(scenario, 3, () => ({ store_listing_stake: 0, credit_limit_cents: 0 }));
+  const [alice, bob, carol] = await setupPlayersWithProperties(scenario, 3, () => ({}));
   const all = [alice, bob, carol];
   for (const p of all) await useTestCoordinators(p, ["catalog"]);
   const sync = () => dhtSync(all, alice.cells[0].cell_id[0]);

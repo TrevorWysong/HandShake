@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, decodeEntry, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, decodeEntry, ST_PETE, testApp, retryingCaller, customerPaid } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, merchant] = await scenario.addPlayersWithApps([testApp, testApp]);
@@ -82,6 +82,7 @@ await runScenario(async (scenario) => {
   );
   const first = actionHash(await dispatchOf(customer)<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: catalogRef, items: [{ item_ref: menuItemRef, quantity: 1 }], order_total: 1000 }));
   await dhtSync(all, customer.cells[0].cell_id[0]);
+  await customerPaid(merchant, first, all);
   await dispatchOf(merchant)("accept_pickup_order", { order_original_action: first });
   await dispatchOf(merchant)("mark_ready_for_pickup", first);
   await dhtSync(all, customer.cells[0].cell_id[0]);

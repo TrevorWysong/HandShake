@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, commitAndCook, currentBeacon, deliveryStatus, netOn, retryUntil, retryUntilOk, settleAll, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { actionHash, commitAndCook, currentBeacon, deliveryStatus, netOn, retryUntil, retryUntilOk, settleAll, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller, customerPaid } from "./helpers.js";
 
 const FOOD = 1000;
 const FEE = 400;
@@ -49,6 +49,7 @@ await runScenario(async (scenario) => {
       ),
     );
     await sync();
+    await customerPaid(merchant, ref, all);
     await retryUntilOk(() => call(merchant, "dispatch")("accept_delivery_order", { order_original_action: ref, prep_minutes: 1 }));
     await sync();
     return ref;

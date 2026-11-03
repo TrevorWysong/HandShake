@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, bytesEqual, decodeEntry, retryUntil, waitForSignal, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, bytesEqual, decodeEntry, retryUntil, waitForSignal, ST_PETE, testApp, retryingCaller, customerPaid } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [requester, providerA, providerB, providerC] = await scenario.addPlayersWithApps([
@@ -54,6 +54,7 @@ await runScenario(async (scenario) => {
   });
   const orderRef = actionHash(orderRecord);
   // Drivers hear of it once the store accepts it -- here the requester is the store.
+  await customerPaid(requester, orderRef, allPlayers);
   await dispatchOf(requester)("accept_delivery_order", { order_original_action: orderRef });
 
   // Drivers A and B are in the drop-off's neighbourhood; C is in New York.

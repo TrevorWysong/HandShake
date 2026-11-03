@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { CallableCell } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { ST_PETE, actionHash, retryUntil, retryUntilOk, restoreInPlace, retryingCaller, setupPlayersWithProperties } from "./helpers.js";
+import { ST_PETE, actionHash, retryUntil, retryUntilOk, restoreInPlace, retryingCaller, setupPlayersWithProperties, customerPaid } from "./helpers.js";
 
 interface MoveReadiness {
   head: Uint8Array;
@@ -40,6 +40,7 @@ await runScenario(async (scenario) => {
   const order = { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 2000 };
   const first = actionHash(await retryUntilOk(() => call(customer.cells[0], "dispatch")<HcRecord>("request_pickup_order", order)));
   await sync();
+  await customerPaid(merchant, first, [customer, merchant, neighbour]);
   await retryUntilOk(() => call(merchant.cells[0], "dispatch")("accept_pickup_order", { order_original_action: first }));
   // A delivery with no driver yet: someone checking in for it asks the
   // store's own conductor (`check_in_at_store` -> `confirm_check_in`), which

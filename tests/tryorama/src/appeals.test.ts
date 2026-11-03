@@ -1,12 +1,12 @@
 // Proves appeals of a store's decision: a customer appeals their store's
 // settlement to one of the network's arbiters, once, for no more than the
 // store kept; the store answers; only that arbiter rules, once -- and the
-// ruling is what the network's issuer pays from the store's cash-outs.
+// store's payment agent refunds the award to the customer's card, once.
 // Each side's evidence reaches only the arbiter.
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { actionHash, netOn, payeeAgent, retryUntil, retryUntilOk, settleAll, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller, customerPaid } from "./helpers.js";
 
 interface Evidence {
   note: string;
@@ -33,6 +33,7 @@ await runScenario(async (scenario) => {
   await sync();
   const order = actionHash(await retryUntilOk(() => call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 2000 })));
   await sync();
+  await customerPaid(merchant, order, all);
   await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order }));
   await call(merchant, "dispatch")("mark_ready_for_pickup", order);
   await sync();
@@ -83,6 +84,13 @@ await runScenario(async (scenario) => {
   assert.deepEqual([ruled.ruling!.award, ruled.ruling!.reasons], [1500, "A wrong dish, eaten in part."]);
   const due = await call(arbiter, "dispatch")<{ award: number; customer: Uint8Array }[]>("get_rulings_against", merchant.agentPubKey);
   assert.equal(due.length, 1);
-  assert.ok(due[0].award === 1500 && Buffer.from(due[0].customer).equals(Buffer.from(customer.agentPubKey)), "what the issuer takes from the store's cash-outs, for the customer");
+  assert.ok(due[0].award === 1500 && Buffer.from(due[0].customer).equals(Buffer.from(customer.agentPubKey)), "what the store owes the customer");
   console.log("[PASS] only the arbiter rules, once, and the award is due from the store");
+
+  // ===== The store's agent refunds it, once =====
+  await settleAll(all, order);
+  assert.equal(await netOn(customer, order), -(2000 - 1500), "the award comes back to the customer's card");
+  assert.equal(await netOn(merchant, order), 2000 - 1500, "out of what the store charged");
+  assert.equal(await payeeAgent(merchant), 0, "and only once");
+  console.log("[PASS] the store's agent refunds the award to the customer's card, once");
 });

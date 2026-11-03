@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, decodeEntry, retryUntil, ST_PETE, useTestCoordinators, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, decodeEntry, retryUntil, ST_PETE, useTestCoordinators, testApp, retryingCaller, customerPaid } from "./helpers.js";
 
 const MINUTE = 60 * 1_000_000;
 
@@ -101,10 +101,12 @@ await runScenario(async (scenario) => {
   const usual = actionHash(await pickup());
   await sync();
   const acceptedAt = Date.now() * 1000;
+  await customerPaid(merchant, usual, both);
   const accepted = decodeEntry<{ ready_by: number }>(await call(merchant, "dispatch")<HcRecord>("accept_pickup_order", { order_original_action: usual }));
   assert.ok(Math.abs(accepted.ready_by - (acceptedAt + 12 * MINUTE)) < MINUTE, "the store's usual prep time");
   const picked = actionHash(await pickup());
   await sync();
+  await customerPaid(merchant, picked, both);
   const pickedReady = decodeEntry<{ ready_by: number }>(await call(merchant, "dispatch")<HcRecord>("accept_pickup_order", { order_original_action: picked, prep_minutes: 30 })).ready_by;
   assert.ok(Math.abs(pickedReady - (Date.now() * 1000 + 30 * MINUTE)) < MINUTE, "or the time the kitchen picks");
   console.log("[PASS] accepting an order records when it'll be ready");

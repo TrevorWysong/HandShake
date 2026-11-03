@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, retryUntil, retryUntilOk, ST_PETE, useTestCoordinators, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, retryUntil, retryUntilOk, ST_PETE, useTestCoordinators, testApp, retryingCaller, customerPaid } from "./helpers.js";
 
 interface LineView {
   name: string;
@@ -176,6 +176,7 @@ await runScenario(async (scenario) => {
   await sync();
   const stale = actionHash(await raw(largeTwoShots, 555));
   await sync();
+  await customerPaid(merchant, stale, all);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: stale }), /Size was priced from an outdated menu/, "the store refuses an order priced from changed choices");
   await retryUntilOk(() =>
     call(customer, "dispatch")("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: latteRef, quantity: 1, selections: largeTwoShots }], order_total: 605 }),
@@ -209,6 +210,7 @@ await runScenario(async (scenario) => {
   console.log("[PASS] a reward covers the choices it names, and no others");
 
   // ===== A report is worth its line =====
+  await customerPaid(merchant, order, all);
   await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order }));
   await call(merchant, "dispatch")("mark_ready_for_pickup", order);
   await sync();

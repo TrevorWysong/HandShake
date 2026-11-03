@@ -1,13 +1,14 @@
 // Proves the store pays its own share of the delivery fee -- with the
-// customer, store and driver all different agents: the store sets its share
-// aside as it starts preparing, and once the customer confirms the
-// delivery, the driver's conductor collects the whole fee and the tip, and
-// the store's collects the food, with no client involved. Settling again
-// then changes nothing.
+// customer, store and driver all different agents: the customer's card is
+// held by the store for the food, their half of the fee and the tip; the
+// store's card by the driver for the whole bid and the tip. Once the
+// customer confirms the delivery, each payee charges its share, and the
+// store passes on the customer's half of the fee. Settling again then
+// changes nothing.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, handOff, retryUntil, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, handOff, netOn, payeeAgent, settleAll, ST_PETE, testApp, retryingCaller } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, merchant, driver] = await scenario.addPlayersWithApps([testApp, testApp, testApp]);
@@ -44,21 +45,17 @@ await runScenario(async (scenario) => {
   console.log("[PASS] a delivery with three different agents is completed");
 
   // The customer pays the food, their half of the fee, and the tip; the
-  // store's conductor pays its half itself, on the schedule the signal
-  // started (the scheduler loop plus a retry -- allow up to a minute).
-  const driverBalance = await retryUntil(
-    () => call(driver, "ledger")<number>("get_balance", driver.agentPubKey),
-    (balance) => balance === 600,
-    120,
-  );
-  assert.equal(driverBalance, 600, "the driver gets the full $5.00 fee plus the $1.00 tip -- half the fee from the store");
-  assert.equal(await call(customer, "ledger")<number>("get_balance", customer.agentPubKey), -(600 + 250 + 100), "the customer pays the food, half the fee and the tip");
-  assert.equal(await call(merchant, "ledger")<number>("get_balance", merchant.agentPubKey), 600 - 250, "the store is paid for the food and pays its half of the fee");
-  console.log("[PASS] each party's conductor settles its share once the customer confirms the delivery");
+  // store pays the whole bid and the tip, and passes on the customer's half.
+  await settleAll(all, order);
+  assert.equal(await netOn(driver, order), 600, "the driver gets the full $5.00 fee plus the $1.00 tip -- half the fee from the store");
+  assert.equal(await netOn(customer, order), -(600 + 250 + 100), "the customer pays the food, half the fee and the tip");
+  assert.equal(await netOn(merchant, order), 600 - 250, "the store is paid for the food and pays its half of the fee");
+  console.log("[PASS] each party's agent charges its share once the customer confirms the delivery");
 
   for (const p of [customer, merchant, driver]) {
     assert.equal(await call(p, "dispatch")<number>("settle_order", order), 0, "settling again finds nothing left");
+    assert.equal(await payeeAgent(p), 0, "nor anything left to charge");
   }
-  assert.equal(await call(driver, "ledger")<number>("get_balance", driver.agentPubKey), 600, "and changes nothing");
+  assert.equal(await netOn(driver, order), 600, "and changes nothing");
   console.log("[PASS] once settled, settling again is a no-op for everyone");
 });

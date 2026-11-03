@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, FULL_SIZE_PHOTO, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { actionHash, FULL_SIZE_PHOTO, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller, customerPaid, netOn, payeeAgent } from "./helpers.js";
 
 /// Long enough to report in, short enough to wait out.
 // Long enough that a slow CI runner files both reports before it closes.
@@ -30,12 +30,15 @@ await runScenario(async (scenario) => {
   for (const p of all) await useTestCoordinators(p, ["dispatch", "catalog", "reputation"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
   const call = (p: typeof customer, zome: string) => retryingCaller(p.cells[0], zome);
-  const balance = (p: typeof customer) => call(p, "ledger")<number>("get_balance", p.agentPubKey);
+  /// What `p` paid and was paid on `order`, once the store's app has
+  /// settled it and charged what it's owed.
   const settlesTo = (p: typeof customer, order: Uint8Array, expected: number) =>
     retryUntil(
       async () => {
-        await call(p, "dispatch")("settle_order", order).catch(() => 0);
-        return balance(p);
+        await call(merchant, "dispatch")("settle_order", order).catch(() => 0);
+        await payeeAgent(merchant).catch(() => 0);
+        await sync();
+        return netOn(p, order);
       },
       (b) => b === expected,
       150,
@@ -68,6 +71,7 @@ await runScenario(async (scenario) => {
       ),
     );
     await sync();
+    await customerPaid(merchant, ref, all);
     await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: ref }));
     await call(merchant, "dispatch")("mark_ready_for_pickup", ref);
     await sync();
@@ -80,8 +84,6 @@ await runScenario(async (scenario) => {
   const BREAD = 1;
   const raw = (p: typeof customer, fn: string, input: unknown) => call(p, "dispatch")(`create_raw_${fn}_for_testing`, input);
 
-  const customerBefore = await balance(customer);
-  const storeBefore = await balance(merchant);
   const { ref: order, collected } = await pickup();
 
   // Who can report what.
@@ -123,8 +125,8 @@ await runScenario(async (scenario) => {
   console.log("[PASS] only the store settles, citing that the customer has the order, for no more than the reports are worth");
 
   // The window runs out: the store's app settles on its answers.
-  await settlesTo(merchant, order, storeBefore + 1500);
-  await settlesTo(customer, order, customerBefore - 2000 + 500);
+  await settlesTo(merchant, order, 1500);
+  await settlesTo(customer, order, -2000 + 500);
   assert.equal(await refundOf(order), 500, "the accepted report is refunded; the declined one isn't");
   await assert.rejects(settlement(merchant, { refund: 0, issues: [] }), /settled once/, "and it's settled once");
   await assert.rejects(call(customer, "dispatch")("report_issue", { order, lines: [{ line: STEW, quantity: 1, kind: "Missing" }], note: "", photo_data_uri: "" }), /already settled/, "a report after that comes too late");
@@ -141,7 +143,6 @@ await runScenario(async (scenario) => {
   console.log("[PASS] an order's store is reviewed once");
 
   // ===== A report the store ignores =====
-  const customerThen = await balance(customer);
   const { ref: ignored } = await pickup();
   await call(customer, "dispatch")("report_issue", { order: ignored, lines: [{ line: BREAD, quantity: 2, kind: "Missing" }], note: "", photo_data_uri: "" });
   await sync();
@@ -155,6 +156,6 @@ await runScenario(async (scenario) => {
     1000,
   );
   assert.equal(await refundOf(ignored), 1000, "a report the store never answers is refunded");
-  await settlesTo(customer, ignored, customerThen - 2000 + 1000);
+  await settlesTo(customer, ignored, -2000 + 1000);
   console.log("[PASS] a report the store ignores is refunded when its window closes");
 });

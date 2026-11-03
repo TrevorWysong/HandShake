@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { ActionHash, Record as HcRecord } from "@holochain/client";
-import { ST_PETE, actionHash, retryUntil, retryUntilOk, retryingCaller, setupPlayersWithProperties, useTestCoordinators } from "./helpers.js";
+import { ST_PETE, actionHash, retryUntil, retryUntilOk, retryingCaller, setupPlayersWithProperties, useTestCoordinators, customerPaid } from "./helpers.js";
 
 /// Seconds after a settlement its customer may appeal it, here.
 const WINDOW_SECS = 25;
@@ -40,6 +40,7 @@ await runScenario(async (scenario) => {
   const settled = async () => {
     const order = actionHash(await retryUntilOk(() => call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 2000 })));
     await sync();
+    await customerPaid(merchant, order, all);
     const accepted = actionHash(await retryUntilOk(() => call(merchant, "dispatch")<HcRecord>("accept_pickup_order", { order_original_action: order })));
     await call(merchant, "dispatch")("mark_ready_for_pickup", order);
     await sync();

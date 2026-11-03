@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, decodeEntry, ST_PETE, retryUntil, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, decodeEntry, ST_PETE, testApp, retryingCaller, customerPaid, netOn, settleAll } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, merchant] = await scenario.addPlayersWithApps([testApp, testApp]);
@@ -15,7 +15,6 @@ await runScenario(async (scenario) => {
   const profilesOf = (p: typeof customer) => retryingCaller(p.cells[0], "profiles");
   const catalogOf = (p: typeof customer) => retryingCaller(p.cells[0], "catalog");
   const dispatchOf = (p: typeof customer) => retryingCaller(p.cells[0], "dispatch");
-  const ledgerOf = (p: typeof customer) => retryingCaller(p.cells[0], "ledger");
   const reputationOf = (p: typeof customer) => retryingCaller(p.cells[0], "reputation");
 
   const now = Date.now() * 1000;
@@ -52,6 +51,7 @@ await runScenario(async (scenario) => {
   assert.equal(merchantSide[0].kind, "Pickup");
   console.log("[PASS] get_active_orders_for_store discovers the order");
 
+  await customerPaid(merchant, orderRef, all);
   await dispatchOf(merchant)("accept_pickup_order", { order_original_action: orderRef });
   await dhtSync(all, customer.cells[0].cell_id[0]);
   await dispatchOf(merchant)("mark_ready_for_pickup", orderRef);
@@ -60,9 +60,10 @@ await runScenario(async (scenario) => {
   await dispatchOf(customer)("complete_pickup", orderRef);
   await dhtSync(all, customer.cells[0].cell_id[0]);
 
-  const merchantBalance = await retryUntil(() => ledgerOf(merchant)<number>("get_balance", merchant.agentPubKey), (b) => b === 600, 120, 1000);
+  await settleAll(all, orderRef);
+  const merchantBalance = await netOn(merchant, orderRef);
   assert.equal(merchantBalance, 600, "merchant should be paid order_total -- no delivery-fee split exists for pickup");
-  const customerBalance = await retryUntil(() => ledgerOf(customer)<number>("get_balance", customer.agentPubKey), (b) => b === -600, 120, 1000);
+  const customerBalance = await netOn(customer, orderRef);
   assert.equal(customerBalance, -600, "customer should be debited exactly order_total, nothing else");
   console.log("[PASS] complete_pickup settles order_total with no delivery-fee concept at all");
 
@@ -99,7 +100,7 @@ await runScenario(async (scenario) => {
   await dhtSync(all, customer.cells[0].cell_id[0]);
   await dispatchOf(customer)("cancel_pickup_order", order2Ref);
   await dhtSync(all, customer.cells[0].cell_id[0]);
-  const merchantBalanceAfterCancel = await retryUntil(() => ledgerOf(merchant)<number>("get_balance", merchant.agentPubKey), (b) => b === 600, 120, 1000);
-  assert.equal(merchantBalanceAfterCancel, 600, "cancelling before pickup must not settle any payment");
+  await settleAll(all, order2Ref);
+  assert.equal(await netOn(merchant, order2Ref), 0, "cancelling before pickup must not settle any payment");
   console.log("[PASS] cancel_pickup_order leaves payment untouched");
 });

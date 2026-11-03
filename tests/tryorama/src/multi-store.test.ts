@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, bytesEqual, decodeEntry, retryUntilOk, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, bytesEqual, decodeEntry, retryUntilOk, ST_PETE, testApp, retryingCaller, customerPaid } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, merchant] = await scenario.addPlayersWithApps([testApp, testApp]);
@@ -104,6 +104,7 @@ await runScenario(async (scenario) => {
   console.log("[PASS] each store's active queue holds only that store's orders");
 
   // --- Reputation lands on the store the order came from. ---
+  await customerPaid(merchant, pickupB, all);
   await dispatchOf(merchant)("accept_pickup_order", { order_original_action: pickupB });
   await dispatchOf(merchant)("mark_ready_for_pickup", pickupB);
   await sync();

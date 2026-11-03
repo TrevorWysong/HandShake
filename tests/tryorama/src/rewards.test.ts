@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { ActionHash, Record as HcRecord } from "@holochain/client";
-import { ST_PETE, actionHash, bytesEqual, decodeEntry, retryUntil, retryUntilOk, retryingCaller, testApp, useTestCoordinators } from "./helpers.js";
+import { ST_PETE, actionHash, bytesEqual, decodeEntry, retryUntil, retryUntilOk, retryingCaller, testApp, useTestCoordinators, customerPaid } from "./helpers.js";
 
 interface Card {
   balance: number;
@@ -79,6 +79,7 @@ await runScenario(async (scenario) => {
     call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items, order_total, reward });
   const accept = async (order: ActionHash) => {
     await sync();
+    await customerPaid(merchant, order, all);
     await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order }));
   };
   const fulfil = async (order: ActionHash) => {
@@ -96,7 +97,7 @@ await runScenario(async (scenario) => {
   assert.ok(decodeEntry<Order>(first).rewards, "it joins the store's program");
   await fulfil(firstRef);
   // $10 of soup at 10 a dollar, $4 of bread at twice that, and the welcome
-  // (a network without issuers has no cards to verify).
+  // with their first settled order.
   const earned = await retryUntil(() => card(), (c) => c.balance > 0, 30, 1000);
   assert.equal(earned.balance, 100 + 80 + 50);
   assert.deepEqual(earned.history.map((l) => [l.kind, l.points]), [["Earned", 230]], "what it earned, as the rules played it");
@@ -142,12 +143,13 @@ await runScenario(async (scenario) => {
       requester: who.agentPubKey, merchant: merchant.agentPubKey, catalog_ref: store, catalog_version: version,
       lines: [{ item_ref: soup, priced_version: soup, quantity: 1, selections: [] }, { item_ref: bread, priced_version: bread, quantity: 1, selections: [] }],
       order_total: total, status: "Placed", requested_at: Date.now() * 1000, kitchen_note: null, promo_code_ref: null,
-      loyalty_proof: [], rewards: rewardsField, cancellation: null, ready_by: null, food_hold: null, sealed_customer_name: null,
+      loyalty_proof: [], rewards: rewardsField, cancellation: null, ready_by: null, customer_payment: null, sealed_customer_name: null,
     });
   await assert.rejects(raw({ program: programVersion, reward: 9 }, 1400), /no such reward/, "a reward the program doesn't have");
   await assert.rejects(raw({ program: programVersion, reward: null }, 1000), /promo code's requirement|lines at their priced versions/, "no discount without a reward");
   const greedy = actionHash(await raw({ program: programVersion, reward: 3 }, 1300));
   await sync();
+  await customerPaid(merchant, greedy, all);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: greedy }), /points don't cover/, "the store won't accept a reward the points don't cover");
   await call(customer, "dispatch")("cancel_pickup_order", greedy);
   await sync();
@@ -177,6 +179,7 @@ await runScenario(async (scenario) => {
   await sync();
   const underOld = actionHash(await raw({ program: programVersion, reward: null }, 1400, stranger));
   await sync();
+  await customerPaid(merchant, underOld, all);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: underOld }), /rewards program's earlier terms/, "an order citing a replaced version isn't accepted");
   const fresh = decodeEntry<Order>(await retryUntilOk(() => call(stranger, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: soup, quantity: 1 }], order_total: 1000 })));
   assert.ok(fresh.rewards && !bytesEqual(fresh.rewards.program, programVersion), "a new order cites the current version");

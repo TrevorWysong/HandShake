@@ -359,7 +359,7 @@ export async function handOff(
 }
 
 /// `count` players on their own conductors, with DNA properties that can
-/// name some of them (an issuer) -- `properties` gets every player's key, in
+/// name some of them (an arbiter) -- `properties` gets every player's key, in
 /// order, before anything is installed.
 export async function setupPlayersWithProperties(scenario: Scenario, count: number, properties: (keys: string[]) => Record<string, unknown>): Promise<PlayerApp[]> {
   // One at a time, as `setupArbitratedPlayers` does: conductors started

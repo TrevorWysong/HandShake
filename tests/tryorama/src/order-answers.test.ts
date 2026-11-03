@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, appWithProperties, decodeEntry, retryUntil, retryingCaller, ST_PETE, useTestCoordinators } from "./helpers.js";
+import { actionHash, appWithProperties, decodeEntry, retryUntil, retryingCaller, ST_PETE, useTestCoordinators, customerPaid } from "./helpers.js";
 
 // Long enough that a slow CI runner's steps fit inside it.
 const WINDOW_SECS = 30;
@@ -134,6 +134,7 @@ await runScenario(async (scenario) => {
   const late = await pickup(900);
   await customer.conductor.shutDown();
   await new Promise((resolve) => setTimeout(resolve, (WINDOW_SECS + 2) * 1000));
+  await customerPaid(merchant, late, both);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: late }), /the store's window to accept this order has passed/);
   console.log("[PASS] past its window, the store can't accept an order -- whether or not the customer's conductor is there to cancel it");
 });

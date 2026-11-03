@@ -7,9 +7,9 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { agentAsLinkBase, actionHash, ST_PETE, useTestCoordinators, acceptOrder, testApp, retryingCaller } from "./helpers.js";
+import { agentAsLinkBase, actionHash, ST_PETE, useTestCoordinators, acceptOrder, testApp, retryingCaller, customerPaid, holdOf } from "./helpers.js";
 
-const ALL_ZOMES = ["attestation", "catalog", "dispatch", "ledger", "profiles", "reputation"];
+const ALL_ZOMES = ["attestation", "catalog", "dispatch", "profiles", "reputation"];
 
 await runScenario(async (scenario) => {
   const [customer, merchant, attacker] = await scenario.addPlayersWithApps([testApp, testApp, testApp]);
@@ -39,6 +39,7 @@ await runScenario(async (scenario) => {
   const placePickup = async () =>
     actionHash(await call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: storeA, items: [{ item_ref: itemA, quantity: 1 }], order_total: 1000 }));
   const completePickup = async (order: Uint8Array) => {
+    await customerPaid(merchant, order, all);
     await call(merchant, "dispatch")("accept_pickup_order", { order_original_action: order });
     await call(merchant, "dispatch")("mark_ready_for_pickup", order);
     await sync();
@@ -66,8 +67,8 @@ await runScenario(async (scenario) => {
   await sync();
   const leg = actionHash(await call(attacker, "attestation")<HcRecord>("record_leg", { order_ref: deliveryOrder, sequence: 0, kind: "MerchantHandoff", to: merchant.agentPubKey, geo_at_completion: ST_PETE }));
   await sync();
-  const [hold] = await call(customer, "ledger")<{ hold: Uint8Array }[]>("holds_for_order", reviewedOrder);
-  assert.ok(hold, "the pickup's food should have been held");
+  const hold = await holdOf(merchant, reviewedOrder, "Customer");
+  assert.ok(hold, "the pickup's customer should have been paid");
   console.log("[PASS] set up two stores, a reviewed order, an active order, a leg and a payment");
 
   const rejects = (attempt: Promise<unknown>, reason: RegExp, what: string) => assert.rejects(attempt, reason, what);
@@ -107,10 +108,10 @@ await runScenario(async (scenario) => {
   await rejects(rawLink(customer, "dispatch", "CustomerHistoryPath", storeA, storeA, dayTag(activeOrder)), /indexed by its order's customer, for the day it was placed/, "for the day it was placed");
   console.log("[PASS] anchors and history indexes can't be cluttered with links to nothing");
 
-  // --- Ledger: a hold is found under its own order. ---
-  await rejects(rawLink(attacker, "ledger", "OrderToHold", activeOrder, hold.hold), /authored by the author of the entry/, "a stranger can't file someone else's hold");
-  await rejects(rawLink(customer, "ledger", "OrderToHold", activeOrder, hold.hold), /must sit under the order, hold, grant or agent its entry is about/, "a hold can't be filed under an order it isn't for");
-  console.log("[PASS] ledger: a hold can only be linked under its own order, by its payer");
+  // --- Payments: a hold is found under its own order. ---
+  await rejects(rawLink(attacker, "dispatch", "OrderToPayment", reviewedOrder, hold), /linked by its author, under its own order/, "a stranger can't file someone else's hold");
+  await rejects(rawLink(merchant, "dispatch", "OrderToPayment", activeOrder, hold), /linked by its author, under its own order/, "a hold can't be filed under an order it isn't for");
+  console.log("[PASS] payments: a hold can only be linked under its own order, by its payee");
 
   // --- A store's decisions: only its own outcome or settlement, under its order. ---
   await rejects(rawLink(attacker, "dispatch", "OrderToDecision", reviewedOrder, review), /isn't the record its link type indexes/, "anything else can't pose as a store's decision");

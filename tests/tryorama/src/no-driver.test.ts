@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, commitAndCook, currentBeacon, deliveryStatus, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { actionHash, commitAndCook, currentBeacon, deliveryStatus, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller, customerPaid, netOn, payeeAgent } from "./helpers.js";
 
 const FOOD = 1000;
 const FEE = 400;
@@ -49,12 +49,17 @@ await runScenario(async (scenario) => {
   for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
   const call = (p: typeof customer, zome: string) => retryingCaller(p.cells[0], zome);
-  const balance = (p: typeof customer) => call(p, "ledger")<number>("get_balance", p.agentPubKey);
+  /// What `p` paid and was paid on `order`, once every party's app has
+  /// settled what it can -- as each does on its own.
   const settlesTo = (p: typeof customer, order: Uint8Array, expected: number, why: string) =>
     retryUntil(
       async () => {
-        await call(p, "dispatch")("settle_order", order).catch(() => 0);
-        return balance(p);
+        for (const q of all) {
+          await call(q, "dispatch")("settle_order", order).catch(() => 0);
+          await payeeAgent(q).catch(() => 0);
+        }
+        await sync();
+        return netOn(p, order);
       },
       (b) => b === expected,
       90,
@@ -80,6 +85,7 @@ await runScenario(async (scenario) => {
       ),
     );
     await sync();
+    await customerPaid(merchant, ref, all);
     await retryUntilOk(() => call(merchant, "dispatch")("accept_delivery_order", { order_original_action: ref, prep_minutes: PREP_MINUTES }));
     await sync();
     return ref;
@@ -154,7 +160,7 @@ await runScenario(async (scenario) => {
   await sync();
   await reachesStatus(collected, "Collected");
   await settlesTo(customer, collected, -FOOD + STORE_SHARE, "the customer pays for the food, less the store's share of the fee");
-  await settlesTo(merchant, collected, FOOD + FOOD - STORE_SHARE, "the store is paid for the food, less its share of the fee");
+  await settlesTo(merchant, collected, FOOD - STORE_SHARE, "the store is paid for the food, less its share of the fee");
   await settlesTo(second, collected, 0, "the late driver's collateral comes back");
   console.log("[PASS] a customer collecting a late order is refunded the store's share of the fee");
 });

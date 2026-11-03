@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, decodeEntry, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, decodeEntry, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller, customerPaid } from "./helpers.js";
 
 const PRICE = 1000;
 
@@ -52,7 +52,7 @@ await runScenario(async (scenario) => {
       loyalty_proof: [],
       cancellation: null,
       ready_by: null,
-      food_hold: null,
+      customer_payment: null,
       sealed_customer_name: null,
     });
   };
@@ -69,6 +69,7 @@ await runScenario(async (scenario) => {
   // past validation -- but not past the store.
   const underOldTerms = actionHash(await rawPickup(1, store));
   await sync();
+  await customerPaid(merchant, underOldTerms, all);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: underOldTerms }), /earlier terms/, "the store holds an order to its current terms");
   await retryUntilOk(() => pickup(customer, 2));
   console.log("[PASS] a store's minimum order holds, whichever version of its terms an order cites");
