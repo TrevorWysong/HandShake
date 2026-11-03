@@ -511,7 +511,6 @@ export const en = {
   "rewardsAdmin.maxBalanceHint": "Points earned past it are lost.",
   "rewardsAdmin.membersSee": "Members see",
   "rewardsAdmin.save": "Save changes",
-  "rewardsAdmin.saved": "Saved",
   "rewardsAdmin.launch": "Launch program",
   "rewardsAdmin.problem.names": "Give the program a name, and its points a name.",
   "rewardsAdmin.problem.rate": "Points for each dollar go from 1 to 100.",

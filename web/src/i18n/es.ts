@@ -506,7 +506,6 @@ export const es: Catalog = {
   "rewardsAdmin.maxBalanceHint": "Los puntos ganados por encima se pierden.",
   "rewardsAdmin.membersSee": "Lo que ven los miembros",
   "rewardsAdmin.save": "Guardar cambios",
-  "rewardsAdmin.saved": "Guardado",
   "rewardsAdmin.launch": "Lanzar programa",
   "rewardsAdmin.problem.names": "Ponle nombre al programa y a sus puntos.",
   "rewardsAdmin.problem.rate": "Los puntos por dólar van de 1 a 100.",

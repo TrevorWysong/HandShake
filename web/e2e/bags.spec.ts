@@ -6,7 +6,7 @@ import { signInAs, store } from "./seed.ts";
 
 test("a goodie bag is added to the cart, and checkout steers a pickup-only bag to pickup", async ({ page }) => {
   const cafe = store("cafe");
-  await signInAs(page, "ana");
+  await signInAs(page, "sam");
   await page.getByText(cafe.name, { exact: true }).first().click();
   await page.getByRole("button", { name: /^Add$/ }).click();
   await expect(page.getByText("In cart")).toBeVisible();
@@ -18,6 +18,9 @@ test("a goodie bag is added to the cart, and checkout steers a pickup-only bag t
 
   await page.getByRole("button", { name: "Switch to pickup" }).click();
   await expect(page.getByText("End-of-day pastry bag is pickup only")).toHaveCount(0);
-  await page.getByRole("button", { name: /Place pickup order/ }).click();
-  await expect(page).toHaveURL(/#\/customer\/pickup-orders\//);
+  await expect(page.getByRole("button", { name: /Place pickup order/ })).toBeEnabled();
+
+  // Placing it would use up the bag for Sam; taking it out empties the cart.
+  await page.getByRole("button", { name: "Remove bag" }).click();
+  await expect(page.getByText("Your cart is empty.")).toBeVisible();
 });
