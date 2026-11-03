@@ -75,6 +75,8 @@ pub struct OrderTerms {
     pub delivery: bool,
     /// A delivery whose driver carries nothing else.
     pub priority: bool,
+    /// The most the customer will pay a driver (`max_delivery_fee`).
+    pub fee_cap: Option<u64>,
 }
 
 impl OrderTerms {
@@ -87,6 +89,7 @@ impl OrderTerms {
             delivery_subsidy_percent: order.delivery_subsidy_percent,
             delivery: true,
             priority: order.priority,
+            fee_cap: order.max_delivery_fee,
         }
     }
 
@@ -99,6 +102,7 @@ impl OrderTerms {
             delivery_subsidy_percent: 0,
             delivery: false,
             priority: false,
+            fee_cap: None,
         }
     }
 }
@@ -192,7 +196,7 @@ mod tests {
     }
 
     fn terms() -> OrderTerms {
-        OrderTerms { requester: agent(1), merchant: agent(2), order_total: 2000, tip_cents: 300, delivery_subsidy_percent: 50, delivery: true, priority: false }
+        OrderTerms { requester: agent(1), merchant: agent(2), order_total: 2000, tip_cents: 300, delivery_subsidy_percent: 50, delivery: true, priority: false, fee_cap: Some(800) }
     }
 
     fn bid(price_offer: u64) -> Bid {

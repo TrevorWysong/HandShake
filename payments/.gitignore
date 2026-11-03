@@ -1,0 +1,7 @@
+node_modules
+# Processor keys, sandbox or live: never committed.
+.env
+.env.*
+!.env.example
+# The dev agent's encrypted credential store.
+.credentials*

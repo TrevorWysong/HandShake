@@ -9,6 +9,7 @@ pub use catalog_types::{Chosen, ChosenInput, Selection, SelectionInput};
 pub use handshake_types::{Beacon, PinSecret};
 use handshake_types::GeoPoint;
 
+mod direct;
 mod issues;
 pub mod lineage;
 mod settlement;
@@ -17,6 +18,7 @@ mod settlement;
 /// geohash cell of about 1.2 x 0.6 km -- enough for drivers to see it's
 /// nearby, never the address itself.
 pub const DROPOFF_GEOHASH_PRECISION: usize = 6;
+pub use direct::*;
 pub use issues::*;
 pub use settlement::*;
 
