@@ -637,6 +637,6 @@ fn released_driver(version: &Record, order: &DeliveryOrder) -> ExternResult<Opti
     }
     let Some(prior) = decode::<DeliveryOrder>(&must_get_valid_record(update.original_action_address.clone())?) else { return Ok(None) };
     let Some(bid_ref) = prior.accepted_bid else { return Ok(None) };
-    let committed = prior.collateral_hold.is_some();
+    let committed = prior.collateral_payment.is_some();
     Ok(decode::<Bid>(&must_get_valid_record(bid_ref)?).map(|bid| (bid.bidder, committed)))
 }

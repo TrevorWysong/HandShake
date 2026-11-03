@@ -21,12 +21,18 @@ pub struct ReceiptLine {
     pub choices: Vec<String>,
 }
 
-/// One payment the customer made towards the order -- a part of the money
-/// they set aside for it -- and the ledger entry that holds it.
+/// One payment the caller made towards the order, held from their card by
+/// the party it paid.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ReceiptPayment {
-    pub leg: Portion,
-    pub amount_cents: u64,
+    pub leg: PaymentLeg,
+    /// Who it was paid to (the leg's payee).
+    pub payee: AgentPubKey,
+    /// What was held on the card.
+    pub held_cents: u64,
+    /// What was charged of it, once settled -- the rest was released.
+    pub charged_cents: Option<u64>,
+    /// The payee's hold: its record is the payment's reference.
     pub transaction: ActionHash,
 }
 
@@ -126,14 +132,21 @@ pub fn get_order_receipt(order_original_action: ActionHash) -> ExternResult<Rece
     })
 }
 
-/// What the caller paid towards the order: each part of the money they set
-/// aside for it (the food; a delivery's fee share and tip).
+/// What the caller paid towards the order: each payment held from their
+/// card for it, and what was charged of it once settled.
 fn my_payments(order_ref: &ActionHash) -> ExternResult<Vec<ReceiptPayment>> {
     let me = agent_info()?.agent_initial_pubkey;
-    Ok(crate::settlement::holds_for_order(order_ref)?
-        .into_iter()
-        .filter(|hold| hold.payer == me)
-        .flat_map(|hold| hold.shares.into_iter().map(move |share| ReceiptPayment { leg: share.portion, amount_cents: share.amount, transaction: hold.hold.clone() }))
-        .collect())
+    let order = original_action_of(order_ref.clone())?;
+    let settlements = crate::settlement::settlements_on(&order)?;
+    let mut out = Vec::new();
+    for (hold_ref, payee, hold, offer) in crate::settlement::holds_on(&order)? {
+        let payer = get(hold.offer.clone(), GetOptions::default())?.map(|r| r.action().author().clone());
+        if payer.as_ref() != Some(&me) {
+            continue;
+        }
+        let charged = settlements.iter().find(|(_, author, s)| author == &payee && s.hold == hold_ref).map(|(_, _, s)| s.captured);
+        out.push(ReceiptPayment { leg: offer.leg, payee, held_cents: hold.amount, charged_cents: charged, transaction: hold_ref });
+    }
+    Ok(out)
 }
 

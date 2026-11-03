@@ -1,6 +1,7 @@
 //! A new key recovering an account whose key was lost: on the recovery
-//! phrase, or on guardians. Its balance is reissued by an issuer
-//! (`request_reissue`); see docs/RECOVERY.md.
+//! phrase, or on guardians -- see docs/RECOVERY.md. No money comes with
+//! it: that's in its owner's own processor account, which the new key
+//! reconnects.
 
 use crate::{decoded, guest, linked_records, own_links, recovery_plan_of};
 use account_integrity::*;
@@ -68,7 +69,7 @@ pub fn my_succession(_: ()) -> ExternResult<Option<SuccessionView>> {
 /// Every key that has taken over `account` and still stands (`stands`) --
 /// none while it's in use. More than one means someone recovered it who
 /// shouldn't have, or it was recovered twice: apps treat it as moved on
-/// either way, and its issuer reissues nothing until a person looks.
+/// either way.
 #[hdk_extern]
 pub fn successions_of(account: AgentPubKey) -> ExternResult<Vec<SuccessionView>> {
     let mut standing = Vec::new();
@@ -102,15 +103,4 @@ pub fn lineage(agent: AgentPubKey) -> ExternResult<Vec<AgentPubKey>> {
 #[hdk_extern]
 pub fn latest_action_of(agent: AgentPubKey) -> ExternResult<Option<ActionHash>> {
     handshake_coordinator_support::chain::chain_head_of(&agent)
-}
-
-/// When `agent`'s account began: the first action of the oldest key in its
-/// line -- a recovered account keeps its age. What an issuer
-/// weighs, among other things, in how much it lets a card add at once.
-#[hdk_extern]
-pub fn account_since(agent: AgentPubKey) -> ExternResult<Option<Timestamp>> {
-    let first = lineage(agent.clone())?.pop().unwrap_or(agent);
-    let genesis = ChainQueryFilter::new().sequence_range(ChainQueryFilterRange::ActionSeqRange(0, 0));
-    let Some((_, hash)) = handshake_coordinator_support::agent_activity(first, genesis)?.into_iter().next() else { return Ok(None) };
-    Ok(get(hash, GetOptions::default())?.map(|record| record.action().timestamp()))
 }

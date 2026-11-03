@@ -17,7 +17,7 @@ pub use links::catalog_geohash_path;
 // a direct dependency on this crate wouldn't work. Re-exported here so
 // nothing else in this crate or the coordinator crate (which imports via
 // `catalog_integrity::*`) needs to change.
-pub use catalog_types::{listing_stake, listing_tag, ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
+pub use catalog_types::{ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
 
 /// Precision used for the merchant-discovery anchor -- coarse (city-block
 /// scale), matching open orders' drop-off precision so both discovery paths
@@ -76,7 +76,10 @@ const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::v
 pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     match classify(op.flattened::<EntryTypes, LinkTypes>()?)? {
         Checked::Create { entry, action } => match entry {
-            EntryTypes::MerchantCatalog(catalog) => validate_catalog(&catalog, action.author()),
+            EntryTypes::MerchantCatalog(catalog) => match validate_catalog(&catalog, action.author())? {
+                ValidateCallbackResult::Valid => validate_store_count(action.author(), action.prev_action()),
+                other => Ok(other),
+            },
             EntryTypes::MenuItem(item) => validate_menu_item(&item, action.author()),
             EntryTypes::PromoCode(promo) => validate_new_promo_code(&promo, action.author()),
             EntryTypes::GoodieBag(bag) => validate_new_goodie_bag(&bag, action.author(), action.timestamp()),
@@ -172,6 +175,22 @@ fn validate_menu_item_update(item: &MenuItem, author: &AgentPubKey, original: &A
         return invalid("only a store's owner may change its menu items, and an item stays on its own store's menu");
     }
     validate_menu_item(item, author)
+}
+
+/// The most stores one account may open. A store anyone can find is a
+/// network entry anyone can write; this bounds how many listings one
+/// account can fill a neighbourhood with, while leaving room for an owner
+/// with several locations. (Each store also needs a processor account its
+/// processor has checked before it can take an order.)
+pub const MAX_STORES_PER_OWNER: usize = 10;
+
+/// A new store is within its owner's `MAX_STORES_PER_OWNER`: every store
+/// they've opened is on their own chain.
+fn validate_store_count(author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
+    let Some(prev_action) = prev_action else { return invalid("a store can't open a chain") };
+    let store: ScopedEntryDefIndex = UnitEntryTypes::MerchantCatalog.try_into()?;
+    let opened = handshake_integrity_support::chain::entries_since(author, prev_action, Timestamp::from_micros(0), &[store])?.len();
+    require(opened < MAX_STORES_PER_OWNER, "an account opens at most 10 stores")
 }
 
 fn validate_catalog(catalog: &MerchantCatalog, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {

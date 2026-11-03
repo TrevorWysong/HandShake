@@ -279,6 +279,22 @@ pub struct InHand {
     pub priority: bool,
 }
 
+/// A driver's record that an order they committed to has left their hands
+/// -- delivered, cancelled, never arrived, or no longer theirs -- so it no
+/// longer counts against what they may carry (`InHand`). Their app writes
+/// it; validation checks the order really did leave them.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+pub struct CarryEnded {
+    /// The order's original action.
+    pub order: ActionHash,
+    /// The driver's own update committing to it.
+    pub committed: ActionHash,
+    /// What shows it left their hands: a later version of the order, or its
+    /// store's decision that it never arrived.
+    pub basis: ActionHash,
+}
+
 /// Why a driver can't take one more order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CarryRefusal {

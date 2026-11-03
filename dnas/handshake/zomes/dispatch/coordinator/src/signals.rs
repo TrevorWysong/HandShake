@@ -95,6 +95,9 @@ pub enum LocalSignal {
     HandedOver(ActionHash),
     /// This agent's store's customer asked to collect this order.
     CollectRequested(ActionHash),
+    /// A payment on this order changed: the payment agent and the screens
+    /// read it again.
+    PaymentChanged(ActionHash),
     /// Something changed on an order whose customer's app may be closed:
     /// hand this wake token to the network's push relay (docs/MOBILE.md). Only
     /// the store and the driver hold one, each their own.
@@ -115,9 +118,10 @@ pub enum RemoteSignal {
     BidReleased { bid_hash: ActionHash },
     /// From a pickup order's store to its customer only.
     PickupReady { order_hash: ActionHash },
-    /// From a party who's given back part of an order's held money, to the
-    /// party who paid it: there's something to collect (see `settlement`).
-    Returned { order_hash: ActionHash },
+    /// From one of an order's parties to another: a payment record on it
+    /// changed -- a card offered, held, declined or settled, or a decision
+    /// that settles one (see `payments`). Their app reads it for itself.
+    Payment { order_hash: ActionHash },
     /// From the driver to the customer: they've recorded handing the order
     /// over.
     HandoffRecorded { order_hash: ActionHash },
@@ -259,14 +263,19 @@ pub fn recv_remote_signal(payload: RemoteSignal) -> ExternResult<()> {
             emit_signal(LocalSignal::BidAccepted(bid_hash))
         }
         RemoteSignal::BidReleased { bid_hash } => emit_signal(LocalSignal::BidReleased(bid_hash)),
-        RemoteSignal::Returned { order_hash } => {
+        RemoteSignal::Payment { order_hash } => {
             if current_state(&order_hash).is_some_and(|order| order.role_of(&me).is_none() || order.role_of(&sender).is_none()) {
                 return Ok(());
             }
-            // Settling reads every hold and checks every decision, and
-            // scheduling is idempotent -- so a stranger's notice about an order
-            // not yet seen costs at most one run per scheduler tick.
-            schedule("settle_soon")
+            // The store's decisions may be due, and the payment agent and the
+            // screens read what changed for themselves -- so a stranger's
+            // notice about an order not yet seen costs at most a read.
+            schedule("settle_soon")?;
+            // A step may have waited on it: a driver committing once their
+            // collateral's held, a store accepting once it holds the payment.
+            upkeep::tend_my_deliveries_soon()?;
+            upkeep::tend_my_stores_soon()?;
+            emit_signal(LocalSignal::PaymentChanged(order_hash))
         }
         RemoteSignal::HandoffRecorded { order_hash } => {
             // Carries a message for the customer, so it must check out.

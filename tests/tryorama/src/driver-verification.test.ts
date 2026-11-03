@@ -21,7 +21,7 @@ await runScenario(async (scenario) => {
   const stew = actionHash(await call(merchant, "catalog")<HcRecord>("add_menu_item", { catalog_ref: store, name: "Stew", price_cents: PRICE, available: true }));
   await sync();
   const order = actionHash(
-    await retryUntilOk(() => call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: PRICE, dropoff: ST_PETE, max_delivery_fee: null })),
+    await retryUntilOk(() => call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: PRICE, dropoff: ST_PETE, max_delivery_fee: 1_000 })),
   );
   await sync();
   const open = actionHash(await acceptOrder(merchant, order, all));

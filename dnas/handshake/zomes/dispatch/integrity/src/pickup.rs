@@ -2,8 +2,8 @@
 //! state machine.
 
 use super::*;
-use crate::holds::{check_hold, terms_of, ExpectedHold};
-use dispatch_types::HoldPurpose;
+use crate::holds::{check_payment, terms_of, ExpectedPayment};
+use dispatch_types::direct::PaymentLeg;
 use crate::store_answer::{check_cancellation, check_ready_by, CancelledFrom, OrderUpdate};
 use crate::checks::{check_order_rate, check_pricing, store_version, OrderPricing};
 use crate::claims::resolve_original_creation;
@@ -21,8 +21,8 @@ pub(crate) fn validate_new_pickup_order(order: &PickupOrder, author: &AgentPubKe
     if order.status != PickupStatus::Placed {
         return Ok(ValidateCallbackResult::Invalid("a new pickup order must start Placed".into()));
     }
-    if order.food_hold.is_some() {
-        return Ok(ValidateCallbackResult::Invalid("a new pickup order's food is held when the store accepts it".into()));
+    if order.customer_payment.is_some() {
+        return Ok(ValidateCallbackResult::Invalid("a new pickup order's payment is held when the store accepts it".into()));
     }
     if order.cancellation.is_some() || order.ready_by.is_some() {
         return Ok(ValidateCallbackResult::Invalid("a new pickup order can't already be accepted or cancelled".into()));
@@ -134,15 +134,15 @@ pub(crate) fn validate_pickup_order_transition(
         return Ok(ValidateCallbackResult::Invalid(reason));
     }
 
-    // The store accepts an order only once its food is paid for.
+    // The store accepts an order only once it holds the customer's payment.
     if accepting {
         let order_original = resolve_original_creation(original_action_hash.clone())?;
         let Some(terms) = terms_of(&order_original)? else { return Ok(ValidateCallbackResult::Invalid("not an order".into())) };
-        if let Err(reason) = check_hold(&order.food_hold, ExpectedHold { order_original: &order_original, terms: &terms, purpose: HoldPurpose::Food, bid: None })? {
+        if let Err(reason) = check_payment(&order.customer_payment, ExpectedPayment { order_original: &order_original, terms: &terms, leg: PaymentLeg::Customer, bid: None })? {
             return Ok(ValidateCallbackResult::Invalid(reason));
         }
-    } else if prior.food_hold != order.food_hold {
-        return Ok(ValidateCallbackResult::Invalid("food_hold is set once, when the store accepts the order".into()));
+    } else if prior.customer_payment != order.customer_payment {
+        return Ok(ValidateCallbackResult::Invalid("customer_payment is set once, when the store accepts the order".into()));
     }
 
     let unchanged = prior.requester == order.requester

@@ -21,9 +21,6 @@ pub enum PromoBlock {
     ThisPeriod(PromoPeriod),
     /// Every use it allows, across customers, is taken.
     SoldOut,
-    /// It's for new customers, and no issuer has vouched for their card
-    /// yet -- adding funds with a card does.
-    CardNotVerified,
 }
 
 /// A customer's standing with one of a store's codes.
@@ -111,8 +108,6 @@ fn standing(promo_ref: &ActionHash, promo: &PromoCode, store: &catalog_types::Me
         Some(PromoBlock::ThisPeriod(period))
     } else if remaining == Some(0) {
         Some(PromoBlock::SoldOut)
-    } else if limits.first_order_only && !crate::acceptance::card_verified(&agent_info()?.agent_initial_pubkey)? {
-        Some(PromoBlock::CardNotVerified)
     } else {
         None
     };
@@ -147,7 +142,6 @@ pub(crate) fn ensure_promo_allowed(promo_ref: &ActionHash, catalog_ref: &ActionH
         Some(PromoBlock::UsedUp) => Err(guest("You've used that promo code as many times as it allows.")),
         Some(PromoBlock::ThisPeriod(_)) => Err(guest("You've already used that promo code this time around. Try again later.")),
         Some(PromoBlock::SoldOut) => Err(guest("That promo code has been used up.")),
-        Some(PromoBlock::CardNotVerified) => Err(guest("That promo code is for new customers with a verified card. Add funds with a card first.")),
     }
 }
 

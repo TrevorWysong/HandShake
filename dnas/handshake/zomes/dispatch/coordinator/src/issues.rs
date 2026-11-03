@@ -11,7 +11,6 @@
 //! window has run, refunding what the store accepted or never answered.
 
 use crate::orders::{record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
-use crate::settlement::find_hold;
 use dispatch_integrity::*;
 use hdk::prelude::*;
 use handshake_coordinator_support::{call_local, decode_or, guest, open_chunked, original_action_of, resolve_latest, seal_chunked, written};
@@ -315,11 +314,17 @@ fn refund_owed(terms: &Priced, issues: &[IssueView]) -> (Vec<ActionHash>, u64) {
 
 /// Has the store's conductor make its decisions on `order`, in a call of its
 /// own -- a decision that doesn't validate yet must never undo the
-/// caller's. Does nothing unless the caller is the order's store.
-pub(crate) fn decide_as_store(order: &ActionHash) {
+/// caller's. Does nothing unless the caller is the order's store. Whether
+/// it decided anything.
+pub(crate) fn decide_as_store(order: &ActionHash) -> bool {
     let is_store = parties_of(order).ok().zip(agent_info().ok()).is_some_and(|((_, merchant), me)| merchant == me.agent_initial_pubkey);
-    if let (true, Ok(zome)) = (is_store, zome_info().map(|z| z.name)) {
-        let _ = call(CallTargetCell::Local, zome, "decide_order".into(), None, order.clone());
+    let Ok(zome) = zome_info().map(|z| z.name) else { return false };
+    if !is_store {
+        return false;
+    }
+    match call(CallTargetCell::Local, zome, "decide_order".into(), None, order.clone()) {
+        Ok(ZomeCallResponse::Ok(io)) => io.decode::<bool>().unwrap_or(false),
+        _ => false,
     }
 }
 
@@ -378,7 +383,7 @@ pub fn decide_order(order: ActionHash) -> ExternResult<bool> {
                         // word -- and they collect their pay on it.
                         if let Some(bid) = delivery.accepted_bid.as_ref().and_then(|b| get(b.clone(), GetOptions::default()).ok().flatten()).and_then(|r| decode_or::<Bid>(&r)) {
                             record_reputation_event(&bid.bidder, ReputationTargetWire::Driver(bid.bidder.clone()), order.clone(), ReputationEventKindWire::OrderCompleted, hash.clone())?;
-                            let _ = send_remote_signal(crate::signals::RemoteSignal::Returned { order_hash: order.clone() }, vec![bid.bidder]);
+                            let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, vec![bid.bidder]);
                         }
                         // Finished: off every queue, the driver's included.
                         crate::order_queues::retire(&crate::OrderParties::delivery(&order, &delivery)?)?;
@@ -412,7 +417,7 @@ pub fn decide_order(order: ActionHash) -> ExternResult<bool> {
     let terms = priced(&order)?;
     // Nothing to settle for food nobody paid for (an order from the
     // customer's own store).
-    if find_hold(&order, &HoldPurpose::Food, &requester)?.is_none() {
+    if requester == merchant {
         return Ok(false);
     }
     let issues = get_issues_for_order(order.clone())?;
@@ -428,7 +433,7 @@ pub fn decide_order(order: ActionHash) -> ExternResult<bool> {
     };
     let refund = issues_refund.saturating_add(collected_owed).min(terms.order_total);
     record_decision(DecisionWire::Settlement(ItemSettlement { order: order.clone(), basis, issues: cited, refund }))?;
-    let _ = send_remote_signal(crate::signals::RemoteSignal::Returned { order_hash: order }, vec![requester]);
+    let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order }, vec![requester]);
     Ok(true)
 }
 
@@ -449,7 +454,7 @@ fn not_delivered(order: &ActionHash, claim: &Record, delivery: &DeliveryOrder) -
             let driver = bid.bidder;
             record_reputation_event(&driver, ReputationTargetWire::Driver(driver.clone()), order.clone(), ReputationEventKindWire::DisputeResolvedAgainst, hash.clone())?;
             record_reputation_event(&driver, ReputationTargetWire::Driver(driver.clone()), order.clone(), ReputationEventKindWire::CollateralForfeited { amount: bid.collateral }, hash.clone())?;
-            let _ = send_remote_signal(crate::signals::RemoteSignal::Returned { order_hash: order.clone() }, vec![delivery.requester.clone(), driver]);
+            let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, vec![delivery.requester.clone(), driver]);
         }
     }
     // Finished: off every queue, the driver's included.

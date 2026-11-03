@@ -62,7 +62,7 @@ await runScenario(async (scenario) => {
   async function outForDelivery() {
     const ref = actionHash(
       await retryUntilOk(() =>
-        call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: FOOD, dropoff: ST_PETE, max_delivery_fee: null, tip_cents: TIP }),
+        call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: FOOD, dropoff: ST_PETE, max_delivery_fee: 1_000, tip_cents: TIP }),
       ),
     );
     await sync();

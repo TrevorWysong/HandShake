@@ -10,12 +10,10 @@ use hdk::prelude::*;
 mod device;
 mod migration;
 mod plans;
-mod reissue;
 mod succession;
 pub use device::*;
 pub use migration::*;
 pub use plans::*;
-pub use reissue::*;
 pub use succession::*;
 
 pub(crate) use handshake_coordinator_support::guest;
@@ -61,7 +59,7 @@ pub(crate) fn decoded<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>
 mod test_utils {
     use account_integrity::{EntryTypes, LinkTypes, Parcel, RecoveryPlan, Succession, Vouch};
     use hdk::prelude::*;
-    handshake_coordinator_support::raw_link_test_externs!(AccountToPlan, PhraseKeyToPlan, GuardianToPlan, SuccessorToVouch, PredecessorToSuccession, SuccessorToSuccession, SuccessorToParcel, IssuerToReissue, IssuerToMigration, SuccessorToMigration, AccountToArrival);
+    handshake_coordinator_support::raw_link_test_externs!(AccountToPlan, PhraseKeyToPlan, GuardianToPlan, SuccessorToVouch, PredecessorToSuccession, SuccessorToSuccession, SuccessorToParcel, SuccessorToMigration, AccountToArrival);
 
     /// Writes each entry exactly as given, skipping the coordinator's checks
     /// -- what a modified client could.

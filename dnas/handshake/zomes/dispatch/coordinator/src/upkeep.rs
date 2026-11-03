@@ -363,7 +363,7 @@ impl WaitingOrder {
         } else if crate::promos::promo_used_up(order_ref, self.promo_code_ref.as_ref())? {
             Some(DeclineReason::PromoUsedUp)
         } else {
-            crate::acceptance::decline_for(&self.requester, &self.catalog_ref, self.promo_code_ref.as_ref(), self.rewards.as_ref())?
+            crate::acceptance::decline_for(&self.requester, &self.catalog_ref, self.rewards.as_ref())?
         };
         let accept = AcceptOrderInput { order_original_action: order_ref.clone(), prep_minutes: None };
         match (&self.kind, decline) {

@@ -249,26 +249,6 @@ export type Cancellation =
   | "NoDriver";
 
 /**
- * An issuer vouching that `agent` paid with a card it hadn't seen on any
- * other account -- one real card, one account. What a store's offers for
- * newcomers (a welcome bonus, a first-order code) rest on, so they can't be
- * farmed with fresh keys. The card itself is never on the network: the
- * issuer keeps only a hash of it, to know it again.
- */
-export interface CardAttestation {
-  agent: AgentPubKey;
-}
-
-/**
- * An issuer withdrawing its word on `agent`'s card: the payment that
- * verified it was disputed, or found to be fraud. An issuer's latest word
- * on an agent stands -- it can vouch again if the dispute goes its way.
- */
-export interface CardRevocation {
-  agent: AgentPubKey;
-}
-
-/**
  * A member's card at a store: where they stand now, and what's coming.
  */
 export interface CardView {
@@ -301,82 +281,25 @@ export interface CardView {
 }
 
 /**
- * A cash-out the caller, an issuer, has been asked to pay.
+ * A driver's record that an order they committed to has left their hands
+ * -- delivered, cancelled, never arrived, or no longer theirs -- so it no
+ * longer counts against what they may carry (`InHand`). Their app writes
+ * it; validation checks the order really did leave them.
  */
-export interface CashOutRequest {
-  redemption: ActionHash;
-  redeemer: AgentPubKey;
-  amount: number;
-  requested_at: Timestamp;
+export interface CarryEnded {
   /**
-   * The redeemer's payout instructions, opened -- empty if none.
+   * The order's original action.
    */
-  instructions: string;
+  order: ActionHash;
   /**
-   * What the issuer already decided, if it has.
+   * The driver's own update committing to it.
    */
-  outcome: PayoutOutcome | null;
-}
-
-export interface CashOutRequestsPage {
-  requests: CashOutRequest[];
+  committed: ActionHash;
   /**
-   * Just past the newest request on this page -- pass it back as `after`
-   * to carry on from here, now or on the next sweep. The input's `after`
-   * when the page is empty.
+   * What shows it left their hands: a later version of the order, or its
+   * store's decision that it never arrived.
    */
-  cursor: Timestamp | null;
-  /**
-   * Whether more have already arrived past `cursor`.
-   */
-  more: boolean;
-}
-
-/**
- * Where a cash-out stands.
- */
-export type CashOutStatus =
-  /**
-   * Waiting on its issuer.
-   */
-  | "Pending"
-  /**
-   * Paid out of the network; `reference` traces it with the issuer.
-   */
-  | {
-      Paid: {
-        reference: string;
-        at: Timestamp;
-      };
-    }
-  /**
-   * Declined; its funds are on their way back to the balance.
-   */
-  | {
-      Declined: {
-        reason: string;
-        at: Timestamp;
-      };
-    }
-  /**
-   * Declined, and back in the balance.
-   */
-  | {
-      Returned: {
-        reason: string;
-        at: Timestamp;
-      };
-    };
-
-/**
- * One of the caller's cash-outs.
- */
-export interface CashOutView {
-  redemption: ActionHash;
-  issuer: AgentPubKey;
-  amount: number;
-  requested_at: Timestamp;
-  status: CashOutStatus;
+  basis: ActionHash;
 }
 
 /**
@@ -422,6 +345,23 @@ export interface ChosenInput {
 }
 
 /**
+ * One part of a settlement: the part, and what entitles the payee to it.
+ */
+export interface Claim {
+  part: Part;
+  /**
+   * The order's version or the store's decision it rests on.
+   */
+  basis: ActionHash;
+  /**
+   * For a part the store passes on to a driver: the driver's own
+   * `PaymentSettlement` that took it -- the store takes from the
+   * customer exactly what the driver took from the store.
+   */
+  via: ActionHash | null;
+}
+
+/**
  * A customer asking to collect their delivery from the store themselves --
  * when no driver has it, or its driver is late. The store records it
  * (`DeliveryStatus::Collecting`), citing this. One per order.
@@ -432,6 +372,36 @@ export interface CollectRequest {
    */
   order: ActionHash;
 }
+
+/**
+ * Why an offer wasn't authorized -- in words the payer's app shows.
+ */
+export type DeclineCode =
+  /**
+   * The card was declined.
+   */
+  | "Declined"
+  | "InsufficientFunds"
+  /**
+   * The payer didn't complete what their card asked (3-D Secure).
+   */
+  | "ActionFailed"
+  /**
+   * There's no saved card to use, or it no longer works.
+   */
+  | "NoSavedCard"
+  /**
+   * The payee's limit on attempts was reached.
+   */
+  | "TooManyAttempts"
+  /**
+   * This card can't take this offer: a first-order deal it has used here.
+   */
+  | "NotEligible"
+  /**
+   * The payee's processor couldn't be reached, or refused.
+   */
+  | "Unavailable";
 
 /**
  * The customer's app noting its store declined the order before accepting
@@ -481,11 +451,6 @@ export type DeclineReason =
    * own records (`rewards_types`).
    */
   | "RewardUnavailable"
-  /**
-   * Its promo code is for newcomers, and no issuer has vouched for the
-   * customer's card -- so a fresh account can't farm it.
-   */
-  | "CardNotVerified"
   /**
    * The customer has called off too many orders here before the store
    * could answer them, lately.
@@ -656,29 +621,23 @@ export interface DeliveryOrder {
    */
   ready_by: Timestamp | null;
   /**
-   * The customer's hold for the food (`settlement::HoldPurpose::Food`),
-   * cited by the store's update that accepts the order -- validation
-   * won't let a store accept an order whose food isn't paid for. Never
-   * changes after.
+   * The store's hold of the customer's payment (`PaymentHold` on
+   * `Leg::Customer`), cited by its update accepting the order -- so no
+   * store accepts an order it isn't paid for. Never changes after.
    */
-  food_hold: ActionHash | null;
+  customer_payment: ActionHash | null;
   /**
-   * The customer's hold for the current driver's pay -- their share of
-   * the fee, and their tip (`HoldPurpose::DriverPay`) -- cited by their
-   * update that accepts a bid, and gone with that driver.
+   * The store's hold of the current driver's collateral
+   * (`Leg::Collateral`), cited by the driver's update committing to the
+   * order -- before the store cooks it. Gone with that driver.
    */
-  driver_pay_hold: ActionHash | null;
+  collateral_payment: ActionHash | null;
   /**
-   * The store's hold for the current driver (`HoldPurpose::Subsidy`): its
-   * share of their fee, and what it owes them if it keeps them waiting --
-   * cited by its update checking them in.
+   * The current driver's hold of their pay from the store
+   * (`Leg::DriverPay`), cited by their update picking the order up -- so
+   * no driver carries an order they aren't paid for. Gone with them.
    */
-  subsidy_hold: ActionHash | null;
-  /**
-   * The current driver's collateral hold (`HoldPurpose::Collateral`),
-   * cited by their update committing to the order.
-   */
-  collateral_hold: ActionHash | null;
+  driver_payment: ActionHash | null;
   /**
    * The customer's handoff code's commitment, `sha256(pin || salt)` (see
    * `PinSecret`) -- 32 bytes. Fixed when the order is placed.
@@ -832,6 +791,11 @@ export type DispatchLocalSignal =
    */
   | { CollectRequested: ActionHash }
   /**
+   * A payment on this order changed: the payment agent and the screens
+   * read it again.
+   */
+  | { PaymentChanged: ActionHash }
+  /**
    * Something changed on an order whose customer's app may be closed:
    * hand this wake token to the network's push relay (docs/MOBILE.md). Only
    * the store and the driver hold one, each their own.
@@ -920,6 +884,14 @@ export interface DropoffShare {
   committed: ActionHash;
   driver: AgentPubKey;
   sealed: XSalsa20Poly1305EncryptedData;
+}
+
+/**
+ * One part of a settlement the caller can make, and what it takes.
+ */
+export interface DueClaim {
+  claim: Claim;
+  amount: number;
 }
 
 /**
@@ -1057,17 +1029,6 @@ export interface HappyHour {
 }
 
 /**
- * A part of a hold its recipient would give back to its payer, but can't:
- * the recipient's key is lost, and `succession` is the new key that took
- * over their account (docs/RECOVERY.md).
- */
-export interface HeldPart {
-  hold: ActionHash;
-  portion: Portion;
-  succession: ActionHash;
-}
-
-/**
  * What a hold on an order is for. The bid, where there is one, fixes the
  * driver and the fee.
  */
@@ -1088,18 +1049,6 @@ export type HoldPurpose =
         bid: ActionHash;
       };
     };
-
-/**
- * A hold on an order: who paid it, what for, and its parts.
- */
-export interface HoldView {
-  hold: ActionHash;
-  payer: AgentPubKey;
-  purpose: HoldPurpose;
-  amount: number;
-  held_at: Timestamp;
-  shares: ShareView[];
-}
 
 /**
  * The orders a driver has in hand: those whose collateral they've set
@@ -1183,111 +1132,6 @@ export interface IssueView {
 }
 
 /**
- * Funds issued to an agent by an issuer on the DNA's roster
- * (`handshake_governance::is_issuer`) -- the stand-in for a payment processor
- * crediting an account against a real payment. The agent collects it into
- * their balance with a `Deposit`.
- */
-export interface IssuerGrant {
-  to: AgentPubKey;
-  amount: number;
-  /**
-   * The issuer's own reference (a payment id), so a grant is unique.
-   */
-  reference: string;
-  /**
-   * For a grant in place of a part of a hold: the part, which its
-   * payer collects this instead of (`LedgerKind::Returned`) -- never as a
-   * plain deposit, so never both.
-   */
-  in_place_of: HeldPart | null;
-  /**
-   * What its issuer has issued fresh on this UTC day, this grant
-   * included -- a running total, like a balance, checked against their
-   * previous grant alone, and held to the network's daily limit. A grant
-   * in place of a hold's part adds nothing: it isn't new money.
-   */
-  issued_today: number;
-}
-
-/**
- * What an issuer tells the network about itself: who it is, and its terms
- * for cashing out -- what the app shows before anyone asks it to pay out.
- * Its own to change; whether it may issue at all is the network's roster.
- */
-export interface IssuerProfile {
-  name: string;
-  /**
-   * How it pays out, and anything to know first ("Bank transfer through
-   * Stripe. Set up your payout account at ...").
-   */
-  description: string;
-  /**
-   * Where to reach it: an email address or a website.
-   */
-  contact: string;
-  /**
-   * What it keeps from each cash-out: a flat amount, plus a share in
-   * basis points (1/100 of a percent).
-   */
-  payout_fee_cents: number;
-  payout_fee_basis_points: number;
-  /**
-   * The least it pays out at once -- never below the network's minimum.
-   */
-  min_payout_cents: number;
-  /**
-   * How many days a cash-out usually takes to arrive.
-   */
-  payout_days: number;
-  /**
-   * Where its service answers the app -- adding funds by card, setting up
-   * a payout account (an https URL). Empty for an issuer the app can't
-   * reach directly.
-   */
-  service_url: string;
-  /**
-   * How many days a recovered account's old key must stay unused before
-   * this issuer reissues its balance to the new one (see docs/RECOVERY.md).
-   */
-  recovery_wait_days: number;
-  /**
-   * The next version of the network, once there is one (docs/MIGRATION.md):
-   * its DNA. Apps offer to move people there, and this issuer carries
-   * their balances over.
-   */
-  next_network: DnaHash | null;
-}
-
-/**
- * What a signed request to an issuer's service is for.
- */
-export type IssuerRequest =
-  /**
-   * Adding funds by card, saving the card for next time.
-   */
-  | "TopUp"
-  /**
-   * Paying with the card saved before.
-   */
-  | "SavedCard"
-  /**
-   * Linking a payout account.
-   */
-  | "PayoutAccount";
-
-/**
- * An issuer on the network's roster, and what it says about itself.
- */
-export interface IssuerView {
-  issuer: AgentPubKey;
-  /**
-   * `None` until it publishes one: it can still pay out.
-   */
-  profile: IssuerProfile | null;
-}
-
-/**
  * A menu item earning at `percent` of the usual rate (200: double).
  */
 export interface ItemBonus {
@@ -1355,136 +1199,6 @@ export interface ItemSettlement {
   issues: ActionHash[];
   refund: number;
 }
-
-export interface LedgerEntry {
-  kind: LedgerKind;
-  amount: number;
-  /**
-   * The author's balance after this entry.
-   */
-  balance: number;
-  /**
-   * The orders the author has in hand after this entry.
-   */
-  in_hand: InHand;
-  /**
-   * The author's previous ledger entry -- `None` only for their first.
-   */
-  previous: ActionHash | null;
-}
-
-export type LedgerKind =
-  /**
-   * Funds issued to the author by an issuer (`IssuerGrant`). Credit.
-   */
-  | {
-      Deposit: {
-        grant: ActionHash;
-      };
-    }
-  /**
-   * The author setting money aside for an order (its original action).
-   * Debit. See `dispatch_types::settlement`.
-   */
-  | {
-      Hold: {
-        order: ActionHash;
-        purpose: HoldPurpose;
-      };
-    }
-  /**
-   * The author taking a part of a hold they're owed -- or, as its payer,
-   * a part returned to them -- with `basis`, the record that entitles
-   * them. Credit.
-   */
-  | {
-      Collect: {
-        hold: ActionHash;
-        portion: Portion;
-        basis: ActionHash;
-      };
-    }
-  /**
-   * The author, a part's recipient, giving it back to the hold's payer
-   * (an order cancelled before they were owed it). No change to the
-   * author's balance; the payer collects it.
-   */
-  | {
-      Waive: {
-        hold: ActionHash;
-        portion: Portion;
-      };
-    }
-  /**
-   * The author setting aside their store's listing stake, which backs
-   * one listing of `catalog` (its original action) for customers to find.
-   * Debit.
-   */
-  | {
-      Stake: {
-        catalog: ActionHash;
-      };
-    }
-  /**
-   * The author taking their listing stake back, citing `delisting`: their
-   * deletion of the very listing it backed. Credit.
-   */
-  | {
-      Unstake: {
-        stake: ActionHash;
-        delisting: ActionHash;
-      };
-    }
-  /**
-   * The author, a driver, conceding their collateral to the store on its
-   * decision that the order never arrived (`basis`) -- the store collects
-   * it. No change to the author's balance; it settles the order they had
-   * in hand (`InHand`).
-   */
-  | {
-      Forfeit: {
-        hold: ActionHash;
-        basis: ActionHash;
-      };
-    }
-  /**
-   * The author cashing out `amount` through `issuer` (one on the
-   * network's roster), which pays it to them outside the network --
-   * their bank, through its payment processor. Debit, and never into
-   * credit: only money the author has can leave. `instructions`, sealed to
-   * the issuer, says where to pay if the issuer doesn't already know (an
-   * account it gave them, a HoloFuel address).
-   */
-  | {
-      Redeem: {
-        issuer: AgentPubKey;
-        instructions: XSalsa20Poly1305EncryptedData | null;
-      };
-    }
-  /**
-   * The author taking back a cash-out its issuer declined (`outcome`, the
-   * issuer's `RedemptionOutcome`). Credit, of what the cash-out took.
-   */
-  | {
-      Reclaim: {
-        redemption: ActionHash;
-        outcome: ActionHash;
-      };
-    }
-  /**
-   * The author, a hold's payer, collecting an issuer's grant made in place
-   * of a part of it that would have come back to them, but whose
-   * recipient's key is lost (`IssuerGrant::in_place_of`). Credit. It
-   * decides that part for the author, as collecting it would: they can't
-   * also collect it from the hold, nor this grant twice.
-   */
-  | {
-      Returned: {
-        grant: ActionHash;
-        hold: ActionHash;
-        portion: Portion;
-      };
-    };
 
 /**
  * A single leg of a delivery's completion chain. A delivery is a 3-party
@@ -2097,6 +1811,14 @@ export interface MoveReadiness {
   ready: boolean;
 }
 
+export interface MyPaymentInput {
+  /**
+   * The order (its original action, or any version of it).
+   */
+  order: ActionHash;
+  leg: PaymentLeg;
+}
+
 export interface NetworkReach {
   /**
    * How many distinct peers have validated one of the write's ops.
@@ -2120,11 +1842,10 @@ export interface NetworkTerms {
    * The ISO 4217 code every amount is in, in its minor units.
    */
   currency: string;
-  credit_limit_cents: number;
   /**
-   * The least anyone may cash out at once.
+   * Whether payments are real (live processor accounts), or tests.
    */
-  min_redemption_cents: number;
+  live_payments: boolean;
   /**
    * The delivery fee caps checkout suggests, in minor units.
    */
@@ -2219,11 +1940,6 @@ export interface NetworkTerms {
   max_image_bytes: number;
   goodie_bag_max_days: number;
   /**
-   * What listing a store sets aside, in minor units -- returned when it
-   * closes.
-   */
-  store_listing_stake: number;
-  /**
    * Whether a customer can appeal their store's settlement, and for how
    * long after it -- none without arbiters.
    */
@@ -2257,6 +1973,19 @@ export interface NetworkTerms {
    * The push relay that wakes a closed app, if the network runs one.
    */
   push_relay_url: string | null;
+}
+
+export interface OfferPaymentInput {
+  /**
+   * The order (its original action, or any version of it).
+   */
+  order: ActionHash;
+  leg: PaymentLeg;
+  payment: PaymentInput;
+  /**
+   * The `PaymentAction` this answers, once the payer has done it.
+   */
+  resumes: ActionHash | null;
 }
 
 /**
@@ -2382,6 +2111,18 @@ export interface OrderOutcome {
 }
 
 /**
+ * One payment held on an order: its leg, who pays whom, what was held, and
+ * what was charged of it once settled.
+ */
+export interface OrderPayment {
+  leg: PaymentLeg;
+  payer: AgentPubKey;
+  payee: AgentPubKey;
+  held: number;
+  charged: number | null;
+}
+
+/**
  * An order's points: what it earns (an estimate, until it's earned) and
  * where that stands.
  */
@@ -2491,22 +2232,263 @@ export interface Parcel {
   sealed: SealedChunks;
 }
 
-export type PayoutOutcome =
+/**
+ * A part of an order's money: a portion of one of its holds, as
+ * `hold_terms` prices it.
+ */
+export interface Part {
+  purpose: HoldPurpose;
+  portion: Portion;
+}
+
+/**
+ * What a payee's processor needs the payer to do before it authorizes --
+ * 3-D Secure's challenge -- sealed to the payer.
+ */
+export interface PaymentAction {
+  offer: ActionHash;
+  sealed: XSalsa20Poly1305EncryptedData;
+}
+
+/**
+ * A payee recording an offer it didn't authorize.
+ */
+export interface PaymentDeclined {
+  offer: ActionHash;
+  code: DeclineCode;
+}
+
+/**
+ * One thing a payee's payment agent should do on its processor -- exact,
+ * from the network.
+ */
+export type PaymentDue =
   /**
-   * Paid out; `reference` is the issuer's payout id (its processor's
-   * transfer), so the redeemer can trace it.
+   * Authorize an offer, with manual capture, for exactly `amount`.
    */
   | {
-      Paid: {
-        reference: string;
+      Authorize: {
+        offer: ActionHash;
+        order: ActionHash;
+        leg: PaymentLeg;
+        amount: number;
+        payer: AgentPubKey;
+        /**
+         * The single-use token, opened -- `None` to use the card the payer
+         * saved with the payee.
+         */
+        token: string | null;
+        /**
+         * The payer lets the payee keep this card.
+         */
+        save: boolean;
+        /**
+         * The action this offer answers: resume the authorization that
+         * asked for it.
+         */
+        resumes: ActionHash | null;
       };
     }
   /**
-   * Not paid -- no payout account set up, a check failed -- and why.
+   * Capture `captured` of a hold -- releasing the rest; nothing, to
+   * release it all -- and record the claims.
    */
   | {
+      Settle: {
+        hold: ActionHash;
+        reference: string;
+        held: number;
+        captured: number;
+        claims: DueClaim[];
+      };
+    }
+  /**
+   * Refund an arbiter's award from a captured payment.
+   */
+  | {
+      Refund: {
+        settlement: ActionHash;
+        reference: string;
+        ruling: ActionHash;
+        amount: number;
+      };
+    };
+
+/**
+ * A payee's authorization of an offer, on its own processor account --
+ * for exactly what the leg needs (`PaymentLeg::required`).
+ */
+export interface PaymentHold {
+  offer: ActionHash;
+  amount: number;
+  /**
+   * The processor's id for the authorization -- opaque to the network,
+   * what the payee's app captures or releases.
+   */
+  reference: string;
+}
+
+export interface PaymentHoldInput {
+  /**
+   * The order (its original action, or any version of it).
+   */
+  order: ActionHash;
+  leg: PaymentLeg;
+}
+
+/**
+ * A card, as a payer's app hands it over.
+ */
+export interface PaymentInput {
+  /**
+   * A single-use token from the payee's processor's card form; `None` for
+   * the card the payer saved with this payee.
+   */
+  token: string | null;
+  /**
+   * Let the payee keep this card for the payer's later payments to them.
+   */
+  save: boolean;
+}
+
+/**
+ * One card authorization an order needs.
+ */
+export type PaymentLeg =
+  /**
+   * The customer's, on the store's account.
+   */
+  | "Customer"
+  /**
+   * The store's, on the account of the driver behind `bid`.
+   */
+  | {
+      DriverPay: {
+        bid: ActionHash;
+      };
+    }
+  /**
+   * The driver's behind `bid`, on the store's account.
+   */
+  | {
+      Collateral: {
+        bid: ActionHash;
+      };
+    };
+
+/**
+ * A payer's card for one leg of an order, for its payee.
+ */
+export interface PaymentOffer {
+  /**
+   * The order's original action.
+   */
+  order: ActionHash;
+  leg: PaymentLeg;
+  /**
+   * A single-use token from the payee's processor's card form, sealed to
+   * the payee. `None`: the card the payer saved with this payee.
+   */
+  sealed_token: XSalsa20Poly1305EncryptedData | null;
+  /**
+   * The payer lets the payee keep this card, for their later payments to
+   * them -- the same leg on later orders.
+   */
+  save: boolean;
+  /**
+   * The `PaymentAction` this answers, once the payer has done it.
+   */
+  resumes: ActionHash | null;
+}
+
+/**
+ * How a payee is paid: public, by design -- what any payer's app needs to
+ * show the payee's processor's card form.
+ */
+export interface PaymentProfile {
+  processor: Processor;
+  /**
+   * Stripe's publishable key, Square's application id, or Clover's public
+   * (PAKMS) key.
+   */
+  public_key: string;
+  /**
+   * Square's location id, or Clover's merchant id. Empty for Stripe.
+   */
+  account: string;
+  /**
+   * A live account, or a test one. Must be the network's kind
+   * (`handshake_governance::live_payments`).
+   */
+  live: boolean;
+}
+
+/**
+ * A store refunding an arbiter's award to its customer, from what it
+ * captured for the order.
+ */
+export interface PaymentRefund {
+  /**
+   * The store's settlement of the customer's payment.
+   */
+  settlement: ActionHash;
+  /**
+   * The arbiter's `Ruling` for the customer.
+   */
+  ruling: ActionHash;
+  amount: number;
+}
+
+/**
+ * A payee settling its hold: what it captured, part by part. Captures
+ * nothing (no claims) to release it all.
+ */
+export interface PaymentSettlement {
+  hold: ActionHash;
+  claims: Claim[];
+  /**
+   * The sum of the claims: what the payee's processor captured.
+   */
+  captured: number;
+}
+
+/**
+ * Where one of the caller's payments on an order stands.
+ */
+export type PaymentStanding =
+  /**
+   * Offered; the payee's agent hasn't answered.
+   */
+  | {
+      Waiting: {
+        offer: ActionHash;
+      };
+    }
+  /**
+   * The card needs the payer to complete a challenge -- what their app
+   * shows them.
+   */
+  | {
+      ActionNeeded: {
+        offer: ActionHash;
+        action: ActionHash;
+        challenge: string;
+      };
+    }
+  | {
       Declined: {
-        reason: string;
+        offer: ActionHash;
+        code: DeclineCode;
+      };
+    }
+  /**
+   * Held, for this much -- and charged, once settled.
+   */
+  | {
+      Held: {
+        hold: ActionHash;
+        held: number;
+        charged: number | null;
       };
     };
 
@@ -2619,10 +2601,10 @@ export interface PickupOrder {
    */
   ready_by: Timestamp | null;
   /**
-   * The customer's hold for the food, cited by the store's update that
-   * accepts the order -- see `DeliveryOrder::food_hold`.
+   * The store's hold of the customer's payment, cited by its update
+   * accepting the order -- see `DeliveryOrder::customer_payment`.
    */
-  food_hold: ActionHash | null;
+  customer_payment: ActionHash | null;
 }
 
 /**
@@ -2787,6 +2769,11 @@ export type Portion =
    */
   | "LateCover";
 
+/**
+ * The card processor a payee is paid through.
+ */
+export type Processor = "Stripe" | "Square" | "Clover";
+
 export interface Profile {
   /**
    * The name everyone sees -- published only for the roles that face the
@@ -2887,12 +2874,7 @@ export type PromoBlock =
   /**
    * Every use it allows, across customers, is taken.
    */
-  | "SoldOut"
-  /**
-   * It's for new customers, and no issuer has vouched for their card
-   * yet -- adding funds with a card does.
-   */
-  | "CardNotVerified";
+  | "SoldOut";
 
 /**
  * Merchant-scoped, not global -- one restaurant's "WELCOME10" is a
@@ -3195,13 +3177,62 @@ export interface ReceiptLine {
 }
 
 /**
- * One payment the customer made towards the order -- a part of the money
- * they set aside for it -- and the ledger entry that holds it.
+ * One payment the caller made towards the order, held from their card by
+ * the party it paid.
  */
 export interface ReceiptPayment {
-  leg: Portion;
-  amount_cents: number;
+  leg: PaymentLeg;
+  /**
+   * Who it was paid to (the leg's payee).
+   */
+  payee: AgentPubKey;
+  /**
+   * What was held on the card.
+   */
+  held_cents: number;
+  /**
+   * What was charged of it, once settled -- the rest was released.
+   */
+  charged_cents: number | null;
+  /**
+   * The payee's hold: its record is the payment's reference.
+   */
   transaction: ActionHash;
+}
+
+export interface RecordActionInput {
+  offer: ActionHash;
+  /**
+   * What the payer's app needs to complete the processor's challenge.
+   */
+  action: string;
+}
+
+export interface RecordDeclinedInput {
+  offer: ActionHash;
+  code: DeclineCode;
+}
+
+export interface RecordHoldInput {
+  offer: ActionHash;
+  /**
+   * The processor's id for the authorization.
+   */
+  reference: string;
+}
+
+export interface RecordRefundInput {
+  settlement: ActionHash;
+  ruling: ActionHash;
+  amount: number;
+}
+
+export interface RecordSettlementInput {
+  hold: ActionHash;
+  /**
+   * What the agent captured, part by part -- `payments_due`'s.
+   */
+  claims: DueClaim[];
 }
 
 /**
@@ -3286,38 +3317,6 @@ export interface RecurringOrderTemplate {
   next_run_at: Timestamp;
   active: boolean;
   created_at: Timestamp;
-}
-
-/**
- * What an issuer did with a cash-out: paid it outside the network, or
- * declined it -- and its funds go back to the redeemer (`LedgerKind::Reclaim`).
- * Written once per cash-out, by the issuer it names.
- */
-export interface RedemptionOutcome {
-  /**
-   * The redeemer's `Redeem` ledger entry.
-   */
-  redemption: ActionHash;
-  outcome: PayoutOutcome;
-}
-
-/**
- * A recovered account an issuer has been asked to reissue.
- */
-export interface ReissueRequest {
-  succession: ActionHash;
-  predecessor: AgentPubKey;
-  successor: AgentPubKey;
-  requested_at: Timestamp;
-}
-
-export interface ReissueRequestsPage {
-  requests: ReissueRequest[];
-  /**
-   * As `CashOutRequestsPage::cursor`.
-   */
-  cursor: Timestamp | null;
-  more: boolean;
 }
 
 export type ReputationEventKind =
@@ -3592,22 +3591,6 @@ export interface SelectionInput {
 }
 
 /**
- * One part of a hold, over the zome-call boundary.
- */
-export interface ShareView {
-  portion: Portion;
-  recipient: AgentPubKey;
-  amount: number;
-}
-
-/**
- * Where an account's ledger stood as of an action on its chain.
- */
-export interface Standing {
-  balance: number;
-}
-
-/**
  * A store brought over from the previous version of the network
  * (docs/MIGRATION.md): `to`, the author's own store here, republished from
  * `from`, a store on `previous_network`. Validation here can't read the
@@ -3814,15 +3797,6 @@ export interface VouchView {
   guardian: AgentPubKey;
   account: AgentPubKey;
   plan: ActionHash;
-}
-
-/**
- * A part waived back to its payer.
- */
-export interface WaiverView {
-  waiver: ActionHash;
-  portion: Portion;
-  by: AgentPubKey;
 }
 
 /**

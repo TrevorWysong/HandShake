@@ -33,7 +33,7 @@ await runScenario(async (scenario) => {
 
   const delivery = async (fields: Record<string, unknown> = {}) =>
     actionHash(
-      await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: null, ...fields }),
+      await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: 1_000, ...fields }),
     );
   const pickup = async () => actionHash(await call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: item, quantity: 1 }], order_total: 1000 }));
   const myActive = () => call(customer, "dispatch")<OrderEntry[]>("get_my_active_orders", null);

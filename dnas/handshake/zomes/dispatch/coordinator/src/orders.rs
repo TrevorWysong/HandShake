@@ -7,7 +7,6 @@
 use crate::matching::open_order_anchor_path;
 use crate::order_queues::{self, OrderParties};
 use crate::pricing::{ensure_current_terms, ensure_priced_from_current_menu, ensure_store_minimum, price_order, OrderItem};
-use crate::settlement;
 use crate::stores::{closed_reason, current_catalog, current_catalog_version};
 use crate::upkeep;
 use dispatch_integrity::*;
@@ -76,6 +75,10 @@ pub struct RequestDeliveryInput {
     /// A reward of the store's rewards program to spend points on -- its id.
     #[serde(default)]
     pub reward: Option<u16>,
+    /// The customer's card for it, offered to the store with the order (see
+    /// `payments::offer`). Without it, the customer offers one after.
+    #[serde(default)]
+    pub payment: Option<crate::payments::PaymentInput>,
 }
 
 /// Once the store accepts a delivery, it's listed under its drop-off's cell
@@ -247,6 +250,10 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
     if !input.dropoff.is_valid() {
         return Err(guest("That drop-off isn't a real place."));
     }
+    // The customer's card is held for their share of the fee up front.
+    if input.max_delivery_fee.is_none() {
+        return Err(guest("Choose the most you'll pay for delivery."));
+    }
     check_note(&input.dropoff_notes)?;
     check_line2(&input.dropoff_line2)?;
     let dropoff_geohash = handshake_types::encode(input.dropoff, DROPOFF_GEOHASH_PRECISION);
@@ -323,10 +330,9 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         rewards: crate::pricing::join(&catalog_ref, joining)?,
         cancellation: None,
         ready_by: None,
-        food_hold: None,
-        driver_pay_hold: None,
-        subsidy_hold: None,
-        collateral_hold: None,
+        customer_payment: None,
+        collateral_payment: None,
+        driver_payment: None,
         pin_commitment: code.commitment,
         sealed_pin: code.sealed,
         pickup_commitment: Vec::new(),
@@ -339,9 +345,11 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         auto_match: input.auto_match,
     };
     let action_hash = create_entry(&EntryTypes::DeliveryOrder(order))?;
-    // The food is paid for up front, in this same commit: the store can't
-    // accept an order whose money isn't set aside.
-    settlement::place_hold(&action_hash, HoldPurpose::Food)?;
+    // The customer's card for it, offered to the store in this same commit:
+    // the store's app holds it, and accepts the order only once it has.
+    if let Some(payment) = input.payment {
+        crate::payments::offer(&action_hash, PaymentLeg::Customer, payment)?;
+    }
     // The store finds it in its queue; drivers only once the store accepts
     // it (`accept_delivery_order`).
     order_queues::enqueue(&action_hash, &catalog_ref, &requester, now)?;
@@ -408,24 +416,12 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
     ensure_current_terms(&order_original_action, &order.catalog_ref, &order.catalog_version)?;
     crate::pricing::ensure_current_program(&order_original_action, &order.catalog_ref, order.rewards.as_ref())?;
     crate::promos::ensure_promo_left(&order_original_action, order.promo_code_ref.as_ref())?;
-    crate::acceptance::ensure_acceptable(&order.requester, &order.catalog_ref, order.promo_code_ref.as_ref(), order.rewards.as_ref())?;
+    crate::acceptance::ensure_acceptable(&order.requester, &order.catalog_ref, order.rewards.as_ref())?;
     let promo = order.promo_code_ref.clone();
     let rewards = order.rewards.clone();
     let lines = order.lines.clone();
     let original = original_action_of(order_original_action.clone())?;
-    order.food_hold = settlement::required_hold(&original, HoldPurpose::Food, &order.requester, settlement::owes(&original, &HoldPurpose::Food, None)?)?;
-    // A store checks its driver in by setting aside their whole fee (its
-    // share, and the customer's again in case it keeps them waiting). It
-    // must be able to: a store that can't would leave its driver unable to
-    // check in, and answering for food it may have made.
-    let float = order.max_delivery_fee.unwrap_or_else(|| handshake_governance::suggested_delivery_fees().into_iter().max().unwrap_or(0));
-    let spendable = crate::settlement::spendable()?;
-    if spendable < i128::from(float) {
-        return Err(guest(format!(
-            "Your balance can't cover a driver's fee for this order (up to {float_cents}), which you set aside when you check them in. Add funds, then accept it.",
-            float_cents = float
-        )));
-    }
+    order.customer_payment = crate::payments::step_payment(&original, &PaymentLeg::Customer, &order.merchant, "The customer's payment isn't held yet. Your app holds it as soon as their card comes through.")?;
     // The store's own limit on what may be left at a door.
     let limit = current_catalog(&order.catalog_ref)?.leave_at_door_max_cents;
     if order.dropoff_preference == DropoffPreference::LeaveAtDoor && limit.is_some_and(|max| order.order_total > max) {
@@ -494,9 +490,8 @@ pub fn set_order_status(input: SetOrderStatusInput) -> ExternResult<Record> {
 pub struct NetworkTerms {
     /// The ISO 4217 code every amount is in, in its minor units.
     pub currency: String,
-    pub credit_limit_cents: u64,
-    /// The least anyone may cash out at once.
-    pub min_redemption_cents: u64,
+    /// Whether payments are real (live processor accounts), or tests.
+    pub live_payments: bool,
     /// The delivery fee caps checkout suggests, in minor units.
     pub suggested_delivery_fees: Vec<u64>,
     pub store_response_secs: u64,
@@ -550,9 +545,6 @@ pub struct NetworkTerms {
     /// The most an inline image may take, in bytes of its data URI.
     pub max_image_bytes: u64,
     pub goodie_bag_max_days: u64,
-    /// What listing a store sets aside, in minor units -- returned when it
-    /// closes.
-    pub store_listing_stake: u64,
     /// Whether a customer can appeal their store's settlement, and for how
     /// long after it -- none without arbiters.
     pub appeals: bool,
@@ -579,8 +571,7 @@ pub struct NetworkTerms {
 pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
     Ok(NetworkTerms {
         currency: handshake_governance::currency(),
-        credit_limit_cents: handshake_governance::credit_limit_cents(),
-        min_redemption_cents: handshake_governance::min_redemption_cents(),
+        live_payments: handshake_governance::live_payments(),
         suggested_delivery_fees: handshake_governance::suggested_delivery_fees(),
         store_response_secs: handshake_governance::store_response_window().as_secs(),
         max_pending_orders: handshake_governance::max_pending_orders(),
@@ -609,7 +600,6 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         add_on_detour_km: handshake_governance::add_on_detour_km(),
         max_image_bytes: handshake_governance::max_image_bytes() as u64,
         goodie_bag_max_days: handshake_governance::goodie_bag_max_lifetime().as_secs() / 86_400,
-        store_listing_stake: handshake_governance::store_listing_stake(),
         appeals: !handshake_governance::arbiters().is_empty(),
         appeal_window_secs: handshake_governance::appeal_window().as_secs(),
         drivers_verified: handshake_governance::require_verified_drivers(),
@@ -634,6 +624,10 @@ pub fn pick_up_order(order_original_action: ActionHash) -> ExternResult<Record> 
     }
     let proof: Option<ActionHash> = call_local("attestation", "pickup_proof_for_order", order_original_action.clone())?.unwrap_or(None);
     order.pickup_proof = Some(proof.ok_or(guest("Have the store scan your code, or confirm they've handed it over."))?);
+    let bid = order.accepted_bid.clone().ok_or(guest("This order has no driver yet."))?;
+    let me = agent_info()?.agent_initial_pubkey;
+    let original = original_action_of(order_original_action.clone())?;
+    order.driver_payment = crate::payments::step_payment(&original, &PaymentLeg::DriverPay { bid }, &me, "The store hasn't paid you for this delivery yet. Ask them to confirm their card, then pick it up.")?;
     order.status = DeliveryStatus::PickedUp;
     let updated = update_version(&current, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)?;
     written(updated)

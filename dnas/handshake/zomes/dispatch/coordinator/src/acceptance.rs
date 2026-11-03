@@ -8,7 +8,7 @@
 //! holds or can look up without its customer online.
 
 use dispatch_integrity::*;
-use handshake_coordinator_support::{call_local, decode_or, guest};
+use handshake_coordinator_support::{call_local, guest};
 use hdk::prelude::*;
 
 /// Whether the order spends a reward the customer's points at the store
@@ -24,23 +24,6 @@ pub(crate) fn reward_unavailable(requester: &AgentPubKey, catalog_ref: &ActionHa
         reward: u16,
     }
     Ok(call_local::<_, ()>("rewards", "can_redeem", RedeemCheck { customer: requester, catalog_ref, program: &rewards.program, reward })?.is_err())
-}
-
-/// Whether an issuer on the roster vouched for `agent`'s card. On a network
-/// without issuers there's no one to ask, and nothing to wait on.
-pub(crate) fn card_verified(agent: &AgentPubKey) -> ExternResult<bool> {
-    if handshake_governance::issuers().is_empty() {
-        return Ok(true);
-    }
-    Ok(call_local::<_, bool>("ledger", "card_verified", agent.clone())?.unwrap_or(false))
-}
-
-/// Whether the order's code is for newcomers and the customer's card isn't
-/// vouched for.
-pub(crate) fn newcomer_unverified(requester: &AgentPubKey, promo_ref: Option<&ActionHash>) -> ExternResult<bool> {
-    let Some(promo_ref) = promo_ref else { return Ok(false) };
-    let Some(promo) = get(promo_ref.clone(), GetOptions::default())?.and_then(|r| decode_or::<catalog_types::PromoCode>(&r)) else { return Ok(false) };
-    Ok(promo.limits.first_order_only && !card_verified(requester)?)
 }
 
 /// How many orders a customer may call off at one store, before it answers
@@ -70,11 +53,9 @@ pub(crate) fn serial_canceller(requester: &AgentPubKey, catalog_ref: &ActionHash
 }
 
 /// Why the store won't accept this order, of these, if one applies.
-pub(crate) fn decline_for(requester: &AgentPubKey, catalog_ref: &ActionHash, promo_ref: Option<&ActionHash>, rewards: Option<&OrderRewards>) -> ExternResult<Option<DeclineReason>> {
+pub(crate) fn decline_for(requester: &AgentPubKey, catalog_ref: &ActionHash, rewards: Option<&OrderRewards>) -> ExternResult<Option<DeclineReason>> {
     Ok(if serial_canceller(requester, catalog_ref)? {
         Some(DeclineReason::TooManyCancellations)
-    } else if newcomer_unverified(requester, promo_ref)? {
-        Some(DeclineReason::CardNotVerified)
     } else if reward_unavailable(requester, catalog_ref, rewards)? {
         Some(DeclineReason::RewardUnavailable)
     } else {
@@ -83,11 +64,10 @@ pub(crate) fn decline_for(requester: &AgentPubKey, catalog_ref: &ActionHash, pro
 }
 
 /// Refuses to accept an order `decline_for` would decline, saying why.
-pub(crate) fn ensure_acceptable(requester: &AgentPubKey, catalog_ref: &ActionHash, promo_ref: Option<&ActionHash>, rewards: Option<&OrderRewards>) -> ExternResult<()> {
-    match decline_for(requester, catalog_ref, promo_ref, rewards)? {
+pub(crate) fn ensure_acceptable(requester: &AgentPubKey, catalog_ref: &ActionHash, rewards: Option<&OrderRewards>) -> ExternResult<()> {
+    match decline_for(requester, catalog_ref, rewards)? {
         None => Ok(()),
         Some(DeclineReason::TooManyCancellations) => Err(guest("This customer has called off several orders here lately before you could answer, so this one can't be accepted -- decline it.")),
-        Some(DeclineReason::CardNotVerified) => Err(guest("This order's promo code is for new customers, and this customer's card isn't verified yet, so it can't be accepted -- decline it.")),
         Some(_) => Err(guest("This customer's points don't cover the reward this order spends, so it can't be accepted -- decline it.")),
     }
 }

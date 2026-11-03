@@ -95,7 +95,7 @@ await runScenario(async (scenario) => {
       items: [{ item_ref: soupRef, quantity: 1 }],
       order_total: 800,
       dropoff: ST_PETE,
-      max_delivery_fee: null,
+      max_delivery_fee: 1_000,
       requested_delivery_time: Date.now() * 1000 + 3_000_000,
     }),
   );

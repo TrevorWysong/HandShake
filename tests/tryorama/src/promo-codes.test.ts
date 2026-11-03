@@ -53,7 +53,7 @@ await runScenario(async (scenario) => {
       items,
       order_total: orderTotal,
       dropoff: ST_PETE,
-      max_delivery_fee: null,
+      max_delivery_fee: 1_000,
       promo_code_ref: promoRef,
     });
   }

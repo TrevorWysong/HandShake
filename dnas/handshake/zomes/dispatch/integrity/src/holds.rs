@@ -1,41 +1,49 @@
-//! The money behind each step of an order: an order moves on only once
-//! whoever owes for that step has set it aside (see
-//! `dispatch_types::settlement`), and the step's update cites the hold.
-//! The ledger validates the hold itself -- its amount, its payer, the
-//! balance behind it; this checks that the step cites the right one.
+//! The money behind each step of an order: an order moves on only once the
+//! step's payee holds what that step is paid with (see `dispatch_types::
+//! direct`), and the step's update cites the hold. `payments` validates the
+//! hold itself -- its offer, its payee, its amount; this checks that a step
+//! cites the right one.
+//!
+//! - The store accepting cites its hold of the customer's payment.
+//! - The driver committing cites the store's hold of their collateral --
+//!   before the store cooks, so a driver who leaves it cooked has covered it.
+//! - The driver picking up cites their hold of their pay from the store.
 
 use super::*;
-use dispatch_types::{hold_terms, HoldPurpose, OrderTerms};
-use ledger_types::{LedgerEntry, LedgerKind};
+use dispatch_types::direct::PaymentLeg;
+use dispatch_types::{OrderTerms, PaymentHold, PaymentOffer};
 use handshake_integrity_support::decode;
 
-/// One step's hold: what it must be for, and who must have paid it.
-pub(crate) struct ExpectedHold<'a> {
+/// One step's payment: the order, its terms, the leg the step needs, and
+/// the leg's bid if it's a driver's.
+pub(crate) struct ExpectedPayment<'a> {
     pub order_original: &'a ActionHash,
     pub terms: &'a OrderTerms,
-    pub purpose: HoldPurpose,
+    pub leg: PaymentLeg,
     pub bid: Option<&'a Bid>,
 }
 
-/// A step that needs a hold must cite exactly that hold; a step for which
-/// nothing is owed (a customer ordering from their own store, a fee the
-/// store covers in full) must cite none.
-pub(crate) fn check_hold(cited: &Option<ActionHash>, expected: ExpectedHold<'_>) -> ExternResult<Result<(), String>> {
-    let Some((payer, shares)) = hold_terms(expected.terms, &expected.purpose, expected.bid) else {
-        return Ok(Err("that hold doesn't fit this order".into()));
+/// A step that needs a payment must cite exactly its leg's hold, by that
+/// leg's payee, for what it needs; a step for which nothing is owed (a
+/// store ordering from itself) cites none.
+pub(crate) fn check_payment(cited: &Option<ActionHash>, expected: ExpectedPayment<'_>) -> ExternResult<Result<(), String>> {
+    let Some((_, payee)) = expected.leg.parties(expected.terms, expected.bid) else {
+        return Ok(Err("that payment doesn't fit this order".into()));
+    };
+    let Some(required) = expected.leg.required(expected.terms, expected.bid) else {
+        return Ok(Err("a delivery is paid for directly only with a cap on its fee".into()));
     };
     let Some(hold_ref) = cited else {
-        return Ok(if shares.is_empty() { Ok(()) } else { Err(format!("this step needs its {:?} hold, set aside first", expected.purpose)) });
+        return Ok(if required == 0 { Ok(()) } else { Err(format!("this step needs its {:?} payment, held first", expected.leg)) });
     };
-    if shares.is_empty() {
-        return Ok(Err("nothing is owed for this step, so it cites no hold".into()));
+    if required == 0 {
+        return Ok(Err("nothing is owed for this step, so it cites no payment".into()));
     }
     let record = must_get_valid_record(hold_ref.clone())?;
-    let Some(LedgerEntry { kind: LedgerKind::Hold { order, purpose }, .. }) = decode::<LedgerEntry>(&record) else {
-        return Ok(Err("a step's hold must be a ledger hold".into()));
-    };
-    let matches = &order == expected.order_original && purpose == expected.purpose && record.action().author() == &payer;
-    Ok(if matches { Ok(()) } else { Err("a step must cite its own order's hold, for this step, paid by whoever owes it".into()) })
+    let Some(hold) = decode::<PaymentHold>(&record) else { return Ok(Err("a step's payment must be a payment hold".into())) };
+    let Some(offer) = decode::<PaymentOffer>(&must_get_valid_record(hold.offer.clone())?) else { return Ok(Err("a payment hold rests on an offer".into())) };
+    let matches = &offer.order == expected.order_original && offer.leg == expected.leg && record.action().author() == &payee && hold.amount == required;
+    Ok(if matches { Ok(()) } else { Err("a step must cite its own order's payment for this step, held by whoever it pays".into()) })
 }
 
 /// The order's terms, from its as-created record.

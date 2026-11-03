@@ -16,9 +16,6 @@ members = [
     "dnas/handshake/zomes/attestation/types",
     "dnas/handshake/zomes/attestation/integrity",
     "dnas/handshake/zomes/attestation/coordinator",
-    "dnas/handshake/zomes/ledger/types",
-    "dnas/handshake/zomes/ledger/integrity",
-    "dnas/handshake/zomes/ledger/coordinator",
     "dnas/handshake/zomes/reputation/integrity",
     "dnas/handshake/zomes/reputation/coordinator",
     "dnas/handshake/zomes/account/types",
@@ -50,7 +47,6 @@ handshake_governance = { path = "dnas/handshake/governance" }
 handshake_integrity_support = { path = "dnas/handshake/integrity_support" }
 dispatch_types = { path = "dnas/handshake/zomes/dispatch/types" }
 catalog_types = { path = "dnas/handshake/zomes/catalog/types" }
-ledger_types = { path = "dnas/handshake/zomes/ledger/types" }
 account_types = { path = "dnas/handshake/zomes/account/types" }
 rewards_types = { path = "dnas/handshake/zomes/rewards/types" }
 

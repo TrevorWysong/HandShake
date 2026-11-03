@@ -62,6 +62,18 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
             )
         }
         // The customer's confirmation, under their order.
+        // A payment record, by its author, under its own order.
+        LinkTypes::OrderToPayment => {
+            let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
+            let order = crate::payments::order_of_payment(&record)?;
+            require(record.action().author() == link.author && order.is_some_and(|order| link.base == &AnyLinkableHash::from(order)), "a payment record is linked by its author, under its own order")
+        }
+        // How an agent is paid, under their own key.
+        LinkTypes::AgentToPaymentProfile => {
+            let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
+            let own = decode::<PaymentProfile>(&record).is_some() && record.action().author() == link.author && link.base == &AnyLinkableHash::from(link.author.clone());
+            require(own, "a payment profile is linked by its own agent, under their key")
+        }
         LinkTypes::OrderToConfirmation => {
             let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
             // By its type: a `DeclineNoted` has the same fields, and decodes as one.
@@ -123,7 +135,9 @@ fn validate_open_order_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCal
 
 pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
     match link.link_type {
-        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder | LinkTypes::BagToOrder | LinkTypes::OrderToConfirmation => invalid("this dispatch link type can't be deleted"),
+        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder | LinkTypes::BagToOrder | LinkTypes::OrderToConfirmation | LinkTypes::OrderToPayment => invalid("this dispatch link type can't be deleted"),
+        // Disconnecting a processor.
+        LinkTypes::AgentToPaymentProfile => require(link.base == &AnyLinkableHash::from(link.author.clone()), "only its own agent unlinks how they're paid"),
         LinkTypes::DriverToVerification => {
             let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
             require(record.action().author() == link.author, "only its verifier unlinks a verification")

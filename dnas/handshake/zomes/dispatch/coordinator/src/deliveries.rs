@@ -43,7 +43,7 @@
 
 use crate::order_queues::{retire, unqueue_driver, OrderParties};
 use crate::orders::{publish_to_open_anchor, record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
-use crate::settlement::place_hold;
+use crate::payments::hold_for;
 use crate::signals::RemoteSignal;
 use dispatch_integrity::lineage::{self, Version};
 use dispatch_integrity::*;
@@ -72,19 +72,19 @@ fn me() -> ExternResult<AgentPubKey> {
     Ok(agent_info()?.agent_initial_pubkey)
 }
 
-/// The order without its driver: their address, and what was held for them.
+/// The order without its driver, and what was held for them.
 fn without_driver(order: &mut DeliveryOrder) {
     order.accepted_bid = None;
-    order.driver_pay_hold = None;
-    order.collateral_hold = None;
-    order.subsidy_hold = None;
+    order.collateral_payment = None;
+    order.driver_payment = None;
 }
 
 // --- the driver commits ---
 
-/// The driver committing to an order whose customer accepted their bid:
-/// their collateral -- the food's value -- set aside in this same commit.
-/// Their app does it as soon as it hears (`tend_my_deliveries`).
+/// The driver committing to an order whose customer accepted their bid,
+/// once the store holds their collateral -- the food's value, on their card
+/// (`PaymentLeg::Collateral`). Their app does it as soon as it's held
+/// (`tend_my_deliveries`).
 #[hdk_extern]
 pub fn commit_to_order(order_ref: ActionHash) -> ExternResult<Record> {
     let order_ref = original_action_of(order_ref)?;
@@ -96,7 +96,8 @@ pub fn commit_to_order(order_ref: ActionHash) -> ExternResult<Record> {
     if order.status != DeliveryStatus::BidAccepted {
         return Err(guest("You've already committed to this order."));
     }
-    order.collateral_hold = place_hold(&order_ref, HoldPurpose::Collateral { bid: bid_ref })?;
+    let held = hold_for(&order_ref, &PaymentLeg::Collateral { bid: bid_ref }, &order.merchant)?;
+    order.collateral_payment = Some(held.ok_or(guest("The store hasn't held your collateral yet. Confirm your card for it, then commit."))?);
     order.status = DeliveryStatus::DriverEnRouteToMerchant;
     write(&version, order)
 }
@@ -127,7 +128,7 @@ pub fn share_address(order_ref: ActionHash) -> ExternResult<ActionHash> {
 /// order's driver, committed, with no share for them yet.
 pub(crate) fn owed_driver(order_ref: &ActionHash, order: &DeliveryOrder) -> ExternResult<Option<AgentPubKey>> {
     let active = matches!(order.status, DeliveryStatus::DriverEnRouteToMerchant | DeliveryStatus::MerchantConfirmed | DeliveryStatus::DriverAtStore | DeliveryStatus::PickedUp);
-    if !active || order.collateral_hold.is_none() {
+    if !active || order.collateral_payment.is_none() {
         return Ok(None);
     }
     let Some((_, bid)) = driver_of(order)? else { return Ok(None) };
@@ -200,8 +201,6 @@ pub fn ensure_checked_in(order_ref: ActionHash) -> ExternResult<ActionHash> {
         DeliveryStatus::MerchantConfirmed => (version, order),
         _ => return Err(guest("This order has no driver on their way to collect it.")),
     };
-    let bid = order.accepted_bid.clone().ok_or(guest("This order has no driver yet."))?;
-    order.subsidy_hold = place_hold(&order_ref, HoldPurpose::Subsidy { bid })?;
     order.status = DeliveryStatus::DriverAtStore;
     Ok(write(&version, order)?.action_address().clone())
 }
@@ -296,7 +295,7 @@ pub fn move_driver_on(input: TimedStepInput) -> ExternResult<Record> {
         return Err(guest("Only the order's store moves its driver on."));
     }
     let Some((bid_ref, bid)) = driver_of(&order)? else { return Err(guest("This order has no driver.")) };
-    let committed = order.collateral_hold.is_some();
+    let committed = order.collateral_payment.is_some();
     match driver_due(&version.record, &order, &bid)? {
         Some(due) if past(due, committed, input.beacon.as_ref())? => {}
         _ => return Err(guest("This driver still has time.")),
@@ -416,7 +415,7 @@ pub fn record_collecting(input: TimedStepInput) -> ExternResult<Record> {
         return Err(guest("Only the order's store records it collecting."));
     }
     let request = collect_request_of(&order_ref, &order.requester)?.ok_or(guest("The customer hasn't asked to collect it."))?;
-    let committed = order.collateral_hold.is_some();
+    let committed = order.collateral_payment.is_some();
     let released = match driver_of(&order)? {
         Some((bid_ref, bid)) => {
             match driver_due(&version.record, &order, &bid)? {
@@ -638,7 +637,7 @@ fn next_store_step(order_ref: &ActionHash, record: &Record, order: &DeliveryOrde
         Some((_, bid)) => driver_due(record, order, bid)?,
         None => None,
     };
-    let committed = order.collateral_hold.is_some();
+    let committed = order.collateral_payment.is_some();
     let waiting = matches!(order.status, DeliveryStatus::Open | DeliveryStatus::BidAccepted | DeliveryStatus::DriverEnRouteToMerchant | DeliveryStatus::MerchantConfirmed);
     if waiting && order.collect_request.is_none() && collect_request_of(order_ref, &order.requester)?.is_some() {
         return Ok(match (driver.is_some(), driver_due) {
@@ -684,6 +683,11 @@ pub fn get_store_steps_due(_: ()) -> ExternResult<Vec<StoreStepDue>> {
 /// it next needs tending, if it will.
 pub(crate) fn tend_store_delivery(order_ref: &ActionHash, record: &Record, order: &DeliveryOrder, now: Timestamp) -> ExternResult<Option<Timestamp>> {
     if order.status == DeliveryStatus::DriverEnRouteToMerchant {
+        // A driver the store saved its card with is paid by itself;
+        // otherwise the store confirms it when they check in.
+        if let Some(bid) = order.accepted_bid.clone() {
+            let _ = crate::payments::offer_saved(order_ref, PaymentLeg::DriverPay { bid });
+        }
         call_own("start_cooking", order_ref);
         return Ok(Some(Timestamp::from_micros(now.as_micros().saturating_add(1_000_000))));
     }
@@ -705,16 +709,70 @@ pub(crate) fn tend_store_delivery(order_ref: &ActionHash, record: &Record, order
 
 // --- what the driver's app does ---
 
-/// Tends the caller's deliveries as a driver: commits to each one whose
-/// customer just accepted their bid, and picks up each one the store has
-/// handed over. Returns how many it moved on.
+/// How far back a driver's app looks for orders it committed to -- as far
+/// as validation counts them (`dispatch_integrity::carry`).
+const CARRY_LOOKBACK_MICROS: i64 = 2 * 86_400_000_000;
+
+/// Records each order the caller committed to that has left their hands --
+/// over, no longer theirs, or decided never to have arrived -- so it stops
+/// counting against what they carry. Each in a call of its own. Returns how
+/// many it recorded.
+pub(crate) fn end_carries() -> ExternResult<u32> {
+    let me = me()?;
+    let since = Timestamp::from_micros(sys_time()?.as_micros() - CARRY_LOOKBACK_MICROS);
+    let types = [EntryType::try_from(UnitEntryTypes::DeliveryOrder)?, EntryType::try_from(UnitEntryTypes::CarryEnded)?];
+    let mut commits: Vec<(ActionHash, ActionHash)> = Vec::new();
+    let mut ended: Vec<ActionHash> = Vec::new();
+    for record in handshake_coordinator_support::chain::mine(&types).since(since).records()? {
+        if let Some(carry) = decode_or::<CarryEnded>(&record) {
+            ended.push(carry.committed);
+        } else if matches!(record.action().data, ActionData::Update(_)) && decode_or::<DeliveryOrder>(&record).is_some_and(|o| o.status == DeliveryStatus::DriverEnRouteToMerchant) {
+            commits.push((record.action_address().clone(), original_action_of(record.action_address().clone())?));
+        }
+    }
+    let mut recorded = 0;
+    for (committed, order) in commits.into_iter().filter(|(c, _)| !ended.contains(c)) {
+        let latest = resolve_latest(order.clone())?;
+        let left = decode_or::<DeliveryOrder>(&latest).is_some_and(|o| o.status.is_terminal() || driver_of(&o).ok().flatten().is_none_or(|(_, bid)| bid.bidder != me));
+        let basis = if left {
+            Some(latest.action_address().clone())
+        } else {
+            crate::issues::decisions_of(&order)?.not_delivered.map(|(outcome, _)| outcome)
+        };
+        if let Some(basis) = basis {
+            if handshake_coordinator_support::isolated::<_, ActionHash>("record_carry_ended", CarryEnded { order, committed, basis }).is_some() {
+                recorded += 1;
+            }
+        }
+    }
+    Ok(recorded)
+}
+
+/// Writes the caller's record of an order leaving their hands -- see
+/// `end_carries`. Validation checks it did.
+#[hdk_extern]
+pub fn record_carry_ended(ended: CarryEnded) -> ExternResult<ActionHash> {
+    create_entry(&EntryTypes::CarryEnded(ended))
+}
+
+/// Tends the caller's deliveries as a driver: records each that's left
+/// their hands, commits to each one whose customer just accepted their bid,
+/// and picks up each one the store has handed over. Returns how many it
+/// moved on.
 pub(crate) fn tend_driver_deliveries() -> ExternResult<u32> {
-    let mut moved = 0;
+    let mut moved = end_carries().unwrap_or(0);
     for delivery in crate::order_queues::get_my_active_deliveries(())? {
         let Some(order) = decode_or::<DeliveryOrder>(&delivery.order.record) else { continue };
         let order_ref = delivery.order.original_action.clone();
         let step = match order.status {
-            DeliveryStatus::BidAccepted => call_own("commit_to_order", &order_ref),
+            DeliveryStatus::BidAccepted => {
+                // Collateral with a card saved at this store goes by itself;
+                // otherwise the driver confirms it, and commits once held.
+                if let Some(bid) = order.accepted_bid.clone() {
+                    let _ = crate::payments::offer_saved(&order_ref, PaymentLeg::Collateral { bid });
+                }
+                call_own("commit_to_order", &order_ref)
+            }
             DeliveryStatus::DriverAtStore => {
                 // Handed over: the store's record of it has reached us.
                 let handed_over = matches!(call_local::<_, Option<ActionHash>>("attestation", "pickup_proof_for_order", order_ref.clone())?, Ok(Some(_)));
@@ -754,7 +812,7 @@ pub(crate) fn released_driver(version: &Record) -> ExternResult<Option<(AgentPub
     if version.released(&prior).is_none() {
         return Ok(None);
     }
-    Ok(driver_of(&prior.order)?.map(|(_, bid)| (bid.bidder, prior.order.collateral_hold.is_some())))
+    Ok(driver_of(&prior.order)?.map(|(_, bid)| (bid.bidder, prior.order.collateral_payment.is_some())))
 }
 
 /// What a customer's app records when someone else changes their order: a

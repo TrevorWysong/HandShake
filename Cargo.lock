@@ -192,7 +192,6 @@ dependencies = [
  "handshake_types",
  "hdi",
  "holochain_serialized_bytes",
- "ledger_types",
  "serde",
 ]
 
@@ -403,7 +402,6 @@ dependencies = [
  "handshake_types",
  "hdi",
  "holochain_serialized_bytes",
- "ledger_types",
  "rewards_types",
  "serde",
 ]
@@ -907,45 +905,6 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "ledger_coordinator"
-version = "0.1.0"
-dependencies = [
- "dispatch_types",
- "handshake_coordinator_support",
- "handshake_governance",
- "handshake_integrity_support",
- "hdk",
- "ledger_integrity",
- "serde",
-]
-
-[[package]]
-name = "ledger_integrity"
-version = "0.1.0"
-dependencies = [
- "account_types",
- "catalog_types",
- "dispatch_types",
- "handshake_governance",
- "handshake_integrity_support",
- "handshake_types",
- "hdi",
- "holochain_serialized_bytes",
- "ledger_types",
- "serde",
-]
-
-[[package]]
-name = "ledger_types"
-version = "0.1.0"
-dependencies = [
- "dispatch_types",
- "hdi",
- "holochain_serialized_bytes",
- "serde",
 ]
 
 [[package]]

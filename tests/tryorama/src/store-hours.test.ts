@@ -52,7 +52,7 @@ await runScenario(async (scenario) => {
   await sync();
   await assert.rejects(pickup(), /Mo's is closed then -- it next opens at 09:00/, "checkout refuses a store outside its hours");
   await assert.rejects(
-    call(customer, "dispatch")("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: soup, quantity: 1 }], order_total: 800, dropoff: ST_PETE, max_delivery_fee: null }),
+    call(customer, "dispatch")("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: soup, quantity: 1 }], order_total: 800, dropoff: ST_PETE, max_delivery_fee: 1_000 }),
     /is closed then/,
     "deliveries too",
   );

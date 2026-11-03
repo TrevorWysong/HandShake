@@ -10,7 +10,6 @@ use crate::upkeep;
 use crate::stores::{closed_reason, current_catalog_version, ready_by};
 use crate::orders::{ensure_promo_usable, my_name, seal_note, AcceptOrderInput, DeclineOrderInput, record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
 use crate::pricing::{ensure_current_terms, ensure_priced_from_current_menu, ensure_store_minimum, price_order, OrderItem};
-use crate::settlement;
 use crate::signals::RemoteSignal;
 use crate::order_queues::{self, OrderParties};
 use dispatch_integrity::*;
@@ -40,6 +39,9 @@ pub struct RequestPickupOrderInput {
     /// A reward of the store's rewards program to spend points on -- its id.
     #[serde(default)]
     pub reward: Option<u16>,
+    /// The customer's card for it -- see `RequestDeliveryInput::payment`.
+    #[serde(default)]
+    pub payment: Option<crate::payments::PaymentInput>,
 }
 
 /// No matching/signal-fanout step here unlike `orders::request_delivery` --
@@ -95,11 +97,13 @@ pub fn request_pickup_order(input: RequestPickupOrderInput) -> ExternResult<Reco
         rewards: crate::pricing::join(&catalog_ref, joining)?,
         cancellation: None,
         ready_by: None,
-        food_hold: None,
+        customer_payment: None,
     };
     let action_hash = create_entry(&EntryTypes::PickupOrder(order))?;
-    // Paid for up front, in this same commit -- see `request_delivery`.
-    settlement::place_hold(&action_hash, HoldPurpose::Food)?;
+    // The customer's card, offered with it -- see `request_delivery`.
+    if let Some(payment) = input.payment {
+        crate::payments::offer(&action_hash, PaymentLeg::Customer, payment)?;
+    }
     order_queues::enqueue(&action_hash, &catalog_ref, &requester, requested_at)?;
     upkeep::tend_my_orders_soon()?;
 
@@ -131,12 +135,12 @@ pub fn accept_pickup_order(input: AcceptOrderInput) -> ExternResult<Record> {
     ensure_current_terms(&order_original_action, &order.catalog_ref, &order.catalog_version)?;
     crate::pricing::ensure_current_program(&order_original_action, &order.catalog_ref, order.rewards.as_ref())?;
     crate::promos::ensure_promo_left(&order_original_action, order.promo_code_ref.as_ref())?;
-    crate::acceptance::ensure_acceptable(&order.requester, &order.catalog_ref, order.promo_code_ref.as_ref(), order.rewards.as_ref())?;
+    crate::acceptance::ensure_acceptable(&order.requester, &order.catalog_ref, order.rewards.as_ref())?;
     let promo = order.promo_code_ref.clone();
     let rewards = order.rewards.clone();
     let lines = order.lines.clone();
     let original = handshake_coordinator_support::original_action_of(order_original_action.clone())?;
-    order.food_hold = settlement::required_hold(&original, HoldPurpose::Food, &order.requester, settlement::owes(&original, &HoldPurpose::Food, None)?)?;
+    order.customer_payment = crate::payments::step_payment(&original, &PaymentLeg::Customer, &order.merchant, "The customer's payment isn't held yet. Your app holds it as soon as their card comes through.")?;
     order.ready_by = Some(ready_by(&order.catalog_ref, input.prep_minutes)?);
     order.status = PickupStatus::MerchantConfirmed;
     let updated = update_version(&current, &EntryTypes::PickupOrder(order), LinkTypes::Version)?;

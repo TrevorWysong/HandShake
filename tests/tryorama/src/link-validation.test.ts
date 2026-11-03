@@ -51,7 +51,7 @@ await runScenario(async (scenario) => {
   const review = actionHash(await call(customer, "reputation")<HcRecord>("submit_review", { target: { Store: storeA }, order_original_action: reviewedOrder, rating: 1, comment: "cold" }));
   const activeOrder = await placePickup();
   const deliveryOrder = actionHash(
-    await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: storeA, items: [{ item_ref: itemA, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: null }),
+    await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: storeA, items: [{ item_ref: itemA, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: 1_000 }),
   );
   await sync();
   await acceptOrder(merchant, deliveryOrder, all);

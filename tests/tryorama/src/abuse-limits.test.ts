@@ -82,7 +82,7 @@ await runScenario(async (scenario) => {
   await call(merchant, "catalog")("set_minimum_order", { original_action: store, min_cents: null });
   const delivery = actionHash(
     await retryUntilOk(() =>
-      call(neighbour, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: PRICE, dropoff: ST_PETE, max_delivery_fee: null }),
+      call(neighbour, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: PRICE, dropoff: ST_PETE, max_delivery_fee: 1_000 }),
     ),
   );
   await sync();

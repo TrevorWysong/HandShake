@@ -199,15 +199,11 @@ pub fn step(program: &RewardsProgram, prior: Option<&PointsState>, event: Event)
 /// grants -- each with whatever it came from (`S`). Played oldest first
 /// through `step`. A reward the store accepted is taken whatever the rules
 /// would say now -- it was checked when the store took it -- and never below
-/// nothing. `welcome`: whether the member may have the program's welcome
-/// bonus (a verified card, where the network has issuers). The state (`None`
-/// before anything happened), and what each event moved, signed, in order.
-pub fn replay<S>(program: &RewardsProgram, mut events: Vec<(Event, S)>, welcome: bool) -> (Option<PointsState>, Vec<(S, Event, i64)>) {
+/// nothing. The state (`None` before anything happened), and what each
+/// event moved, signed, in order.
+pub fn replay<S>(program: &RewardsProgram, mut events: Vec<(Event, S)>) -> (Option<PointsState>, Vec<(S, Event, i64)>) {
     events.sort_by_key(|(e, _)| e.at());
-    let mut rules = program.clone();
-    if !welcome {
-        rules.earn.welcome_bonus = 0;
-    }
+    let rules = program;
     let signed = |n: u64| i64::try_from(n).unwrap_or(i64::MAX);
     let mut state: Option<PointsState> = None;
     let mut log = Vec::new();
@@ -400,13 +396,14 @@ mod tests {
             (Event::Earn { at: june(12), base: 100 }, 'a'),
             (Event::Credit { at: june(13), points: 10 }, 'b'),
         ];
-        let (state, log) = replay(&p, events.clone(), true);
+        let (state, log) = replay(&p, events.clone());
         assert_eq!(state.unwrap().balance, 100 + 50 + 10 - 120, "earned, welcomed, given, spent -- in time order");
         assert_eq!(log.iter().map(|(s, _, n)| (*s, *n)).collect::<Vec<_>>(), vec![('a', 150), ('b', 10), ('c', -120)]);
-        let (state, log) = replay(&p, events, false);
-        assert_eq!(state.unwrap().balance, 0, "without the welcome, the accepted reward still takes what there is");
+        let bare = RewardsProgram { earn: crate::EarnRules { welcome_bonus: 0, ..p.earn.clone() }, ..p.clone() };
+        let (state, log) = replay(&bare, events);
+        assert_eq!(state.unwrap().balance, 0, "without a welcome, the accepted reward still takes what there is");
         assert_eq!(log.last().map(|(_, _, n)| *n), Some(-110), "and says what it took");
-        assert_eq!(replay::<()>(&p, Vec::new(), true).0, None);
+        assert_eq!(replay::<()>(&p, Vec::new()).0, None);
     }
 
     #[test]

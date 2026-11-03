@@ -1,13 +1,14 @@
 //! Moving an account to the next version of the network -- a different DNA
 //! (docs/MIGRATION.md). The account seals what's private to its key on the new
 //! network, records where it's going, and closes its chain: Holochain
-//! accepts nothing more from it here, so what its ledger held is final. An
-//! issuer on both networks credits that, once, to the key on the new one.
+//! accepts nothing more from it here. Its money never lived on the network
+//! -- each processor account goes on being its owner's -- so nothing needs
+//! carrying over but what the parcel holds.
 
 use crate::{decoded, guest, linked_records, me, own_links};
 use account_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{call_local, call_role, next_page_cursor, open_chunked, seal_chunked};
+use handshake_coordinator_support::{call_local, call_role, open_chunked, seal_chunked};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MigrateInput {
@@ -15,8 +16,6 @@ pub struct MigrateInput {
     pub network: DnaHash,
     /// The account's key there.
     pub successor: AgentPubKey,
-    /// The issuer that carries its balance over.
-    pub issuer: AgentPubKey,
     /// What only this key can read, for the new one (the app's own encoding)
     /// -- empty for nothing.
     pub parcel: String,
@@ -30,32 +29,17 @@ fn unfinished() -> ExternResult<Option<String>> {
         Ok(entries.is_ok_and(|entries| !entries.is_empty()))
     };
     if busy("dispatch", "get_my_active_orders")? || busy("dispatch", "get_my_active_deliveries")? {
-        return Ok(Some("Finish your orders in progress first: what they owe you can only come to this account.".into()));
-    }
-    #[derive(Deserialize, Debug)]
-    struct CatalogView {
-        original_action: ActionHash,
-    }
-    if let Ok(stores) = call_local::<_, Vec<CatalogView>>("catalog", "list_my_catalogs", ())? {
-        for store in stores {
-            if call_local::<_, bool>("catalog", "is_store_listed", store.original_action)? == Ok(true) {
-                return Ok(Some("Take your stores' listings down first: their stakes come back only to this account.".into()));
-            }
-        }
+        return Ok(Some("Finish your orders in progress first: they can only be settled from this account.".into()));
     }
     Ok(None)
 }
 
 /// Moves the caller's account to the next network: seals `parcel` to its
-/// key there, records the move (asking `issuer` to carry the balance), and
-/// closes the chain. After this, this key does nothing more on this network.
+/// key there, records the move, and closes the chain. After this, this key does nothing more on this network.
 #[hdk_extern]
 pub fn migrate_out(input: MigrateInput) -> ExternResult<ActionHash> {
     if input.network == dna_info()?.hash {
         return Err(guest("That's this network: the account moves to the next one."));
-    }
-    if !handshake_governance::is_issuer(&input.issuer)? {
-        return Err(guest("That isn't one of this network's issuers."));
     }
     if let Some(reason) = unfinished()? {
         return Err(guest(reason));
@@ -69,7 +53,6 @@ pub fn migrate_out(input: MigrateInput) -> ExternResult<ActionHash> {
         create_link(input.successor.clone(), hash, LinkTypes::SuccessorToParcel, ())?;
     }
     let hash = create_entry(&EntryTypes::Migration(Migration { network: input.network.clone(), successor: input.successor.clone() }))?;
-    create_link(input.issuer, hash.clone(), LinkTypes::IssuerToMigration, ())?;
     create_link(input.successor, hash.clone(), LinkTypes::SuccessorToMigration, ())?;
     close_chain(Some(MigrationTarget::Dna(input.network)))?;
     Ok(hash)
@@ -101,7 +84,7 @@ pub fn chain_closed(agent: AgentPubKey) -> ExternResult<Option<Closed>> {
     })
 }
 
-/// An account moving to the next network, as its issuer sees it.
+/// An account moved to the next network.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MigrationRequest {
     pub migration: ActionHash,
@@ -113,21 +96,6 @@ pub struct MigrationRequest {
     pub close: Option<ActionHash>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MigrationRequestsInput {
-    pub after: Option<Timestamp>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MigrationRequestsPage {
-    pub requests: Vec<MigrationRequest>,
-    /// As `CashOutRequestsPage::cursor`.
-    pub cursor: Option<Timestamp>,
-    pub more: bool,
-}
-
-const REQUESTS_PAGE_SIZE: usize = 50;
-
 /// `account`'s first migration -- the only one that counts. An account
 /// moves once: its chain closes behind the move, and a modified app that
 /// wrote a second before closing gets nothing for it (validation leaves
@@ -135,32 +103,6 @@ const REQUESTS_PAGE_SIZE: usize = 50;
 pub(crate) fn first_migration_of(account: &AgentPubKey) -> ExternResult<Option<ActionHash>> {
     let filter = ChainQueryFilter::new().entry_type(EntryType::try_from(UnitEntryTypes::Migration)?);
     Ok(handshake_coordinator_support::agent_activity(account.clone(), filter)?.into_iter().min_by_key(|(seq, _)| *seq).map(|(_, hash)| hash))
-}
-
-/// The accounts moving to the next network that asked the caller, an
-/// issuer, to carry their balance, oldest first, a page at a time.
-#[hdk_extern]
-pub fn get_migration_requests(input: MigrationRequestsInput) -> ExternResult<MigrationRequestsPage> {
-    let mut query = LinkQuery::try_new(me()?, LinkTypes::IssuerToMigration)?;
-    query.after = input.after;
-    let mut links = get_links(query, GetStrategy::default())?;
-    links.sort_by_key(|l| l.timestamp);
-    let more = links.len() > REQUESTS_PAGE_SIZE;
-    links.truncate(REQUESTS_PAGE_SIZE);
-    let cursor = links.last().map(|l| next_page_cursor(l.timestamp)).or(input.after);
-    let mut requests = Vec::with_capacity(links.len());
-    for link in links {
-        let Some(hash) = link.target.into_action_hash() else { continue };
-        let Some(record) = get(hash.clone(), GetOptions::default())? else { continue };
-        let Some(migration) = decoded::<Migration>(&record) else { continue };
-        let account = record.action().author().clone();
-        if first_migration_of(&account)?.as_ref() != Some(&hash) {
-            continue;
-        }
-        let close = chain_closed(account.clone())?.filter(|c| c.network.as_ref() == Some(&migration.network)).map(|c| c.close);
-        requests.push(MigrationRequest { migration: hash, account, successor: migration.successor, network: migration.network, requested_at: link.timestamp, close });
-    }
-    Ok(MigrationRequestsPage { requests, cursor, more })
 }
 
 /// The accounts moved to the caller's key from this network -- what the

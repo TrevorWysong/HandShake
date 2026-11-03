@@ -57,7 +57,7 @@ pub fn can_redeem(input: RedeemCheck) -> ExternResult<()> {
     let reward = cited.reward(input.reward).ok_or(guest("This order's reward isn't one of your program's."))?;
     let orders = member_orders(&input.catalog_ref, &input.customer)?;
     let grants = my_grants_to(&input.catalog_ref, &input.customer)?.into_iter().map(|(grant, at, g)| (grant, at, g.points)).collect();
-    let standing = standing(&input.catalog_ref, &input.customer, &store_info.owner, &program, orders, grants)?;
+    let standing = standing(&input.catalog_ref, &program, orders, grants)?;
     let event = Event::Spend { at: sys_time()?, cost: u64::from(reward.cost), min_tier: reward.min_tier };
     step(&program, standing.state.as_ref(), event).map(|_| ()).map_err(|reason| {
         if reason == "that reward needs a higher tier" {

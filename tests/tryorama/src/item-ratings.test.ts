@@ -43,7 +43,7 @@ await runScenario(async (scenario) => {
     items: [{ item_ref: burgerRef, quantity: 1 }],
     order_total: 800,
     dropoff: ST_PETE,
-    max_delivery_fee: null,
+    max_delivery_fee: 1_000,
   });
   const orderRef = actionHash(orderRecord);
   await dhtSync(all, customer.cells[0].cell_id[0]);
@@ -99,7 +99,7 @@ await runScenario(async (scenario) => {
     items: [{ item_ref: burgerRef, quantity: 1 }],
     order_total: 800,
     dropoff: ST_PETE,
-    max_delivery_fee: null,
+    max_delivery_fee: 1_000,
   });
   const order2Ref = actionHash(order2Record);
   await dhtSync(all, customer.cells[0].cell_id[0]);

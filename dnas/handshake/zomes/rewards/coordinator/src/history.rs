@@ -49,44 +49,11 @@ pub(crate) struct RulingWire {
     pub(crate) ruling: ActionHash,
 }
 
-/// Mirrors `ledger::HoldView` and `ledger::WaiverView`, as far as needed.
-#[derive(Deserialize, Debug)]
-pub(crate) struct HoldWire {
-    pub(crate) hold: ActionHash,
-    pub(crate) purpose: dispatch_types::HoldPurpose,
-}
-
-#[derive(Deserialize, Debug)]
-pub(crate) struct WaiverWire {
-    pub(crate) portion: dispatch_types::Portion,
-    pub(crate) by: AgentPubKey,
-}
-
-pub(crate) fn ledger<I: Serialize + std::fmt::Debug, O: serde::de::DeserializeOwned + std::fmt::Debug>(function: &str, input: I) -> ExternResult<O> {
-    call_local("ledger", function, input)?.map_err(|why| guest(format!("{function}: {why}")))
-}
-
-/// Whether the store (`merchant`) gave an order's food back: then whatever
-/// reward it spent comes back too.
-pub(crate) fn food_given_back(order: &ActionHash, merchant: &AgentPubKey) -> ExternResult<bool> {
-    let holds: Vec<HoldWire> = ledger("holds_for_order", order.clone())?;
-    for hold in holds.into_iter().filter(|h| h.purpose == dispatch_types::HoldPurpose::Food) {
-        let waivers: Vec<WaiverWire> = ledger("waivers_for_hold", hold.hold)?;
-        if waivers.iter().any(|w| w.portion == dispatch_types::Portion::Food && &w.by == merchant) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-/// Whether `customer` may have a program's welcome bonus: a card the
-/// network's issuer verified as new to it, on a network with issuers -- so
-/// a welcome can't be farmed with fresh accounts.
-pub(crate) fn may_be_welcomed(customer: &AgentPubKey) -> ExternResult<bool> {
-    if handshake_governance::issuers().is_empty() {
-        return Ok(true);
-    }
-    Ok(ledger::<_, bool>("card_verified", customer.clone()).unwrap_or(false))
+/// Whether the store let an order's food go -- settled the customer's
+/// payment without charging for it: then whatever reward it spent comes
+/// back too.
+pub(crate) fn food_given_back(order: &ActionHash) -> ExternResult<bool> {
+    dispatch::<_, bool>("food_given_back", order.clone())
 }
 
 /// What one accepted order means for points now: an earning (once its
@@ -95,7 +62,7 @@ pub(crate) fn may_be_welcomed(customer: &AgentPubKey) -> ExternResult<bool> {
 /// the member's tier) if they're still to come.
 pub(crate) type OrderEvents = (Vec<Event>, Option<(PointsStatus, u64)>);
 
-pub(crate) fn order_events(view: &MemberOrderView, merchant: &AgentPubKey, now: Timestamp) -> ExternResult<OrderEvents> {
+pub(crate) fn order_events(view: &MemberOrderView, now: Timestamp) -> ExternResult<OrderEvents> {
     let mut events = Vec::new();
     let Some(accepted) = &view.accepted else { return Ok((events, None)) };
     let accepted_at = get(accepted.clone(), GetOptions::default())?.map_or(view.placed_at, |r| r.action().timestamp());
@@ -103,7 +70,7 @@ pub(crate) fn order_events(view: &MemberOrderView, merchant: &AgentPubKey, now: 
     // the customer called it off in time.
     if let Some(id) = view.reward {
         if let Some(reward) = program_cited(&view.order)?.and_then(|p| p.reward(id).cloned()) {
-            if !food_given_back(&view.order, merchant)? && !dispatch::<_, bool>("cancelled_in_time", view.order.clone())? {
+            if !food_given_back(&view.order)? && !dispatch::<_, bool>("cancelled_in_time", view.order.clone())? {
                 events.push(Event::Spend { at: accepted_at, cost: u64::from(reward.cost), min_tier: reward.min_tier });
             }
         }
@@ -153,26 +120,22 @@ pub(crate) struct Standing {
 }
 
 /// `grants`: each grant's record, when, and its points.
-pub(crate) fn standing(catalog_ref: &ActionHash, customer: &AgentPubKey, merchant: &AgentPubKey, program: &RewardsProgram, orders: Vec<MemberOrderView>, grants: Vec<(ActionHash, Timestamp, u32)>) -> ExternResult<Standing> {
+pub(crate) fn standing(catalog_ref: &ActionHash, program: &RewardsProgram, orders: Vec<MemberOrderView>, grants: Vec<(ActionHash, Timestamp, u32)>) -> ExternResult<Standing> {
     let now = sys_time()?;
     let mut events: Vec<(Event, ActionHash)> = grants.into_iter().map(|(grant, at, points)| (Event::Credit { at, points: u64::from(points) }, grant)).collect();
     let mut on_the_way: Vec<(ActionHash, Timestamp, PointsStatus, u64)> = Vec::new();
     for view in &orders {
-        let (happened, pending) = order_events(view, merchant, now)?;
+        let (happened, pending) = order_events(view, now)?;
         events.extend(happened.into_iter().map(|e| (e, view.order.clone())));
         if let Some((status, base)) = pending.filter(|(s, _)| *s != PointsStatus::Earned) {
             on_the_way.push((view.order.clone(), view.placed_at, status, base));
         }
     }
-    let welcome = may_be_welcomed(customer)?;
-    let (state, log) = replay(program, events, welcome);
+    let (state, log) = replay(program, events);
     let state = state.map(|s| roll(program, &s, now));
     // What each pending order should bring, in turn -- a welcome counts once.
     on_the_way.sort_by_key(|(_, at, ..)| *at);
-    let mut rules = program.clone();
-    if !welcome {
-        rules.earn.welcome_bonus = 0;
-    }
+    let rules = program.clone();
     let mut preview = state.clone();
     let mut pending = Vec::new();
     for (order, placed_at, status, base) in on_the_way {

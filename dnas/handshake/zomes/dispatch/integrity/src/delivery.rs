@@ -3,8 +3,8 @@
 //! never arrived.
 
 use super::*;
-use crate::holds::{check_hold, terms_of, ExpectedHold};
-use dispatch_types::HoldPurpose;
+use crate::holds::{check_payment, terms_of, ExpectedPayment};
+use dispatch_types::direct::PaymentLeg;
 use handshake_integrity_support::limits::MAX_SEALED_BYTES;
 use handshake_integrity_support::{decode, sealed_problem};
 use crate::store_answer::{check_cancellation, CancelledFrom, OrderUpdate};
@@ -15,13 +15,16 @@ use crate::checks::{check_order_rate, check_pricing, store_version, OrderPricing
 use crate::claims::{resolve_original_creation, wrote_update_of};
 use attestation_types::dropoff_proof;
 
+/// How far ahead an order may be scheduled -- see `validate_new_order`.
+const MAX_SCHEDULE_AHEAD_MICROS: i64 = 5 * 86_400_000_000;
+
 pub(crate) fn validate_new_order(order: &DeliveryOrder, author: &AgentPubKey, action_timestamp: Timestamp, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
     if &order.requester != author {
         return Ok(ValidateCallbackResult::Invalid(
             "a delivery order can only be authored by its own requester".into(),
         ));
     }
-    let started = order.cancellation.is_some() || order.prep_minutes.is_some() || order.ready_by.is_some() || order.food_hold.is_some() || order.driver_pay_hold.is_some() || order.subsidy_hold.is_some() || order.collateral_hold.is_some();
+    let started = order.cancellation.is_some() || order.prep_minutes.is_some() || order.ready_by.is_some() || order.customer_payment.is_some() || order.collateral_payment.is_some() || order.driver_payment.is_some();
     if started || order.collect_request.is_some() || order.beacon.is_some() {
         return Ok(ValidateCallbackResult::Invalid("a new order can't already be accepted, cancelled or picked up".into()));
     }
@@ -34,7 +37,11 @@ pub(crate) fn validate_new_order(order: &DeliveryOrder, author: &AgentPubKey, ac
     if order.door_risk_accepted != (order.dropoff_preference == DropoffPreference::LeaveAtDoor) {
         return Ok(ValidateCallbackResult::Invalid("an order left at the door needs its customer to accept the risk -- and only such an order".into()));
     }
-    let amounts = [("tip_cents", Some(order.tip_cents)), ("max_delivery_fee", order.max_delivery_fee)];
+    // The customer authorizes their share of the fee up front, so it has a cap.
+    let Some(fee_cap) = order.max_delivery_fee else {
+        return Ok(ValidateCallbackResult::Invalid("a delivery names the most it will pay a driver (max_delivery_fee)".into()));
+    };
+    let amounts = [("tip_cents", Some(order.tip_cents)), ("max_delivery_fee", Some(fee_cap))];
     if let Some(problem) = amounts.into_iter().find_map(|(field, amount)| amount.and_then(|a| handshake_integrity_support::amount_problem(field, a))) {
         return Ok(ValidateCallbackResult::Invalid(problem));
     }
@@ -49,6 +56,12 @@ pub(crate) fn validate_new_order(order: &DeliveryOrder, author: &AgentPubKey, ac
     }
     match (&order.status, order.requested_delivery_time) {
         (DeliveryStatus::Placed, None) => {}
+        // Its customer's card is held when they schedule it, and a card's
+        // hold lasts about a week: it must open, and be delivered, well
+        // within that.
+        (DeliveryStatus::Scheduled, Some(at)) if at.as_micros() > action_timestamp.as_micros() + MAX_SCHEDULE_AHEAD_MICROS => {
+            return Ok(ValidateCallbackResult::Invalid("an order is scheduled at most five days ahead".into()));
+        }
         (DeliveryStatus::Scheduled, Some(_)) => {}
         _ => {
             return Ok(ValidateCallbackResult::Invalid(
@@ -320,25 +333,23 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         return Ok(Some("accepted_bid is set when a bid is accepted, cleared when its driver leaves, and otherwise never changes".into()));
     }
 
-    // The money behind each step, set aside by whoever owes it and cited by
-    // the step that needs it: the customer's food when the store accepts,
-    // the driver's pay when the customer accepts a bid, the driver's
-    // collateral when they commit, the store's when it checks them in. The
-    // three for a driver go with them.
+    // The money behind each step, held by whoever it pays and cited by the
+    // step that needs it: the customer's payment when the store accepts,
+    // the driver's collateral when they commit, their pay when they pick it
+    // up. The two for a driver go with them.
     let Some(terms) = terms_of(&order_original)? else { return Ok(Some("not an order".into())) };
     let bid_ref = if step.accepting { order.accepted_bid.clone() } else { prior.accepted_bid.clone() };
     let bid = match &bid_ref {
         Some(bid_ref) => decode::<Bid>(&must_get_valid_record(bid_ref.clone())?),
         None => None,
     };
-    type HoldStep<'a> = (bool, bool, &'a Option<ActionHash>, &'a Option<ActionHash>, Option<HoldPurpose>, &'static str);
-    let steps: [HoldStep; 4] = [
-        (step.store_accepting, false, &prior.food_hold, &order.food_hold, Some(HoldPurpose::Food), "food_hold"),
-        (step.accepting, true, &prior.driver_pay_hold, &order.driver_pay_hold, bid_ref.clone().map(|bid| HoldPurpose::DriverPay { bid }), "driver_pay_hold"),
-        (step.committing, true, &prior.collateral_hold, &order.collateral_hold, bid_ref.clone().map(|bid| HoldPurpose::Collateral { bid }), "collateral_hold"),
-        (step.checking_in, true, &prior.subsidy_hold, &order.subsidy_hold, bid_ref.clone().map(|bid| HoldPurpose::Subsidy { bid }), "subsidy_hold"),
+    type PaymentStep<'a> = (bool, bool, &'a Option<ActionHash>, &'a Option<ActionHash>, Option<PaymentLeg>, &'static str);
+    let steps: [PaymentStep; 3] = [
+        (step.store_accepting, false, &prior.customer_payment, &order.customer_payment, Some(PaymentLeg::Customer), "customer_payment"),
+        (step.committing, true, &prior.collateral_payment, &order.collateral_payment, bid_ref.clone().map(|bid| PaymentLeg::Collateral { bid }), "collateral_payment"),
+        (step.picking_up, true, &prior.driver_payment, &order.driver_payment, bid_ref.clone().map(|bid| PaymentLeg::DriverPay { bid }), "driver_payment"),
     ];
-    for (this_step, for_driver, before, after, purpose, field) in steps {
+    for (this_step, for_driver, before, after, leg, field) in steps {
         if step.releasing && for_driver {
             if after.is_some() {
                 return Ok(Some(format!("{field} goes with the driver it was for")));
@@ -354,15 +365,22 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         if before.is_some() {
             return Ok(Some(format!("{field} is already set")));
         }
-        let Some(purpose) = purpose else { return Ok(Some("this step needs the order's accepted bid".into())) };
-        let expected = ExpectedHold { order_original: &order_original, terms: &terms, purpose, bid: if for_driver { bid.as_ref() } else { None } };
-        if let Err(reason) = check_hold(after, expected)? {
+        let Some(leg) = leg else { return Ok(Some("this step needs the order's accepted bid".into())) };
+        let expected = ExpectedPayment { order_original: &order_original, terms: &terms, leg, bid: if for_driver { bid.as_ref() } else { None } };
+        if let Err(reason) = check_payment(after, expected)? {
             return Ok(Some(reason));
         }
     }
 
     // An order changes drivers a bounded number of times: past it, it can
     // only be collected or cancelled.
+    // A driver commits only with room in their hands -- counted on their own
+    // chain (`carry`).
+    if step.committing {
+        if let Err(rule) = crate::carry::check_room(author, prev_action, order.priority)? {
+            return Ok(Some(rule.into()));
+        }
+    }
     if step.accepting && !lineage::driver_changes(&prior_version)?.allow_another() {
         return Ok(Some("this order has changed drivers as many times as the network allows".into()));
     }
@@ -380,7 +398,7 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     // keeping the food of a customer who never came. Every other update
     // carries the last one forward unchanged.
     let driver_leaving = step.releasing && is_provider;
-    let store_moving_committed = step.releasing && is_merchant && prior.collateral_hold.is_some();
+    let store_moving_committed = step.releasing && is_merchant && prior.collateral_payment.is_some();
     let ending = |reason: Cancellation| order.cancellation == Some(reason) && cancelled_from.is_some();
     let needs_time = driver_leaving || store_moving_committed || ending(Cancellation::NoDriver) || ending(Cancellation::NotCollected);
     let proved_at = if needs_time {
@@ -649,7 +667,7 @@ pub(crate) fn validate_dropoff_share(share: &DropoffShare, author: &AgentPubKey)
     if &order.requester != author {
         return Ok(ValidateCallbackResult::Invalid("only an order's customer shares its address".into()));
     }
-    let committed = match (&order.accepted_bid, order.collateral_hold.is_some()) {
+    let committed = match (&order.accepted_bid, order.collateral_payment.is_some()) {
         (Some(bid), true) => decode::<Bid>(&must_get_valid_record(bid.clone())?).is_some_and(|bid| bid.bidder == share.driver),
         _ => false,
     };

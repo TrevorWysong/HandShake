@@ -68,7 +68,7 @@ impl Version {
     /// cooking it -- and the store hadn't checked them in: a driver who came
     /// for the food never answers for it.
     pub fn released_liable(&self, prior: &Self) -> Option<ActionHash> {
-        let answers = prior.order.collateral_hold.is_some() && prior.order.ready_by.is_some() && prior.order.status != DeliveryStatus::DriverAtStore;
+        let answers = prior.order.collateral_payment.is_some() && prior.order.ready_by.is_some() && prior.order.status != DeliveryStatus::DriverAtStore;
         self.released(prior).filter(|_| answers)
     }
 
@@ -402,7 +402,7 @@ pub fn driver_changes(from: &Version) -> ExternResult<DriverChanges> {
     while let Some(prior) = current.prior()? {
         if current.released(&prior).is_some() {
             changes.offers += 1;
-            if prior.order.collateral_hold.is_some() {
+            if prior.order.collateral_payment.is_some() {
                 changes.committed += 1;
             }
         }
