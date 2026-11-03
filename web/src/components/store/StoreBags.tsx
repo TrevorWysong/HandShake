@@ -45,7 +45,7 @@ export function StoreBags({ bags, onAdd }: { bags: BagRow[]; onAdd: (row: BagRow
                 </div>
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{bag.title}</p>
+                <p className="line-clamp-2 text-sm font-semibold text-ink-900 dark:text-ink-50">{bag.title}</p>
                 {bag.description && <p className="truncate text-xs text-ink-400">{bag.description}</p>}
                 <div className="flex items-center gap-2">
                   <StatNumber className="text-sm">{formatCents(bag.price_cents)}</StatNumber>

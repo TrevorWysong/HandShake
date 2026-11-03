@@ -20,6 +20,7 @@ import { Button, Card, Field, Input, SectionLabel, Select, Skeleton, Switch } fr
 import { MAX_HAPPY_HOURS, MAX_ITEM_BONUSES, MAX_REWARDS, MAX_TIERS, type ChoiceTerms, type MerchantCatalog, type PromoReward, type Reward, type RewardsProgram } from "../../holochain/types";
 import { useT } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
+import { toast } from "../../store/toast";
 
 type Translate = ReturnType<typeof useT>;
 
@@ -78,7 +79,6 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
   const [edited, setDraft] = useState<RewardsProgram | null>(null);
   const [previewPoints, setPreviewPoints] = useState(240);
   const action = useAction();
-  const [saved, setSaved] = useState(false);
 
   const draft = edited ?? (data ? (data.view?.program ?? starterProgram(catalogRef, data.store.business_name)) : null);
 
@@ -93,7 +93,6 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
   }
   const { menu, store } = data;
   const update = (change: (p: RewardsProgram) => RewardsProgram) => {
-    setSaved(false);
     setDraft(change(structuredClone(draft)));
   };
   const problem = draftProblem(draft, t);
@@ -105,7 +104,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
     return action.run(async () => {
       await saveProgram(draft);
       await reload();
-      setSaved(true);
+      toast(t("common.saved"));
     });
   }
 
@@ -334,21 +333,26 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
         </div>
       </div>
 
-      {/* Saving, kept in reach. */}
-      <div className="fixed inset-x-0 bottom-20 z-30 px-4 lg:bottom-6 lg:left-sidebar">
-        <div className="mx-auto max-w-lg rounded-2xl bg-white/90 p-3 shadow-[var(--shadow-float)] backdrop-blur-md dark:bg-ink-900/90">
-          <AnimatePresence>
-            {(problem || action.error) && (
-              <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mb-2 text-xs font-semibold text-red-600">
-                {problem ?? action.error}
-              </motion.p>
-            )}
-          </AnimatePresence>
-          <Button className="w-full" onClick={save} loading={action.busy} disabled={!!problem || (!dirty && !!data.view)}>
-            {saved && !dirty ? t("rewardsAdmin.saved") : data.view ? t("rewardsAdmin.save") : t("rewardsAdmin.launch")}
-          </Button>
-        </div>
-      </div>
+      {/* Saving, kept in reach -- while there's something to save (or a
+          program to launch), or a problem to tell. */}
+      <AnimatePresence>
+        {(dirty || !data.view || problem || action.error) && (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} className="fixed inset-x-0 bottom-20 z-30 px-4 lg:bottom-6 lg:left-sidebar">
+            <div className="mx-auto max-w-lg rounded-2xl bg-white/90 p-3 shadow-[var(--shadow-float)] backdrop-blur-md dark:bg-ink-900/90">
+              <AnimatePresence>
+                {(problem || action.error) && (
+                  <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mb-2 text-xs font-semibold text-red-600">
+                    {problem ?? action.error}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+              <Button className="w-full" onClick={save} loading={action.busy} disabled={!!problem || (!dirty && !!data.view)}>
+                {data.view ? t("rewardsAdmin.save") : t("rewardsAdmin.launch")}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

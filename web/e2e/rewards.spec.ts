@@ -19,7 +19,7 @@ test("a store's owner builds its rewards program, with its card drawn live", asy
   await expect(page.getByRole("heading", { level: 1, name: "Rewards" })).toBeVisible();
   await expect(page.getByText("Café Club").first()).toBeVisible();
   await expect(page.getByText("Free Almond Croissant").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0, { timeout: 2000 });
   await shoot(page, "merchant-rewards");
   await page.locator('input[maxlength="40"]').first().fill("Café Club+");
   await expect(page.getByText("Café Club+").first()).toBeVisible();
