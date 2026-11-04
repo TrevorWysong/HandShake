@@ -22,6 +22,6 @@ test("anything else isn't a move code", () => {
   assert.equal(readMoveCode(moveCode(agent, agent)), null, "a key where the network goes");
   assert.equal(readMoveCode(moveCode(network, network)), null, "a network where the key goes");
   assert.equal(readMoveCode(moveCode(network, agent).slice(0, -4)), null, "cut short");
-  assert.equal(readMoveCode("handshake-move:"), null);
+  assert.equal(readMoveCode("handshake-upgrade:"), null);
   assert.equal(readMoveCode("hello"), null);
 });

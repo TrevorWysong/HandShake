@@ -96,7 +96,7 @@ export function MoveCode({ network, agent, note }: { network: Uint8Array; agent:
 /// Reads a new version's move code, and hands over its network and key.
 export function MoveCodeReader({ onMove, prompt }: { onMove: (move: { network: Uint8Array; successor: AgentPubKey }) => void; prompt: string }) {
   const t = useT();
-  return <CodeReader accepts={(code) => readMoveCode(code) !== null} onCode={(code) => onMove(readMoveCode(code)!)} prompt={prompt} refusal={t("code.notMove")} placeholder="handshake-move:uhC0k…" />;
+  return <CodeReader accepts={(code) => readMoveCode(code) !== null} onCode={(code) => onMove(readMoveCode(code)!)} prompt={prompt} refusal={t("code.notMove")} placeholder="handshake-upgrade:uhC0k…" />;
 }
 
 /// Reads an account code, and hands over its key.

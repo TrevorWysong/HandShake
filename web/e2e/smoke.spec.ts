@@ -44,6 +44,9 @@ test("a customer's order waits on the store, which can accept or decline it", as
   await page.getByRole("link", { name: "Cart" }).click();
   await page.getByText("Pickup", { exact: true }).click();
   await page.getByRole("button", { name: /Place pickup order/ }).click();
+  // The store's card form -- on the dev network, the test processor's, a
+  // card that works already filled in.
+  await page.getByRole("button", { name: /^Hold .* on my card$/ }).click();
   await expect(page.getByText(/Waiting for the store to accept your order/)).toBeVisible();
   await expect(page.getByText(/The store has until \d{1,2}:\d{2}/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Cancel order" })).toBeVisible();

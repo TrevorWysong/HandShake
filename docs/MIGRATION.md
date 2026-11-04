@@ -22,7 +22,7 @@ Holochain 0.7.1 adds a fourth, which HandShake uses within a network rather than
 
 ### 1. The new version names its network
 
-Nothing is announced on the old network. The person installs the new version, chooses "I already have an account" → "From the previous version", and the new version shows a **move code**: its network (DNA hash) and the account's new key there (`handshake-move:…`). That code, from an app the person installed themselves, is the only thing that points an account anywhere; nobody else can. In the old version, Account & recovery → New version reads it.
+Nothing is announced on the old network. The person installs the new version, chooses "I already have an account" → "From the previous version", and the new version shows a **move code**: its network (DNA hash) and the account's new key there (`handshake-upgrade:…`). That code, from an app the person installed themselves, is the only thing that points an account anywhere; nobody else can. In the old version, Account & recovery → New version reads it.
 
 ### 2. Leaving the old network
 
