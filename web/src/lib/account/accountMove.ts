@@ -33,7 +33,7 @@ export function readAccountCode(text: string): AgentPubKey | null {
   }
 }
 
-const MOVE_PREFIX = "handshake-move:";
+const MOVE_PREFIX = "handshake-upgrade:";
 /// Holochain's prefix for a DNA hash.
 const DNA_PREFIX = [0x84, 0x2d, 0x24];
 
