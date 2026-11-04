@@ -871,6 +871,7 @@ export const en = {
   "role.Merchant": "Store",
   "profile.about": "About",
   "profile.bio": "Bio",
+  "phone.invalid": "That isn't a full phone number. Include the area code, or + and the country code for a number abroad.",
   "profile.phone": "Phone",
   "profile.noBio": "No bio yet.",
   "profile.vehicle": "Vehicle",

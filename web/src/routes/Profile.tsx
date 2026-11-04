@@ -22,6 +22,7 @@ import { DEV_ADMIN_URL } from "../lib/network/devNode";
 import { MAX_LABEL_CHARS, MAX_LICENSE_PLATE_CHARS, MAX_NOTE_CHARS, MAX_PHONE_CHARS, MAX_VEHICLE_CHARS } from "../holochain/types";
 import { useT } from "../i18n";
 import { useAction } from "../lib/hooks/useAction";
+import { normalizePhone } from "../lib/phone";
 
 /// One identity, several hats: ratings and stats are shown per role (your
 /// driving) and per store (each restaurant you run), never blended into
@@ -89,12 +90,13 @@ export function ProfilePage() {
     setEditingVehicle((v) => !v);
   }
 
+  const phoneNumber = normalizePhone(draft.phone);
   function saveProfile() {
-    if (!profile || !profileActionHash) return;
+    if (!profile || !profileActionHash || phoneNumber === null) return;
     return action.run(async () => {
       const { roles, created_at } = profile;
       const { name, ...rest } = draft;
-      await updateProfile(profileActionHash, { display_name: name.trim(), roles, created_at, ...rest });
+      await updateProfile(profileActionHash, { display_name: name.trim(), roles, created_at, ...rest, phone: phoneNumber });
       await Promise.all([refreshProfile(), reloadPhone(), reloadName()]);
       setEditing(false);
     });
@@ -164,9 +166,10 @@ export function ProfilePage() {
               {publicFacing ? t("onboarding.namePublic") : t("onboarding.namePrivate")}
             </p>
             <Textarea maxLength={MAX_NOTE_CHARS} value={draft.bio} onChange={(e) => setDraft((d) => ({ ...d, bio: e.target.value }))} rows={2} placeholder={t("profile.bio")} />
-            <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder={t("profile.phone")} type="tel" />
+            <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder={t("profile.phone")} inputMode="tel" autoComplete="tel" aria-invalid={phoneNumber === null} type="tel" />
+            {phoneNumber === null && <p className="-mt-1 text-xs text-amber-600">{t("phone.invalid")}</p>}
             {action.error && <Notice>{action.error}</Notice>}
-            <Button loading={action.busy} onClick={saveProfile} className="py-2 text-xs">
+            <Button loading={action.busy} disabled={phoneNumber === null} onClick={saveProfile} className="py-2 text-xs">
               {t("common.save")}
             </Button>
           </motion.div>
