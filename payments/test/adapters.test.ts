@@ -7,11 +7,20 @@ import { squareProcessor, checkKeys as squareKeys } from "../src/adapters/square
 import { cloverProcessor, fingerprintOf } from "../src/adapters/clover.ts";
 import { Refused } from "../src/processor.ts";
 
+/// A request's body: JSON where it is, as sent otherwise.
+const parsed = (body: string) => {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return body;
+  }
+};
+
 /// A processor's API, answering each request with the next of `answers`.
 function api(answers: [number, unknown][]) {
   const sent: { url: string; method: string; headers: Record<string, string>; body: any }[] = [];
   const fetchImpl = (async (url: string, init: RequestInit) => {
-    sent.push({ url, method: init.method!, headers: init.headers as Record<string, string>, body: init.body ? JSON.parse(init.body as string) : null });
+    sent.push({ url, method: init.method!, headers: init.headers as Record<string, string>, body: init.body ? parsed(init.body as string) : null });
     const [status, json] = answers.shift() ?? [500, {}];
     return new Response(JSON.stringify(json), { status });
   }) as typeof fetch;
@@ -104,4 +113,47 @@ test("clover: one card's fingerprint is the same whichever charge it's on", () =
   assert.notEqual(fingerprintOf(card), fingerprintOf({ ...card, last4: "4243" }));
   assert.equal(fingerprintOf({ fingerprint: "clover-fp" }), "clover-fp");
   assert.equal(fingerprintOf({ last4: "4242" }), null);
+});
+
+const PAYPAL = { client_id: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", secret: "EfGhIjKlMnOpQrStUvWxYz0123456789AbCd" };
+const token = [200, { access_token: "A21", expires_in: 3600 }] as [number, unknown];
+const approved = (value = "25.00") => [200, { id: "5O190127TN364715T", intent: "AUTHORIZE", status: "APPROVED", payer: { payer_id: "PAYER1" }, purchase_units: [{ amount: { currency_code: "USD", value } }] }] as [number, unknown];
+
+test("paypal: the keys find their environment; an approved order is held only for exactly what's owed", async () => {
+  const { sent, fetchImpl } = api([
+    [401, {}],
+    token,
+    approved(),
+    [201, { payer: { payer_id: "PAYER1" }, purchase_units: [{ payments: { authorizations: [{ id: "0VF52814937998046", status: "CREATED" }] } }] }],
+  ]);
+  const paypal = (await import("../src/adapters/paypal.ts")).paypalProcessor(PAYPAL, "USD", fetchImpl);
+  const held = await paypal.authorize({ ...request, token: "5O190127TN364715T" });
+  assert.deepEqual(held, { status: "held", reference: "5O190127TN364715T_0VF52814937998046", fingerprint: "PAYER1", savedAs: null });
+  assert.match(sent[0].url, /^https:\/\/api-m\.paypal\.com\/v1\/oauth2\/token$/, "live first");
+  assert.match(sent[1].url, /^https:\/\/api-m\.sandbox\.paypal\.com\//, "then the sandbox");
+  assert.equal(sent[3].headers["PayPal-Request-Id"], request.idempotencyKey);
+});
+
+test("paypal: an order for any other amount, intent or state is declined, never held", async () => {
+  const { paypalProcessor } = await import("../src/adapters/paypal.ts");
+  for (const order of [approved("1.00"), [200, { ...(approved()[1] as object), intent: "CAPTURE" }], [200, { ...(approved()[1] as object), status: "CREATED" }], [404, {}]] as [number, unknown][]) {
+    const { sent, fetchImpl } = api([token, order]);
+    const result = await paypalProcessor(PAYPAL, "USD", fetchImpl).authorize({ ...request, token: "5O190127TN364715T" });
+    assert.deepEqual(result, { status: "declined", code: "Declined" });
+    assert.equal(sent.length, 2, "nothing authorized");
+  }
+  const { fetchImpl } = api([]);
+  assert.deepEqual(await paypalProcessor(PAYPAL, "USD", fetchImpl).authorize({ ...request, token: "not an order" }), { status: "declined", code: "Declined" });
+});
+
+test("paypal: what's due is captured as the final capture; nothing due is voided; a refund is of the capture", async () => {
+  const { paypalProcessor } = await import("../src/adapters/paypal.ts");
+  const { sent, fetchImpl } = api([token, [201, {}], [201, {}], [200, { purchase_units: [{ payments: { captures: [{ id: "CAP1", amount: { value: "18.00" } }] } }] }], [201, {}]]);
+  const paypal = paypalProcessor(PAYPAL, "USD", fetchImpl);
+  await paypal.capture("ORDER1_AUTH1", 1800, "k1");
+  assert.deepEqual([sent[1].url.endsWith("/v2/payments/authorizations/AUTH1/capture"), sent[1].body.amount.value, sent[1].body.final_capture], [true, "18.00", true]);
+  await paypal.capture("ORDER2_AUTH2", 0, "k2");
+  assert.ok(sent[2].url.endsWith("/v2/payments/authorizations/AUTH2/void"));
+  await paypal.refund("ORDER1_AUTH1", 1500, "k3");
+  assert.deepEqual([sent[4].url.endsWith("/v2/payments/captures/CAP1/refund"), sent[4].body.amount.value], [true, "15.00"]);
 });

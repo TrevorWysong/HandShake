@@ -277,7 +277,7 @@ export async function heldBy(payee: PlayerApp, order: Uint8Array, leg: PaymentLe
 /// does on its own, run here so a test can check what everyone paid. A
 /// store's food settles once the report window runs (`TEST_PROPERTIES`), so
 /// this waits for it.
-export async function settleAll(players: PlayerApp[], order: Uint8Array, rounds = 20): Promise<void> {
+export async function settleAll(players: PlayerApp[], order: Uint8Array, rounds = 60): Promise<void> {
   for (let round = 0; round < rounds; round++) {
     let done = 0;
     for (const player of players) {
@@ -287,7 +287,10 @@ export async function settleAll(players: PlayerApp[], order: Uint8Array, rounds 
       done += await payeeAgent(player).catch(() => 1);
     }
     await dhtSync(players, players[0].cells[0].cell_id[0]);
-    if (done === 0 && round > 2) return;
+    // Quiet isn't finished: the store's own app may not have decided the
+    // order yet. Done once every hold on it is settled, or nothing's held.
+    const unsettled = (await paymentsOn(players[0], order)).some((p) => p.charged === null);
+    if (done === 0 && round > 2 && !unsettled) return;
     await new Promise((r) => setTimeout(r, 1000));
   }
 }

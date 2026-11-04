@@ -18,13 +18,27 @@ import { useSession } from "../store/session";
 import { useTerms } from "../store/network";
 import { useT, type MessageKey } from "../i18n";
 
-/// Each processor a payee can connect: who it suits, where its dashboard
-/// shows the keys, and what to paste.
-const PROCESSORS: Record<Processor, { blurb: MessageKey; dashboard: string | null; how: MessageKey | null; fields: { name: string; label: MessageKey; secret: boolean; placeholder: string }[] }> = {
+/// One step of connecting a processor: what to do, and where, if there's
+/// a page to open.
+interface Step {
+  text: MessageKey;
+  link?: { href: string; label: MessageKey };
+}
+
+/// Each processor a payee can connect: who it suits, what it takes, how to
+/// find its keys step by step, and what to paste.
+const PROCESSORS: Record<Processor, { blurb: MessageKey; need: MessageKey | null; steps: Step[]; fields: { name: string; label: MessageKey; secret: boolean; placeholder: string }[] }> = {
   Stripe: {
     blurb: "payments.blurb.stripe",
-    dashboard: "https://dashboard.stripe.com/apikeys",
-    how: "payments.how.stripe",
+    need: "payments.need.stripe",
+    steps: [
+      { text: "payments.stripe.1", link: { href: "https://dashboard.stripe.com/register", label: "payments.stripe.1link" } },
+      { text: "payments.stripe.2" },
+      { text: "payments.stripe.3", link: { href: "https://dashboard.stripe.com/apikeys", label: "payments.stripe.3link" } },
+      { text: "payments.stripe.4" },
+      { text: "payments.stripe.5" },
+      { text: "payments.stripe.6" },
+    ],
     fields: [
       { name: "publishable_key", label: "payments.key.publishable", secret: false, placeholder: "pk_…" },
       { name: "restricted_key", label: "payments.key.restricted", secret: true, placeholder: "rk_…" },
@@ -32,8 +46,14 @@ const PROCESSORS: Record<Processor, { blurb: MessageKey; dashboard: string | nul
   },
   Square: {
     blurb: "payments.blurb.square",
-    dashboard: "https://developer.squareup.com/apps",
-    how: "payments.how.square",
+    need: "payments.need.square",
+    steps: [
+      { text: "payments.square.1", link: { href: "https://squareup.com/signup", label: "payments.square.1link" } },
+      { text: "payments.square.2", link: { href: "https://developer.squareup.com/apps", label: "payments.square.2link" } },
+      { text: "payments.square.3" },
+      { text: "payments.square.4" },
+      { text: "payments.square.5" },
+    ],
     fields: [
       { name: "application_id", label: "payments.key.applicationId", secret: false, placeholder: "sq0idp-…" },
       { name: "location_id", label: "payments.key.locationId", secret: false, placeholder: "L…" },
@@ -42,15 +62,35 @@ const PROCESSORS: Record<Processor, { blurb: MessageKey; dashboard: string | nul
   },
   Clover: {
     blurb: "payments.blurb.clover",
-    dashboard: "https://www.clover.com/dashboard",
-    how: "payments.how.clover",
+    need: "payments.need.clover",
+    steps: [
+      { text: "payments.clover.1", link: { href: "https://www.clover.com/dashboard", label: "payments.clover.1link" } },
+      { text: "payments.clover.2" },
+      { text: "payments.clover.3" },
+      { text: "payments.clover.4" },
+      { text: "payments.clover.5" },
+    ],
     fields: [
       { name: "merchant_id", label: "payments.key.merchantId", secret: false, placeholder: "" },
       { name: "public_key", label: "payments.key.publicKey", secret: false, placeholder: "" },
       { name: "private_token", label: "payments.key.privateToken", secret: true, placeholder: "" },
     ],
   },
-  Test: { blurb: "payments.blurb.test", dashboard: null, how: null, fields: [] },
+  PayPal: {
+    blurb: "payments.blurb.paypal",
+    need: "payments.need.paypal",
+    steps: [
+      { text: "payments.paypal.1", link: { href: "https://www.paypal.com/business", label: "payments.paypal.1link" } },
+      { text: "payments.paypal.2", link: { href: "https://developer.paypal.com/dashboard/applications", label: "payments.paypal.2link" } },
+      { text: "payments.paypal.3" },
+      { text: "payments.paypal.4" },
+    ],
+    fields: [
+      { name: "client_id", label: "payments.key.clientId", secret: false, placeholder: "A…" },
+      { name: "secret", label: "payments.key.secret", secret: true, placeholder: "E…" },
+    ],
+  },
+  Test: { blurb: "payments.blurb.test", need: null, steps: [], fields: [] },
 };
 
 export function Payments() {
@@ -152,7 +192,7 @@ function Connected({ connection, agent, onChange }: { connection: PaymentsConnec
 function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: () => void }) {
   const t = useT();
   const live = useTerms().live_payments;
-  const choices: Processor[] = live ? ["Stripe", "Square", "Clover"] : ["Stripe", "Square", "Clover", "Test"];
+  const choices: Processor[] = live ? ["Stripe", "Square", "Clover", "PayPal"] : ["Stripe", "Square", "Clover", "PayPal", "Test"];
   const [processor, setProcessor] = useState<Processor>(live ? "Stripe" : "Test");
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [shown, setShown] = useState<Record<string, boolean>>({});
@@ -172,16 +212,6 @@ function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: ()
       setKeys({});
       onConnected();
     });
-
-  const steps: ReactNode[] = chosen.how && chosen.dashboard
-    ? [
-        <a key="dashboard" href={chosen.dashboard} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 font-semibold text-handshake-600 dark:text-handshake-400">
-          {t("payments.openDashboard", { processor })} <ExternalLink size={12} />
-        </a>,
-        t(chosen.how),
-        t("payments.pasteBelow"),
-      ]
-    : [];
 
   return (
     <Card className="p-5">
@@ -207,12 +237,26 @@ function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: ()
         ))}
       </div>
 
-      {steps.length > 0 && (
-        <ol className="mt-5 flex flex-col gap-3">
-          {steps.map((step, i) => (
-            <li key={i} className="flex gap-3 text-sm text-ink-600 dark:text-ink-300">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-ink-100 text-xs font-bold text-ink-500 dark:bg-ink-800">{i + 1}</span>
-              <span className="pt-0.5 leading-relaxed">{step}</span>
+      {!live && processor !== "Test" && <Notice tone="warn" className="mt-4">{t("payments.testNetwork")}</Notice>}
+      {processor === "PayPal" && <Notice tone="warn" className="mt-4">{t("payments.paypalDesktop")}</Notice>}
+
+      {chosen.need && <p className="mt-5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{t(chosen.need)}</p>}
+
+      {chosen.steps.length > 0 && (
+        <ol className="relative mt-4 flex flex-col gap-4">
+          {/* The thread joining the steps. */}
+          <span aria-hidden className="absolute bottom-3 left-3 top-3 w-px bg-ink-100 dark:bg-ink-800" />
+          {chosen.steps.map((step, i) => (
+            <li key={step.text} className="relative flex gap-3">
+              <span className="relative z-10 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-handshake-500 text-[11px] font-bold text-white ring-4 ring-white dark:ring-ink-900">{i + 1}</span>
+              <div className="min-w-0 pt-0.5">
+                <p className="text-sm leading-relaxed text-ink-700 dark:text-ink-200">{t(step.text)}</p>
+                {step.link && (
+                  <a href={step.link.href} target="_blank" rel="noreferrer noopener" className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-handshake-50 px-3 py-1.5 text-xs font-semibold text-handshake-700 transition hover:bg-handshake-100 dark:bg-handshake-900/30 dark:text-handshake-300">
+                    {t(step.link.label)} <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
             </li>
           ))}
         </ol>

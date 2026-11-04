@@ -93,9 +93,12 @@ export function PaySheet({
       footer={
         <>
           {action.error && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
-          <Button className="w-full" loading={action.busy} disabled={useNew && !ready} onClick={pay}>
-            {t("pay.hold", { amount: formatCents(amountCents) })}
-          </Button>
+          {/* PayPal pays from its own buttons, in the form. */}
+          {!(useNew && form.paysItself) && (
+            <Button className="w-full" loading={action.busy} disabled={useNew && !ready} onClick={pay}>
+              {t("pay.hold", { amount: formatCents(amountCents) })}
+            </Button>
+          )}
           <p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">
             <Lock size={11} className="-mt-0.5 mr-1 inline" />
             {t("pay.heldNotCharged", { payee })}
@@ -128,7 +131,7 @@ export function PaySheet({
             <div ref={mountForm} />
             {!ready && <Skeleton className="absolute inset-0 rounded-xl" />}
           </div>
-          {offerToSave && (
+          {offerToSave && !form.paysItself && (
             <label className="mt-4 flex items-start justify-between gap-3 text-sm">
               <span>
                 <span className="font-semibold text-ink-800 dark:text-ink-100">{t("pay.remember", { payee })}</span>

@@ -40,7 +40,7 @@ await runScenario(async (scenario) => {
   await assert.rejects(profile({ public_key: "sk_test_abcdefghij" }), /publishable key starts pk_test_/, "a secret key is never published");
   await assert.rejects(profile({ processor: "Square", public_key: "sandbox-sq0idb-abcdefghij", account: "L1234567" }), /names its country/, "Square's names its country");
   await assert.rejects(profile({ country: "us" }), /two capital letters/);
-  await assert.rejects(profile({ account: "acct_1" }), /Stripe names none/);
+  await assert.rejects(profile({ account: "acct_1" }), /Stripe and PayPal name none/);
   await call(store, "dispatch")("set_payment_profile", { processor: "Test", public_key: "test", account: "", live: false, country: "" });
   await sync(store);
   const published = await retryUntil(() => call(customer, "dispatch")<{ processor: string } | null>("payment_profile_of", store.agentPubKey), (p) => p !== null);

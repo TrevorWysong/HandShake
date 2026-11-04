@@ -60,7 +60,7 @@ test("nothing connects or disconnects without the person's own yes", async () =>
 });
 
 test("what the app passes is checked as untrusted", () => {
-  assert.throws(() => checkKeysInput("PayPal", {}), Refused);
+  assert.throws(() => checkKeysInput("Venmo", {}), Refused);
   assert.throws(() => checkKeysInput("Stripe", "pk_test"), Refused);
   assert.throws(() => checkKeysInput("toString", {}), Refused);
   assert.throws(() => checkKeysInput("Stripe", { access_token: "a" }), Refused, "another processor's field");
