@@ -52,6 +52,10 @@ pub fn create_recurring_template(input: CreateRecurringTemplateInput) -> ExternR
     if input.dropoff_preference == DropoffPreference::LeaveAtDoor && !input.door_risk_accepted {
         return Err(guest("To have these orders left at your door, accept that each is delivered once it's left there."));
     }
+    let (_, store) = crate::stores::current_catalog_version(&input.catalog_ref)?;
+    if input.max_delivery_fee.is_some_and(|cap| cap > store.max_delivery_fee) {
+        return Err(guest("That's more than this store allows for delivery. Choose a lower most you'll pay."));
+    }
     let next_run_at = next_occurrence(&input.recurrence, &input.time_zone, sys_time()?.as_micros());
     crate::orders::check_note(&input.dropoff_notes)?;
     crate::orders::check_line2(&input.dropoff_line2)?;
@@ -202,11 +206,14 @@ fn fire(template: &RecurringOrderTemplate, details: &TemplateDetails) -> ExternR
         items,
         order_total: priced.order_total,
         dropoff: details.dropoff,
-        max_delivery_fee: template.max_delivery_fee,
+        // Within the store's limits as they are now -- a store may have
+        // lowered them since -- rather than holding up the standing order:
+        // a lower cap only ever costs the customer less.
+        max_delivery_fee: template.max_delivery_fee.map(|cap| cap.min(store.max_delivery_fee)),
         kitchen_notes: details.kitchen_notes.clone(),
         dropoff_notes: details.dropoff_notes.clone(),
         dropoff_line2: details.dropoff_line2.clone(),
-        tip_cents: template.tip_cents,
+        tip_cents: template.tip_cents.min(store.max_tip(priced.order_total)),
         requested_delivery_time: None,
         promo_code_ref: promo,
         dropoff_preference: template.dropoff_preference,

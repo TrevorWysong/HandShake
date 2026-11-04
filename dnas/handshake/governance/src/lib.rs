@@ -501,8 +501,11 @@ pub fn report_window() -> Duration {
 
 /// The longest a report window may run, whatever a network sets: the store
 /// captures the customer's payment once it closes, and a card authorization
-/// lasts about seven days -- this leaves days to spare.
-const MAX_REPORT_WINDOW_SECS: u64 = 3 * 86_400;
+/// lasts about seven days from when it's held -- which, for an order
+/// scheduled the most ahead it may be (five days), is when it was
+/// scheduled. Five days, then this, then the delivery itself, leaves most of
+/// a day to spare.
+const MAX_REPORT_WINDOW_SECS: u64 = 86_400;
 
 /// However late a report comes, the store has at least this long to answer
 /// it before its app settles the order -- never longer than the report
