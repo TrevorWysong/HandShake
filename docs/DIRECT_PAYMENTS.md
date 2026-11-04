@@ -59,7 +59,7 @@ It runs only on a payee's device (stores and drivers) and holds their processor 
 - **Idempotency:** every processor call carries a key derived from the network record it answers (`idempotencyKey`), so a round cut short by a crash and run again moves money once. Adapters also treat "already done, for the same amount" as done.
 - **Card testing:** at most `MAX_ATTEMPTS_PER_ORDER` per order, and `MAX_ATTEMPTS_PER_PAYER_HOUR` per payer, counted per offer before the processor sees it.
 - **First-order deals:** when an order takes a store's first-order deal (`newcomer_deal`), a card fingerprint that already took it on another order is released at once and declined `NotEligible`. On the network a first order is one per account; the fingerprint makes it one per card too. The fingerprints are kept in the agent's state on the store's device.
-- **The app's surface:** four commands, `status`, `connect`, `disconnect`, `wake` (`window.__HANDSHAKE_PAYMENTS__`). None takes an amount or names a payment, so script in the app's pages can't move money. Keys from the app are checked as untrusted: only the processor's own field names, each a short string.
+- **The app's surface:** four commands, `status`, `connect`, `disconnect`, `wake` (`window.__HANDSHAKE_PAYMENTS__`). None takes an amount or names a payment, so script in the app's pages can't move money. Connecting or disconnecting also waits for the person's confirmation outside the page (a native dialog on desktop), so script can't redirect payments to another account either. Keys from the app are checked as untrusted: only the processor's own field names, each a short string.
 - **Keys:** desktop keeps them sealed with the OS keystore (Electron `safeStorage`; refused where there's none, including Linux's plain-text fallback). Dev keeps them in owner-only files under `.dev/payments/`. Never on the network, never in the app's pages.
 
 | Processor | Keys | Hold → capture → release | Status |
@@ -92,7 +92,7 @@ Timing: an authorization lasts about seven days, so a scheduled order is at most
 | Payee | charge a saved card beyond what's agreed | saving is opt-in per payer and payee, with consent text; every rightful charge has a signed record, so anything else is a dispute the payer wins |
 | Anyone | write a payment record for someone else's order or leg | validation checks the author against the order's parties; payment links only by their author, under their own order |
 | Anyone | read a card token or a bank challenge | sealed to the counterparty |
-| Script in the app | move money | the app has no amount, capture or refund commands; the agent acts only on `payments_due` |
+| Script in the app | move money, or point a store's payments at another account | the app has no amount, capture or refund commands, and the agent acts only on `payments_due`; connecting or disconnecting an account needs the person's yes in a native dialog the page can't draw or click |
 | A stolen computer | use the keys | sealed by the OS keystore; Stripe keys are restricted; keys can be revoked from the processor's dashboard |
 | A crash or retry | charge twice | idempotency keys, one hold per leg, one settlement per hold |
 | An arbiter's award | go unpaid | the store's agent refunds it (`PaymentRefund`); it's no longer enforced centrally, but the public ruling is the customer's evidence for a chargeback |

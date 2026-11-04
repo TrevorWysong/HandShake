@@ -10,7 +10,7 @@ import { memoryCredentials } from "../src/credentials.ts";
 import { memoryStore } from "../src/state.ts";
 import { Refused } from "../src/processor.ts";
 
-function setup(live_payments = false) {
+function setup(live_payments = false, answer = true) {
   const calls: { fn: string; payload: unknown }[] = [];
   const dispatch = async <T,>(fn: string, payload: unknown): Promise<T> => {
     calls.push({ fn, payload });
@@ -19,8 +19,10 @@ function setup(live_payments = false) {
     return null as T;
   };
   const credentials = memoryCredentials();
-  const agent = createAgent({ dispatch, credentials, state: memoryStore(), processorFor, roundMs: 60_000 });
-  return { agent, calls, credentials };
+  const asked: unknown[] = [];
+  const confirm = async (change: unknown) => (asked.push(change), answer);
+  const agent = createAgent({ dispatch, credentials, state: memoryStore(), processorFor, confirm, roundMs: 60_000 });
+  return { agent, calls, credentials, asked };
 }
 
 test("connecting checks the account, keeps the keys, and publishes only their public half", async () => {
@@ -43,6 +45,17 @@ test("a live network takes no test account; nothing's kept or published when it'
   await assert.rejects(agent.connect("Stripe", { publishable_key: "pk_test_abcdefghijklmnop", restricted_key: "sk_test_abcdefghijklmnop" }), /full secret key/);
   assert.equal(await credentials.load(), null);
   assert.ok(!calls.some((c) => c.fn === "set_payment_profile"));
+  agent.stop();
+});
+
+test("nothing connects or disconnects without the person's own yes", async () => {
+  const { agent, calls, credentials, asked } = setup(false, false);
+  await assert.rejects(agent.connect("Test", {}), /didn't confirm/);
+  assert.equal(asked.length, 1, "asked, with the account found");
+  assert.equal(await credentials.load(), null, "and nothing kept");
+  assert.ok(!calls.some((c) => c.fn === "set_payment_profile"), "nor published");
+  await assert.rejects(agent.disconnect(), /didn't confirm/);
+  assert.ok(!calls.some((c) => c.fn === "clear_payment_profile"));
   agent.stop();
 });
 
