@@ -1666,6 +1666,18 @@ export interface MerchantCatalog {
    */
   delivery_subsidy_percent: number;
   /**
+   * The most a delivery fee may be on the store's orders, in minor units:
+   * a customer's cap (`max_delivery_fee`), and so any bid, is at most
+   * this, and so is their tip. The store's card pays its driver the fee
+   * and the tip, passing on the customer's part: this bounds what that
+   * can cost it -- a customer and a driver can't agree a fee of any size
+   * for the store to pay its share of, nor pass a tip of any size
+   * through it on a card whose charge is later reversed. A new store
+   * starts at the network's default
+   * (`handshake_governance::default_max_delivery_fee`).
+   */
+  max_delivery_fee: number;
+  /**
    * Whether the store's conductor accepts new orders as they arrive
    * (still declining any priced from an outdated menu), rather than
    * waiting for someone to tap Accept.

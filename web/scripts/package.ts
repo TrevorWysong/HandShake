@@ -128,7 +128,9 @@ try {
   // src/holochain/host.ts), and none of the dev-only public files.
   step("Building the UI", "npm", ["run", "build"], path.join(REPO, "web"));
   const dist = path.join(REPO, "web/dist");
-  for (const devOnly of ["handshake.happ", "sw.js"]) rmSync(path.join(dist, devOnly), { force: true });
+  // The dev payment agents' token and the dev network's settings are this
+  // machine's alone: never shipped, whatever's running while it builds.
+  for (const devOnly of ["handshake.happ", "sw.js", "dev-network.json", "dev-payments.json"]) rmSync(path.join(dist, devOnly), { force: true });
   step("Zipping the UI", "zip", ["-q", "-r", path.join(work, "ui.zip"), "."], dist);
 
   writeFileSync(path.join(work, "web-happ.yaml"), JSON.stringify({ manifest_version: "0", name: "handshake", ui: { path: "./ui.zip" }, happ: { path: "./handshake.happ" } }, null, 2));

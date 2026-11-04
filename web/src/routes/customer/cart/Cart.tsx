@@ -93,6 +93,11 @@ export function Cart() {
   const subtotalCents = cart.total();
   const tipCents = tipFor(subtotalCents, options.tipPercent, options.customTip);
   const maxFeeCents = feeCapCents(options.feePreset, options.customFee);
+  // The store's most a delivery fee, or a tip, may be: above it, an order
+  // is refused.
+  const feeLimitCents = storeInfo?.maxDeliveryFeeCents ?? null;
+  const overFeeLimit = feeLimitCents !== null && maxFeeCents > feeLimitCents;
+  const overTipLimit = feeLimitCents !== null && tipCents > feeLimitCents;
   const taxIncluded = storeInfo?.pricesIncludeTax ?? false;
   const taxRates = storeInfo?.taxRates ?? [];
   const price = priceCheckout({
@@ -152,7 +157,7 @@ export function Cart() {
     (ageRestricted && !ageConfirmed) ||
     takesNoCards ||
     (!ownStore && storeProfile === undefined) ||
-    (delivery && (price.discountedSubtotalCents === 0 || maxFeeCents <= 0 || scheduleInvalid || (dropoffPreference === "LeaveAtDoor" && !options.doorRiskAccepted)));
+    (delivery && (price.discountedSubtotalCents === 0 || maxFeeCents <= 0 || overFeeLimit || overTipLimit || scheduleInvalid || (dropoffPreference === "LeaveAtDoor" && !options.doorRiskAccepted)));
 
   // An order is placed once, with its card: it stays busy as the page
   // moves on to it, where its payment is followed.
@@ -290,10 +295,12 @@ export function Cart() {
                   checkout the most delivery can cost. */}
               <Section title={t("cart.feeCap")}>
                 <p className="mb-2 text-xs text-ink-400">{t("cart.feeCapDetail")}</p>
-                <AmountChoice presets={options.feePresets} label={formatCents} preset={options.feePreset} custom={options.customFee} onPreset={options.setFeePreset} onCustom={options.setCustomFee} placeholder={t("cart.custom")} />
+                <AmountChoice presets={options.feePresets.filter((fee) => feeLimitCents === null || fee <= feeLimitCents)} label={formatCents} preset={options.feePreset} custom={options.customFee} onPreset={options.setFeePreset} onCustom={options.setCustomFee} placeholder={t("cart.custom")} />
+                {overFeeLimit && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{t("cart.feeCapOver", { amount: formatCents(feeLimitCents ?? 0) })}</p>}
               </Section>
               <Section title={t("cart.tipTitle")}>
                 <AmountChoice presets={TIP_PRESETS_PERCENT} label={(p) => (p === 0 ? t("cart.noTip") : `${p}%`)} preset={options.tipPercent} custom={options.customTip} onPreset={options.setTipPercent} onCustom={options.setCustomTip} placeholder={t("cart.custom")} />
+                {overTipLimit && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{t("cart.tipOver", { amount: formatCents(feeLimitCents ?? 0) })}</p>}
               </Section>
             </>
           )}

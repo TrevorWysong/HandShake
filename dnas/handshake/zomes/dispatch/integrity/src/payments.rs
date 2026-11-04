@@ -245,8 +245,11 @@ pub fn order_of_payment(record: &Record) -> ExternResult<Option<ActionHash>> {
     Ok(decode::<PaymentOffer>(&must_get_valid_record(offer_ref)?).map(|offer| offer.order))
 }
 
+/// A hold, its payee, its offer and its leg.
+type Held = (PaymentHold, AgentPubKey, PaymentOffer, LegContext);
+
 /// A hold, by its payee, with its offer and leg.
-fn hold_of(hold_ref: &ActionHash) -> ExternResult<Result<(PaymentHold, AgentPubKey, PaymentOffer, LegContext), &'static str>> {
+fn hold_of(hold_ref: &ActionHash) -> ExternResult<Result<Held, &'static str>> {
     let record = must_get_valid_record(hold_ref.clone())?;
     let Some(hold) = decode::<PaymentHold>(&record) else { return Ok(Err("that isn't a payment hold")) };
     let (offer, _, context) = match offer_of(&hold.offer)? {

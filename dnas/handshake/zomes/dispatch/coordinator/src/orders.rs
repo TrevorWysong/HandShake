@@ -272,6 +272,12 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
     // and its share of the delivery fee, which this order records as the
     // split it was placed under.
     let (catalog_version, catalog) = current_catalog_version(&input.catalog_ref)?;
+    if input.max_delivery_fee.is_some_and(|cap| cap > catalog.max_delivery_fee) {
+        return Err(guest("That's more than this store allows for delivery. Choose a lower most you'll pay."));
+    }
+    if input.tip_cents > catalog.max_delivery_fee {
+        return Err(guest("That tip is more than this store passes on to a driver. Choose a smaller one."));
+    }
     // The store's rewards program, and any reward chosen, priced in.
     let joining = crate::pricing::joining(&input.catalog_ref, input.reward)?;
     let reward = joining.as_ref().and_then(|j| j.reward.as_ref().map(|(_, benefit)| benefit));

@@ -283,6 +283,11 @@ export async function setTaxSettings(originalAction: ActionHash, settings: { tax
   return callZome("catalog", "set_tax_settings", { original_action: originalAction, ...settings });
 }
 
+/// The most a delivery fee may be on the store's orders.
+export async function setMaxDeliveryFee(originalAction: ActionHash, maxCents: number): Promise<HcRecord> {
+  return callZome("catalog", "set_max_delivery_fee", { original_action: originalAction, max_cents: maxCents });
+}
+
 export async function setMinimumOrder(originalAction: ActionHash, minCents: number | null): Promise<HcRecord> {
   return callZome("catalog", "set_minimum_order", { original_action: originalAction, min_cents: minCents });
 }
