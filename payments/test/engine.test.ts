@@ -4,7 +4,7 @@
 // payer shouldn't get (card testing, a first-order deal twice on one card).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Engine, MAX_ATTEMPTS_PER_ORDER, idempotencyKey } from "../src/engine.ts";
+import { Engine, MAX_ATTEMPTS_PER_ORDER, Refused, Retry, idempotencyKey } from "../src/engine.ts";
 import { testProcessor } from "../src/adapters/test.ts";
 import { memoryStore } from "../src/state.ts";
 import type { PaymentDue } from "../src/types.ts";
@@ -187,6 +187,22 @@ test("an award is refunded once, from what was charged", async () => {
   z.due = [refund];
   await engine.round();
   assert.equal(processor.held.get(reference)?.refunded, 1500, "refunded once, though recorded on the second round");
+});
+
+test("a processor refusing an authorization for good is the payer's to hear about; a passing failure is tried again", async () => {
+  const z = zome();
+  let calls = 0;
+  const failing = { ...testProcessor("USD"), authorize: async () => {
+    calls += 1;
+    if (calls === 1) throw new Retry("busy");
+    throw new Refused("the key was revoked");
+  } };
+  const engine = new Engine({ dispatch: z.dispatch, processor: failing, state: memoryStore(), currency: "USD" });
+  z.due = [authorize(10, 50)];
+  await engine.round();
+  assert.equal(z.recorded("record_declined").length, 0, "busy: left for the next round");
+  await engine.round();
+  assert.deepEqual(z.recorded("record_declined").map((d) => d.code), ["Unavailable"]);
 });
 
 test("rounds never overlap", async () => {

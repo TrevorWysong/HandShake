@@ -41,7 +41,7 @@ export function testProcessor(currency: string): Processor & { held: Map<string,
   return {
     held,
     async connect(): Promise<Connection> {
-      return { account: "Test account", live: false, currency, publicKey: "test", publicAccount: "" };
+      return { account: "Test account", live: false, currency, publicKey: "test", publicAccount: "", country: "" };
     },
     async authorize(request: AuthorizeRequest) {
       return once(request.idempotencyKey, "authorize", (): Authorization => {

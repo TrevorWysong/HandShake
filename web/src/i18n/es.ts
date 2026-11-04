@@ -895,6 +895,8 @@ export const es: Catalog = {
   "pay.setUpToBePaid": "Configura los cobros con tarjeta en Pagos, para que la tienda pueda pagarte esta entrega.",
   "pay.yourPayHeld": "Tu pago está retenido en la tarjeta de la tienda.",
   "pay.yourPayWaiting": "Esperando a que la tienda retenga tu pago.",
+  "pay.applePay": "Pagar con Apple Pay",
+  "pay.orCard": "o paga con tarjeta",
   "pay.declined.Declined": "Tu tarjeta fue rechazada. Prueba con otra.",
   "pay.declined.InsufficientFunds": "Tu tarjeta no tiene fondos suficientes para esto. Prueba con otra.",
   "pay.declined.ActionFailed": "No se completó la comprobación de tu banco. Vuelve a intentarlo o usa otra tarjeta.",

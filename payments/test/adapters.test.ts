@@ -53,6 +53,21 @@ test("square: what's due is completed -- lowered first when it's less -- and not
   assert.equal(sent.length, 6, "already completed for that amount: done");
 });
 
+test("square: a location says its country; a wallet's card isn't kept on file, and a card Square won't keep doesn't undo its hold", async () => {
+  const { fetchImpl } = api([[200, { location: { id: "L1234567", status: "ACTIVE", business_name: "Mo's", currency: "USD", country: "US" } }]]);
+  const connection = await squareProcessor(SQUARE, "USD", fetchImpl).connect();
+  assert.deepEqual([connection.country, connection.publicAccount], ["US", "L1234567"]);
+  await assert.rejects(squareProcessor(SQUARE, "USD", api([[200, { location: { status: "ACTIVE" } }]]).fetchImpl).connect(), /which country/);
+
+  const wallet = api([[200, { payment: { id: "p1", status: "APPROVED" } }]]);
+  const held = await squareProcessor(SQUARE, "USD", wallet.fetchImpl).authorize({ ...request, token: JSON.stringify({ nonce: "wnon:1", verification: null, wallet: true }), save: true });
+  assert.deepEqual([held.status, held.status === "held" && held.savedAs, wallet.sent.length], ["held", null, 1], "held, and nothing more asked of Square");
+
+  const unkept = api([[200, { payment: { id: "p2", status: "APPROVED" } }], [400, { errors: [{ code: "BAD_REQUEST" }] }]]);
+  const still = await squareProcessor(SQUARE, "USD", unkept.fetchImpl).authorize({ ...request, save: true });
+  assert.deepEqual([still.status, still.status === "held" && still.savedAs], ["held", null]);
+});
+
 test("square: a declined card reads as the network's code", async () => {
   const { fetchImpl } = api([[400, { errors: [{ category: "PAYMENT_METHOD_ERROR", code: "INSUFFICIENT_FUNDS" }] }]]);
   assert.deepEqual(await squareProcessor(SQUARE, "USD", fetchImpl).authorize(request), { status: "declined", code: "InsufficientFunds" });

@@ -76,7 +76,7 @@ export function PaymentStatus({
   const completeChallenge = (challenge: string, actionRef: ActionHash) =>
     action.run(async () => {
       if (!profile) return;
-      await cardFormFor(profile, { amountCents, currency }).complete(challenge);
+      await cardFormFor(profile, { amountCents, currency, label: payee }).complete(challenge);
       await offerPayment(order, leg, { token: null, save: false }, actionRef);
       await reload();
     });

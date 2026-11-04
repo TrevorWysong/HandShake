@@ -100,7 +100,7 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
   return {
     async connect(): Promise<Connection> {
       await environment();
-      return { account: found.name ?? "Clover merchant", live, currency: found.defaultCurrency ?? currency, publicKey: keys.public_key.trim(), publicAccount: merchant };
+      return { account: found.name ?? "Clover merchant", live, currency: found.defaultCurrency ?? currency, publicKey: keys.public_key.trim(), publicAccount: merchant, country: "" };
     },
 
     async authorize(request: AuthorizeRequest): Promise<Authorization> {

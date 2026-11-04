@@ -41,6 +41,18 @@ export function idempotencyKey(what: string, about: Uint8Array, ...more: (string
   return createHash("sha256").update(`handshake:${what}:`).update(about).update(more.join(":")).digest("hex").slice(0, 40);
 }
 
+/// An authorization's outcome -- what the payee's processor refused, for
+/// good, is the payer's to hear about as unavailable, rather than an offer
+/// left unanswered; what may pass on its own is tried again next round.
+async function authorizing(attempt: () => Promise<Authorization>): Promise<Authorization> {
+  try {
+    return await attempt();
+  } catch (err) {
+    if (err instanceof Refused) return { status: "declined", code: "Unavailable" };
+    throw err;
+  }
+}
+
 /// What the processor sees of an order: a tag that names nothing.
 export const orderTag = (order: ActionHash) => `hs_${createHash("sha256").update("handshake:order:").update(order).digest("hex").slice(0, 16)}`;
 
@@ -91,7 +103,7 @@ export class Engine {
     if (due.resumes) {
       const reference = state.challenged[hex(due.resumes)];
       if (!reference) return decline("ActionFailed");
-      result = await processor.resume(reference, offerKey);
+      result = await authorizing(() => processor.resume(reference, offerKey));
     } else {
       // Attempts, counted before the processor sees any: a retry of the
       // same offer is the same attempt.
@@ -106,7 +118,7 @@ export class Engine {
       }
       const savedAs = due.token === null ? (state.saved[payer] ?? null) : null;
       if (due.token === null && !savedAs) return decline("NoSavedCard");
-      result = await processor.authorize({ amount: due.amount, currency, token: due.token, savedAs, save: due.save, tag: orderTag(due.order), idempotencyKey: offerKey });
+      result = await authorizing(() => processor.authorize({ amount: due.amount, currency, token: due.token, savedAs, save: due.save, tag: orderTag(due.order), idempotencyKey: offerKey }));
     }
 
     if (result.status === "declined") return decline(result.code);
