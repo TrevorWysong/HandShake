@@ -49,6 +49,12 @@ await runScenario(async (scenario) => {
     "an hour of 24 must be rejected",
   );
   console.log("[PASS] out-of-range recurrence values are rejected");
+  await assert.rejects(
+    dispatchOf(customer)("create_recurring_template", { ...baseInput, max_delivery_fee: 2_501, recurrence: { Daily: { hour: 9, minute: 0 } } }),
+    /more than this store allows for delivery/,
+    "a standing order's fee cap is within its store's most, as a one-off order's is",
+  );
+  console.log("[PASS] a standing order past the store's most delivery fee is refused when it's set up");
 
   const templateRecord = await dispatchOf(customer)<HcRecord>("create_recurring_template", {
     ...baseInput,

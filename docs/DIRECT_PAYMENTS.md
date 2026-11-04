@@ -78,7 +78,7 @@ Still to verify against the processors' sandboxes: Square and Clover end to end;
 
 **Ways to pay.** Cards everywhere. Apple Pay and Google Pay with Stripe (inside its Payment Element) and Square (its own wallet buttons, using the account's `country` from its payment profile), wherever the device and the app's domain allow them: a browser that supports them, on a domain registered with the payee's processor. Inside the desktop app (Electron) they don't appear, and cards still work. Clover is cards only. Bank debits, buy-now-pay-later and the like are left out on purpose: they can't be held and released, which every leg depends on. A payer's token is only ever a fresh one from the card form: each agent refuses anything shaped like a saved card's id, since the processors would accept one in its place. A wallet's card is never kept on file with Square; asking to keep one is ignored, and a card a processor won't keep never undoes its hold.
 
-Timing: an authorization lasts about seven days, so a scheduled order is at most five days ahead, and the report window is capped at three days.
+Timing: an authorization lasts about seven days from when it's held, and a scheduled order's is held when it's scheduled. So a scheduled order is at most five days ahead, and the report window is capped at one day: five days, one more to report, and the delivery itself still fit.
 
 ## Running it
 
