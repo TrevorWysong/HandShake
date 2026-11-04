@@ -203,6 +203,13 @@ Cancelling is free until the customer's app has seen the store start, and the ap
 | Square and Clover take a saved card's id where a fresh token goes, and the agent passed the payer's token on as given | Medium | Each agent accepts only a fresh token's shape from the card form; saved cards are named by the agent alone |
 | A driver's app could settle its pay as soon as the order showed delivered, before the store's delivered decision -- the basis of its pay -- reached it, settling for nothing, once and for all; and an order its store decided never arrived never counted as over, so the driver's collateral never paid the store for the food | High (money lost) | A delivery that arrived, or was said not to, is over for settling exactly when its store has decided which |
 
+Second review of the same day:
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| A store pays its share of whatever delivery fee its customer's cap allows, and the customer set the cap: a customer and a driver working together could agree a fee of any size, and the store's card paid the driver its share (half, by default) -- automatically, where it had saved its card with that driver | High (money lost) | Each store sets the most a delivery fee may be (`max_delivery_fee`, the network's default $25); validation refuses an order whose cap is above the version of the store it cites, and the store's acceptance refuses one citing a higher most than today's |
+| The dev payment agents' session token (`web/public/dev-payments.json`) was copied into the packaged app if they were running while it built | Low | Packaging removes every dev-only file from the build |
+
 ## Store contact details and pickup chat
 
 - **Contact links can only be what they say.** A store's email must be a plain address (letters, digits and `._+-'`, so a `mailto:` link can't carry `?cc=` or anything else), and its website an `http(s)://` address with a real host. No `user@` before the host, which could dress one site up as another. No characters that could break out of a link. Validation holds every peer to this (`handshake_integrity_support::contact`). The app builds every link only from details that pass (`web/src/lib/storefront/contact.ts`), a phone link from its digits alone, and directions from the store's coordinates.

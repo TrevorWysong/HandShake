@@ -3,7 +3,10 @@
 // validation refuses an order a modified client writes anyway -- every
 // order cites the store version it was placed under (`catalog_version`),
 // and its public drop-off area must lie within that version's radius, its
-// fee split be that version's, and its sealed notes stay small.
+// fee split be that version's, its fee cap and tip within that version's
+// most -- so a customer and a driver can't agree a fee of any size for the
+// store to pay its share of, or pass any tip through its card -- and its
+// sealed notes stay small.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
@@ -32,6 +35,7 @@ await runScenario(async (scenario) => {
     max_delivery_radius_km: 5,
   });
   const catalogRef = actionHash(catalogRecord);
+  assert.equal(decodeEntry<{ max_delivery_fee: number }>(catalogRecord).max_delivery_fee, 2_500, "a new store's most fee is the network's default");
   assert.equal(decodeEntry<{ max_delivery_radius_km: number }>(catalogRecord).max_delivery_radius_km, 5);
   console.log("[PASS] publish_catalog accepts and stores a custom max_delivery_radius_km");
 
@@ -70,6 +74,33 @@ await runScenario(async (scenario) => {
     "a dropoff far past the merchant's own delivery radius must be rejected",
   );
   console.log("[PASS] request_delivery rejects a dropoff outside the merchant's delivery radius");
+
+  await assert.rejects(
+    dispatchOf(customer)("request_delivery", {
+      merchant: merchant.agentPubKey,
+      catalog_ref: catalogRef,
+      items: [{ item_ref: menuItemRef, quantity: 1 }],
+      order_total: 1250,
+      dropoff: ST_PETE,
+      max_delivery_fee: 2_501,
+    }),
+    /more than this store allows for delivery/,
+    "a fee cap past the store's most is refused",
+  );
+  await assert.rejects(
+    dispatchOf(customer)("request_delivery", {
+      merchant: merchant.agentPubKey,
+      catalog_ref: catalogRef,
+      items: [{ item_ref: menuItemRef, quantity: 1 }],
+      order_total: 1250,
+      dropoff: ST_PETE,
+      max_delivery_fee: 500,
+      tip_cents: 2_501,
+    }),
+    /more than this store passes on to a driver/,
+    "so is a tip past it",
+  );
+  console.log("[PASS] request_delivery refuses a fee cap or a tip past the store's most");
 
   // Same enforcement point also covers a goodie-bag delivery claim
   // finalizing into a DeliveryOrder -- bag deliveries flow through this
@@ -127,9 +158,11 @@ await runScenario(async (scenario) => {
   await assert.rejects(forged({ dropoff_geohash: honest.dropoff_geohash.slice(0, 4) }), /geohash of 6 characters/, "nor a vaguer area, which could stretch the radius");
   await assert.rejects(forged({ catalog_version: actionHash(defaultCatalogRecord) }), /version of the order's own store/, "an order cites its own store's terms, not another's");
   await assert.rejects(forged({ delivery_subsidy_percent: 0 }), /fee split is its store's/, "nor a fee split the store never set");
+  await assert.rejects(forged({ tip_cents: 1_000_000 }), /fee and tip are each at most its store's most/, "nor a tip of any size passed through the store's card");
+  await assert.rejects(forged({ max_delivery_fee: 1_000_000 }), /fee and tip are each at most its store's most/, "nor a fee of any size for the store to pay its share of");
   await assert.rejects(forged({ kitchen_note_bytes: limits.MAX_SEALED_BYTES + 1 }), /kitchen_note is too large/, "a sealed note stays small");
   assert.ok(await forged({}), "the honest order's own copy is still valid");
-  console.log("[PASS] validation holds every order to its store's radius, fee split and size limits");
+  console.log("[PASS] validation holds every order to its store's radius, fee split, most fee and size limits");
 
   console.log("[PASS] delivery radius enforcement test complete");
 });

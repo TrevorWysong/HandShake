@@ -53,6 +53,22 @@ pub fn set_leave_at_door_limit(input: SetLeaveAtDoorLimitInput) -> ExternResult<
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct SetMaxDeliveryFeeInput {
+    pub original_action: ActionHash,
+    pub max_cents: u64,
+}
+
+/// The most a delivery fee may be on the store's orders -- see
+/// `MerchantCatalog::max_delivery_fee`.
+#[hdk_extern]
+pub fn set_max_delivery_fee(input: SetMaxDeliveryFeeInput) -> ExternResult<Record> {
+    let (current, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(input.original_action, "MerchantCatalog")?;
+    catalog.max_delivery_fee = input.max_cents;
+    let updated = update_version(&current, &EntryTypes::MerchantCatalog(catalog), LinkTypes::Version)?;
+    written(updated)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SetMinimumOrderInput {
     pub original_action: ActionHash,
     /// `None` for any size.

@@ -116,6 +116,7 @@ mod tests {
             "is_open": true,
             "prep_minutes": 15,
             "delivery_subsidy_percent": 50,
+            "max_delivery_fee": 2500,
             "max_delivery_radius_km": 8.0,
         }))
         .unwrap();

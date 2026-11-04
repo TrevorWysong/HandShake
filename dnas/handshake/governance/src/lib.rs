@@ -66,6 +66,8 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub default_delivery_subsidy_percent: Option<u8>,
     #[serde(default)]
+    pub default_max_delivery_fee: Option<u64>,
+    #[serde(default)]
     pub max_delivery_radius_km: Option<f64>,
     #[serde(default)]
     pub max_concurrent_deliveries: Option<u32>,
@@ -277,7 +279,7 @@ pub fn currency() -> String {
 
 /// The delivery fee caps checkout suggests, in minor units of the network's
 /// currency -- set alongside `currency`. Suggestions only: a customer can
-/// enter any cap.
+/// enter any cap up to their store's (`MerchantCatalog::max_delivery_fee`).
 pub fn suggested_delivery_fees() -> Vec<u64> {
     setting(|p| p.suggested_delivery_fees.filter(|fees| !fees.is_empty()), vec![400, 600, 900, 1200])
 }
@@ -296,7 +298,6 @@ pub fn store_response_window() -> Duration {
 /// many a customer can have waiting on stores at once -- an order costs
 /// nothing until a store accepts it, so without a bound one identity could
 /// bury a store's queue.
-
 pub fn max_pending_orders() -> u32 {
     setting(|p| p.max_pending_orders, 5).max(1)
 }
@@ -339,6 +340,12 @@ pub fn default_delivery_radius_km() -> f64 {
 /// own.
 pub fn default_delivery_subsidy_percent() -> u8 {
     setting(|p| p.default_delivery_subsidy_percent, 50).min(100)
+}
+
+/// A new store's most a delivery fee may be, in minor units of the
+/// network's currency, until it sets its own.
+pub fn default_max_delivery_fee() -> u64 {
+    setting(|p| p.default_max_delivery_fee, 2_500)
 }
 
 /// The furthest any store may deliver.

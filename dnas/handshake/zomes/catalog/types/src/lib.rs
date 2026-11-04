@@ -78,6 +78,16 @@ pub struct MerchantCatalog {
     /// covers. A new store starts at the network's default
     /// (`handshake_governance::default_delivery_subsidy_percent`).
     pub delivery_subsidy_percent: u8,
+    /// The most a delivery fee may be on the store's orders, in minor units:
+    /// a customer's cap (`max_delivery_fee`), and so any bid, is at most
+    /// this, and so is their tip. The store's card pays its driver the fee
+    /// and the tip, passing on the customer's part: this bounds what that
+    /// can cost it -- a customer and a driver can't agree a fee of any size
+    /// for the store to pay its share of, nor pass a tip of any size
+    /// through it on a card whose charge is later reversed. A new store
+    /// starts at the network's default
+    /// (`handshake_governance::default_max_delivery_fee`).
+    pub max_delivery_fee: u64,
     /// Whether the store's conductor accepts new orders as they arrive
     /// (still declining any priced from an outdated menu), rather than
     /// waiting for someone to tap Accept.
@@ -390,13 +400,15 @@ pub struct GoodieBag {
 impl MerchantCatalog {
     /// Whether an order placed under these terms gets more from the store
     /// than `current` would give it: a lower minimum, a wider delivery
-    /// area, or a larger share of the delivery fee. Anything else about a
+    /// area, a larger share of the delivery fee, or a larger fee for it to
+    /// share. Anything else about a
     /// store (its hours, its description, being busy) changes nothing an
     /// order holds the store to.
     pub fn offers_more_than(&self, current: &MerchantCatalog) -> bool {
         self.min_order_cents.unwrap_or(0) < current.min_order_cents.unwrap_or(0)
             || self.max_delivery_radius_km > current.max_delivery_radius_km
             || self.delivery_subsidy_percent > current.delivery_subsidy_percent
+            || self.max_delivery_fee > current.max_delivery_fee
     }
 }
 

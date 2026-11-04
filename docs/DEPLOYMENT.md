@@ -39,6 +39,7 @@ Every other setting is optional, and the defaults suit most networks. Set only t
 | `default_delivery_radius_km` | 8 | A new store's delivery radius. |
 | `max_delivery_radius_km` | 50 | The furthest any store may deliver. Validation checks every order's drop-off area against its store's radius. |
 | `default_delivery_subsidy_percent` | 50 | A new store's share of each delivery fee. |
+| `default_max_delivery_fee` | 2500 | A new store's most a delivery fee may be, in minor units. It bounds what the store's share of a fee can cost it. |
 | `suggested_delivery_fees` | `[400, 600, 900, 1200]` | The delivery fee caps checkout suggests, in minor units of `currency`. Set them with the currency. |
 | `max_pending_orders` | 5 | The most orders a customer may place within one store response window. An order costs nothing until a store accepts it, so this keeps one identity from burying a store's queue. |
 | `offer_secs` | 45 | How long a driver whose bid is accepted has to commit (their collateral held) before the store's app offers the order to another. |

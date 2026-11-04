@@ -644,7 +644,7 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
             out.push(PaymentHistoryItem { order: order.clone(), hold: hold_ref, leg: offer.leg, payer: context.payer, payee, held: hold.amount, charged, parts, at, store_name: store_name.clone(), delivery: terms.delivery });
         }
     }
-    out.sort_by(|a, b| b.at.cmp(&a.at));
+    out.sort_by_key(|item| std::cmp::Reverse(item.at));
     Ok(out)
 }
 

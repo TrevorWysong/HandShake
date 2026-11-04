@@ -111,7 +111,8 @@ pub(crate) fn validate_new_order(order: &DeliveryOrder, author: &AgentPubKey, ac
 }
 
 /// The store's terms a delivery was placed under, from the version it cites
-/// (`catalog_version`): its fee split, and its delivery radius -- checked
+/// (`catalog_version`): its fee split, the most its fee and tip may be,
+/// and its delivery radius -- checked
 /// against the drop-off's public cell, the nearest the store could be to it
 /// (the exact point is sealed). The store's terms, or why they don't hold.
 fn check_store_terms(order: &DeliveryOrder) -> ExternResult<Result<MerchantCatalog, String>> {
@@ -121,6 +122,9 @@ fn check_store_terms(order: &DeliveryOrder) -> ExternResult<Result<MerchantCatal
     };
     if order.delivery_subsidy_percent != store.delivery_subsidy_percent {
         return Ok(Err("an order's fee split is its store's, as it stood when the order was placed".into()));
+    }
+    if order.max_delivery_fee.is_some_and(|cap| cap > store.max_delivery_fee) || order.tip_cents > store.max_delivery_fee {
+        return Ok(Err("a delivery's fee and tip are each at most its store's most".into()));
     }
     if order.dropoff_geohash.chars().count() != DROPOFF_GEOHASH_PRECISION {
         return Ok(Err(format!("a drop-off's area is a geohash of {DROPOFF_GEOHASH_PRECISION} characters")));

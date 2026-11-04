@@ -167,6 +167,7 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
         time_zone: input.time_zone,
         prep_minutes: input.prep_minutes.unwrap_or_else(handshake_governance::default_prep_minutes),
         delivery_subsidy_percent: handshake_governance::default_delivery_subsidy_percent(),
+        max_delivery_fee: handshake_governance::default_max_delivery_fee(),
         max_delivery_radius_km: input.max_delivery_radius_km.unwrap_or_else(handshake_governance::default_delivery_radius_km),
         dietary_tags: Vec::new(),
         auto_accept_orders: false,

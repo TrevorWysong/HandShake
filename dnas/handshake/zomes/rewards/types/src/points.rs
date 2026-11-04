@@ -208,7 +208,7 @@ pub fn replay<S>(program: &RewardsProgram, mut events: Vec<(Event, S)>) -> (Opti
     let mut state: Option<PointsState> = None;
     let mut log = Vec::new();
     for (event, source) in events {
-        match step(&rules, state.as_ref(), event) {
+        match step(rules, state.as_ref(), event) {
             Ok((next, moved)) => {
                 state = Some(next);
                 log.push((source, event, if matches!(event, Event::Spend { .. }) { -signed(moved) } else { signed(moved) }));
@@ -216,7 +216,7 @@ pub fn replay<S>(program: &RewardsProgram, mut events: Vec<(Event, S)>) -> (Opti
             Err(_) => {
                 if let Event::Spend { at, cost, .. } = event {
                     let start = state.clone().unwrap_or(PointsState { year: local_time(at, &rules.time_zone).year, ..PointsState::default() });
-                    let mut next = roll(&rules, &start, at);
+                    let mut next = roll(rules, &start, at);
                     let taken = next.balance.min(cost);
                     next.balance -= taken;
                     state = Some(next);

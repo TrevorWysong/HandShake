@@ -255,6 +255,12 @@ fn validate_catalog(catalog: &MerchantCatalog, author: &AgentPubKey) -> ExternRe
     if let Some(problem) = store_amounts.into_iter().find_map(|(field, amount)| amount.and_then(|a| amount_problem(field, a))) {
         return Ok(ValidateCallbackResult::Invalid(problem));
     }
+    if catalog.max_delivery_fee == 0 {
+        return Ok(ValidateCallbackResult::Invalid("a store's most delivery fee is more than nothing".into()));
+    }
+    if let Some(problem) = amount_problem("max_delivery_fee", catalog.max_delivery_fee) {
+        return Ok(ValidateCallbackResult::Invalid(problem));
+    }
     if catalog.min_order_cents == Some(0) {
         return Ok(ValidateCallbackResult::Invalid("a minimum order is more than nothing -- leave it unset for none".into()));
     }

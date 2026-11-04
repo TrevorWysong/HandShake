@@ -238,6 +238,10 @@ mod test_utils {
         pub dropoff_geohash: Option<String>,
         #[serde(default)]
         pub delivery_subsidy_percent: Option<u8>,
+        #[serde(default)]
+        pub max_delivery_fee: Option<u64>,
+        #[serde(default)]
+        pub tip_cents: Option<u64>,
         /// A "sealed" kitchen note of this many bytes -- forged ciphertext,
         /// as only a modified client could write: the conductor won't seal
         /// more than a box holds.
@@ -260,6 +264,12 @@ mod test_utils {
         }
         if let Some(percent) = input.delivery_subsidy_percent {
             order.delivery_subsidy_percent = percent;
+        }
+        if let Some(cap) = input.max_delivery_fee {
+            order.max_delivery_fee = Some(cap);
+        }
+        if let Some(tip) = input.tip_cents {
+            order.tip_cents = tip;
         }
         if let Some(bytes) = input.kitchen_note_bytes {
             let real = handshake_coordinator_support::seal(&order.merchant, &String::new())?;
