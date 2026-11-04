@@ -18,7 +18,7 @@ import { useSession } from "../../../store/session";
 import { useCustomerSettings } from "../../../store/roleSettings";
 import { useTerms } from "../../../store/network";
 import { createRecurringTemplate, requestDelivery, requestPickupOrder } from "../../../holochain/zomes/dispatch";
-import { paymentProfileOf } from "../../../holochain/zomes/payments";
+import { hasSavedCard, paymentProfileOf } from "../../../holochain/zomes/payments";
 import { actionHash, bytesEqual, bytesToHex } from "../../../holochain/decode";
 import type { DropoffPreference, PaymentInput, RecurrenceRule } from "../../../holochain/types";
 import { earnedFor, pointsEarned } from "../../../lib/rewards/rewards";
@@ -62,6 +62,10 @@ export function Cart() {
   const merchant = cart.merchant;
   const { data: storeProfile } = useResource(merchant && `payment-profile:${bytesToHex(merchant)}`, () => paymentProfileOf(merchant!));
   const ownStore = !!agentPubKey && !!merchant && bytesEqual(agentPubKey, merchant);
+  // A card this account saved with the store, offered in one tap -- keyed by
+  // the account, so nobody else signed in here is ever offered it.
+  const savedCardKey = agentPubKey && merchant && !ownStore ? `saved-card:${bytesToHex(agentPubKey)}:${bytesToHex(merchant)}` : null;
+  const { data: savedCard = false } = useResource(savedCardKey, () => hasSavedCard(merchant!));
 
   const options = useDeliveryOptions();
   const discounts = useDiscounts(storeInfo, now);
@@ -351,6 +355,7 @@ export function Cart() {
           profile={storeProfile}
           payee={cart.merchantName ?? t("cart.theStore")}
           amountCents={price.holdCents}
+          canUseSaved={savedCard}
           title={t("cart.payTitle", { payee: cart.merchantName ?? t("cart.theStore") })}
           subtitle={delivery ? t("cart.paySubtitleDelivery") : t("cart.paySubtitlePickup")}
           onClose={() => setPaying(false)}

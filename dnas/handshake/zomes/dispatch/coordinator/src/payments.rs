@@ -103,6 +103,15 @@ fn saved_with(payee: &AgentPubKey) -> ExternResult<bool> {
     Ok(false)
 }
 
+/// Whether the caller has a card saved with `payee` -- for a payer's
+/// checkout, to offer it in one tap. Read from the caller's own chain: only
+/// the account that saved a card is ever offered it, and the payee's agent
+/// uses it only for an offer that account made.
+#[hdk_extern]
+pub fn has_saved_card(payee: AgentPubKey) -> ExternResult<bool> {
+    saved_with(&payee)
+}
+
 /// The caller's app offering their saved card for `leg` of `order`, by
 /// itself -- only where they saved one with that leg's payee, and only once
 /// a leg: a decline waits for them.
