@@ -222,6 +222,7 @@ pub fn recv_remote_signal(payload: RemoteSignal) -> ExternResult<()> {
                         Some(role) if sender_ok => {
                             if let Some(record) = &written {
                                 crate::deliveries::record_what_changed(record, &order_hash, released.as_ref())?;
+                                crate::orders::record_cancellation(record, &order_hash)?;
                             }
                             // Whatever it changed may be the store's or the
                             // driver's to act on -- their apps tend it.

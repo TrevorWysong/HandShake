@@ -185,7 +185,9 @@ pub(crate) fn cancel_pickup(order_original_action: ActionHash, reason: Cancellat
     order.cancellation = Some(reason);
     let updated = update_version(&current, &EntryTypes::PickupOrder(order.clone()), LinkTypes::Version)?;
     order_queues::retire(&OrderParties::pickup(&order_original_action, &order))?;
-    written(updated)
+    let record = written(updated)?;
+    crate::orders::record_cancellation(&record, &order_original_action)?;
+    Ok(record)
 }
 
 /// The store recording a ready pickup its customer never came for, once the
@@ -209,9 +211,9 @@ pub fn mark_pickup_not_collected(input: crate::deliveries::TimedStepInput) -> Ex
     order.beacon = input.beacon;
     let updated = update_version(&current, &EntryTypes::PickupOrder(order.clone()), LinkTypes::Version)?;
     order_queues::retire(&OrderParties::pickup(&order_ref, &order))?;
-    let requester = order.requester.clone();
-    record_reputation_event(&requester, ReputationTargetWire::Customer(requester.clone()), order_ref, ReputationEventKindWire::OrderCancelledByThem, updated.clone())?;
-    written(updated)
+    let record = written(updated)?;
+    crate::orders::record_cancellation(&record, &order_ref)?;
+    Ok(record)
 }
 
 /// The gated completion path -- `ReadyForPickup -> PickedUp`, called by the

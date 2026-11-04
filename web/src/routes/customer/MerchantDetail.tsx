@@ -193,6 +193,7 @@ function StorePage({ hash }: { hash: string }) {
           {catalog.busy_extra_minutes > 0 && <span className="font-semibold text-amber-600">{t("store.busy", { minutes: catalog.prep_minutes + catalog.busy_extra_minutes })}</span>}
           {record && record.late_count > 0 && <span className="font-semibold text-amber-600">{t("store.late", { count: record.late_count })}</span>}
           {record && record.check_in_refused_count > 0 && <span className="font-semibold text-amber-600">{t("store.reports", { count: record.check_in_refused_count })}</span>}
+          {record && record.cancelled_by_them_count > 0 && <span className="font-semibold text-amber-600">{t("store.calledOff", { count: record.cancelled_by_them_count })}</span>}
           {catalog.min_order_cents !== null && <span>{t("store.minimum", { amount: formatCents(catalog.min_order_cents) })}</span>}
           <button
             type="button"

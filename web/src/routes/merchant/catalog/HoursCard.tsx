@@ -118,8 +118,8 @@ function HoursEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: (w
                     </button>
                   )}
                   {!isAllDay(week[day]) && (
-                    <button onClick={() => update(day, [ALL_DAY])} className="text-ink-400 hover:text-handshake-600">
-                      {t("hoursEditor.allDay")}
+                    <button onClick={() => update(day, [ALL_DAY])} className="flex items-center gap-0.5 text-ink-400 hover:text-handshake-600">
+                      <Clock size={12} /> {t("hoursEditor.allDay")}
                     </button>
                   )}
                   {!isAllDay(week[day]) && (
@@ -132,7 +132,9 @@ function HoursEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: (w
               {week[day].length === 0 && <span className="text-xs text-ink-400">{t("hours.closed")}</span>}
               {isAllDay(week[day]) && (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-presence-700 dark:text-presence-400">{t("hours.allDay")}</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-presence-500/10 px-3 py-1.5 text-xs font-semibold text-presence-600 dark:text-presence-400">
+                    <Clock size={13} /> {t("hours.allDay")}
+                  </span>
                   <button onClick={() => update(day, [])} className="text-ink-300 hover:text-red-500" aria-label={t("hoursEditor.remove")}>
                     <X size={14} />
                   </button>

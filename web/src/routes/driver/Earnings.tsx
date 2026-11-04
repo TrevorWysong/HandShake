@@ -55,7 +55,7 @@ export function Earnings() {
           ) : (
             <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-3 text-sm">
               <Stat label={t("earnings.completed")} value={rep.completed_count} tone="success" />
-              <Stat label={t("earnings.cancelled")} value={rep.cancelled_by_them_count} />
+              <Stat label={t("earnings.dropped")} value={rep.dropped_count} tone={rep.dropped_count > 0 ? "danger" : "default"} />
               <Stat label={t("earnings.disputes")} value={rep.dispute_raised_count} />
               <Stat label={t("earnings.against")} value={rep.dispute_resolved_against_count} tone={rep.dispute_resolved_against_count > 0 ? "danger" : "default"} />
             </motion.div>
