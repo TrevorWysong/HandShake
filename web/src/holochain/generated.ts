@@ -2859,11 +2859,6 @@ export type Processor =
   | "Square"
   | "Clover"
   /**
-   * PayPal: the payer approves in PayPal's own window, with their PayPal
-   * balance or a card.
-   */
-  | "PayPal"
-  /**
    * No processor at all: a stand-in for development and tests, whose
    * payments move no money. Only ever on a test network.
    */

@@ -14,12 +14,12 @@ import { defineConfig, transformWithOxc, type Plugin } from 'vite'
 // The one exception is paying by card: each payee's processor's own card
 // form (src/lib/payments/cardForm.ts), in its own frames, from its own
 // domains -- Stripe's, Square's or Clover's, and the bank checks (3-D
-// Secure) they run, Google Pay's own sheet for Square, and PayPal's buttons. Card details
+// Secure) they run, and Google Pay's own sheet for Square. Card details
 // go only there, never to this app.
 const CARD_FORMS = {
-  script: ["https://js.stripe.com", "https://web.squarecdn.com", "https://sandbox.web.squarecdn.com", "https://checkout.clover.com", "https://checkout.sandbox.dev.clover.com", "https://pay.google.com", "https://www.paypal.com"],
-  frame: ["https://js.stripe.com", "https://hooks.stripe.com", "https://web.squarecdn.com", "https://sandbox.web.squarecdn.com", "https://*.cardinalcommerce.com", "https://checkout.clover.com", "https://checkout.sandbox.dev.clover.com", "https://pay.google.com", "https://www.paypal.com", "https://www.sandbox.paypal.com"],
-  connect: ["https://api.stripe.com", "https://pci-connect.squareup.com", "https://pci-connect.squareupsandbox.com", "https://token.clover.com", "https://token-sandbox.dev.clover.com", "https://pay.google.com", "https://www.paypal.com", "https://www.sandbox.paypal.com"],
+  script: ["https://js.stripe.com", "https://web.squarecdn.com", "https://sandbox.web.squarecdn.com", "https://checkout.clover.com", "https://checkout.sandbox.dev.clover.com", "https://pay.google.com"],
+  frame: ["https://js.stripe.com", "https://hooks.stripe.com", "https://web.squarecdn.com", "https://sandbox.web.squarecdn.com", "https://*.cardinalcommerce.com", "https://checkout.clover.com", "https://checkout.sandbox.dev.clover.com", "https://pay.google.com"],
+  connect: ["https://api.stripe.com", "https://pci-connect.squareup.com", "https://pci-connect.squareupsandbox.com", "https://token.clover.com", "https://token-sandbox.dev.clover.com", "https://pay.google.com"],
   font: ["https://*.squarecdn.com"],
 }
 const CONTENT_SECURITY_POLICY = [
@@ -28,7 +28,7 @@ const CONTENT_SECURITY_POLICY = [
   `frame-src ${CARD_FORMS.frame.join(' ')}`,
   // Leaflet and the UI's animations set inline style attributes.
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.stripe.com https://www.paypalobjects.com",
+  "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.stripe.com",
   `connect-src 'self' ws://localhost:* ws://127.0.0.1:* https://nominatim.openstreetmap.org ${CARD_FORMS.connect.join(' ')}`,
   `font-src 'self' ${CARD_FORMS.font.join(' ')}`,
   "object-src 'none'",

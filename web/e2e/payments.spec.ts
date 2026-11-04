@@ -62,9 +62,6 @@ test("a store sees where it's paid, and connects again", async ({ page }) => {
   await shoot(page, "payments-connect-square");
   await page.getByRole("radio", { name: /Clover/ }).click();
   await shoot(page, "payments-connect-clover");
-  await page.getByRole("radio", { name: /PayPal/ }).click();
-  await expect(page.getByRole("link", { name: /Open Apps & Credentials/ })).toBeVisible();
-  await shoot(page, "payments-connect-paypal");
   await page.getByRole("radio", { name: /Test processor/ }).click();
   await page.getByRole("button", { name: "Use the test processor" }).click();
   await expect(page.getByText(/Paid into your Test account/)).toBeVisible();
