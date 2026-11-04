@@ -676,7 +676,48 @@ pub(crate) fn cancel_delivery(order_original_action: ActionHash, reason: Cancell
     order.cancellation = Some(reason);
     let updated = update_version(&current, &EntryTypes::DeliveryOrder(order.clone()), LinkTypes::Version)?;
     order_queues::retire(&OrderParties::delivery(&order_original_action, &order)?)?;
-    written(updated)
+    let record = written(updated)?;
+    record_cancellation(&record, &order_original_action)?;
+    Ok(record)
+}
+
+/// A cancellation that cost someone, recorded against whoever made it
+/// (`OrderCancelledByThem`) by the order's other principal -- its customer
+/// or its store, whichever didn't: by the one writing it here, or on
+/// seeing it (`signals`). So each counts once. What costs someone: a
+/// customer calling off an order the store had taken on, or never coming
+/// for one that was theirs to collect; a store calling off one it had
+/// accepted, or never answering. Not: turning an order down, or withdrawing
+/// one, before the store had taken it on; what's nobody's doing (no driver,
+/// a closed store, a missed schedule); or what has its own event (a store
+/// keeping a driver waiting). Best-effort, like every reputation event.
+pub(crate) fn record_cancellation(version: &Record, order_ref: &ActionHash) -> ExternResult<()> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let (requester, merchant, catalog_ref, cancellation) = match (decode_or::<DeliveryOrder>(version), decode_or::<PickupOrder>(version)) {
+        (Some(o), _) if o.status == DeliveryStatus::Cancelled => (o.requester, o.merchant, o.catalog_ref, o.cancellation),
+        (None, Some(o)) if o.status == PickupStatus::Cancelled => (o.requester, o.merchant, o.catalog_ref, o.cancellation),
+        _ => return Ok(()),
+    };
+    if me != requester && me != merchant {
+        return Ok(());
+    }
+    // Only the update that cancelled it: before it, the order still waiting
+    // on its store, or taken on.
+    let ActionData::Update(update) = &version.action().data else { return Ok(()) };
+    let Some(prior) = get(update.original_action_address.clone(), GetOptions::default())? else { return Ok(()) };
+    let waiting = match (decode_or::<DeliveryOrder>(&prior), decode_or::<PickupOrder>(&prior)) {
+        (Some(p), _) if p.status != DeliveryStatus::Cancelled => matches!(p.status, DeliveryStatus::Scheduled | DeliveryStatus::Placed),
+        (None, Some(p)) if p.status != PickupStatus::Cancelled => p.status == PickupStatus::Placed,
+        _ => return Ok(()),
+    };
+    let (subject, target) = match cancellation {
+        Some(Cancellation::ByCustomer) if !waiting => (requester.clone(), ReputationTargetWire::Customer(requester)),
+        Some(Cancellation::NotCollected) => (requester.clone(), ReputationTargetWire::Customer(requester)),
+        Some(Cancellation::ByStore(_)) if !waiting => (merchant, ReputationTargetWire::Store(catalog_ref)),
+        Some(Cancellation::StoreDidNotRespond) => (merchant, ReputationTargetWire::Store(catalog_ref)),
+        _ => return Ok(()),
+    };
+    record_reputation_event(&subject, target, order_ref.clone(), ReputationEventKindWire::OrderCancelledByThem, version.action_address().clone())
 }
 
 #[derive(Serialize, Deserialize, Debug)]

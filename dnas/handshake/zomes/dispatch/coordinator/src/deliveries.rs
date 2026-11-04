@@ -505,11 +505,7 @@ pub fn mark_not_collected(input: TimedStepInput) -> ExternResult<Record> {
     if !past(window_ends, true, input.beacon.as_ref())? {
         return Err(guest("The customer still has time to collect it."));
     }
-    let requester = order.requester.clone();
-    let cancelled = cancel_proved(&version, order, &order_ref, Cancellation::NotCollected, input.beacon)?;
-    // Against the customer who never came.
-    record_reputation_event(&requester, ReputationTargetWire::Customer(requester.clone()), order_ref, ReputationEventKindWire::OrderCancelledByThem, cancelled.action_address().clone())?;
-    Ok(cancelled)
+    cancel_proved(&version, order, &order_ref, Cancellation::NotCollected, input.beacon)
 }
 
 /// The driver saying nobody came to take the order: at the drop-off, once
@@ -558,6 +554,7 @@ fn cancel_proved(current: &EntryVersion, mut order: DeliveryOrder, order_ref: &A
     order.beacon = beacon;
     let cancelled = write(current, order.clone())?;
     retire(&OrderParties::delivery(order_ref, &order)?)?;
+    crate::orders::record_cancellation(&cancelled, order_ref)?;
     Ok(cancelled)
 }
 
