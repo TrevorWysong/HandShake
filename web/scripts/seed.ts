@@ -234,7 +234,7 @@ async function seedStore(store: WorldStore, owner: Agent, center: Point): Promis
       birthday_points: r.birthday_points,
       expiry_days: r.expiry_days,
       max_balance: null,
-      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      time_zone: SEED_TIME_ZONE,
     });
   }
   if (store.goodieBag) {
