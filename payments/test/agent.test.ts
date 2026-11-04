@@ -31,7 +31,7 @@ test("connecting checks the account, keeps the keys, and publishes only their pu
   const status = await agent.connect("Test", {});
   assert.deepEqual(status, { processor: "Test", account: "Test account", live: false });
   const published = calls.find((c) => c.fn === "set_payment_profile")!.payload;
-  assert.deepEqual(published, { processor: "Test", public_key: "test", account: "", live: false });
+  assert.deepEqual(published, { processor: "Test", public_key: "test", account: "", live: false, country: "" });
   assert.equal((await credentials.load())?.processor, "Test");
   await agent.disconnect();
   assert.ok(calls.some((c) => c.fn === "clear_payment_profile"));

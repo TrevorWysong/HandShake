@@ -46,24 +46,29 @@ export function PaySheet({
   const currency = useTerms().currency;
   // One form for the sheet's life: re-rendering mustn't rebuild a form
   // someone's typing into.
-  const [form] = useState<CardForm>(() => cardFormFor(profile, { amountCents, currency }));
+  const [form] = useState<CardForm>(() => cardFormFor(profile, { amountCents, currency, label: payee }));
   const [useNew, setUseNew] = useState(!canUseSaved);
   const [save, setSave] = useState(false);
   const action = useAction();
-  const { setError } = action;
+  const { setError, run } = action;
+  // A wallet pays from its own button, inside the processor's form. A
+  // sheet is opened for one payment, so the offer it was opened with is
+  // the one its wallets make.
+  const [offerWallet] = useState(() => onCard);
 
   // The processor's form, mounted into its node and torn down with it.
   const mountForm = useCallback(
     (node: HTMLDivElement | null) => {
       if (!node) return;
       let gone = false;
-      form.mount(node).catch((err) => !gone && setError(describeError(err)));
+      const wallet = { onToken: (token: string) => void run(() => offerWallet({ token, save: false })), onError: (err: unknown) => !gone && setError(describeError(err)) };
+      form.mount(node, wallet).catch((err) => !gone && setError(describeError(err)));
       return () => {
         gone = true;
         form.destroy();
       };
     },
-    [form, setError],
+    [form, setError, run, offerWallet],
   );
 
   const pay = () =>

@@ -97,7 +97,8 @@ export function stripeProcessor(keys: StripeKeys, currency: string, fetchImpl: F
       // this agent needs, and the account's name is a courtesy.
       await call("GET", "/payment_intents", { limit: 1 });
       const account = await call("GET", "/account").catch(() => null);
-      return { account: account?.settings?.dashboard?.display_name ?? account?.business_profile?.name ?? account?.id ?? "Stripe account", live, currency, publicKey: keys.publishable_key.trim(), publicAccount: "" };
+      const country = typeof account?.country === "string" && /^[A-Z]{2}$/.test(account.country) ? account.country : "";
+      return { account: account?.settings?.dashboard?.display_name ?? account?.business_profile?.name ?? account?.id ?? "Stripe account", live, currency, publicKey: keys.publishable_key.trim(), publicAccount: "", country };
     },
 
     async authorize(request: AuthorizeRequest): Promise<Authorization> {

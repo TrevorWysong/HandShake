@@ -14,11 +14,12 @@ import { defineConfig, transformWithOxc, type Plugin } from 'vite'
 // The one exception is paying by card: each payee's processor's own card
 // form (src/lib/payments/cardForm.ts), in its own frames, from its own
 // domains -- Stripe's, Square's or Clover's, and the bank checks (3-D
-// Secure) they run. Card details go only there, never to this app.
+// Secure) they run, and Google Pay's own sheet for Square. Card details
+// go only there, never to this app.
 const CARD_FORMS = {
-  script: ["https://js.stripe.com", "https://web.squarecdn.com", "https://sandbox.web.squarecdn.com", "https://checkout.clover.com", "https://checkout.sandbox.dev.clover.com"],
-  frame: ["https://js.stripe.com", "https://hooks.stripe.com", "https://web.squarecdn.com", "https://sandbox.web.squarecdn.com", "https://*.cardinalcommerce.com", "https://checkout.clover.com", "https://checkout.sandbox.dev.clover.com"],
-  connect: ["https://api.stripe.com", "https://pci-connect.squareup.com", "https://pci-connect.squareupsandbox.com", "https://token.clover.com", "https://token-sandbox.dev.clover.com"],
+  script: ["https://js.stripe.com", "https://web.squarecdn.com", "https://sandbox.web.squarecdn.com", "https://checkout.clover.com", "https://checkout.sandbox.dev.clover.com", "https://pay.google.com"],
+  frame: ["https://js.stripe.com", "https://hooks.stripe.com", "https://web.squarecdn.com", "https://sandbox.web.squarecdn.com", "https://*.cardinalcommerce.com", "https://checkout.clover.com", "https://checkout.sandbox.dev.clover.com", "https://pay.google.com"],
+  connect: ["https://api.stripe.com", "https://pci-connect.squareup.com", "https://pci-connect.squareupsandbox.com", "https://token.clover.com", "https://token-sandbox.dev.clover.com", "https://pay.google.com"],
   font: ["https://*.squarecdn.com"],
 }
 const CONTENT_SECURITY_POLICY = [

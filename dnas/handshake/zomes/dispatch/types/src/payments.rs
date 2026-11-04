@@ -47,6 +47,11 @@ pub struct PaymentProfile {
     /// A live account, or a test one. Must be the network's kind
     /// (`handshake_governance::live_payments`).
     pub live: bool,
+    /// The account's country, ISO 3166 (`US`), as its processor has it --
+    /// what a wallet's payment sheet (Apple Pay, Google Pay) names as the
+    /// seller's. Square's must say; empty where the processor didn't.
+    #[serde(default)]
+    pub country: String,
 }
 
 /// A payer's card for one leg of an order, for its payee.

@@ -900,6 +900,8 @@ export const en = {
   "pay.setUpToBePaid": "Set up getting paid by card in Payments, so the store can pay you for this delivery.",
   "pay.yourPayHeld": "Your pay is held on the store's card.",
   "pay.yourPayWaiting": "Waiting for the store to hold your pay.",
+  "pay.applePay": "Pay with Apple Pay",
+  "pay.orCard": "or pay by card",
   "pay.declined.Declined": "Your card was declined. Try another card.",
   "pay.declined.InsufficientFunds": "Your card doesn't have enough funds for this. Try another card.",
   "pay.declined.ActionFailed": "Your bank's check wasn't completed. Try again, or use another card.",

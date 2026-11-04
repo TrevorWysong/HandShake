@@ -17,6 +17,9 @@ export interface Connection {
   publicKey: string;
   /// Square's location, Clover's merchant -- empty for Stripe.
   publicAccount: string;
+  /// The account's country (ISO 3166, `US`), where the processor says --
+  /// what wallets' payment sheets name as the seller's.
+  country: string;
 }
 
 /// What became of an authorization.

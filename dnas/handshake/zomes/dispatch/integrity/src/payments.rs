@@ -134,6 +134,12 @@ pub fn validate_profile(profile: &PaymentProfile) -> ExternResult<ValidateCallba
     if !account_ok {
         return invalid("a Square location or Clover merchant id is its letters and digits; Stripe names none");
     }
+    if !(profile.country.is_empty() || (profile.country.len() == 2 && profile.country.bytes().all(|b| b.is_ascii_uppercase()))) {
+        return invalid("a payment account's country is two capital letters (ISO 3166), or none");
+    }
+    if profile.processor == Processor::Square && profile.country.is_empty() {
+        return invalid("a Square account names its country, for wallets' payment sheets");
+    }
     // A Stripe publishable key says which mode it's for -- and a secret key
     // must never be published.
     if profile.processor == Processor::Stripe && !profile.public_key.starts_with(if profile.live { "pk_live_" } else { "pk_test_" }) {

@@ -7,7 +7,7 @@
 // | Processor | Form | Token | Challenge (3-D Secure) |
 // |---|---|---|---|
 // | Stripe | Payment Element, cards only | a PaymentMethod id | `handleNextAction` on the intent's client secret |
-// | Square | Web Payments SDK card | a nonce, with the buyer's verification | done before tokenizing (`verifyBuyer`) |
+// | Square | Web Payments SDK card, and Apple Pay / Google Pay where the device has them | a nonce, with the buyer's verification | done before tokenizing (`verifyBuyer`) |
 // | Clover | its iframe card fields | a card token | none |
 // | Test | a plain field (test networks only) | `tok_test_...` | none |
 import { loadStripe, type Stripe, type StripeElements } from "@stripe/stripe-js";
@@ -15,8 +15,10 @@ import type { PaymentProfile } from "../../holochain/types";
 import { t } from "../../i18n";
 
 export interface CardForm {
-  /// Shows the form in `element`.
-  mount(element: HTMLElement): Promise<void>;
+  /// Shows the form in `element`. A wallet the form offers (Apple Pay,
+  /// Google Pay) pays by itself, from its own button: its token goes to
+  /// `wallet.onToken`, and what went wrong to `wallet.onError`.
+  mount(element: HTMLElement, wallet?: WalletHandler): Promise<void>;
   /// The single-use token for the card entered -- or throws, in words for
   /// the person.
   tokenize(): Promise<string>;
@@ -26,10 +28,25 @@ export interface CardForm {
   destroy(): void;
 }
 
-/// What the form is for: the amount, in minor units of `currency`.
+/// Where a wallet's payment goes, once its own button is tapped.
+export interface WalletHandler {
+  onToken(token: string): void;
+  onError(err: unknown): void;
+}
+
+/// What the form is for: the amount, in minor units of `currency`, and who
+/// a wallet's payment sheet says it's to.
 export interface Charge {
   amountCents: number;
   currency: string;
+  label: string;
+}
+
+/// An amount in minor units as the major-unit decimal a processor's
+/// browser SDK takes ("12.50", or "1250" for yen).
+export function majorUnits(cents: number, currency: string): string {
+  const digits = new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  return (cents / 10 ** digits).toFixed(digits);
 }
 
 /// The card form for `profile`'s processor.
@@ -90,8 +107,16 @@ interface SquareCard {
   tokenize(): Promise<{ status: string; token?: string; errors?: { message: string }[] }>;
   destroy(): Promise<void>;
 }
+interface SquareWallet {
+  attach?(element: HTMLElement): Promise<void>;
+  tokenize(): Promise<{ status: string; token?: string; errors?: { message: string }[] }>;
+  destroy(): Promise<void>;
+}
 interface SquarePayments {
   card(): Promise<SquareCard>;
+  paymentRequest(request: { countryCode: string; currencyCode: string; total: { amount: string; label: string } }): unknown;
+  applePay(request: unknown): Promise<SquareWallet>;
+  googlePay(request: unknown): Promise<SquareWallet>;
   verifyBuyer(token: string, details: { amount: string; currencyCode: string; intent: "CHARGE"; billingContact: Record<string, never> }): Promise<{ token?: string }>;
 }
 declare global {
@@ -125,28 +150,85 @@ function loadScript(src: string): Promise<void> {
 function squareForm(profile: PaymentProfile, charge: Charge): CardForm {
   let payments: SquarePayments | null = null;
   let card: SquareCard | null = null;
+  const wallets: SquareWallet[] = [];
+  const amount = majorUnits(charge.amountCents, charge.currency);
+  // Strong customer authentication happens here, before the payee's agent
+  // ever sees the card.
+  const verified = async (nonce: string, wallet: boolean) => {
+    const verification = await payments!.verifyBuyer(nonce, { amount, currencyCode: charge.currency, intent: "CHARGE", billingContact: {} });
+    return JSON.stringify({ nonce, verification: verification.token ?? null, wallet });
+  };
+
+  /// Apple Pay and Google Pay, where this device has them: each its own
+  /// button, paying when it's tapped. Neither is offered without the
+  /// store's country, or where the device or domain can't use it.
+  async function mountWallets(element: HTMLElement, handler: WalletHandler) {
+    if (!payments || !profile.country) return;
+    const request = payments.paymentRequest({ countryCode: profile.country, currencyCode: charge.currency, total: { amount, label: charge.label } });
+    const row = document.createElement("div");
+    row.className = "mb-3 flex flex-col gap-2";
+    const pay = (wallet: SquareWallet, needsVerifying: boolean) => async () => {
+      try {
+        const result = await wallet.tokenize();
+        // Closing the wallet's sheet is changing one's mind, not a problem.
+        if (result.status !== "OK" || !result.token) return;
+        handler.onToken(needsVerifying ? await verified(result.token, true) : JSON.stringify({ nonce: result.token, verification: null, wallet: true }));
+      } catch (err) {
+        handler.onError(err);
+      }
+    };
+    const apple = await payments.applePay(request).catch(() => null);
+    if (apple) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("aria-label", t("pay.applePay"));
+      button.className = "h-11 w-full rounded-xl";
+      button.style.setProperty("-webkit-appearance", "-apple-pay-button");
+      button.style.setProperty("-apple-pay-button-type", "plain");
+      button.style.setProperty("-apple-pay-button-style", "black");
+      button.addEventListener("click", pay(apple, false));
+      row.appendChild(button);
+      wallets.push(apple);
+    }
+    const google = await payments.googlePay(request).catch(() => null);
+    if (google?.attach) {
+      const slot = document.createElement("div");
+      slot.className = "min-h-11 w-full";
+      row.appendChild(slot);
+      await google.attach(slot).catch(() => slot.remove());
+      // Google Pay's own button carries the tap; a card from it may still
+      // need its bank to say it's the buyer.
+      slot.addEventListener("click", pay(google, true));
+      wallets.push(google);
+    }
+    if (row.childElementCount === 0) return;
+    const divider = document.createElement("p");
+    divider.className = "mb-3 text-center text-xs text-ink-400";
+    divider.textContent = t("pay.orCard");
+    element.prepend(row, divider);
+  }
+
   return {
-    async mount(element) {
+    async mount(element, wallet) {
       await loadScript(profile.live ? "https://web.squarecdn.com/v1/square.js" : "https://sandbox.web.squarecdn.com/v1/square.js");
       if (!window.Square) throw new CardProblem(t("pay.formUnavailable"));
       payments = window.Square.payments(profile.public_key, profile.account);
       card = await payments.card();
       await card.attach(element);
+      if (wallet) await mountWallets(element, wallet);
     },
     async tokenize() {
       if (!payments || !card) throw new CardProblem(t("pay.formUnavailable"));
       const result = await card.tokenize();
       if (result.status !== "OK" || !result.token) throw new CardProblem(result.errors?.[0]?.message ?? t("pay.cardProblem"));
-      // Strong customer authentication happens here, before the payee's
-      // agent ever sees the card.
-      const verified = await payments.verifyBuyer(result.token, { amount: (charge.amountCents / 100).toFixed(2), currencyCode: charge.currency, intent: "CHARGE", billingContact: {} });
-      return JSON.stringify({ nonce: result.token, verification: verified.token ?? null });
+      return verified(result.token, false);
     },
     async complete() {
       throw new CardProblem(t("pay.actionFailed"));
     },
     destroy() {
       void card?.destroy();
+      for (const wallet of wallets) void wallet.destroy();
     },
   };
 }

@@ -47,12 +47,13 @@ export function declineCode(errors: Json[] | undefined): DeclineCode {
   return "Declined";
 }
 
-/// What the card form hands over: the card's nonce, and the buyer's
-/// verification token if their bank asked.
-function readToken(token: string): { nonce: string; verification: string | null } {
+/// What the card form hands over: the card's (or wallet's) nonce, the
+/// buyer's verification token if their bank asked, and whether it came from
+/// a wallet -- whose cards Square doesn't keep on file.
+function readToken(token: string): { nonce: string; verification: string | null; wallet: boolean } {
   try {
-    const parsed = JSON.parse(token) as { nonce?: unknown; verification?: unknown };
-    if (typeof parsed.nonce === "string" && parsed.nonce.length <= 300) return { nonce: parsed.nonce, verification: typeof parsed.verification === "string" ? parsed.verification : null };
+    const parsed = JSON.parse(token) as { nonce?: unknown; verification?: unknown; wallet?: unknown };
+    if (typeof parsed.nonce === "string" && parsed.nonce.length <= 300) return { nonce: parsed.nonce, verification: typeof parsed.verification === "string" ? parsed.verification : null, wallet: parsed.wallet === true };
   } catch {
     // not the card form's
   }
@@ -93,7 +94,8 @@ export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: F
     async connect(): Promise<Connection> {
       const { location: found } = await call("GET", `/locations/${encodeURIComponent(location)}`);
       if (found?.status !== "ACTIVE") throw new Refused("That location isn't active on Square.");
-      return { account: found.business_name ?? found.name ?? "Square location", live, currency: found.currency ?? currency, publicKey: keys.application_id.trim(), publicAccount: location };
+      if (typeof found.country !== "string" || !/^[A-Z]{2}$/.test(found.country)) throw new Refused("Square didn't say which country that location is in.");
+      return { account: found.business_name ?? found.name ?? "Square location", live, currency: found.currency ?? currency, publicKey: keys.application_id.trim(), publicAccount: location, country: found.country };
     },
 
     async authorize(request: AuthorizeRequest): Promise<Authorization> {
@@ -101,8 +103,9 @@ export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: F
         let source: string;
         let customer: string | undefined;
         let verification: string | null = null;
+        let wallet = false;
         if (request.savedAs) [customer, source] = request.savedAs.split(":");
-        else ({ nonce: source, verification } = readToken(request.token ?? ""));
+        else ({ nonce: source, verification, wallet } = readToken(request.token ?? ""));
         const { payment } = await call("POST", "/payments", {
           idempotency_key: request.idempotencyKey,
           source_id: source,
@@ -114,11 +117,17 @@ export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: F
           ...(verification ? { verification_token: verification } : {}),
         });
         if (payment.status !== "APPROVED") return { status: "declined", code: "Declined" };
+        // Keeping the card is a courtesy: if Square won't, the payment
+        // still stands, held.
         let savedAs: string | null = null;
-        if (request.save && !request.savedAs) {
-          const { customer: made } = await call("POST", "/customers", { idempotency_key: derived(request.idempotencyKey, "customer"), note: "HandShake payer" });
-          const { card } = await call("POST", "/cards", { idempotency_key: derived(request.idempotencyKey, "card"), source_id: payment.id, card: { customer_id: made.id } });
-          savedAs = `${made.id}:${card.id}`;
+        if (request.save && !request.savedAs && !wallet) {
+          try {
+            const { customer: made } = await call("POST", "/customers", { idempotency_key: derived(request.idempotencyKey, "customer"), note: "HandShake payer" });
+            const { card } = await call("POST", "/cards", { idempotency_key: derived(request.idempotencyKey, "card"), source_id: payment.id, card: { customer_id: made.id } });
+            savedAs = `${made.id}:${card.id}`;
+          } catch {
+            savedAs = null;
+          }
         }
         return { status: "held", reference: payment.id, fingerprint: fingerprint(payment), savedAs };
       } catch (err) {

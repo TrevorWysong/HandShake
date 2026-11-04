@@ -2489,6 +2489,12 @@ export interface PaymentProfile {
    * (`handshake_governance::live_payments`).
    */
   live: boolean;
+  /**
+   * The account's country, ISO 3166 (`US`), as its processor has it --
+   * what a wallet's payment sheet (Apple Pay, Google Pay) names as the
+   * seller's. Square's must say; empty where the processor didn't.
+   */
+  country: string;
 }
 
 /**
