@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, agentAsLinkBase, collectFromStore, commitAndCook, heldBy, offerCard, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, agentAsLinkBase, collectFromStore, commitAndCook, heldBy, offerCard, retryUntil, retryUntilOk, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller, driverPaid } from "./helpers.js";
 
 const FOOD = 1000;
 
@@ -71,13 +71,15 @@ await runScenario(async (scenario) => {
   await sync();
 
   // A modified app taking a second anyway -- the customer's accepting it
-  // past the app's check, the store holding the collateral -- and the driver
-  // committing: validation refuses it, counting their own chain.
+  // past the app's check, the store holding the collateral and the driver
+  // their pay -- and the driver committing: validation refuses it, counting
+  // their own chain.
   await call(customer, "dispatch")("force_order_update_for_testing", { order_original_action: second, next_status: "BidAccepted", delivery_receipts: [], accepted_bid: secondBid });
   await sync();
   await offerCard(driver, second, { Collateral: { bid: secondBid } });
   await sync();
   await heldBy(merchant, second, { Collateral: { bid: secondBid } }, all);
+  await driverPaid(merchant, driver, second, all);
   await assert.rejects(driver.cells[0].callZome({ zome_name: "dispatch", fn_name: "commit_to_order", payload: second }), /no more orders at once than the network allows/, "the network refuses a commitment past the limit");
   console.log("[PASS] validation counts the orders in hand and refuses a commitment past the limit");
 
