@@ -75,6 +75,7 @@ await runScenario(async (scenario) => {
   console.log("[PASS] a hold is settled once, by its holder, for exactly what it can claim");
 
   // ===== Refunds: by whoever captured, for a ruling =====
+  await sync();
   await assert.rejects(raw(other, { Refund: { settlement: released, ruling: held, amount: 1 } }), /whoever captured the payment/);
   await assert.rejects(raw(store, { Refund: { settlement: released, ruling: held, amount: 1 } }), /pays a ruling/, "a refund pays a ruling, not anything");
   console.log("[PASS] a refund is the capturer's own, and only for a ruling");
