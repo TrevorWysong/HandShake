@@ -12,8 +12,13 @@ export function legLabel(leg: PaymentLeg, asPayer: boolean): string {
 }
 
 /// One payment, as `me` reads it: what it was, which way it went, and how
-/// much -- what was charged once it settled, what's held until then.
-export function describePayment(payment: { leg: PaymentLeg; payer: AgentPubKey; payee: AgentPubKey; held: number; charged: number | null }, me: AgentPubKey): { label: string; direction: "in" | "out"; amount: number; pending: boolean } {
+/// much -- what was charged once it settled, what's held until then -- and
+/// whether it's still held, or was released with nothing charged.
+export function describePayment(
+  payment: { leg: PaymentLeg; payer: AgentPubKey; payee: AgentPubKey; held: number; charged: number | null },
+  me: AgentPubKey,
+): { label: string; direction: "in" | "out"; amount: number; pending: boolean; released: boolean } {
   const asPayer = bytesEqual(payment.payer, me);
-  return { label: legLabel(payment.leg, asPayer), direction: asPayer ? "out" : "in", amount: payment.charged ?? payment.held, pending: payment.charged === null };
+  const released = payment.charged === 0;
+  return { label: legLabel(payment.leg, asPayer), direction: asPayer ? "out" : "in", amount: released ? payment.held : (payment.charged ?? payment.held), pending: payment.charged === null, released };
 }

@@ -1,4 +1,4 @@
-import { ArrowDownCircle, ArrowUpCircle, Clock, ShieldCheck } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, CircleSlash, Clock, ShieldCheck } from "lucide-react";
 import { TimeAgo } from "../components/TimeAgo";
 import { motion } from "framer-motion";
 import { useSession } from "../store/session";
@@ -42,7 +42,7 @@ export function Transparency() {
   }
 
   const rows = items.map((item) => ({ item, ...describePayment(item, agentPubKey) }));
-  const settled = rows.filter((r) => !r.pending);
+  const settled = rows.filter((r) => !r.pending && !r.released);
   const totalReceived = settled.filter((r) => r.direction === "in").reduce((sum, r) => sum + r.amount, 0);
   const totalPaid = settled.filter((r) => r.direction === "out").reduce((sum, r) => sum + r.amount, 0);
   const net = totalReceived - totalPaid;
@@ -83,7 +83,7 @@ export function Transparency() {
         </Card>
         <Card className="p-3 text-center">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">{t("transparency.net")}</p>
-          <StatNumber tone={net >= 0 ? "success" : "danger"} className="text-lg">{formatCents(net)}</StatNumber>
+          <StatNumber tone={net > 0 ? "success" : "default"} className="text-lg">{formatCents(net)}</StatNumber>
         </Card>
       </motion.div>
 
@@ -114,22 +114,31 @@ export function Transparency() {
       ) : (
         <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="pb-6">
           <Card className="flex flex-col gap-3 p-4">
-            {rows.map(({ item, label, direction, amount, pending }) => {
-              const Icon = pending ? Clock : direction === "in" ? ArrowDownCircle : ArrowUpCircle;
+            {rows.map(({ item, label, direction, amount, pending, released }) => {
+              const Icon = pending ? Clock : released ? CircleSlash : direction === "in" ? ArrowDownCircle : ArrowUpCircle;
+              const earned = !pending && !released && direction === "in";
               return (
-                <motion.div variants={fadeSlideUp} key={bytesToHex(item.hold)} className="flex items-center gap-2.5">
-                  <Icon size={18} className={!pending && direction === "in" ? "shrink-0 text-presence-600" : "shrink-0 text-ink-400"} />
+                <motion.div variants={fadeSlideUp} key={bytesToHex(item.hold)} className="flex items-center gap-3">
+                  <Icon size={18} className={earned ? "shrink-0 text-presence-600" : "shrink-0 text-ink-400"} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{label}</p>
+                    <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">
+                      {label}
+                      {item.store_name && <span className="font-normal text-ink-500"> · {item.store_name}</span>}
+                    </p>
                     <p className="text-xs text-ink-400">
                       <TimeAgo at={item.at} />
                       {pending && ` · ${t("transparency.held")}`}
+                      {released && ` · ${t("transparency.released")}`}
                     </p>
                   </div>
-                  <StatNumber tone={!pending && direction === "in" ? "success" : "default"} className="text-sm">
-                    {direction === "in" ? "+" : "−"}
-                    {formatCents(amount)}
-                  </StatNumber>
+                  {released ? (
+                    <span className="shrink-0 text-sm tabular-nums text-ink-400 line-through">{formatCents(amount)}</span>
+                  ) : (
+                    <StatNumber tone={earned ? "success" : "default"} className="shrink-0 text-sm">
+                      {direction === "in" ? "+" : "−"}
+                      {formatCents(amount)}
+                    </StatNumber>
+                  )}
                 </motion.div>
               );
             })}

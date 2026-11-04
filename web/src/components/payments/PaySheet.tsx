@@ -96,8 +96,9 @@ export function PaySheet({
           <Button className="w-full" loading={action.busy} disabled={useNew && !ready} onClick={pay}>
             {t("pay.hold", { amount: formatCents(amountCents) })}
           </Button>
-          <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-[11px] text-ink-400">
-            <Lock size={11} className="shrink-0" /> {t("pay.heldNotCharged", { payee })}
+          <p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">
+            <Lock size={11} className="-mt-0.5 mr-1 inline" />
+            {t("pay.heldNotCharged", { payee })}
           </p>
         </>
       }

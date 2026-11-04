@@ -2370,6 +2370,14 @@ export interface PaymentHistoryItem {
    * When it was settled -- or held, while it isn't.
    */
   at: Timestamp;
+  /**
+   * The order's store, by its name now -- "" if it can't be read.
+   */
+  store_name: string;
+  /**
+   * A delivery, or a pickup.
+   */
+  delivery: boolean;
 }
 
 /**
