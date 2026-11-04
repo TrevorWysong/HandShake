@@ -13,9 +13,9 @@ import { actionHash, bytesToHex, decodeEntry } from "../holochain/decode";
 import { describeError } from "../lib/ui/errors";
 import { useNetwork } from "./network";
 import type { ActionHash, GeoPoint, Profile, RoleTag } from "../holochain/types";
-import { readStoredJson, store } from "../lib/util/storage";
+import { forget, readStoredJson, store } from "../lib/util/storage";
 import { nowMicros } from "../lib/ui/format";
-import { useCart } from "./cart";
+import { signedIn } from "./identityScope";
 
 /// The development host's identity code (Admin API, passkeys), loaded only
 /// where it exists -- see `holochain/host.ts`.
@@ -33,15 +33,18 @@ const DEFAULT_LOCATION: GeoPoint = { lat: 27.7676, lon: -82.6403 };
 
 /// `location` drives every geohash-anchored discovery read in the app
 /// (Browse's "restaurants near me", goodie bags, driver/order matching).
-/// Persisted (like `StoredIdentity`) so a reload keeps the address the user
-/// picked instead of resetting to the default below -- which, far from them,
-/// would show no restaurants nearby.
-function loadStoredLocation(): GeoPoint | null {
-  return readStoredJson<GeoPoint>(LOCATION_STORAGE_KEY);
+/// Persisted so a reload keeps the address the person picked instead of
+/// resetting to the default below -- which, far from them, would show no
+/// restaurants nearby. Kept per identity, since it's often their home:
+/// before anyone's signed in (onboarding), the device's own.
+const locationKey = (agent: Uint8Array | null) => (agent ? `${LOCATION_STORAGE_KEY}:${bytesToHex(agent)}` : LOCATION_STORAGE_KEY);
+
+function loadStoredLocation(agent: Uint8Array | null): GeoPoint | null {
+  return readStoredJson<GeoPoint>(locationKey(agent));
 }
 
-function saveStoredLocation(location: GeoPoint) {
-  store(LOCATION_STORAGE_KEY, JSON.stringify(location));
+function saveStoredLocation(location: GeoPoint, agent: Uint8Array | null) {
+  store(locationKey(agent), JSON.stringify(location));
 }
 
 export type Mode = "customer" | "driver" | "merchant";
@@ -155,7 +158,7 @@ export const useSession = create<SessionState>((set, get) => ({
   hasDeviceLock: false,
   resuming: false,
   mode: "customer",
-  location: loadStoredLocation() ?? DEFAULT_LOCATION,
+  location: loadStoredLocation(null) ?? DEFAULT_LOCATION,
 
   hasStoredIdentity: () => HOST === "launcher" || loadStoredIdentity() !== null,
   needsUnlock: () => HOST === "dev" && storedIdentityNeedsUnlock(),
@@ -180,6 +183,7 @@ export const useSession = create<SessionState>((set, get) => ({
       set({
         status: "connected",
         agentPubKey: myAgentPubKey(),
+        location: loadStoredLocation(myAgentPubKey()) ?? DEFAULT_LOCATION,
         profile,
         profileActionHash: profileRecord ? actionHash(profileRecord) : null,
         movedTo: successions[0]?.successor ?? null,
@@ -200,7 +204,6 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   createIdentity: async (displayName, roles, location, extras, devAdminUrl) => {
-    saveStoredLocation(location);
     set({ status: "connecting", error: null, location });
     try {
       // A launcher already runs this app as its agent; in development, a
@@ -223,6 +226,7 @@ export const useSession = create<SessionState>((set, get) => ({
       });
       const profile = decodeEntry<Profile>(profileRecord);
       const hasDeviceLock = devIdentity ? await (await devHost()).rememberIdentity(devAdminUrl ?? "", devIdentity.installedAppId, devIdentity.agentPubKey, displayName) : false;
+      saveStoredLocation(location, myAgentPubKey());
       set({
         status: "connected",
         agentPubKey: myAgentPubKey(),
@@ -264,7 +268,7 @@ export const useSession = create<SessionState>((set, get) => ({
 
   setMode: (mode) => set({ mode }),
   setLocation: (location) => {
-    saveStoredLocation(location);
+    saveStoredLocation(location, get().agentPubKey);
     set({ location });
   },
 
@@ -307,8 +311,13 @@ export async function resumeSession(): Promise<void> {
   }
 }
 
-// Whoever is signed in on this device has their own cart: switching to
-// another identity, or making a new one, never brings the last one's along.
+// What's kept for whoever is signed in -- their cart, their settings --
+// follows them: another identity, or a new one, never sees the last one's.
 useSession.subscribe((state, previous) => {
-  if (state.agentPubKey && state.agentPubKey !== previous.agentPubKey) useCart.getState().claim(bytesToHex(state.agentPubKey));
+  if (state.agentPubKey === previous.agentPubKey) return;
+  signedIn(state.agentPubKey ? bytesToHex(state.agentPubKey) : null);
+  // The device's own location is only for onboarding: once someone's
+  // signed in, theirs is kept under them, and the device's -- perhaps the
+  // last person's home -- is forgotten.
+  if (state.agentPubKey) forget(LOCATION_STORAGE_KEY);
 });

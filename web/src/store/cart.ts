@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 import { base64ToBytes, bytesToBase64 } from "../lib/util/base64";
 import type { ActionHash, OrderItem, SelectionInput } from "../holochain/types";
 import { bytesEqual, bytesToHex } from "../holochain/decode";
 import { selectionsKey, type GroupCharges } from "../lib/storefront/choices";
+import { identityStorage, perIdentity } from "./identityScope";
 
 export interface CartLine {
   itemRef: ActionHash;
@@ -70,10 +71,6 @@ export function cartItems(lines: CartLine[]): OrderItem[] {
 }
 
 interface CartState {
-  /// Whose cart it is (their key, hex): a device can be shared between
-  /// identities, and one's cart -- a reward's points held in it included --
-  /// is never another's.
-  owner: string | null;
   catalogRef: ActionHash | null;
   merchant: Uint8Array | null;
   merchantName: string | null;
@@ -102,9 +99,6 @@ interface CartState {
   /// past order in one shot.
   setCart: (catalogRef: ActionHash, merchant: Uint8Array, merchantName: string, lines: CartLine[]) => void;
   clear: () => void;
-  /// The cart for `owner` (hex), signed in now: theirs as it was, or an
-  /// empty one if it was someone else's.
-  claim: (owner: string) => void;
   total: () => number;
 }
 
@@ -123,11 +117,11 @@ const reviver = (_key: string, value: unknown) =>
   value && typeof value === "object" && BYTES in value && typeof (value as Record<string, unknown>)[BYTES] === "string" ? base64ToBytes((value as Record<string, string>)[BYTES]) : value;
 
 // Kept on this device, so a cart outlives a reload, a card payment or
-// closing the tab -- as the big apps' do.
+// closing the tab -- as the big apps' do -- and per identity: one person's
+// cart, a reward's held points included, is never another's.
 export const useCart = create<CartState>()(
   persist(
     (set, get) => ({
-      owner: null,
       catalogRef: null,
       merchant: null,
       merchantName: null,
@@ -176,19 +170,14 @@ export const useCart = create<CartState>()(
 
       clear: () => set({ catalogRef: null, merchant: null, merchantName: null, lines: [], promoHex: null, reward: null }),
 
-      claim: (owner) => {
-        if (get().owner === owner) return;
-        get().clear();
-        set({ owner });
-      },
-
       total: () => get().lines.reduce((sum, l) => sum + l.priceCents * l.quantity, 0),
     }),
     {
       // v2: lines carry their choices' charges.
       name: "handshake.cart.v2",
-      storage: createJSONStorage(() => localStorage, { replacer, reviver }),
-      partialize: ({ owner, catalogRef, merchant, merchantName, lines, promoHex, reward }) => ({ owner, catalogRef, merchant, merchantName, lines, promoHex, reward }),
+      storage: identityStorage({ replacer, reviver }),
+      partialize: ({ catalogRef, merchant, merchantName, lines, promoHex, reward }) => ({ catalogRef, merchant, merchantName, lines, promoHex, reward }),
     },
   ),
 );
+perIdentity(useCart);

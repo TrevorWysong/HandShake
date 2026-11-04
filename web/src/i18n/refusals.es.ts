@@ -68,6 +68,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.only-this-order-s-customer-and-its-2": "Solo el cliente de este pedido y su tienda pueden chatear sobre él.",
   "refusal.only-whoever-held-a-payment-settles-it": "Solo quien retuvo un pago lo liquida.",
   "refusal.only-whoever-pays-that-part-of-the": "Solo quien paga esa parte del pedido ofrece una tarjeta para ella.",
+  "refusal.paypal-didn-t-say-which-account-these": "PayPal no indicó a qué cuenta pagan estas claves.",
   "refusal.paypal-doesn-t-recognise-those-keys-live": "PayPal no reconoce esas claves, ni reales ni de sandbox.",
   "refusal.paypal-no-longer-accepts-this-device-s": "PayPal ya no acepta las claves de este dispositivo. Conéctalo de nuevo.",
   "refusal.paypal-refused-the-keys": "PayPal rechazó las claves ({0})",

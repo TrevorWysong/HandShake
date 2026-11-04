@@ -268,10 +268,12 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
     // Only what the order still needs: nothing once it's over, and a
     // driver's legs only for the driver it has -- so nobody can run cards
     // through a store's account by bidding on orders they'll never carry.
-    let latest = handshake_coordinator_support::resolve_latest(order.clone())?;
-    let (ongoing, accepted_bid) = match (decode_or::<DeliveryOrder>(&latest), decode_or::<PickupOrder>(&latest)) {
-        (Some(o), _) => (!o.status.is_terminal(), o.accepted_bid),
-        (None, Some(o)) => (!o.status.is_terminal(), None),
+    // An order not yet seen here has nothing to authorize, but its holds
+    // still settle.
+    let latest = handshake_coordinator_support::resolve_latest(order.clone()).ok();
+    let (ongoing, accepted_bid) = match latest.as_ref().map(|r| (decode_or::<DeliveryOrder>(r), decode_or::<PickupOrder>(r))) {
+        Some((Some(o), _)) => (!o.status.is_terminal(), o.accepted_bid),
+        Some((None, Some(o))) => (!o.status.is_terminal(), None),
         _ => (false, None),
     };
     let wanted = |leg: &PaymentLeg| ongoing && leg.bid().is_none_or(|bid| accepted_bid.as_ref() == Some(bid));

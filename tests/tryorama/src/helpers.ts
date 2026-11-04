@@ -262,7 +262,8 @@ export async function payeeAgent(payee: PlayerApp): Promise<number> {
 export async function heldBy(payee: PlayerApp, order: Uint8Array, leg: PaymentLeg, players: PlayerApp[]): Promise<void> {
   await retryUntil(
     async () => {
-      await payeeAgent(payee);
+      // A record not yet here fails the round; the agent tries again next.
+      await payeeAgent(payee).catch(() => 0);
       await dhtSync(players, payee.cells[0].cell_id[0]);
       return payee.cells[0].callZome<Uint8Array | null>({ zome_name: "dispatch", fn_name: "payment_hold", payload: { order, leg } });
     },

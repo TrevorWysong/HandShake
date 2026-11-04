@@ -49,11 +49,13 @@ export function declineCode(errors: Json[] | undefined): DeclineCode {
 
 /// What the card form hands over: the card's (or wallet's) nonce, the
 /// buyer's verification token if their bank asked, and whether it came from
-/// a wallet -- whose cards Square doesn't keep on file.
+/// a wallet -- whose cards Square doesn't keep on file. Only ever a fresh
+/// nonce: Square would take a card on file's id in its place, and a payer's
+/// token is never another payer's saved card.
 function readToken(token: string): { nonce: string; verification: string | null; wallet: boolean } {
   try {
     const parsed = JSON.parse(token) as { nonce?: unknown; verification?: unknown; wallet?: unknown };
-    if (typeof parsed.nonce === "string" && parsed.nonce.length <= 300) return { nonce: parsed.nonce, verification: typeof parsed.verification === "string" ? parsed.verification : null, wallet: parsed.wallet === true };
+    if (typeof parsed.nonce === "string" && /^[cw]non:[A-Za-z0-9_:-]{1,295}$/.test(parsed.nonce)) return { nonce: parsed.nonce, verification: typeof parsed.verification === "string" ? parsed.verification : null, wallet: parsed.wallet === true };
   } catch {
     // not the card form's
   }

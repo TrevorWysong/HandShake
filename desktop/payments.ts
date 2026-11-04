@@ -50,7 +50,9 @@ export async function startPayments(holochain: HolochainManager, window: Browser
   const port = existing?.port ?? (await admin.attachAppInterface({ allowed_origins: AGENT_ORIGIN, installed_app_id: HAPP_APP_ID })).port;
   const appWs = await AppWebsocket.connect({ url: new URL(`ws://localhost:${port}`), token, wsClientOptions: { origin: AGENT_ORIGIN } });
 
-  const dir = path.join(fs.profileDataDir, 'payments');
+  // Per identity: one this install signs in as later -- an account restored
+  // or moved here -- never acts with another's processor keys or cards.
+  const dir = path.join(fs.profileDataDir, 'payments', Buffer.from(cellId[1]).toString('hex'));
   const agent = createAgent({
     dispatch: (fn, payload) => appWs.callZome({ cell_id: cellId, zome_name: 'dispatch', fn_name: fn, payload }),
     credentials: fileCredentials(path.join(dir, 'keys.sealed'), sealer),

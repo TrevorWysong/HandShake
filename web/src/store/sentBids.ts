@@ -5,6 +5,7 @@
 // still be taking offers.
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { identityStorage, perIdentity } from "./identityScope";
 
 export interface SentBid {
   /// The bid's action, hex.
@@ -45,7 +46,7 @@ export const useSentBids = create<SentBidsState>()(
         }),
       forgetBid: (bidHex) => set((state) => ({ sent: Object.fromEntries(Object.entries(state.sent).filter(([, b]) => b.bid !== bidHex)) })),
     }),
-    { name: "handshake.sent-bids.v1" },
+    { name: "handshake.sent-bids.v1", storage: identityStorage() },
   ),
 );
-
+perIdentity(useSentBids);

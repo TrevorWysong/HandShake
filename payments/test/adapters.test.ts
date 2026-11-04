@@ -117,12 +117,16 @@ test("clover: one card's fingerprint is the same whichever charge it's on", () =
 
 const PAYPAL = { client_id: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", secret: "EfGhIjKlMnOpQrStUvWxYz0123456789AbCd" };
 const token = [200, { access_token: "A21", expires_in: 3600 }] as [number, unknown];
-const approved = (value = "25.00") => [200, { id: "5O190127TN364715T", intent: "AUTHORIZE", status: "APPROVED", payer: { payer_id: "PAYER1" }, purchase_units: [{ amount: { currency_code: "USD", value } }] }] as [number, unknown];
+const MO = { merchant_id: "MOSMERCHANT1" };
+const approved = (value = "25.00", unit: object = { payee: MO }) => [200, { id: "5O190127TN364715T", intent: "AUTHORIZE", status: "APPROVED", payer: { payer_id: "PAYER1" }, purchase_units: [{ amount: { currency_code: "USD", value }, ...unit }] }] as [number, unknown];
+/// The order the agent makes to learn whose account it is.
+const probe = [201, { id: "PROBE1", purchase_units: [{ payee: MO }] }] as [number, unknown];
 
 test("paypal: the keys find their environment; an approved order is held only for exactly what's owed", async () => {
   const { sent, fetchImpl } = api([
     [401, {}],
     token,
+    probe,
     approved(),
     [201, { payer: { payer_id: "PAYER1" }, purchase_units: [{ payments: { authorizations: [{ id: "0VF52814937998046", status: "CREATED" }] } }] }],
   ]);
@@ -131,16 +135,26 @@ test("paypal: the keys find their environment; an approved order is held only fo
   assert.deepEqual(held, { status: "held", reference: "5O190127TN364715T_0VF52814937998046", fingerprint: "PAYER1", savedAs: null });
   assert.match(sent[0].url, /^https:\/\/api-m\.paypal\.com\/v1\/oauth2\/token$/, "live first");
   assert.match(sent[1].url, /^https:\/\/api-m\.sandbox\.paypal\.com\//, "then the sandbox");
-  assert.equal(sent[3].headers["PayPal-Request-Id"], request.idempotencyKey);
+  assert.equal(sent[4].headers["PayPal-Request-Id"], request.idempotencyKey);
 });
 
-test("paypal: an order for any other amount, intent or state is declined, never held", async () => {
+test("paypal: an order for any other amount, intent, state or payee is declined, never held", async () => {
   const { paypalProcessor } = await import("../src/adapters/paypal.ts");
-  for (const order of [approved("1.00"), [200, { ...(approved()[1] as object), intent: "CAPTURE" }], [200, { ...(approved()[1] as object), status: "CREATED" }], [404, {}]] as [number, unknown][]) {
-    const { sent, fetchImpl } = api([token, order]);
+  const others = [
+    approved("1.00"),
+    [200, { ...(approved()[1] as object), intent: "CAPTURE" }],
+    [200, { ...(approved()[1] as object), status: "CREATED" }],
+    // Paid into someone else's account, or with the money split off.
+    approved("25.00", { payee: { merchant_id: "ACCOMPLICE1" } }),
+    approved("25.00", { payee: {} }),
+    approved("25.00", { payee: MO, payment_instruction: { platform_fees: [{ amount: { currency_code: "USD", value: "24.00" } }] } }),
+    [404, {}],
+  ] as [number, unknown][];
+  for (const order of others) {
+    const { sent, fetchImpl } = api([token, probe, order]);
     const result = await paypalProcessor(PAYPAL, "USD", fetchImpl).authorize({ ...request, token: "5O190127TN364715T" });
     assert.deepEqual(result, { status: "declined", code: "Declined" });
-    assert.equal(sent.length, 2, "nothing authorized");
+    assert.ok(!sent.some((s) => s.url.endsWith("/authorize")), "nothing authorized");
   }
   const { fetchImpl } = api([]);
   assert.deepEqual(await paypalProcessor(PAYPAL, "USD", fetchImpl).authorize({ ...request, token: "not an order" }), { status: "declined", code: "Declined" });
@@ -156,4 +170,20 @@ test("paypal: what's due is captured as the final capture; nothing due is voided
   assert.ok(sent[2].url.endsWith("/v2/payments/authorizations/AUTH2/void"));
   await paypal.refund("ORDER1_AUTH1", 1500, "k3");
   assert.deepEqual([sent[4].url.endsWith("/v2/payments/captures/CAP1/refund"), sent[4].body.amount.value], [true, "15.00"]);
+});
+
+test("a payer's token is only ever a fresh one from the card form -- never a saved card's id -- and nothing's sent for one", async () => {
+  const { stripeProcessor } = await import("../src/adapters/stripe.ts");
+  const cases = [
+    [(f: typeof fetch) => squareProcessor(SQUARE, "USD", f), [JSON.stringify({ nonce: "ccof:customer-card-1" }), "cnon:not-json"]],
+    [(f: typeof fetch) => cloverProcessor(CLOVER, "USD", f), ["CUSTOMER123", "clv_bad token"]],
+    [(f: typeof fetch) => stripeProcessor({ publishable_key: "pk_test_abcdefghijklmnop", restricted_key: "rk_test_abcdefghijklmnop" }, "USD", f), ["cus_SomeoneElse", "src_123"]],
+  ] as const;
+  for (const [processor, tokens] of cases) {
+    for (const token of tokens) {
+      const { sent, fetchImpl } = api([]);
+      assert.deepEqual(await processor(fetchImpl).authorize({ ...request, token }), { status: "declined", code: "Declined" }, token);
+      assert.equal(sent.length, 0, token);
+    }
+  }
 });

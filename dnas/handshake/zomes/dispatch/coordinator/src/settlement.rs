@@ -37,7 +37,8 @@ struct Facts {
     /// The store confirming a later driver: the version, and each bid that
     /// left before it, now clear.
     replaced: Vec<(ActionHash, ActionHash)>,
-    /// Whether the order is over: delivered, collected or cancelled.
+    /// Whether the order is over: collected, cancelled, or its store's
+    /// decided whether it arrived.
     finished: bool,
     /// Whether the customer had it -- the store then settles the food once
     /// their report window runs out.
@@ -75,6 +76,7 @@ fn facts(order: &ActionHash) -> ExternResult<Option<Facts>> {
     let Some(original) = all.first() else { return Ok(None) };
     let delivery = decode_or::<DeliveryOrder>(original).is_some();
     let mut facts = Facts { decisions: crate::issues::decisions_of(order)?, cancellations: Vec::new(), releases: Vec::new(), replaced: Vec::new(), finished: false, received: false };
+    let mut delivered = false;
     let prior_of = |record: &Record| match &record.action().data {
         ActionData::Update(update) => all.iter().find(|r| r.action_address() == &update.original_action_address),
         _ => None,
@@ -94,6 +96,7 @@ fn facts(order: &ActionHash) -> ExternResult<Option<Facts>> {
         let (Some(version), Some(prior)) = (lineage::Version::of(record.clone()), prior.and_then(|p| lineage::Version::of(p.clone()))) else { continue };
         facts.finished |= version.order.status.is_terminal();
         facts.received |= matches!(version.order.status, DeliveryStatus::Delivered | DeliveryStatus::Collected);
+        delivered |= version.order.status == DeliveryStatus::Delivered;
         if let Some(bid) = version.released(&prior) {
             facts.releases.push(Release { version: record.action_address().clone(), liable: version.released_liable(&prior).is_some(), bid });
         }
@@ -111,6 +114,12 @@ fn facts(order: &ActionHash) -> ExternResult<Option<Facts>> {
             facts.cancellations.push(record.action_address().clone());
         }
     }
+    // A delivery that reached its customer, or that they said never did,
+    // is over once its store has decided which: what the driver's paid or
+    // forfeits rests on that decision, and a hold settles only once --
+    // settled before the decision's seen, it would settle for nothing.
+    let decided = facts.decisions.delivered.is_some() || facts.decisions.not_delivered.is_some();
+    facts.finished = decided || (facts.finished && !delivered);
     Ok(Some(facts))
 }
 
