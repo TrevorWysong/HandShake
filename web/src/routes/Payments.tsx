@@ -76,20 +76,6 @@ const PROCESSORS: Record<Processor, { blurb: MessageKey; need: MessageKey | null
       { name: "private_token", label: "payments.key.privateToken", secret: true, placeholder: "" },
     ],
   },
-  PayPal: {
-    blurb: "payments.blurb.paypal",
-    need: "payments.need.paypal",
-    steps: [
-      { text: "payments.paypal.1", link: { href: "https://www.paypal.com/business", label: "payments.paypal.1link" } },
-      { text: "payments.paypal.2", link: { href: "https://developer.paypal.com/dashboard/applications", label: "payments.paypal.2link" } },
-      { text: "payments.paypal.3" },
-      { text: "payments.paypal.4" },
-    ],
-    fields: [
-      { name: "client_id", label: "payments.key.clientId", secret: false, placeholder: "A…" },
-      { name: "secret", label: "payments.key.secret", secret: true, placeholder: "E…" },
-    ],
-  },
   Test: { blurb: "payments.blurb.test", need: null, steps: [], fields: [] },
 };
 
@@ -192,7 +178,7 @@ function Connected({ connection, agent, onChange }: { connection: PaymentsConnec
 function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: () => void }) {
   const t = useT();
   const live = useTerms().live_payments;
-  const choices: Processor[] = live ? ["Stripe", "Square", "Clover", "PayPal"] : ["Stripe", "Square", "Clover", "PayPal", "Test"];
+  const choices: Processor[] = live ? ["Stripe", "Square", "Clover"] : ["Stripe", "Square", "Clover", "Test"];
   const [processor, setProcessor] = useState<Processor>(live ? "Stripe" : "Test");
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [shown, setShown] = useState<Record<string, boolean>>({});
@@ -238,7 +224,6 @@ function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: ()
       </div>
 
       {!live && processor !== "Test" && <Notice tone="warn" className="mt-4">{t("payments.testNetwork")}</Notice>}
-      {processor === "PayPal" && <Notice tone="warn" className="mt-4">{t("payments.paypalDesktop")}</Notice>}
 
       {chosen.need && <p className="mt-5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{t(chosen.need)}</p>}
 
