@@ -32,8 +32,10 @@ export const NO_ITEMS: ItemRow[] = [];
 
 export interface CartStoreInfo {
   subsidyPercent: number;
-  /// The most a delivery fee, or a tip, may be here (`max_delivery_fee`).
+  /// The most a delivery fee may be here (`max_delivery_fee`).
   maxDeliveryFeeCents: number | null;
+  /// How big a tip may be here (`max_tip_percent`, `max_tip_floor`).
+  tipLimit: { percent: number; floorCents: number } | null;
   // The store's delivery range -- lets `onValidate` below reject an
   // out-of-range drop-off as it's picked (the network refuses one anyway).
   // `null` until the catalog loads: nothing to check yet.
@@ -89,6 +91,7 @@ export async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartSt
   return {
     subsidyPercent: catalog?.delivery_subsidy_percent ?? 0,
     maxDeliveryFeeCents: catalog?.max_delivery_fee ?? null,
+    tipLimit: catalog ? { percent: catalog.max_tip_percent, floorCents: catalog.max_tip_floor } : null,
     merchantLocation: catalog?.location ?? null,
     merchantRadiusKm: catalog?.max_delivery_radius_km ?? null,
     hours: catalog,

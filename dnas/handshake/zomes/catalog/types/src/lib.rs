@@ -80,14 +80,23 @@ pub struct MerchantCatalog {
     pub delivery_subsidy_percent: u8,
     /// The most a delivery fee may be on the store's orders, in minor units:
     /// a customer's cap (`max_delivery_fee`), and so any bid, is at most
-    /// this, and so is their tip. The store's card pays its driver the fee
-    /// and the tip, passing on the customer's part: this bounds what that
-    /// can cost it -- a customer and a driver can't agree a fee of any size
-    /// for the store to pay its share of, nor pass a tip of any size
-    /// through it on a card whose charge is later reversed. A new store
-    /// starts at the network's default
+    /// this. The store's card pays its driver the whole fee, its share
+    /// included: this bounds what that share can cost it -- a customer and
+    /// a driver can't agree a fee of any size for the store to pay its
+    /// share of. A new store starts at the network's default
     /// (`handshake_governance::default_max_delivery_fee`).
     pub max_delivery_fee: u64,
+    /// How big a tip may be on the store's deliveries: at most this percent
+    /// of the order, or `max_tip_floor`, whichever is more (`max_tip`). A
+    /// tip passes through the store's card to the driver, so on a card
+    /// whose charge is later reversed the store is out what it passed on:
+    /// this keeps that in proportion to the order, where the store wants
+    /// it, while honest tips -- generous ones on large orders, a few dollars
+    /// on a coffee -- fit. Up to `MAX_TIP_PERCENT`.
+    pub max_tip_percent: u16,
+    /// The most a tip may be whatever the order's size, in minor units --
+    /// see `max_tip_percent`.
+    pub max_tip_floor: u64,
     /// Whether the store's conductor accepts new orders as they arrive
     /// (still declining any priced from an outdated menu), rather than
     /// waiting for someone to tap Accept.
@@ -175,6 +184,14 @@ pub struct TaxRate {
 /// with several locations. (Each store also needs a processor account its
 /// processor has checked before it can take an order.)
 pub const MAX_STORES_PER_OWNER: usize = 10;
+
+/// The highest tip limit a store may set, as a percent of the order
+/// (`MerchantCatalog::max_tip_percent`).
+pub const MAX_TIP_PERCENT: u16 = 1_000;
+/// A new store's tip limit: the whole order's value, or $10, whichever is
+/// more -- until it sets its own.
+pub const DEFAULT_MAX_TIP_PERCENT: u16 = 100;
+pub const DEFAULT_MAX_TIP_FLOOR: u64 = 1_000;
 
 /// The most tax rates a store may have, and the highest rate.
 pub const MAX_TAX_RATES: usize = 8;
@@ -398,10 +415,16 @@ pub struct GoodieBag {
 }
 
 impl MerchantCatalog {
+    /// The most a customer may tip on an order of `order_total` here: its
+    /// `max_tip_percent`, or its `max_tip_floor`, whichever is more.
+    pub fn max_tip(&self, order_total: u64) -> u64 {
+        (order_total.saturating_mul(u64::from(self.max_tip_percent)) / 100).max(self.max_tip_floor)
+    }
+
     /// Whether an order placed under these terms gets more from the store
     /// than `current` would give it: a lower minimum, a wider delivery
     /// area, a larger share of the delivery fee, or a larger fee for it to
-    /// share. Anything else about a
+    /// share or tip for it to pass on. Anything else about a
     /// store (its hours, its description, being busy) changes nothing an
     /// order holds the store to.
     pub fn offers_more_than(&self, current: &MerchantCatalog) -> bool {
@@ -409,6 +432,8 @@ impl MerchantCatalog {
             || self.max_delivery_radius_km > current.max_delivery_radius_km
             || self.delivery_subsidy_percent > current.delivery_subsidy_percent
             || self.max_delivery_fee > current.max_delivery_fee
+            || self.max_tip_percent > current.max_tip_percent
+            || self.max_tip_floor > current.max_tip_floor
     }
 }
 

@@ -117,6 +117,8 @@ mod tests {
             "prep_minutes": 15,
             "delivery_subsidy_percent": 50,
             "max_delivery_fee": 2500,
+            "max_tip_percent": 100,
+            "max_tip_floor": 1000,
             "max_delivery_radius_km": 8.0,
         }))
         .unwrap();

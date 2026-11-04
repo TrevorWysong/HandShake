@@ -381,6 +381,14 @@ export interface CollectRequest {
   order: ActionHash;
 }
 
+export const DEFAULT_MAX_TIP_FLOOR = 1000;
+
+/**
+ * A new store's tip limit: the whole order's value, or $10, whichever is
+ * more -- until it sets its own.
+ */
+export const DEFAULT_MAX_TIP_PERCENT = 100;
+
 /**
  * Why an offer wasn't authorized -- in words the payer's app shows.
  */
@@ -1528,6 +1536,12 @@ export const MAX_TIER_PERCENT = 300;
  */
 export const MAX_TIME_ZONE_CHARS = 64;
 
+/**
+ * The highest tip limit a store may set, as a percent of the order
+ * (`MerchantCatalog::max_tip_percent`).
+ */
+export const MAX_TIP_PERCENT = 1000;
+
 export const MAX_VEHICLE_CHARS = 100;
 
 /**
@@ -1668,15 +1682,28 @@ export interface MerchantCatalog {
   /**
    * The most a delivery fee may be on the store's orders, in minor units:
    * a customer's cap (`max_delivery_fee`), and so any bid, is at most
-   * this, and so is their tip. The store's card pays its driver the fee
-   * and the tip, passing on the customer's part: this bounds what that
-   * can cost it -- a customer and a driver can't agree a fee of any size
-   * for the store to pay its share of, nor pass a tip of any size
-   * through it on a card whose charge is later reversed. A new store
-   * starts at the network's default
+   * this. The store's card pays its driver the whole fee, its share
+   * included: this bounds what that share can cost it -- a customer and
+   * a driver can't agree a fee of any size for the store to pay its
+   * share of. A new store starts at the network's default
    * (`handshake_governance::default_max_delivery_fee`).
    */
   max_delivery_fee: number;
+  /**
+   * How big a tip may be on the store's deliveries: at most this percent
+   * of the order, or `max_tip_floor`, whichever is more (`max_tip`). A
+   * tip passes through the store's card to the driver, so on a card
+   * whose charge is later reversed the store is out what it passed on:
+   * this keeps that in proportion to the order, where the store wants
+   * it, while honest tips -- generous ones on large orders, a few dollars
+   * on a coffee -- fit. Up to `MAX_TIP_PERCENT`.
+   */
+  max_tip_percent: number;
+  /**
+   * The most a tip may be whatever the order's size, in minor units --
+   * see `max_tip_percent`.
+   */
+  max_tip_floor: number;
   /**
    * Whether the store's conductor accepts new orders as they arrive
    * (still declining any priced from an outdated menu), rather than

@@ -275,13 +275,13 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
     if input.max_delivery_fee.is_some_and(|cap| cap > catalog.max_delivery_fee) {
         return Err(guest("That's more than this store allows for delivery. Choose a lower most you'll pay."));
     }
-    if input.tip_cents > catalog.max_delivery_fee {
-        return Err(guest("That tip is more than this store passes on to a driver. Choose a smaller one."));
-    }
     // The store's rewards program, and any reward chosen, priced in.
     let joining = crate::pricing::joining(&input.catalog_ref, input.reward)?;
     let reward = joining.as_ref().and_then(|j| j.reward.as_ref().map(|(_, benefit)| benefit));
     let priced = price_order(&input.catalog_ref, &catalog, &input.items, input.promo_code_ref.as_ref(), reward, true, input.order_total)?;
+    if input.tip_cents > catalog.max_tip(priced.order_total) {
+        return Err(guest("That tip is more than this order allows. Choose a smaller one."));
+    }
     ensure_store_minimum(&catalog, &priced)?;
     crate::pricing::ensure_age_rules(&priced, true, false)?;
     let distance = handshake_types::distance_km(catalog.location, input.dropoff);

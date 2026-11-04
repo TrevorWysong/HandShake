@@ -17,7 +17,7 @@ pub use links::catalog_geohash_path;
 // a direct dependency on this crate wouldn't work. Re-exported here so
 // nothing else in this crate or the coordinator crate (which imports via
 // `catalog_integrity::*`) needs to change.
-pub use catalog_types::{MAX_STORES_PER_OWNER, ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
+pub use catalog_types::{DEFAULT_MAX_TIP_FLOOR, DEFAULT_MAX_TIP_PERCENT, MAX_STORES_PER_OWNER, MAX_TIP_PERCENT, ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
 
 /// Precision used for the merchant-discovery anchor -- coarse (city-block
 /// scale), matching open orders' drop-off precision so both discovery paths
@@ -259,6 +259,12 @@ fn validate_catalog(catalog: &MerchantCatalog, author: &AgentPubKey) -> ExternRe
         return Ok(ValidateCallbackResult::Invalid("a store's most delivery fee is more than nothing".into()));
     }
     if let Some(problem) = amount_problem("max_delivery_fee", catalog.max_delivery_fee) {
+        return Ok(ValidateCallbackResult::Invalid(problem));
+    }
+    if catalog.max_tip_percent > MAX_TIP_PERCENT {
+        return Ok(ValidateCallbackResult::Invalid(format!("a store's tip limit is at most {}% of the order", MAX_TIP_PERCENT)));
+    }
+    if let Some(problem) = amount_problem("max_tip_floor", catalog.max_tip_floor) {
         return Ok(ValidateCallbackResult::Invalid(problem));
     }
     if catalog.min_order_cents == Some(0) {

@@ -288,6 +288,12 @@ export async function setMaxDeliveryFee(originalAction: ActionHash, maxCents: nu
   return callZome("catalog", "set_max_delivery_fee", { original_action: originalAction, max_cents: maxCents });
 }
 
+/// How big a tip may be on the store's deliveries: `percent` of the order,
+/// or `floorCents`, whichever is more.
+export async function setTipLimit(originalAction: ActionHash, percent: number, floorCents: number): Promise<HcRecord> {
+  return callZome("catalog", "set_tip_limit", { original_action: originalAction, percent, floor_cents: floorCents });
+}
+
 export async function setMinimumOrder(originalAction: ActionHash, minCents: number | null): Promise<HcRecord> {
   return callZome("catalog", "set_minimum_order", { original_action: originalAction, min_cents: minCents });
 }
