@@ -26,8 +26,8 @@ const PROCESSORS: Record<Processor, { blurb: MessageKey; dashboard: string | nul
     dashboard: "https://dashboard.stripe.com/apikeys",
     how: "payments.how.stripe",
     fields: [
-      { name: "publishable_key", label: "payments.key.publishable", secret: false, placeholder: "pk_live_…" },
-      { name: "restricted_key", label: "payments.key.restricted", secret: true, placeholder: "rk_live_…" },
+      { name: "publishable_key", label: "payments.key.publishable", secret: false, placeholder: "pk_…" },
+      { name: "restricted_key", label: "payments.key.restricted", secret: true, placeholder: "rk_…" },
     ],
   },
   Square: {

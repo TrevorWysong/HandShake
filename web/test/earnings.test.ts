@@ -22,8 +22,10 @@ const pay = (when: string, parts: [Portion, number][], charged: number | null = 
   charged,
   parts: charged === null ? [] : parts.map(([portion, amount]) => ({ part: { purpose: { DriverPay: { bid: h(0) } }, portion }, amount })),
   at: at(when),
+  store_name: "Mo's",
+  delivery: true,
 });
-const collateral = (when: string, charged: number, payer = me): PaymentHistoryItem => ({ order: h(next++), hold: h(next++), leg: { Collateral: { bid: h(next++) } }, payer, payee: store, held: charged || 1500, charged, parts: [], at: at(when) });
+const collateral = (when: string, charged: number, payer = me): PaymentHistoryItem => ({ order: h(next++), hold: h(next++), leg: { Collateral: { bid: h(next++) } }, payer, payee: store, held: charged || 1500, charged, parts: [], at: at(when), store_name: "Mo's", delivery: true });
 
 test("fees, tips and late cover by week; held, released and paid-out money isn't earnings", () => {
   const items = [

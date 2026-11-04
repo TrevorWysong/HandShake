@@ -341,7 +341,7 @@ export function Cart() {
           profile={storeProfile}
           payee={cart.merchantName ?? t("cart.theStore")}
           amountCents={price.holdCents}
-          title={t("cart.payTitle", { amount: formatCents(price.holdCents) })}
+          title={t("cart.payTitle", { payee: cart.merchantName ?? t("cart.theStore") })}
           subtitle={delivery ? t("cart.paySubtitleDelivery") : t("cart.paySubtitlePickup")}
           onClose={() => setPaying(false)}
           onCard={async (card) => {

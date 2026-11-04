@@ -285,13 +285,21 @@ function testForm(): CardForm {
   let input: HTMLInputElement | null = null;
   return {
     async mount(element) {
+      const label = document.createElement("label");
+      label.className = "block";
+      const caption = document.createElement("span");
+      caption.className = "mb-1.5 block text-xs font-semibold text-ink-600 dark:text-ink-300";
+      caption.textContent = t("pay.testCard");
       input = document.createElement("input");
       input.inputMode = "numeric";
       input.maxLength = 4;
       input.value = "4242";
-      input.setAttribute("aria-label", t("pay.testCard"));
-      input.className = "w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm dark:border-ink-700 dark:bg-ink-900";
-      element.appendChild(input);
+      input.className = "w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 font-mono text-sm tracking-[0.3em] dark:border-ink-700 dark:bg-ink-900";
+      const hint = document.createElement("span");
+      hint.className = "mt-1.5 block text-[11px] text-ink-400";
+      hint.textContent = t("pay.testCardHint");
+      label.append(caption, input, hint);
+      element.appendChild(label);
     },
     async tokenize() {
       const digits = input?.value.trim() ?? "";
@@ -300,7 +308,7 @@ function testForm(): CardForm {
     },
     async complete() {},
     destroy() {
-      input?.remove();
+      input?.closest("label")?.remove();
     },
   };
 }

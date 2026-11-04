@@ -21,7 +21,7 @@ import { Button } from "../ui";
 import { PaySheet } from "./PaySheet";
 
 const TONES = {
-  info: "bg-ink-50 text-ink-700 dark:bg-ink-800/60 dark:text-ink-200",
+  info: "border border-ink-100 bg-white text-ink-700 shadow-[var(--shadow-card)] dark:border-ink-800 dark:bg-ink-900 dark:text-ink-200",
   success: "bg-presence-500/10 text-presence-600 dark:text-presence-400",
   warn: "bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100",
   error: "bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200",
@@ -99,7 +99,7 @@ export function PaymentStatus({
     const { held, charged } = standing.Held;
     return (
       <Panel tone="success" icon={<CheckCircle2 size={16} />}>
-        {charged === null ? t("pay.held", { amount: formatCents(held), payee }) : t("pay.charged", { amount: formatCents(charged), payee })}
+        {charged === null ? t(heldWording(leg), { amount: formatCents(held), payee }) : t("pay.charged", { amount: formatCents(charged), payee })}
       </Panel>
     );
   }
@@ -127,6 +127,15 @@ export function PaymentStatus({
       {retry}
     </>
   );
+}
+
+/// What a hold is, as its payer reads it: an order's charge comes to what
+/// the order does, a driver's pay to what they're owed, and collateral is
+/// charged only if the food never arrives.
+function heldWording(leg: PaymentLeg) {
+  if (leg === "Customer") return "pay.held" as const;
+  if ("DriverPay" in leg) return "pay.heldDriverPay" as const;
+  return "pay.heldCollateral" as const;
 }
 
 /// Why a payment was declined, as the payer reads it.

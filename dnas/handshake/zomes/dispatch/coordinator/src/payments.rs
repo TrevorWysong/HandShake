@@ -573,6 +573,10 @@ pub struct PaymentHistoryItem {
     pub parts: Vec<ChargedPart>,
     /// When it was settled -- or held, while it isn't.
     pub at: Timestamp,
+    /// The order's store, by its name now -- "" if it can't be read.
+    pub store_name: String,
+    /// A delivery, or a pickup.
+    pub delivery: bool,
 }
 
 /// The most history the caller's screens read at once.
@@ -599,8 +603,12 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
     let mut out = Vec::new();
     for order in orders {
         let settlements = settlements_on(&order)?;
-        let terms = get(order.clone(), GetOptions::default())?.and_then(|r| decode_or::<DeliveryOrder>(&r).map(|o| OrderTerms::of_delivery(&o)).or_else(|| decode_or::<PickupOrder>(&r).map(|o| OrderTerms::of_pickup(&o))));
-        let Some(terms) = terms else { continue };
+        let placed = get(order.clone(), GetOptions::default())?;
+        let found = placed.as_ref().and_then(|r| {
+            decode_or::<DeliveryOrder>(r).map(|o| (OrderTerms::of_delivery(&o), o.catalog_ref)).or_else(|| decode_or::<PickupOrder>(r).map(|o| (OrderTerms::of_pickup(&o), o.catalog_ref)))
+        });
+        let Some((terms, catalog_ref)) = found else { continue };
+        let store_name = crate::stores::current_catalog(&catalog_ref).map(|c| c.business_name).unwrap_or_default();
         for (hold_ref, payee, hold, offer) in holds_on(&order)? {
             let Ok(Ok(context)) = leg_context(&order, &offer.leg) else { continue };
             if context.payee != payee || (payee != me && context.payer != me) {
@@ -631,7 +639,7 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
                 }
                 None => (None, Vec::new(), held_at),
             };
-            out.push(PaymentHistoryItem { order: order.clone(), hold: hold_ref, leg: offer.leg, payer: context.payer, payee, held: hold.amount, charged, parts, at });
+            out.push(PaymentHistoryItem { order: order.clone(), hold: hold_ref, leg: offer.leg, payer: context.payer, payee, held: hold.amount, charged, parts, at, store_name: store_name.clone(), delivery: terms.delivery });
         }
     }
     out.sort_by(|a, b| b.at.cmp(&a.at));
