@@ -7,7 +7,11 @@
 // The payer's side creates the order, so the agent believes none of it:
 // before authorizing, it reads the order back from PayPal and holds it only
 // if it's approved, for authorizing, in exactly the network's amount and
-// currency -- an order the payee's account can't read isn't theirs at all.
+// currency, paid to the payee's own account and nobody else -- an order
+// can name another payee, or split the money off, and one the payee's
+// account can't read isn't theirs at all. Which account is the payee's,
+// PayPal says on an order the agent makes itself (never approved, it
+// lapses, costing nothing).
 // A PayPal authorization is honoured for three days (and capturable for 29),
 // within the network's report window. PayPal keeps no card on file here: a
 // payer approves each payment. Which environment the keys are for isn't in
@@ -53,6 +57,7 @@ export function paypalProcessor(keys: PayPalKeys, currency: string, fetchImpl: F
   let host: string | null = null;
   let live = true;
   let token: { value: string; until: number } | null = null;
+  let own: Promise<string> | null = null;
 
   async function send(base: string, method: "GET" | "POST", path: string, init: { body?: string; headers?: Record<string, string> } = {}): Promise<Response> {
     try {
@@ -121,9 +126,24 @@ export function paypalProcessor(keys: PayPalKeys, currency: string, fetchImpl: F
   };
   const capturedOn = (order: Json): Json[] => order.purchase_units?.[0]?.payments?.captures ?? [];
 
+  /// The payee's own merchant ID, as PayPal names it on an order made here.
+  function ownMerchant(): Promise<string> {
+    own ??= call("POST", "/v2/checkout/orders", { intent: "AUTHORIZE", purchase_units: [{ amount: { currency_code: currency.toUpperCase(), value: majorUnits(100, currency) } }] })
+      .then((order) => {
+        const id = order.purchase_units?.[0]?.payee?.merchant_id;
+        if (typeof id !== "string" || !id) throw new Refused("PayPal didn't say which account these keys pay into.");
+        return id;
+      })
+      .catch((err) => {
+        own = null;
+        throw err;
+      });
+    return own;
+  }
+
   return {
     async connect(): Promise<Connection> {
-      await authorized();
+      await ownMerchant();
       return { account: "PayPal account", live, currency, publicKey: keys.client_id.trim(), publicAccount: "", country: "" };
     },
 
@@ -131,10 +151,12 @@ export function paypalProcessor(keys: PayPalKeys, currency: string, fetchImpl: F
       const orderId = request.token ?? "";
       if (!/^[A-Z0-9]{8,40}$/.test(orderId)) return { status: "declined", code: "Declined" };
       try {
+        const merchant = await ownMerchant();
         const order = await call("GET", `/v2/checkout/orders/${orderId}`);
         const unit = order.purchase_units?.[0];
         const exact = order.intent === "AUTHORIZE" && order.status === "APPROVED" && order.purchase_units?.length === 1 && unit?.amount?.currency_code === request.currency.toUpperCase() && unit?.amount?.value === majorUnits(request.amount, request.currency);
-        if (!exact) return { status: "declined", code: "Declined" };
+        const ours = unit?.payee?.merchant_id === merchant && unit?.payment_instruction === undefined;
+        if (!exact || !ours) return { status: "declined", code: "Declined" };
         const done = await call("POST", `/v2/checkout/orders/${orderId}/authorize`, {}, request.idempotencyKey);
         const authorization = done.purchase_units?.[0]?.payments?.authorizations?.[0];
         if (!authorization?.id || authorization.status !== "CREATED") return { status: "declined", code: "Declined" };

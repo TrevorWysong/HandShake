@@ -56,8 +56,8 @@ const BEFORE_PICKUP: DeliveryStatus[] = ["BidAccepted", "DriverEnRouteToMerchant
 /// On the way to the store, not yet checked in.
 const ON_THE_WAY: DeliveryStatus[] = ["DriverEnRouteToMerchant", "MerchantConfirmed"];
 
-/// Orders this device has bid on automatically, so a poll never bids twice
-/// (the network refuses a second bid regardless).
+/// Orders this device has bid on automatically, by driver and order, so a
+/// poll never bids twice (the network refuses a second bid regardless).
 const autoBidOn = new Set<string>();
 interface OrderRow {
   /// The order's identity (its original action) -- what every order call takes.
@@ -121,7 +121,7 @@ export function DriverDashboard() {
     if (!autoBid.on) return;
     const commitmentsNow: Commitment[] = activeOrders.map((row) => ({ order: row.order, dropoff: dropoffPoint(row) }));
     for (const { hash: orderRef, order } of offerable(offered, commitmentsNow, offerRules(terms, limits))) {
-      const key = bytesToHex(orderRef);
+      const key = `${bytesToHex(myAgentPubKey())}:${bytesToHex(orderRef)}`;
       if (autoBidOn.has(key)) continue;
       autoBidOn.add(key);
       try {

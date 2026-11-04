@@ -1,9 +1,10 @@
 // What a person has chosen for themselves in a role: a customer's usual
 // checkout, a driver's own limits. Each only ever narrows that person's own
 // choices -- nobody else relies on them, and the network enforces its own
-// rules regardless -- so they're kept on this device, like `preferences`.
+// rules regardless -- so they're kept on this device, per identity.
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { identityStorage, perIdentity } from "./identityScope";
 import type { DropoffPreference } from "../holochain/types";
 import type { TravelMode } from "../lib/driving/routing";
 
@@ -33,6 +34,7 @@ export const useCustomerSettings = create<CustomerSettings>()(
     // Checkout defaults saved before a field existed take its default.
     {
       name: "handshake.customer-settings.v1",
+      storage: identityStorage(),
       merge: (saved, current) => {
         const stored = saved as Partial<CustomerSettings> | undefined;
         return { ...current, checkout: { ...current.checkout, ...stored?.checkout } };
@@ -85,6 +87,8 @@ export const useDriverSettings = create<DriverSettings>()(
       setTravelMode: (travelMode) => set({ travelMode }),
     }),
     // Settings saved before a field existed take its default.
-    { name: "handshake.driver-settings.v1", merge: (saved, current) => ({ ...current, ...(saved as Partial<DriverSettings> | undefined), autoBid: { ...current.autoBid, ...(saved as Partial<DriverSettings> | undefined)?.autoBid } }) },
+    { name: "handshake.driver-settings.v1", storage: identityStorage(), merge: (saved, current) => ({ ...current, ...(saved as Partial<DriverSettings> | undefined), autoBid: { ...current.autoBid, ...(saved as Partial<DriverSettings> | undefined)?.autoBid } }) },
   ),
 );
+perIdentity(useCustomerSettings);
+perIdentity(useDriverSettings);

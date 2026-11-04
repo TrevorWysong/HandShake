@@ -102,6 +102,9 @@ export function stripeProcessor(keys: StripeKeys, currency: string, fetchImpl: F
     },
 
     async authorize(request: AuthorizeRequest): Promise<Authorization> {
+      // Only ever a payment method from the card form: never a saved one of
+      // another payer's (the agent names saved cards itself, `savedAs`).
+      if (!request.savedAs && !/^pm_[A-Za-z0-9_]{1,250}$/.test(request.token ?? "")) return { status: "declined", code: "Declined" };
       try {
         let customer: string | undefined;
         let paymentMethod = request.token ?? undefined;

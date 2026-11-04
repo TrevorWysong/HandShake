@@ -12,7 +12,7 @@
 // poll, and chat was always best effort.
 import { decode, encode } from "@msgpack/msgpack";
 import type { DirectSignal } from "@holochain/client";
-import { callZome, onDirectSignal, sendDirectSignal } from "./client";
+import { callZome, myAgentPubKey, onDirectSignal, sendDirectSignal } from "./client";
 import { bytesEqual, bytesToHex } from "./decode";
 import { MAX_NOTE_CHARS } from "./types";
 import type { ActionHash, AgentPubKey, LiveCounterpart, Timestamp } from "./types";
@@ -42,8 +42,10 @@ interface Known {
 }
 const counterparts = new Map<string, Known>();
 
+/// The order's other party, for the caller -- remembered by caller and
+/// order, since who's on the other end depends on who's asking.
 function counterpart(orderRef: ActionHash, maxAgeMs = COUNTERPART_FRESH_MS): Promise<LiveCounterpart> {
-  const key = bytesToHex(orderRef);
+  const key = `${bytesToHex(myAgentPubKey())}:${bytesToHex(orderRef)}`;
   const known = counterparts.get(key);
   if (known && Date.now() - known.at < maxAgeMs) return known.answer;
   const answer = callZome<LiveCounterpart>("dispatch", "live_counterpart", orderRef);

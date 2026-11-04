@@ -105,6 +105,9 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
 
     async authorize(request: AuthorizeRequest): Promise<Authorization> {
       try {
+        // Only ever a fresh card token: Clover would take a saved card's
+        // customer in its place, and a payer's token is never another's.
+        if (!request.savedAs && !/^clv_[A-Za-z0-9_-]{1,250}$/.test(request.token ?? "")) return { status: "declined", code: "Declined" };
         let source = request.savedAs ?? request.token ?? "";
         let savedAs: string | null = null;
         if (request.save && !request.savedAs && request.token) {

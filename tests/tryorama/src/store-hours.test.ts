@@ -118,6 +118,7 @@ await runScenario(async (scenario) => {
     call(merchant, "dispatch")("force_pickup_update_for_testing", { order_original_action: forced, next_status: "MerchantConfirmed", cancellation: null, ready_by: readyBy });
   await assert.rejects(force(null), /accepting an order must say when it'll be ready/);
   await assert.rejects(force(Date.now() * 1000 + 5 * 60 * MINUTE), /within the longest prep time the network allows/);
+  await customerPaid(merchant, forced, both);
   await force(Date.now() * 1000 + 20 * MINUTE);
   console.log("[PASS] validation requires a ready time on acceptance, within the network's longest prep time");
 });

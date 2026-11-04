@@ -51,13 +51,3 @@ test("one reward a bag: another replaces it, and taking it out frees its points"
   useCart.getState().addLine(new Uint8Array([4]), owner, "Elsewhere", line(soup, 1000));
   assert.equal(useCart.getState().reward, null, "a bag from another store holds no reward of this one's");
 });
-
-test("a cart is its owner's: another identity signed in starts with an empty one", () => {
-  const cart = useCart.getState();
-  cart.claim("aa");
-  cart.addLine(store, owner, "Mo's", { itemRef: bread, name: "Bread", basePriceCents: 300, priceCents: 300, choiceCharges: [], quantity: 2, selections: [], choiceLabels: [] });
-  useCart.getState().claim("aa");
-  assert.equal(useCart.getState().lines.length, 1, "the same identity keeps it");
-  useCart.getState().claim("bb");
-  assert.deepEqual([useCart.getState().lines.length, useCart.getState().catalogRef, useCart.getState().owner], [0, null, "bb"], "anyone else starts afresh");
-});

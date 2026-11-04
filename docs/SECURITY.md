@@ -194,6 +194,15 @@ Third review of the same day:
 
 Cancelling is free until the customer's app has seen the store start, and the app says so by the cancel button. A store that starts cooking before the customer's app has heard back takes that risk itself. Its acceptance reaches the customer's app within seconds, by signal, and the app confirms by itself, so the window is small. Neither side's clock can settle which came first, so the customer's own chain decides.
 
+## 2026-11-04 review: findings and fixes
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| On a device shared between identities, one person's cart (a reward's held points included), checkout and driver settings, guardian names, sent offers and saved address showed to the next, or to a new account; screens kept what they'd read for the last one | High (privacy) | Everything kept for a person is kept under their key (`web/src/store/identityScope.ts`), emptied and read back for whoever signs in, with nothing written for nobody; every screen remounts on a change of identity; caches keyed by the caller |
+| A PayPal order is made by the payer, and can name another payee or split the money off: a customer could have a store hold and capture a payment that went to an accomplice | High | The store's agent holds an order only if it pays the store's own merchant ID, with no payment instructions |
+| Square and Clover take a saved card's id where a fresh token goes, and the agent passed the payer's token on as given | Medium | Each agent accepts only a fresh token's shape from the card form; saved cards are named by the agent alone |
+| A driver's app could settle its pay as soon as the order showed delivered, before the store's delivered decision -- the basis of its pay -- reached it, settling for nothing, once and for all; and an order its store decided never arrived never counted as over, so the driver's collateral never paid the store for the food | High (money lost) | A delivery that arrived, or was said not to, is over for settling exactly when its store has decided which |
+
 ## Store contact details and pickup chat
 
 - **Contact links can only be what they say.** A store's email must be a plain address (letters, digits and `._+-'`, so a `mailto:` link can't carry `?cc=` or anything else), and its website an `http(s)://` address with a real host. No `user@` before the host, which could dress one site up as another. No characters that could break out of a link. Validation holds every peer to this (`handshake_integrity_support::contact`). The app builds every link only from details that pass (`web/src/lib/storefront/contact.ts`), a phone link from its digits alone, and directions from the store's coordinates.
@@ -216,6 +225,6 @@ Cancelling is free until the customer's app has seen the store start, and the ap
 - **A payee could charge a held or saved card more than it's owed.** Processors can't know HandShake's rules. Every rightful charge has a signed settlement on the network, so anything beyond it is a clear chargeback for the payer, and the store's or driver's processor account answers for it. Saving a card with a payee is opt-in, per payee.
 - **An arbiter's award isn't enforced centrally.** The store's agent refunds it; a store that turns its agent off doesn't. The public ruling is the customer's evidence for a chargeback.
 - **One card per first-order deal rests on the store's agent**: its processor's card fingerprints, kept on the store's device. A store that loses that device's state could let a card take its deal again; on the network a first order is still one per account.
-- **Square and Clover adapters haven't yet run against their sandboxes**, nor the card forms inside the desktop app. Stripe's has, in test mode.
+- **Square, Clover and PayPal adapters haven't yet run against their sandboxes**, nor the card forms inside the desktop app. Stripe's has, in test mode.
 - **Validation reads a customer's history by walking their whole chain** -- Holochain validation can't pick out one entry type -- so the checks that need it (a promo's limits, the daily cancel allowance) stop at a bound. A key past it can't use limited promos; the cancel allowance steps aside for it.
 - **Timestamps** still decide store response windows, scheduled orders and promo expiry. An author can backdate within their own chain's history. The store's acceptance check bounds the promo case.

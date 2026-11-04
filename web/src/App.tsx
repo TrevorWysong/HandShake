@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useSession } from "./store/session";
+import { bytesToHex } from "./holochain/decode";
 import { HOST } from "./holochain/host";
 import { Spinner } from "./components/ui";
 import { Fingerprint } from "lucide-react";
@@ -145,15 +146,18 @@ function NoHost() {
 
 export default function App() {
   // A change of language remounts the screens, so every word -- including
-  // those a screen computed once -- is read again in the new one.
+  // those a screen computed once -- is read again in the new one. So does a
+  // change of identity: nothing a screen read for one person stays on it
+  // for another.
   const locale = useLocale((s) => s.locale);
+  const identity = useSession((s) => (s.agentPubKey ? bytesToHex(s.agentPubKey) : "nobody"));
   // Sent to a new phone: this device has stopped, and connects to nothing.
   const departing = useDeparture((s) => s.sealed);
   if (HOST === "none") return <NoHost />;
   if (departing) return <Departure sealed={departing} />;
   return (
     <SessionBootstrap>
-      <Routes key={locale}>
+      <Routes key={`${locale}:${identity}`}>
         <Route
           path="/onboarding"
           element={

@@ -83,6 +83,7 @@ await runScenario(async (scenario) => {
   await call(merchant, "catalog")("set_auto_accept_orders", { original_action: store, auto_accept_orders: true });
   await sync();
   const accepted = await pickup();
+  await customerPaid(merchant, accepted, both);
   assert.equal((await eventually(() => pickupState(customer, accepted), (o) => o.status !== "Placed")).status, "MerchantConfirmed");
   console.log("[PASS] an auto-accepting store's conductor accepts a pickup with nobody at the tablet");
 
@@ -100,6 +101,8 @@ await runScenario(async (scenario) => {
     }),
   );
   assert.equal((await deliveryState(scheduled)).status, "Scheduled");
+  await sync();
+  await customerPaid(merchant, scheduled, both);
   assert.equal((await eventually(() => deliveryState(scheduled), (o) => o.status === "Open")).status, "Open");
   console.log("[PASS] a scheduled delivery is placed with its store when due, and the store's conductor accepts it");
 
@@ -132,9 +135,9 @@ await runScenario(async (scenario) => {
   await call(merchant, "catalog")("set_auto_accept_orders", { original_action: store, auto_accept_orders: false });
   await sync();
   const late = await pickup(900);
+  await customerPaid(merchant, late, both);
   await customer.conductor.shutDown();
   await new Promise((resolve) => setTimeout(resolve, (WINDOW_SECS + 2) * 1000));
-  await customerPaid(merchant, late, both);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: late }), /the store's window to accept this order has passed/);
   console.log("[PASS] past its window, the store can't accept an order -- whether or not the customer's conductor is there to cancel it");
 });

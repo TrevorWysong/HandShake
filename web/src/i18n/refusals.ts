@@ -66,6 +66,7 @@ export const REFUSALS = {
   "refusal.only-this-order-s-customer-and-its-2": "Only this order's customer and its store can chat about it.",
   "refusal.only-whoever-held-a-payment-settles-it": "Only whoever held a payment settles it.",
   "refusal.only-whoever-pays-that-part-of-the": "Only whoever pays that part of the order offers a card for it.",
+  "refusal.paypal-didn-t-say-which-account-these": "PayPal didn't say which account these keys pay into.",
   "refusal.paypal-doesn-t-recognise-those-keys-live": "PayPal doesn't recognise those keys, live or sandbox.",
   "refusal.paypal-no-longer-accepts-this-device-s": "PayPal no longer accepts this device's keys. Connect again.",
   "refusal.paypal-refused-the-keys": "PayPal refused the keys ({0})",
