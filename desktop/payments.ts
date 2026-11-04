@@ -6,7 +6,7 @@
 // the app's own window only (`window.__HANDSHAKE_PAYMENTS__`, exposed by the
 // preload patch): status, connect, disconnect, wake. None takes an amount.
 import path from 'path';
-import { BrowserWindow, ipcMain, safeStorage, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, dialog, ipcMain, safeStorage, type IpcMainInvokeEvent } from 'electron';
 import { AppWebsocket, CellType } from '@holochain/client';
 import { createAgent } from './payments/src/agent.ts';
 import { processorFor } from './payments/src/adapters/index.ts';
@@ -19,6 +19,8 @@ import { HAPP_APP_ID } from './const';
 
 /// The app's DNA role, as its hApp names it.
 const ROLE_NAME = 'handshake';
+/// The origin the agent's websocket presents to its own app interface.
+const AGENT_ORIGIN = 'handshake-payments';
 
 /// The keystore's seal: refuses to keep keys where there's no keystore.
 const sealer: Sealer = {
@@ -42,7 +44,11 @@ export async function startPayments(holochain: HolochainManager, window: Browser
   const cellId = cell.value.cell_id;
   await admin.authorizeSigningCredentials(cellId);
   const { token } = await admin.issueAppAuthenticationToken({ installed_app_id: HAPP_APP_ID });
-  const appWs = await AppWebsocket.connect({ url: new URL(`ws://localhost:${holochain.appPort}`), token, wsClientOptions: { origin: 'handshake-payments' } });
+  // Its own app interface, for this app and this origin only -- the app's
+  // window keeps Kangaroo's -- reused across restarts.
+  const existing = (await admin.listAppInterfaces()).find((i) => i.allowed_origins === AGENT_ORIGIN && i.installed_app_id === HAPP_APP_ID);
+  const port = existing?.port ?? (await admin.attachAppInterface({ allowed_origins: AGENT_ORIGIN, installed_app_id: HAPP_APP_ID })).port;
+  const appWs = await AppWebsocket.connect({ url: new URL(`ws://localhost:${port}`), token, wsClientOptions: { origin: AGENT_ORIGIN } });
 
   const dir = path.join(fs.profileDataDir, 'payments');
   const agent = createAgent({
@@ -50,6 +56,13 @@ export async function startPayments(holochain: HolochainManager, window: Browser
     credentials: fileCredentials(path.join(dir, 'keys.sealed'), sealer),
     state: fileStore(path.join(dir, 'state.json')),
     processorFor,
+    // The person's own yes, in a dialog the app's pages can't draw or click.
+    confirm: async (change) => {
+      const { response } = await dialog.showMessageBox(window, change
+        ? { type: 'question', buttons: ['Connect', 'Cancel'], defaultId: 1, cancelId: 1, message: `Get paid into this ${change.processor} account?`, detail: `${change.connection.account} (${change.connection.live ? 'live' : 'test mode'}). Customers' and stores' cards will be held and charged for you on it.` }
+        : { type: 'warning', buttons: ['Disconnect', 'Cancel'], defaultId: 1, cancelId: 1, message: 'Stop taking card payments here?', detail: 'Payments already held are charged once you connect again; until then nobody can pay you by card.' });
+      return response === 0;
+    },
     onProblem: (what, err) => console.warn(`[payments] ${what}: ${err instanceof Error ? err.message : String(err)}`),
   });
   appWs.on('signal', () => agent.wake());

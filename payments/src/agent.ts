@@ -2,12 +2,15 @@
 // runs, and the four commands it gives the app (`window.__HANDSHAKE_PAYMENTS__`,
 // web/src/holochain/paymentsAgent.ts) -- status, connect, disconnect, wake.
 // None of them takes an amount or names a payment: whatever runs in the
-// app's pages can at most connect an account (with keys it was given), or
-// ask the agent to look for what the network says is due now.
+// app's pages can at most ask to connect an account (with keys it was
+// given), or ask the agent to look for what the network says is due now.
+// Connecting or disconnecting waits for the person's own yes, asked outside
+// the app's pages (`confirm`), so no script in them can point payments at
+// another account.
 import { Engine, type Dispatch } from "./engine.ts";
 import { KEY_NAMES } from "./adapters/index.ts";
 import type { CredentialStore } from "./credentials.ts";
-import type { Processor } from "./processor.ts";
+import type { Connection, Processor } from "./processor.ts";
 import { Refused } from "./processor.ts";
 import type { StateStore } from "./state.ts";
 import type { NetworkTerms, ProcessorName } from "./types.ts";
@@ -28,6 +31,9 @@ export interface AgentOptions {
   state: StateStore;
   /// The adapter for a processor, with its keys.
   processorFor: (processor: ProcessorName, keys: Record<string, string>, currency: string) => Processor;
+  /// Asks the person, outside the app's pages, whether to connect the
+  /// account found (`connection`) -- or, with none, to disconnect.
+  confirm: (change: { processor: ProcessorName; connection: Connection } | null) => Promise<boolean>;
   roundMs?: number;
   onProblem?: (what: string, err: unknown) => void;
 }
@@ -46,7 +52,7 @@ export function checkKeysInput(processor: unknown, keys: unknown): { processor: 
 }
 
 export function createAgent(options: AgentOptions) {
-  const { dispatch, credentials, state, processorFor, roundMs = ROUND_MS, onProblem = () => {} } = options;
+  const { dispatch, credentials, state, processorFor, confirm, roundMs = ROUND_MS, onProblem = () => {} } = options;
   let engine: Engine | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   const terms = () => dispatch<NetworkTerms>("get_network_terms", null);
@@ -88,6 +94,7 @@ export function createAgent(options: AgentOptions) {
         throw new Refused("This network is for testing: use your account's test keys.");
       }
       if (connection.currency.toUpperCase() !== network.currency.toUpperCase()) throw new Refused(`That account takes ${connection.currency.toUpperCase()}; this network pays in ${network.currency.toUpperCase()}.`);
+      if (!(await confirm({ processor, connection }))) throw new Refused("Not connected: you didn't confirm it.");
       await dispatch("set_payment_profile", { processor, public_key: connection.publicKey, account: connection.publicAccount, live: connection.live });
       await credentials.save({ processor, keys, connection });
       await run(processor, keys);
@@ -97,6 +104,7 @@ export function createAgent(options: AgentOptions) {
     /// Withdraws the payment profile and forgets the keys. Payments already
     /// held settle once it's connected again.
     async disconnect() {
+      if (!(await confirm(null))) throw new Refused("Still connected: you didn't confirm it.");
       await dispatch("clear_payment_profile", null);
       await credentials.clear();
       engine = null;

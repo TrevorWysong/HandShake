@@ -33,6 +33,9 @@ export async function devPaymentsAgent(adminWs: AdminWebsocket, appId: string, l
     credentials: fileCredentials(path.join(dir, "keys.json")),
     state: fileStore(path.join(dir, "state.json")),
     processorFor,
+    // Development's agents take test and sandbox keys only, pasted by the
+    // developer: the desktop app asks the person instead (desktop/payments.ts).
+    confirm: async () => true,
     onProblem: (what, err) => log(`${appId}: ${what}: ${messageOf(err)}`),
   });
   // The network's word that something changed: a payment offered, an
