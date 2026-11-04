@@ -1229,7 +1229,7 @@ export const es: Catalog = {
   "storeSettings.radius": "Radio de entrega (km)",
   "storeSettings.sharing": "Reparto del coste de envío",
   "storeSettings.editSharing": "Editar reparto del coste de envío",
-  "storeSettings.sharingDetail": "Tu parte de cada tarifa de envío, repartida automáticamente con el cliente (mitad y mitad al principio, ya que no hay comisión de plataforma que compensar), y la tarifa o propina máxima, que limita lo que te puede costar el envío.",
+  "storeSettings.sharingDetail": "Tu parte de cada tarifa de envío, repartida automáticamente con el cliente (mitad y mitad al principio). Los clientes pagan su parte y su propina; ambas pasan por tu tarjeta hasta el repartidor, así que tú fijas la tarifa o propina máxima.",
   "storeSettings.youCover": "Cubres el {percent} % del envío",
   "storeSettings.customerCovers": "El cliente paga todo el envío",
   "storeSettings.feesUpTo": "Tarifas y propinas de hasta {amount} cada una",
