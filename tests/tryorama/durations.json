@@ -11,6 +11,7 @@
   "delivery-radius": 314,
   "delivery-subsidy": 320,
   "dietary-tags": 88,
+  "direct-payments": 450,
   "driver-limits": 377,
   "dropoff-preference": 295,
   "escrow": 451,
@@ -33,6 +34,7 @@
   "order-answers": 198,
   "order-pricing": 113,
   "order-total-settlement": 356,
+  "payment-rules": 450,
   "pickup-orders": 217,
   "pickup-self-order": 88,
   "privacy": 433,
@@ -54,6 +56,5 @@
   "store-order-queues": 201,
   "storefront-details": 203,
   "wake": 380,
-  "warrants": 170,
-  "direct-payments": 450
+  "warrants": 170
 }

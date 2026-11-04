@@ -18,6 +18,12 @@ export type Dispatch = <T>(fn: string, payload: unknown) => Promise<T>;
 /// payee's account.
 export const MAX_ATTEMPTS_PER_ORDER = 5;
 export const MAX_ATTEMPTS_PER_PAYER_HOUR = 10;
+/// New accounts are free, so the per-payer caps don't stop cards being
+/// tested across many of them: this many declines of new payers' cards
+/// within the window pauses new payers until it's passed. Payers whose
+/// card held here before carry on. Short, since anyone can trip it.
+export const MAX_NEW_PAYER_DECLINES = 10;
+export const NEW_PAYER_WINDOW_MS = 15 * 60_000;
 const HOUR_MS = 3_600_000;
 /// Attempts older than an authorization can live are forgotten.
 const ATTEMPTS_KEPT_MS = 8 * 24 * HOUR_MS;
@@ -116,12 +122,17 @@ export class Engine {
         if (forOrder >= MAX_ATTEMPTS_PER_ORDER || lastHour >= MAX_ATTEMPTS_PER_PAYER_HOUR) return decline("TooManyAttempts");
         state.attempts[offer] = { payer, order, at: now() };
       }
+      state.declines = state.declines.filter((at) => now() - at < NEW_PAYER_WINDOW_MS);
+      if (!state.known[payer] && state.declines.length >= MAX_NEW_PAYER_DECLINES) return decline("TooManyAttempts");
       const savedAs = due.token === null ? (state.saved[payer] ?? null) : null;
       if (due.token === null && !savedAs) return decline("NoSavedCard");
       result = await authorizing(() => processor.authorize({ amount: due.amount, currency, token: due.token, savedAs, save: due.save, tag: orderTag(due.order), idempotencyKey: offerKey }));
     }
 
-    if (result.status === "declined") return decline(result.code);
+    if (result.status === "declined") {
+      if (!state.known[payer] && result.code !== "Unavailable") state.declines.push(now());
+      return decline(result.code);
+    }
     if (result.status === "action") {
       const action = await dispatch<ActionHash>("record_action", { offer: due.offer, action: result.action });
       state.challenged[hex(action)] = result.reference;
@@ -143,6 +154,7 @@ export class Engine {
       state.newcomers[store][result.fingerprint] = order;
     }
     if (result.savedAs) state.saved[payer] = result.savedAs;
+    state.known[payer] = true;
     await dispatch("record_hold", { offer: due.offer, reference: result.reference });
   }
 

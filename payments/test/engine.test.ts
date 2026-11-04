@@ -4,7 +4,7 @@
 // payer shouldn't get (card testing, a first-order deal twice on one card).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Engine, MAX_ATTEMPTS_PER_ORDER, Refused, Retry, idempotencyKey } from "../src/engine.ts";
+import { Engine, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, idempotencyKey } from "../src/engine.ts";
 import { testProcessor } from "../src/adapters/test.ts";
 import { memoryStore } from "../src/state.ts";
 import type { PaymentDue } from "../src/types.ts";
@@ -138,6 +138,32 @@ test("too many tries on an order, or by a payer in an hour, are declined before 
   await e2.round();
   await e2.round();
   assert.equal(z2.recorded("record_hold").length, 1);
+});
+
+test("a burst of declines across new accounts pauses new payers for a while; a payer the store knows carries on", async () => {
+  const z = zome();
+  const processor = testProcessor("USD");
+  let clock = 1_000_000;
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", now: () => clock });
+  z.due = [authorize(5, 49, { payer: h(80) })];
+  await engine.round();
+  assert.equal(z.recorded("record_hold").length, 1, "a regular, known from now on");
+  for (let i = 0; i < MAX_NEW_PAYER_DECLINES; i++) {
+    z.due = [authorize(100 + i, 150 + i, { payer: h(120 + i), token: "tok_test_0002" })];
+    await engine.round();
+  }
+  const seen = processor.held.size;
+  z.due = [authorize(60, 90, { payer: h(200) })];
+  await engine.round();
+  assert.equal(z.recorded("record_declined").at(-1)?.code, "TooManyAttempts", "a new payer waits");
+  assert.equal(processor.held.size, seen, "unseen by the processor");
+  z.due = [authorize(61, 91, { payer: h(80) })];
+  await engine.round();
+  assert.equal(z.recorded("record_hold").length, 2, "the regular is held as ever");
+  clock += NEW_PAYER_WINDOW_MS;
+  z.due = [authorize(62, 92, { payer: h(201) })];
+  await engine.round();
+  assert.equal(z.recorded("record_hold").length, 3, "and once the burst has passed, new payers again");
 });
 
 test("a hold is charged once for what's due, the rest released -- even if recording it failed", async () => {
