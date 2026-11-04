@@ -14,7 +14,7 @@ use crate::signals::RemoteSignal;
 use crate::order_queues::{self, OrderParties};
 use dispatch_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{guest, resolve_version_decoded, update_version, written};
+use handshake_coordinator_support::{guest, original_action_of, resolve_version_decoded, update_version, written};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestPickupOrderInput {
@@ -98,6 +98,7 @@ pub fn request_pickup_order(input: RequestPickupOrderInput) -> ExternResult<Reco
         cancellation: None,
         ready_by: None,
         customer_payment: None,
+        beacon: None,
     };
     let action_hash = create_entry(&EntryTypes::PickupOrder(order))?;
     // The customer's card, offered with it -- see `request_delivery`.
@@ -184,6 +185,32 @@ pub(crate) fn cancel_pickup(order_original_action: ActionHash, reason: Cancellat
     order.cancellation = Some(reason);
     let updated = update_version(&current, &EntryTypes::PickupOrder(order.clone()), LinkTypes::Version)?;
     order_queues::retire(&OrderParties::pickup(&order_original_action, &order))?;
+    written(updated)
+}
+
+/// The store recording a ready pickup its customer never came for, once the
+/// collection window from its being ready has passed -- with proof of the
+/// time, which validation checks: it keeps the food's price, and it counts
+/// against the customer. Never one they've said they can't get
+/// (`Disputed`): that, the store answers.
+#[hdk_extern]
+pub fn mark_pickup_not_collected(input: crate::deliveries::TimedStepInput) -> ExternResult<Record> {
+    let order_ref = original_action_of(input.order_ref)?;
+    let (current, mut order): (_, PickupOrder) = resolve_version_decoded(order_ref.clone(), "PickupOrder")?;
+    if order.merchant != agent_info()?.agent_initial_pubkey || order.status != PickupStatus::ReadyForPickup {
+        return Err(guest("Only the store records a ready order nobody came for as uncollected."));
+    }
+    let window_ends = Timestamp::from_micros(current.record.action().timestamp().as_micros().saturating_add(handshake_governance::collection_window().as_micros() as i64));
+    if handshake_integrity_support::beacon::proves_past(input.beacon.as_ref(), window_ends).is_err() {
+        return Err(guest("The customer still has time to collect it."));
+    }
+    order.status = PickupStatus::Cancelled;
+    order.cancellation = Some(Cancellation::NotCollected);
+    order.beacon = input.beacon;
+    let updated = update_version(&current, &EntryTypes::PickupOrder(order.clone()), LinkTypes::Version)?;
+    order_queues::retire(&OrderParties::pickup(&order_ref, &order))?;
+    let requester = order.requester.clone();
+    record_reputation_event(&requester, ReputationTargetWire::Customer(requester.clone()), order_ref, ReputationEventKindWire::OrderCancelledByThem, updated.clone())?;
     written(updated)
 }
 

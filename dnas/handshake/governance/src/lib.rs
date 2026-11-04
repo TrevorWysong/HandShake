@@ -85,6 +85,8 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub collection_window_secs: Option<u64>,
     #[serde(default)]
+    pub dropoff_wait_secs: Option<u64>,
+    #[serde(default)]
     pub add_on_detour_km: Option<f64>,
     #[serde(default)]
     pub offer_secs: Option<u64>,
@@ -485,12 +487,27 @@ pub fn pickup_grace() -> Duration {
     Duration::from_secs(setting(|p| p.pickup_grace_secs, 15 * 60))
 }
 
-/// How long a customer who chose to collect a delivery themselves has to
-/// come for it, before the store may record it uncollected and keep its
-/// price -- it cooked the food.
+/// How long a customer has to come for an order that's theirs to collect --
+/// a pickup once it's ready, or a delivery they chose to collect -- before
+/// the store may record it uncollected and keep its price: it cooked the
+/// food.
 pub fn collection_window() -> Duration {
     Duration::from_secs(setting(|p| p.collection_window_secs, 60 * 60))
 }
+
+/// How long a driver waits at the drop-off, from recording that they've
+/// arrived, before they may say the customer wasn't there to take it
+/// (`DeliveryStatus::Unanswered`). The customer's app is told when they
+/// arrive. At most an hour.
+pub fn dropoff_wait() -> Duration {
+    Duration::from_secs(setting(|p| p.dropoff_wait_secs, 10 * 60).min(60 * 60))
+}
+
+/// How late past its time a scheduled order may still be sent to its
+/// store. Its customer's app sends it when it comes due; one that comes
+/// back online later than this calls it off instead
+/// (`Cancellation::ScheduleMissed`) -- dinner doesn't arrive at breakfast.
+pub const SCHEDULE_SEND_GRACE: Duration = Duration::from_secs(30 * 60);
 
 /// How long a customer has to report items missing or wrong once they have
 /// their order. The store's app waits this long before settling the food's

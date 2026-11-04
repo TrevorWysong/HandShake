@@ -140,6 +140,13 @@ export function OrderStatusTimeline({ status, cancellation = null }: { status: D
       </TerminalBanner>
     );
   }
+  if (status === "Unanswered") {
+    return (
+      <TerminalBanner icon={<AlertTriangle size={20} />} tone="danger">
+        {t("status.unanswered")}
+      </TerminalBanner>
+    );
+  }
 
   const collecting = status === "Collecting" || status === "Collected";
   const steps = collecting ? COLLECT_STEPS : STEPS;

@@ -472,6 +472,18 @@ export async function markNotCollected(orderRef: ActionHash, beacon: Beacon): Pr
   return callZome("dispatch", "mark_not_collected", { order_ref: orderRef, beacon });
 }
 
+/// The store recording a ready pickup its customer never came for --
+/// proved past their window, from when it was ready, by the time source.
+export async function markPickupNotCollected(orderRef: ActionHash, beacon: Beacon): Promise<HcRecord> {
+  return callZome("dispatch", "mark_pickup_not_collected", { order_ref: orderRef, beacon });
+}
+
+/// The driver saying nobody came to take the order -- proved past the
+/// network's wait since they recorded arriving, by the time source.
+export async function customerNotHere(orderRef: ActionHash, beacon: Beacon): Promise<HcRecord> {
+  return callZome("dispatch", "customer_not_here", { order_ref: orderRef, beacon });
+}
+
 /// The caller's stores' steps that are due and need proof of the time --
 /// which the store's app takes (`useStoreSteps`).
 export async function getStoreStepsDue(): Promise<StoreStepDue[]> {

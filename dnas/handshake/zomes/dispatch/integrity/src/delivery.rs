@@ -184,6 +184,24 @@ pub(crate) fn validate_delivery_receipts(order_original_creation: &ActionHash, r
     }
 }
 
+/// When the order's driver (`driver`) recorded arriving at its drop-off:
+/// `receipts` holding just their drop-off handoff for it -- its location and
+/// photo sealed to the customer -- which no code or door drop completes.
+/// `Err(reason)` if not.
+fn arrival_of(order_original_creation: &ActionHash, receipts: &[ActionHash], driver: Option<&AgentPubKey>) -> ExternResult<Result<Timestamp, &'static str>> {
+    let [arrival] = receipts else { return Ok(Err("a driver saying nobody came cites their arrival, alone")) };
+    let record = must_get_valid_record(arrival.clone())?;
+    let Some(leg) = decode::<Leg>(&record) else { return Ok(Err("a driver's arrival is their drop-off handoff")) };
+    let theirs = leg.kind == LegKind::CustomerHandoff && Some(&leg.from) == driver && record.action().author() == &leg.from;
+    if !theirs || &resolve_original_creation(leg.order_ref.clone())? != order_original_creation {
+        return Ok(Err("a driver's arrival is their own drop-off handoff for this order"));
+    }
+    if leg.revealed_pin.is_some() || leg.left_at_door {
+        return Ok(Err("a drop-off the customer's code or the door completes is a delivery, not nobody coming"));
+    }
+    Ok(Ok(record.action().timestamp()))
+}
+
 /// The driver's proof they collected the order from the store: the store's
 /// own acknowledgment of their pickup leg -- it handed the order over, and
 /// its chain says so.
@@ -213,6 +231,8 @@ struct Step {
     collecting: bool,
     collected: bool,
     completing: bool,
+    /// The driver saying nobody came to take it.
+    unanswering: bool,
     claiming: bool,
 }
 
@@ -229,8 +249,9 @@ impl Step {
             releasing: prior_has_driver && matches!(next, Open | Collecting),
             collecting: *prior != Collecting && *next == Collecting,
             collected: *prior == Collecting && *next == Collected,
-            completing: matches!(prior, PickedUp | Disputed) && *next == Delivered,
-            claiming: *prior == PickedUp && *next == Disputed,
+            completing: matches!(prior, PickedUp | Disputed | Unanswered) && *next == Delivered,
+            unanswering: *prior == PickedUp && *next == Unanswered,
+            claiming: matches!(prior, PickedUp | Unanswered) && *next == Disputed,
         }
     }
 }
@@ -403,18 +424,24 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     if prior.status == DeliveryStatus::Scheduled && order.cancellation == Some(Cancellation::StoreClosed) && !due {
         return Ok(Some("a scheduled order finds its store closed only once its time has come".into()));
     }
+    // ...and is missed only once it's too late to send.
+    let missed_after = prior.requested_delivery_time.unwrap_or(Timestamp(0)).as_micros().saturating_add(handshake_governance::SCHEDULE_SEND_GRACE.as_micros() as i64);
+    if prior.status == DeliveryStatus::Scheduled && order.cancellation == Some(Cancellation::ScheduleMissed) && written_at.as_micros() < missed_after {
+        return Ok(Some("a scheduled order is missed only once it's too late to send".into()));
+    }
 
     // Proof of the time: a fresh round of the network's time source on
     // every update whose deadline costs someone else if it's claimed early --
     // a driver leaving (it dates the window another driver has, and proves a
     // store late), the store moving on a driver who's committed (who then
     // answers for the food), ending an order for want of a driver, or
-    // keeping the food of a customer who never came. Every other update
-    // carries the last one forward unchanged.
+    // keeping the food of a customer who never came, or a driver saying
+    // nobody came to take it. Every other update carries the last one
+    // forward unchanged.
     let driver_leaving = step.releasing && is_provider;
     let store_moving_committed = step.releasing && is_merchant && prior.collateral_payment.is_some();
     let ending = |reason: Cancellation| order.cancellation == Some(reason) && cancelled_from.is_some();
-    let needs_time = driver_leaving || store_moving_committed || ending(Cancellation::NoDriver) || ending(Cancellation::NotCollected);
+    let needs_time = driver_leaving || store_moving_committed || step.unanswering || ending(Cancellation::NoDriver) || ending(Cancellation::NotCollected);
     let proved_at = if needs_time {
         let Some(beacon) = order.beacon.as_ref().filter(|b| prior.beacon.as_ref() != Some(*b)) else {
             return Ok(Some("this step says when, with fresh proof of the time".into()));
@@ -545,10 +572,26 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     } else if prior.pickup_proof != order.pickup_proof {
         return Ok(Some("pickup_proof is set once, by the update picking the order up".into()));
     }
-    // Delivered only on proof the customer has it, set once by the update
-    // completing it -- final: there's no claim from Delivered.
-    if step.completing {
+    // Nobody came: the driver's record of arriving, alone in the receipts,
+    // and the network's wait since it, proved.
+    if step.unanswering {
         if !prior.delivery_receipts.is_empty() {
+            return Ok(Some("delivery_receipts are set once, by the update completing the order".into()));
+        }
+        let arrived_at = match arrival_of(&order_original, &order.delivery_receipts, provider)? {
+            Ok(at) => at,
+            Err(reason) => return Ok(Some(reason.into())),
+        };
+        let waited_until = arrived_at.as_micros().saturating_add(handshake_governance::dropoff_wait().as_micros() as i64);
+        if proved_at.is_none_or(|at| at.as_micros() < waited_until) {
+            return Ok(Some("a driver says nobody came only once they've waited the network's wait at the drop-off".into()));
+        }
+    // Delivered only on proof the customer has it, set once by the update
+    // completing it -- final: there's no claim from Delivered. From the
+    // driver's word that nobody came, the proof follows their arrival.
+    } else if step.completing {
+        let carried_forward = prior.delivery_receipts.is_empty() || (prior.status == DeliveryStatus::Unanswered && order.delivery_receipts.starts_with(&prior.delivery_receipts));
+        if !carried_forward {
             return Ok(Some("delivery_receipts are set once, by the update completing the order".into()));
         }
         if let Err(reason) = validate_delivery_receipts(&order_original, &order.delivery_receipts)? {

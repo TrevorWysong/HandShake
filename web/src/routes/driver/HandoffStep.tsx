@@ -3,14 +3,23 @@
 // out (their app checks them), or they confirm in their own app. An order
 // the customer chose to have left at the door needs only the drop-off and
 // a photo. (At the store, the store records the handover -- see
-// `AtTheStore`.)
+// `AtTheStore`.) Nobody coming to the door: once the driver has recorded
+// arriving (which tells the customer) and waited the network's wait, they
+// can say so -- see `NobodyCame`.
 import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, DoorOpen, ScanLine, Smartphone } from "lucide-react";
-import { handoffByCode, recordLeg } from "../../holochain/zomes/attestation";
-import { completeDelivery } from "../../holochain/zomes/dispatch";
-import { actionHash, bytesToHex } from "../../holochain/decode";
-import { HANDOFF_CODE_DIGITS, type DeliveryOrder, type GeoPoint, type PinSecret } from "../../holochain/types";
+import { BellRing, CheckCircle2, DoorOpen, ScanLine, Smartphone } from "lucide-react";
+import { getLegsForOrder, handoffByCode, recordLeg } from "../../holochain/zomes/attestation";
+import { completeDelivery, customerNotHere, getOrderDecisions } from "../../holochain/zomes/dispatch";
+import { actionHash, bytesEqual, bytesToHex, decodeEntry, timestampOf } from "../../holochain/decode";
+import { myAgentPubKey } from "../../holochain/client";
+import { HANDOFF_CODE_DIGITS, type DeliveryOrder, type GeoPoint, type Leg, type PinSecret } from "../../holochain/types";
+import { useResource } from "../../lib/hooks/useResource";
+import { useClock } from "../../lib/hooks/useClock";
+import { useTerms } from "../../store/network";
+import { currentBeacon } from "../../lib/network/timeSource";
+import { formatClockTime, formatDeadline } from "../../lib/ui/format";
+import { POLL } from "../../lib/network/poll";
 import { decodeHandoverCode, matchesCommitment } from "../../lib/orders/handoverCode";
 import { Button, Notice } from "../../components/ui";
 import { PinField } from "../../components/orders/PinField";
@@ -38,6 +47,9 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
   const [leg, setLeg] = useState<Uint8Array | null>(null);
   const [waitingForGiver, setWaitingForGiver] = useState(false);
   const action = useAction();
+  // When this driver recorded arriving: read back from the network, so the
+  // wait survives the app closing.
+  const { data: arrivedAt = null, reload: reloadArrival } = useResource(`arrival:${bytesToHex(orderRef)}`, () => arrivalOf(orderRef));
 
   const copy = COPY;
   const leftAtDoor = order.dropoff_preference === "LeaveAtDoor";
@@ -72,6 +84,7 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
     });
     const hash = actionHash(record);
     setLeg(hash);
+    await reloadArrival();
     return hash;
   }
 
@@ -114,6 +127,14 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
     });
   // A customer who confirms completes the delivery themselves.
   const checkAgain = () => run(complete);
+  // Nobody answering: arriving is recorded (the customer's told), and the
+  // wait starts.
+  const nobodyAnswering = () => action.run(async () => {
+    if (!arrivedAt) await record({});
+  });
+  const sayNotHere = () => run(async () => {
+    await customerNotHere(orderRef, await currentBeacon());
+  });
 
   if (leftAtDoor) {
     return (
@@ -194,6 +215,16 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
         </>
       )}
 
+      {order.status !== "PickedUp" ? (
+        <NoShowStanding orderRef={orderRef} />
+      ) : arrivedAt === null ? (
+        <button onClick={nobodyAnswering} disabled={action.busy} className="-mt-1 text-center text-xs font-semibold text-ink-500 underline-offset-4 hover:underline disabled:opacity-50">
+          {t("noShow.nobodyAnswering")}
+        </button>
+      ) : (
+        <NobodyCame arrivedAt={arrivedAt} busy={action.busy} onSay={sayNotHere} />
+      )}
+
       <Sheet open={scanning} onClose={() => setScanning(false)} title={t(copy.scan)} subtitle={t("handoff.scanSubtitle")}>
         <QrScanner onScan={onScan} />
         <AnimatePresence>
@@ -209,6 +240,53 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
       </Sheet>
     </div>
   );
+}
+
+/// When this driver recorded arriving at `orderRef`'s drop-off (µs): their
+/// latest handoff there no code or door completes -- `null` before one.
+async function arrivalOf(orderRef: Uint8Array): Promise<number | null> {
+  const me = myAgentPubKey();
+  const arrivals = (await getLegsForOrder(orderRef))
+    .filter((record) => {
+      const leg = decodeEntry<Leg>(record);
+      return leg.kind === "CustomerHandoff" && bytesEqual(leg.from, me) && leg.revealed_pin === null && !leg.left_at_door;
+    })
+    .map(timestampOf);
+  return arrivals.length ? Math.max(...arrivals) : null;
+}
+
+/// The driver at the door, nobody coming: the customer's been told they're
+/// here, and once the network's wait has passed they may say nobody came --
+/// paid as delivered, unless the customer disputes it and the store sides
+/// with them.
+function NobodyCame({ arrivedAt, busy, onSay }: { arrivedAt: number; busy: boolean; onSay: () => void }) {
+  const t = useT();
+  const now = useClock(15_000).getTime() * 1000;
+  const canSay = arrivedAt + useTerms().dropoff_wait_secs * 1_000_000;
+  const waited = now >= canSay;
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-amber-50 p-4 dark:bg-amber-900/20">
+      <div className="flex items-start gap-3">
+        <BellRing size={18} className="mt-0.5 shrink-0 text-amber-600" />
+        <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">
+          <span className="font-semibold">{t("noShow.toldTitle")}</span> {waited ? t("noShow.canSay") : t("noShow.waitUntil", { time: formatClockTime(canSay) })}
+        </p>
+      </div>
+      <Button variant="ghost" className="w-full" loading={busy} disabled={!waited} onClick={onSay}>
+        {t("noShow.notHere")}
+      </Button>
+    </div>
+  );
+}
+
+/// Where the driver's word that nobody came stands: paid as delivered once
+/// the customer's report window has run, unless they say they were there
+/// and the store sides with them. The customer can still take it meanwhile.
+function NoShowStanding({ orderRef }: { orderRef: Uint8Array }) {
+  const t = useT();
+  const { data: decisions } = useResource(`order-decisions:${bytesToHex(orderRef)}`, () => getOrderDecisions(orderRef), { pollMs: POLL.signalled });
+  if (!decisions?.no_show_upheld_after) return null;
+  return <Notice tone="warn">{t("noShow.driverSaid", { time: formatDeadline(decisions.no_show_upheld_after) })}</Notice>;
 }
 
 function ErrorNote({ message }: { message: string }) {

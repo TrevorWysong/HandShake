@@ -18,14 +18,14 @@ A pickup has only the customer leg, for the food. A store ordering from itself p
 
 | Outcome | Customer leg (store captures) | Driver pay (driver captures) | Collateral (store captures) |
 |---|---|---|---|
-| Delivered | food − refunds + customer's fee share + tip | bid + tip | nothing |
+| Delivered -- or nobody came to the door, upheld (`Unanswered`) | food − refunds + customer's fee share + tip | bid + tip | nothing |
 | Customer collects it themselves | food − store's fee share | — | nothing |
 | Customer cancels before the store cooks, a driver paid for | customer's fee share (passed on) | customer's fee share | nothing |
 | Customer cancels once it's cooking | food + customer's fee share | customer's fee share | nothing |
 | Store kept the driver waiting (`StoreLate`) | nothing for that driver | the whole bid | nothing |
-| No driver came (`NoDriver`), or it never arrived | nothing | nothing | the liable driver's collateral |
-| Customer never collected (`NotCollected`) | the food | — | — |
-| Store declined, or never answered | nothing | nothing | nothing |
+| No driver came (`NoDriver`), or it never arrived (a customer's claim the store sided with, a no-show's included) | nothing | nothing | the liable driver's collateral |
+| Customer never collected (`NotCollected`): a delivery they chose to collect, or a ready pickup | the food | — | — |
+| Store declined, or never answered; a scheduled order its store was closed for, or sent too late (`StoreClosed`, `ScheduleMissed`) | nothing | nothing | nothing |
 
 The store's share of the fee is inside the bid it pays the driver; the customer is held only for their own share. The store passes on the customer's share of the fee and the tip only as the driver actually took them: a store's claim cites the driver's settlement (`Claim.via`).
 

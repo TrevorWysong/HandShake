@@ -228,9 +228,11 @@ export type Cancellation =
    */
   | "StoreDidNotRespond"
   /**
-   * The customer chose to collect it and never came within the
-   * collection window. Written by the store, which keeps the food's
-   * price: it cooked it.
+   * The customer never came for an order that was theirs to collect --
+   * a delivery they chose to collect, or a pickup once it was ready --
+   * within the collection window (`handshake_governance::collection_window`).
+   * Written by the store, with proof of the time, which keeps the
+   * food's price: it cooked it.
    */
   | "NotCollected"
   /**
@@ -254,7 +256,15 @@ export type Cancellation =
    * reached the store, and nobody owes anything. Validation can't read a
    * store's hours in its time zone, so it's held against nobody.
    */
-  | "StoreClosed";
+  | "StoreClosed"
+  /**
+   * A scheduled order its customer's app couldn't send in time: it came
+   * back online more than `handshake_governance::SCHEDULE_SEND_GRACE`
+   * past the order's time. Written by the customer's conductor in place
+   * of sending it so late; it never reached the store, and nobody owes
+   * anything.
+   */
+  | "ScheduleMissed";
 
 /**
  * A member's card at a store: where they stand now, and what's coming.
@@ -763,7 +773,16 @@ export type DeliveryStatus =
   /**
    * The customer has it, collected from the store. Final.
    */
-  | "Collected";
+  | "Collected"
+  /**
+   * The driver reached the drop-off, recorded arriving, waited the
+   * network's wait (`handshake_governance::dropoff_wait`), and nobody
+   * came to take it. The customer can still take it (with proof, as from
+   * `PickedUp`), or dispute it (`Disputed`); otherwise its store upholds
+   * it once their report window has run, and it's paid as delivered --
+   * see `Outcome::Delivered`.
+   */
+  | "Unanswered";
 
 /**
  * Local UI-facing signals, emitted from `recv_remote_signal` once a remote
@@ -1988,9 +2007,15 @@ export interface NetworkTerms {
   time_relays: string[];
   time_chain_hash: string;
   /**
-   * How long a customer collecting an order has to come for it.
+   * How long a customer collecting an order -- a pickup once it's
+   * ready, or a delivery they chose to collect -- has to come for it.
    */
   collection_window_secs: number;
+  /**
+   * How long a driver waits at the drop-off before they may say nobody
+   * came to take the order.
+   */
+  dropoff_wait_secs: number;
   /**
    * Wrong handoff codes a giver's app answers per order before it stops.
    */
@@ -2130,9 +2155,16 @@ export interface OrderDecisions {
    */
   reports_until: Timestamp | null;
   /**
-   * When the store's app decides an unanswered claim, if there is one.
+   * When the store's app decides an unanswered claim that it never
+   * arrived -- refunding the customer -- if there is one.
    */
   claim_decided_after: Timestamp | null;
+  /**
+   * When the store's app upholds its driver's word that nobody came to
+   * take the order -- paid as delivered -- if the order rests on it:
+   * disputed or not, unless the store sides with the customer first.
+   */
+  no_show_upheld_after: Timestamp | null;
 }
 
 /**
@@ -2735,6 +2767,12 @@ export interface PickupOrder {
    * accepting the order -- see `DeliveryOrder::customer_payment`.
    */
   customer_payment: ActionHash | null;
+  /**
+   * Proof of when the store recorded the order uncollected
+   * (`Cancellation::NotCollected`), fresh on that update -- see
+   * `DeliveryOrder::beacon`.
+   */
+  beacon: Beacon | null;
 }
 
 /**
@@ -3495,7 +3533,14 @@ export type ReputationEventKind =
    * offer lapse, or turned it down. Recorded by the customer, on the
    * version releasing them: what automatic matching weighs.
    */
-  | "OfferLapsed";
+  | "OfferLapsed"
+  /**
+   * A customer who wasn't there to take their delivery: its driver
+   * waited at the drop-off and nobody came, and the store upheld the
+   * driver's word (`DeliveryStatus::Unanswered`). Recorded by the store,
+   * citing its decision.
+   */
+  | "NoShow";
 
 export interface ReputationSummary {
   completed_count: number;
@@ -3519,6 +3564,10 @@ export interface ReputationSummary {
    * who've delivered for enough different stores (`min_reporter_stores`).
    */
   check_in_refused_count: number;
+  /**
+   * Deliveries the customer wasn't there to take, as their store upheld.
+   */
+  no_show_count: number;
   total_collateral_forfeited: number;
 }
 

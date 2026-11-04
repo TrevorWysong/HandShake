@@ -7,6 +7,7 @@ use dispatch_types::direct::PaymentLeg;
 use crate::store_answer::{check_cancellation, check_ready_by, CancelledFrom, OrderUpdate};
 use crate::checks::{check_order_rate, check_pricing, store_version, OrderPricing};
 use crate::claims::resolve_original_creation;
+use handshake_integrity_support::beacon;
 
 /// `PickupOrder`'s sibling of `validate_new_order` -- same shape, minus
 /// every check that only makes sense once a driver is in the loop
@@ -23,6 +24,9 @@ pub(crate) fn validate_new_pickup_order(order: &PickupOrder, author: &AgentPubKe
     }
     if order.customer_payment.is_some() {
         return Ok(ValidateCallbackResult::Invalid("a new pickup order's payment is held when the store accepts it".into()));
+    }
+    if order.beacon.is_some() {
+        return Ok(ValidateCallbackResult::Invalid("a new pickup order has no proof of the time: only recording it uncollected sets one".into()));
     }
     if order.cancellation.is_some() || order.ready_by.is_some() {
         return Ok(ValidateCallbackResult::Invalid("a new pickup order can't already be accepted or cancelled".into()));
@@ -127,11 +131,30 @@ pub(crate) fn validate_pickup_order_transition(
     }
     let cancelled_from = (prior.status != PickupStatus::Cancelled && order.status == PickupStatus::Cancelled).then_some(match prior.status {
         PickupStatus::Placed => CancelledFrom::Placed,
+        PickupStatus::ReadyForPickup => CancelledFrom::Ready,
         PickupStatus::Disputed => CancelledFrom::Disputed,
         _ => CancelledFrom::Elsewhere,
     });
     if let Some(reason) = check_cancellation(&update, cancelled_from, &prior.cancellation, &order.cancellation) {
         return Ok(ValidateCallbackResult::Invalid(reason));
+    }
+    // The store keeping the food's price of a ready order nobody came for:
+    // only past the customer's window from when it was ready, on fresh
+    // proof of the time -- never on one the customer has said they can't
+    // get (`Disputed`), which the store answers instead. Every other update
+    // carries the proof forward unchanged.
+    if cancelled_from.is_some() && order.cancellation == Some(Cancellation::NotCollected) {
+        let window_ends = update.prior_written_at.as_micros().saturating_add(handshake_governance::collection_window().as_micros() as i64);
+        let Some(fresh) = order.beacon.as_ref().filter(|b| prior.beacon.as_ref() != Some(*b)) else {
+            return Ok(ValidateCallbackResult::Invalid("recording an order uncollected says when, with fresh proof of the time".into()));
+        };
+        match beacon::beacon_time(fresh) {
+            Ok(at) if at.as_micros() >= window_ends => {}
+            Ok(_) => return Ok(ValidateCallbackResult::Invalid("the store records an order uncollected only once the customer's window has passed".into())),
+            Err(reason) => return Ok(ValidateCallbackResult::Invalid(reason.into())),
+        }
+    } else if order.beacon != prior.beacon {
+        return Ok(ValidateCallbackResult::Invalid("only recording an order uncollected sets its proof of the time".into()));
     }
 
     // The store accepts an order only once it holds the customer's payment.

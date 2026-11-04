@@ -260,8 +260,13 @@ pub struct OrderDecisions {
     /// When the customer's report window ends, once they have the order --
     /// when the store's app settles it.
     pub reports_until: Option<Timestamp>,
-    /// When the store's app decides an unanswered claim, if there is one.
+    /// When the store's app decides an unanswered claim that it never
+    /// arrived -- refunding the customer -- if there is one.
     pub claim_decided_after: Option<Timestamp>,
+    /// When the store's app upholds its driver's word that nobody came to
+    /// take the order -- paid as delivered -- if the order rests on it:
+    /// disputed or not, unless the store sides with the customer first.
+    pub no_show_upheld_after: Option<Timestamp>,
 }
 
 /// The store's settlement of `order` (any version), if it's settled --
@@ -283,12 +288,16 @@ pub fn get_order_decisions(order: ActionHash) -> ExternResult<OrderDecisions> {
         (None, Some(o)) => (o.status == PickupStatus::PickedUp, false),
         _ => (false, false),
     };
+    let undecided = decisions.delivered.is_none() && decisions.not_delivered.is_none();
+    let no_show = no_show_word(&latest)?.filter(|_| undecided);
+    let window = handshake_governance::report_window().as_micros() as i64;
     Ok(OrderDecisions {
         delivered: decisions.delivered.is_some(),
         not_delivered: decisions.not_delivered.is_some(),
         refund: decisions.settlement.map(|(_, refund)| refund),
-        reports_until: has_it.then(|| Timestamp::from_micros(at + handshake_governance::report_window().as_micros() as i64)),
-        claim_decided_after: (claimed && decisions.not_delivered.is_none()).then(|| Timestamp::from_micros(at + claim_grace_micros())),
+        reports_until: has_it.then(|| Timestamp::from_micros(at + window)),
+        claim_decided_after: (claimed && no_show.is_none() && decisions.not_delivered.is_none()).then(|| Timestamp::from_micros(at + claim_grace_micros())),
+        no_show_upheld_after: no_show.map(|word| Timestamp::from_micros(word.action().timestamp().as_micros() + window)),
     })
 }
 
@@ -372,24 +381,31 @@ pub fn decide_order(order: ActionHash) -> ExternResult<bool> {
     let has_it = match (decode_or::<DeliveryOrder>(&latest), decode_or::<PickupOrder>(&latest)) {
         (Some(delivery), _) => {
             if decisions.delivered.is_none() && decisions.not_delivered.is_none() {
-                match delivery.status {
-                    DeliveryStatus::Delivered => {
+                let no_show = no_show_word(&latest)?;
+                match (&delivery.status, no_show) {
+                    (DeliveryStatus::Delivered, _) => {
                         let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::Delivered { proof: latest.action_address().clone() } }))?;
                         // A customer who claimed it never came, and it had.
                         if came_out_of_claim(&latest)? {
                             record_reputation_event(&requester, ReputationTargetWire::Customer(requester.clone()), order.clone(), ReputationEventKindWire::DisputeResolvedAgainst, hash.clone())?;
                         }
-                        // The driver's completed delivery, on the store's
-                        // word -- and they collect their pay on it.
-                        if let Some(bid) = delivery.accepted_bid.as_ref().and_then(|b| get(b.clone(), GetOptions::default()).ok().flatten()).and_then(|r| decode_or::<Bid>(&r)) {
-                            record_reputation_event(&bid.bidder, ReputationTargetWire::Driver(bid.bidder.clone()), order.clone(), ReputationEventKindWire::OrderCompleted, hash.clone())?;
-                            let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, vec![bid.bidder]);
-                        }
-                        // Finished: off every queue, the driver's included.
-                        crate::order_queues::retire(&crate::OrderParties::delivery(&order, &delivery)?)?;
+                        delivered_on(&order, &delivery, &hash)?;
                         decisions.delivered = Some((hash, delivery.accepted_bid.clone()));
                     }
-                    DeliveryStatus::Disputed if now >= latest.action().timestamp().as_micros() + claim_grace_micros() => {
+                    // The driver's word that nobody came -- disputed or not --
+                    // upheld once the customer's report window from it has
+                    // run: a store siding with the customer decides it never
+                    // arrived before then (`decide_not_delivered`).
+                    (_, Some(word)) => {
+                        if now >= word.action().timestamp().as_micros() + handshake_governance::report_window().as_micros() as i64 {
+                            let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::Delivered { proof: word.action_address().clone() } }))?;
+                            record_reputation_event(&requester, ReputationTargetWire::Customer(requester.clone()), order.clone(), ReputationEventKindWire::NoShow, hash.clone())?;
+                            delivered_on(&order, &delivery, &hash)?;
+                            let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, vec![requester.clone()]);
+                            return Ok(true);
+                        }
+                    }
+                    (DeliveryStatus::Disputed, None) if now >= latest.action().timestamp().as_micros() + claim_grace_micros() => {
                         not_delivered(&order, &latest, &delivery)?;
                         return Ok(true);
                     }
@@ -435,6 +451,33 @@ pub fn decide_order(order: ActionHash) -> ExternResult<bool> {
     record_decision(DecisionWire::Settlement(ItemSettlement { order: order.clone(), basis, issues: cited, refund }))?;
     let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order }, vec![requester]);
     Ok(true)
+}
+
+/// The driver's word that nobody came to take the order, if `latest` rests
+/// on it: that version itself, or the one the customer's dispute of it
+/// replaced.
+fn no_show_word(latest: &Record) -> ExternResult<Option<Record>> {
+    let status = |record: &Record| decode_or::<DeliveryOrder>(record).map(|o| o.status);
+    match status(latest) {
+        Some(DeliveryStatus::Unanswered) => Ok(Some(latest.clone())),
+        Some(DeliveryStatus::Disputed) => {
+            let ActionData::Update(update) = &latest.action().data else { return Ok(None) };
+            let prior = get(update.original_action_address.clone(), GetOptions::default())?;
+            Ok(prior.filter(|p| status(p) == Some(DeliveryStatus::Unanswered)))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// The store's decision that the order was delivered (`outcome`), as it
+/// reaches the driver: their completed delivery, and the pay they collect
+/// on it. Finished: off every queue, the driver's included.
+fn delivered_on(order: &ActionHash, delivery: &DeliveryOrder, outcome: &ActionHash) -> ExternResult<()> {
+    if let Some(bid) = delivery.accepted_bid.as_ref().and_then(|b| get(b.clone(), GetOptions::default()).ok().flatten()).and_then(|r| decode_or::<Bid>(&r)) {
+        record_reputation_event(&bid.bidder, ReputationTargetWire::Driver(bid.bidder.clone()), order.clone(), ReputationEventKindWire::OrderCompleted, outcome.clone())?;
+        let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, vec![bid.bidder]);
+    }
+    crate::order_queues::retire(&crate::OrderParties::delivery(order, delivery)?)
 }
 
 /// Whether a delivered version came out of the customer's claim that it

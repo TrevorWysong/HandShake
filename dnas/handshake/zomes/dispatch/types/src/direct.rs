@@ -240,7 +240,7 @@ pub fn entitlement(part: &Part, amount: u64, basis: &Basis) -> Entitlement {
             Cancellation::StoreDidNotRespond if portion == Portion::Food => TakesIf(ChainCheck::ConfirmedCooking, amount).filter_zero(),
             Cancellation::StoreDidNotRespond => No,
             // It never reached the store.
-            Cancellation::StoreClosed => No,
+            Cancellation::StoreClosed | Cancellation::ScheduleMissed => No,
         },
     }
 }

@@ -133,6 +133,9 @@ pub struct ReputationSummary {
     /// Drivers' reports that a store wouldn't check them in -- from drivers
     /// who've delivered for enough different stores (`min_reporter_stores`).
     pub check_in_refused_count: u32,
+    /// Deliveries the customer wasn't there to take, as their store upheld.
+    #[serde(default)]
+    pub no_show_count: u32,
     pub total_collateral_forfeited: u64,
 }
 
@@ -203,6 +206,7 @@ pub fn get_reputation_summary(target: ReputationTarget) -> ExternResult<Reputati
             5 => summary.dropped_count += 1,
             6 => summary.late_count += 1,
             8 => summary.lapsed_count += 1,
+            9 => summary.no_show_count += 1,
             CHECK_IN_REFUSED => summary.check_in_refused_count += 1,
             4 => summary.total_collateral_forfeited += amount,
             _ => {}
@@ -224,6 +228,7 @@ impl ReputationSummary {
         self.late_count += other.late_count;
         self.lapsed_count += other.lapsed_count;
         self.check_in_refused_count += other.check_in_refused_count;
+        self.no_show_count += other.no_show_count;
         self.total_collateral_forfeited += other.total_collateral_forfeited;
     }
 }
