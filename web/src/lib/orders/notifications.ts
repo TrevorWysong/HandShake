@@ -61,6 +61,7 @@ function cancelledText(role: OrderRole, change: OrderChange): string {
   if (role === "Customer") return cancellationText(cancellation);
   if (cancellation === "ByCustomer") return t("notify.cancel.byCustomer");
   if (cancellation === "StoreDidNotRespond") return t("notify.cancel.noResponse");
+  if (cancellation === "StoreClosed") return t("notify.cancel.storeClosed");
   if (cancellation === "StoreLate") return t(role === "Driver" ? "notify.cancel.lateDriver" : "notify.cancel.lateStore");
   if (cancellation === "NoDriver") return t(role === "Driver" ? "notify.cancel.noDriverDriver" : "notify.cancel.noDriverStore");
   return t(role === "Driver" ? "notify.cancel.delivery" : "notify.cancel.order");

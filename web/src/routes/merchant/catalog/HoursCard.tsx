@@ -66,6 +66,10 @@ export function HoursCard({ catalog, catalogRef, onSaved }: { catalog: MerchantC
 
 type Week = Record<number, { opens: number; closes: number }[]>;
 
+/// A day open around the clock: one period from midnight to midnight.
+const ALL_DAY = { opens: 0, closes: 0 };
+const isAllDay = (periods: { opens: number; closes: number }[]) => periods.length === 1 && periods[0].opens === 0 && periods[0].closes === 0;
+
 function weekFrom(schedule: OpeningPeriod[]): Week {
   const week: Week = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
   for (const p of [...schedule].sort((a, b) => a.opens - b.opens)) week[p.weekday].push({ opens: p.opens, closes: p.closes });
@@ -113,13 +117,28 @@ function HoursEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: (w
                       {t("hoursEditor.copyAll")}
                     </button>
                   )}
-                  <button onClick={() => update(day, [...week[day], week[day].length ? { opens: 17 * 60, closes: 22 * 60 } : DEFAULT_PERIOD])} className="flex items-center gap-0.5 text-handshake-600">
-                    <Plus size={12} /> {week[day].length ? t("hoursEditor.addHours") : t("hoursEditor.open")}
-                  </button>
+                  {!isAllDay(week[day]) && (
+                    <button onClick={() => update(day, [ALL_DAY])} className="text-ink-400 hover:text-handshake-600">
+                      {t("hoursEditor.allDay")}
+                    </button>
+                  )}
+                  {!isAllDay(week[day]) && (
+                    <button onClick={() => update(day, [...week[day], week[day].length ? { opens: 17 * 60, closes: 22 * 60 } : DEFAULT_PERIOD])} className="flex items-center gap-0.5 text-handshake-600">
+                      <Plus size={12} /> {week[day].length ? t("hoursEditor.addHours") : t("hoursEditor.open")}
+                    </button>
+                  )}
                 </div>
               </div>
               {week[day].length === 0 && <span className="text-xs text-ink-400">{t("hours.closed")}</span>}
-              {week[day].map((period, i) => (
+              {isAllDay(week[day]) && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-presence-700 dark:text-presence-400">{t("hours.allDay")}</span>
+                  <button onClick={() => update(day, [])} className="text-ink-300 hover:text-red-500" aria-label={t("hoursEditor.remove")}>
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+              {!isAllDay(week[day]) && week[day].map((period, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <Input type="time" aria-label={t("hoursEditor.opens", { day: weekdayName(day) })} value={toTimeInput(period.opens)} onChange={(e) => update(day, week[day].map((p, j) => (j === i ? { ...p, opens: fromTimeInput(e.target.value) } : p)))} className="py-1.5 text-xs" />
                   <span className="text-xs text-ink-400">{t("hoursEditor.to")}</span>
@@ -129,8 +148,8 @@ function HoursEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: (w
                   </button>
                 </div>
               ))}
-              {week[day].some((p) => p.closes <= p.opens) && <span className="text-[11px] text-ink-400">{t("hoursEditor.overnight")}</span>}
-              {week[day].some((p) => p.closes === p.opens) && <span className="text-[11px] text-red-600">{t("hoursEditor.same")}</span>}
+              {!isAllDay(week[day]) && week[day].some((p) => p.closes < p.opens) && <span className="text-[11px] text-ink-400">{t("hoursEditor.overnight")}</span>}
+              {!isAllDay(week[day]) && week[day].some((p) => p.closes === p.opens) && <span className="text-[11px] text-ink-400">{t("hoursEditor.fullDay")}</span>}
             </div>
           ))}
         </div>
@@ -143,7 +162,7 @@ function HoursEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: (w
         {t("hoursEditor.prepDetail", { zone: deviceTimeZone().replace(/_/g, " ") })}
       </p>
       {action.error && <Notice>{action.error}</Notice>}
-      <Button loading={action.busy} onClick={save} disabled={!prepValid || (setHours && WEEK.some((d) => week[d].some((p) => p.closes === p.opens)))} className="py-2 text-xs">
+      <Button loading={action.busy} onClick={save} disabled={!prepValid} className="py-2 text-xs">
         {t("common.save")}
       </Button>
     </div>

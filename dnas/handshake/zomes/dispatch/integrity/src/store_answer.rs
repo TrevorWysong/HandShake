@@ -34,6 +34,8 @@ impl OrderUpdate<'_> {
 pub(crate) enum CancelledFrom {
     /// Waiting for the store to accept it.
     Placed,
+    /// A delivery waiting for its scheduled time.
+    Scheduled,
     /// A pickup its customer says they can't get -- only the store, giving
     /// their money back, cancels it from here.
     Disputed,
@@ -68,6 +70,8 @@ pub(crate) fn check_cancellation(update: &OrderUpdate<'_>, cancelled_from: Optio
         // Their conditions are checked with the delivery's other rules.
         Cancellation::StoreLate => update.author == update.requester && from != CancelledFrom::Placed && from != CancelledFrom::Collecting,
         Cancellation::NoDriver => update.author == update.merchant && from == CancelledFrom::Open,
+        // Its time is checked with the delivery's other rules.
+        Cancellation::StoreClosed => update.author == update.requester && from == CancelledFrom::Scheduled,
     };
     (!allowed).then(|| format!("{reason:?} isn't a cancellation this author can give here"))
 }

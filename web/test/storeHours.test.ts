@@ -71,3 +71,15 @@ test("a week reads with matching days run together", () => {
     { days: "Sun", hours: "Closed", weekdays: [0] },
   ]);
 });
+
+test("a day open 24 hours runs midnight to midnight, and reads so", () => {
+  const always = [0, 1, 2, 3, 4, 5, 6].map((day) => period(day, 0, 0));
+  assert.ok([0, 6].every((day) => openAt(always, day, 0) && openAt(always, day, 24 * H - 1)));
+  assert.deepEqual(plain(storeStatus({ is_open: true, weekly_hours: always, time_zone: "UTC" }, SAT_NOON_UTC)), { open: true, label: "Open 24 hours" });
+  // Friday and Saturday around the clock: on Saturday, open until it ends.
+  const weekend = [period(5, 0, 0), period(6, 0, 0)];
+  assert.deepEqual(plain(storeStatus({ is_open: true, weekly_hours: weekend, time_zone: "UTC" }, SAT_NOON_UTC)), { open: true, label: "Open until 12:00 AM" });
+  const fridayToSunday = [period(5, 0, 0), period(6, 0, 0), period(0, 0, 10 * H)];
+  assert.deepEqual(plain(storeStatus({ is_open: true, weekly_hours: fridayToSunday, time_zone: "UTC" }, SAT_NOON_UTC)), { open: true, label: "Open until Sunday 10:00 AM" });
+  assert.deepEqual(plain(describeWeek(weekend)).slice(1), [{ days: "Fri–Sat", hours: "Open 24 hours", weekdays: [5, 6] }, { days: "Sun", hours: "Closed", weekdays: [0] }]);
+});

@@ -578,6 +578,8 @@ fn canceller(cancellation: &Option<Cancellation>, requester: &AgentPubKey, merch
         Cancellation::ByStore(_) | Cancellation::StoreDidNotRespond | Cancellation::StoreLate => Some(merchant.clone()),
         // A driver's doing, recorded as a drop.
         Cancellation::NoDriver => None,
+        // Unprovable either way (see `Cancellation::StoreClosed`).
+        Cancellation::StoreClosed => None,
     }
 }
 
