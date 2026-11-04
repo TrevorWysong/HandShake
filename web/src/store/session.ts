@@ -9,12 +9,13 @@ import { forgetStoredIdentity, loadStoredIdentity, storedIdentityNeedsUnlock } f
 import { createProfile, getProfileForAgent } from "../holochain/zomes/profiles";
 import { chainClosed, successionsOf } from "../holochain/zomes/account";
 import { prepareDevice } from "../holochain/device";
-import { actionHash, decodeEntry } from "../holochain/decode";
+import { actionHash, bytesToHex, decodeEntry } from "../holochain/decode";
 import { describeError } from "../lib/ui/errors";
 import { useNetwork } from "./network";
 import type { ActionHash, GeoPoint, Profile, RoleTag } from "../holochain/types";
 import { readStoredJson, store } from "../lib/util/storage";
 import { nowMicros } from "../lib/ui/format";
+import { useCart } from "./cart";
 
 /// The development host's identity code (Admin API, passkeys), loaded only
 /// where it exists -- see `holochain/host.ts`.
@@ -305,3 +306,9 @@ export async function resumeSession(): Promise<void> {
     useSession.setState({ resuming: false });
   }
 }
+
+// Whoever is signed in on this device has their own cart: switching to
+// another identity, or making a new one, never brings the last one's along.
+useSession.subscribe((state, previous) => {
+  if (state.agentPubKey && state.agentPubKey !== previous.agentPubKey) useCart.getState().claim(bytesToHex(state.agentPubKey));
+});
