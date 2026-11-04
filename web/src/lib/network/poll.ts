@@ -19,8 +19,8 @@ export const POLL = {
   /// Upkeep that matters over days, not minutes: re-affirming a recovery
   /// plan (account coordinator, `reaffirm_recovery_plan`).
   upkeep: 30 * 60_000,
-  /// A card payment that's gone through, until its funds land: the issuer
-  /// grants them within seconds of hearing from the processor.
+  /// A card offered to its payee, until their payment agent has held it:
+  /// seconds, while it's running.
   payment: 2_000,
   /// A new device waiting to be handed an account, or vouched for: someone
   /// is standing there with both phones.

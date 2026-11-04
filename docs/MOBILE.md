@@ -61,7 +61,7 @@ To notify a phone whose app is closed, the phone has to be woken through Apple's
 - Tokens carry an expiry inside the encryption (30 days by default, `TOKEN_TTL_DAYS`), so an old token is useless. The relay answers every wake alike, valid or not, so a token can't be tested.
 - A phone that's being spammed re-registers. That gets a new device id, and every outstanding token stops working.
 
-**What it costs:** one small service per network, holding only device id → where to reach it (`push/`). It can be run by the network operator, the same party that runs the issuer, or anyone; a network can run more than one. A network without one still works: phones are notified while the app is open, which is today's behaviour.
+**What it costs:** one small service per network, holding only device id → where to reach it (`push/`). It can be run by the network operator, the same party that runs the bootstrap server, or anyone; a network can run more than one. A network without one still works: phones are notified while the app is open, which is today's behaviour.
 
 ### What's built, and what a phone build adds
 

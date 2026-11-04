@@ -4,11 +4,11 @@ How someone keeps their HandShake account when they change phones, and gets it b
 
 ## The problem
 
-A HandShake account is an agent key. Its private half lives in the keystore of the person's device (the Holochain runtime's lair), and the app never sees it. Changing phones, the old one can send the key on. Lose the device, though, and the key is gone: nothing peer-to-peer can bring it back, and nobody has a copy. With balances now real money, that loss can't be left to chance.
+A HandShake account is an agent key. Its private half lives in the keystore of the person's device (the Holochain runtime's lair), and the app never sees it. Changing phones, the old one can send the key on. Lose the device, though, and the key is gone: nothing peer-to-peer can bring it back, and nobody has a copy. With stores, ratings and a store's or driver's in-flight payments riding on it, that loss can't be left to chance.
 
 ## Moving to a new phone: the same key
 
-Moving to a new phone while the old one still works keeps the account's **own key**. The old phone sends the key to the new one, sealed so only the new phone can open it. The new phone then rebuilds the account's chain from the network (Holochain 0.7.1's `restore_from_dht`). It's the same account afterwards: the same balance, stores, listings, ratings, history and orders in progress. Nothing moves to a different key, so nothing has to be re-listed, handed on or reissued.
+Moving to a new phone while the old one still works keeps the account's **own key**. The old phone sends the key to the new one, sealed so only the new phone can open it. The new phone then rebuilds the account's chain from the network (Holochain 0.7.1's `restore_from_dht`). It's the same account afterwards: the same stores, listings, ratings, history and orders in progress, its payments still its own to settle. Nothing moves to a different key, so nothing has to be re-listed or handed on. A store or driver connects their processor account on the new phone, since its keys stay on the device they were pasted into.
 
 1. **The new phone invites.** Its keystore makes a one-time encryption key, and it shows the public half as a code (`handshake-move:1:…`) with a fingerprint.
 2. **The old phone waits for the network.** It scans the code, and the person checks the fingerprint matches on both screens. The account zome's `ready_to_move` then has to say the network's authorities hold this device's latest action. A new phone restores only what the network holds, so nothing the old phone wrote can be left behind.
@@ -36,41 +36,31 @@ A plan counts only if it's the account's **latest** as of where the account stoo
 
 Each key takes over at most one account, so an account's history is a single line. Ratings and reputation for drivers and customers follow that line (the reputation zome reads the whole `lineage`). Stores are keyed by their catalog, so they don't move: see *What doesn't move yet*.
 
-### Identity on the network, money through the issuer
+### Identity on the network; money stays where it is
 
-The phrase or guardians prove *who* the person is, peer to peer. Validation alone can't safely move a lost key's **money**:
+The phrase or guardians prove *who* the person is, peer to peer. Recovery moves no money, because there's none on the network to move: every payment is a card authorization its payee holds on their own processor account ([DIRECT_PAYMENTS.md](DIRECT_PAYMENTS.md)).
 
-- **The old key can't be shown to be gone.** Validation sees only what it can fetch by hash. It can never prove an action *doesn't* exist, so it can't refuse the old key's future spending. A found or stolen phone could spend the same balance the new key inherits.
-- **A phrase isn't single-use.** Whoever holds the words can sign for any number of new keys, and each would inherit the balance.
-
-So a recovered account's balance is **reissued by an issuer**, the party that already holds the money behind it. That logic lives in the issuer service's `recovery.ts`:
-
-- **Once per account.** The grant reference is `recovery:<old key>`, and a second recovery of the same account is marked contested and left to a person to review.
-- **After a wait.** The old key must stay quiet for the issuer's published `recovery_wait_days` (default 7) from when the issuer first saw the request. Any activity on the old key restarts the wait.
-- **For what the old key holds then, never more.**
-- **Then what it was owed, a part at a time.** For 30 days after, the issuer also reissues what the old key was owed on its orders and never collected: a store's payment for food in flight, a driver's pay, a refund. See *Money owed to a lost key*.
-- **And what it owed back, to whoever it was owed to.** Over the same 30 days, the issuer grants the payers of refunds the old key never gave back (a store's cancellation, say) their money, in the refund's place. See *Refunds that wait on a lost key*.
+- **A customer loses nothing.** Their cards were held by the stores and drivers they paid, who settle as usual.
+- **A store or driver connects their processor account again** on the new key, pasting its keys in again: they never left the lost device. They should revoke the old device's keys from their processor's dashboard, so a found phone can't charge anything. The new key publishes its own payment profile.
+- **Payments the lost key held but hadn't settled lapse uncharged.** Only a hold's author settles it, and the network can't tell a lost key from one still in use, so the new key can't settle in its place: a found old phone could then charge the same hold again. A card authorization lapses after about seven days, and its payer is never charged. A store or driver who loses their device loses what was in flight then. That's the price of nobody being able to charge on a lost key's word.
 
 Around that, honest apps treat a key whose account has moved on as finished:
 
 - A store's app won't accept its orders, and a customer's app won't accept its bids (`dispatch::accounts::ensure_not_moved`).
-- The issuer won't cash it out.
 - The device itself shows "Your account has moved" (`MovedAway`).
 
 ## Residual risks
 
 | Risk | Why it remains | What limits it |
 |---|---|---|
-| A thief with an unlocked lost phone spends its balance before recovery | The device's own key is still valid until the owner acts | The phone's lock, plus HandShake's passkey gate in development; recover promptly. |
-| A thief keeps spending at a colluding store after recovery | Validation can't see the recovery | Honest stores refuse the key. The issuer's wait restarts on activity and it won't cash out a recovered key. Money only leaves through issuers. |
-| The old key collects a part the issuer already reissued, or granted its payer in its place | Validation can't see the reissue, and the issuer can't see the future; a modified app ignores the old device's own stop | It's reissued only after the old key's been quiet for the wait, and the watch stops at its first new action. An honest old device stops collecting once it sees the move. What it collects lands in a balance that's frozen in practice: this issuer won't cash it out and honest stores won't take its orders. A colluding store could still take its orders and cash out, so the issuer's grants are public, and its review limit counts everything paid out for the account. |
-| A payer is paid twice for a refund the old key never gave back: the issuer's grant, and the part itself | -- | Ruled out by validation. The payer takes the grant *as* that part, on their own chain; whichever they write first, the other is refused. |
+| A thief with an unlocked lost phone acts as the account before recovery | The device's own key is still valid until the owner acts | The phone's lock, plus HandShake's passkey gate in development; recover promptly. A store or driver revokes the device's processor keys from their processor's dashboard. |
+| A thief keeps acting as the old key at a colluding store after recovery | Validation can't see the recovery | Honest stores refuse the key. There's no balance for it to spend, and processor keys revoked at the processor charge nothing. |
+| A store's or driver's unsettled holds when their device is lost | Only a hold's author settles it | They lapse uncharged within about a week; payers lose nothing. |
 | Both phones use the account at once | A modified app, or taking the account back after the new phone already has it | The old phone stops before its key leaves and offers to take it back only with a warning. The network refuses a forked account: the person recovers it as they would a lost phone's. |
-| Someone else uses the phrase or the guardians | The phrase *is* the account; guardians are trusted | The old device sees "Your account has moved". The issuer's wait gives the owner time to see it. Guardians are asked to vouch only after speaking to the person. A threshold over half means two different recoveries would each need a guardian who vouched for both, which their chain forbids. |
-| An issuer reissues dishonestly | Issuers are trusted for money in and out | Their grants are public, and they're on the network's roster. |
+| Someone else uses the phrase or the guardians | The phrase *is* the account; guardians are trusted | The old device sees "Your account has moved". Guardians are asked to vouch only after speaking to the person. A threshold over half means two different recoveries would each need a guardian who vouched for both, which their chain forbids. |
 | A plan names its guardians in public | Validation must see who may vouch | Names stay on the device (`guardianNames`); only keys are published. |
 
-When Holochain's DPKI (Deepkey) returns, key revocation at the conductor level could make recovery's money move deterministically too. The `Succession` record is the natural thing to anchor it to.
+When Holochain's DPKI (Deepkey) returns, key revocation at the conductor level could let a recovered key settle what its old key held. The `Succession` record is the natural thing to anchor it to.
 
 ## Stores
 
@@ -79,53 +69,12 @@ A store is authored by its merchant's key, and no key can change another's entri
 - Validation accepts it only from the key whose `Succession` took over the old store's owner, and each store moves once.
 - Ratings follow the store's line (`store_line`), as a person's follow their keys. A move counts only while the succession behind it stands.
 - Customers opening the old store are sent on to the new one, and Browse lists only the new one.
-- The old listing's stake stays with the lost key.
-
-### Money owed to a lost key
-
-Money for an order sits in holds until each party collects their part, from their own device. A lost key never will, so its parts would sit there for good. The new key can't collect them in its place: the network allows each part once *per chain*, so a found or stolen old phone could collect the same part again, and the money would exist twice. So the issuer reissues them, part by part, with the same caution as the balance:
-
-- **Read the way validation reads.** `dispatch::uncollected_by` reads the old key's history from the head the balance was reissued at, every action back, or fails (`ledger::decisions_of`). A read that misses a part the old key collected would pay it twice, so an incomplete read pays nothing.
-- **Priced as collecting it would pay**, a store's settlement splitting food between store and refund as `ledger::collect` does. Only parts the old key would *collect*, on a valid hold and a valid basis; never ones it would give back or forfeit.
-- **A found old device stops collecting.** Its conductor collects what it's owed every few minutes, app open or not. Once it sees its account has moved to a new key, its sweeps skip (`dispatch::settlement::moved_on`), so an honest owner who finds the old phone doesn't collect what the issuer already reissued. They stay scheduled, though: if the recovery wasn't the owner's and they void it (by replacing the plan it rested on), the account is theirs again here and the sweeps carry on. Stopping them for good would let anyone with the phrase switch off the owner's settling.
-- **Only while the old key stays lost.** Before each grant, the issuer checks the old key has done nothing since that head. If it has, the watch stops and the recovery is left for a person: the key could collect what it's owed itself.
-- **Once per part.** The grant's reference is `recovery:<old key>:<hold>:<part>`, recorded before it's granted, so a retry can't grant twice.
-- **Review counts the whole account.** The balance and every part add up against the issuer's review limit, so an account can't come through in small parts; once a part is left for review, so is everything after it.
-- **Bounded.** 60 days of orders, at most 500 of them, 20,000 actions of history; past that, a person looks. The orders are the ones in the old key's history, and every order in its stores' queues: an order a store never answered appears nowhere in its own history. Anyone can place orders in a store's queue, so someone could flood one past the cap. That only stops the sweep: nothing is reissued for the account until a person looks, and nothing moves wrongly.
-
-### Refunds that wait on a lost key
-
-Some parts come back to their payer only when the recipient gives them back (`Waive`): the food of an order the store cancelled, never answered, or was called off before it cooked; a driver's pay on an order cancelled; the collateral of a driver who doesn't answer for the food. A lost key never will, so the payer's money would stay held for good.
-
-**The new key can't give it back in the old key's place.** That looks harmless, since a waiver gives money back, but it would let money be made from nothing. A waiver by the new key could be safe only if the old key could *never* collect that part, and validation can't prove that. An order's history can branch: anyone who may update an order can update an older version of it, and validation sees only the version updated. So a found or stolen old phone, working with a customer or a driver, can usually build a branch on which the store is owed after all (the customer picking the order up, say). The old key would collect the part on that branch while the payer collected it on the new key's waiver.
-
-**So the issuer pays the payer, and the payer's own chain keeps it to once.** The issuer grants the payer exactly the part, as a grant **in place of** it (`IssuerGrant::in_place_of`). The payer collects that grant *as* the part (`LedgerKind::Returned`), and validation treats it like collecting the part (`ledger_integrity`):
-
-- **Never both.** Taking the grant decides the part for the payer: a later collection of the part from the hold, on any basis, is refused. And a grant for a part they've already collected is refused too. Both checks read the payer's own chain, so they hold whatever any other chain says.
-- **Never twice.** A second grant in place of the same part, from this issuer or another, is refused the same way. Such a grant can't be collected as a plain deposit either.
-- **Only the payer's own money.** Validation checks the grant itself, even from an issuer on the roster:
-  - it goes to the hold's payer;
-  - it's for exactly the part;
-  - it cites a `Succession` taking over the recipient's account.
-
-  So no issuer can pay a part around a recipient who was never recovered.
-- **A driver's collateral settles the order in hand**, as the collateral coming back from the hold would, so the driver isn't left at their limit.
-
-The issuer decides *which* parts with the same care as what was owed (`dispatch::unreturned_by`):
-- It reads the same history, from the same head, or reads nothing.
-- It takes only parts the old key would give back and hadn't, on an order that's over.
-- It skips an order with more than one cancellation across its branches.
-- It skips a part the payer can collect on their own.
-
-Each part's reference is shared with what's reissued to the new key, `recovery:<old key>:<hold>:<part>`, so a part goes one way, once, to one party. A part that reads as both owed and given back goes neither way. The grant is retried only to the party it was first recorded for. Each grant also counts toward the account's review limit, and stops at the old key's first new action, like everything else here.
-
-What this leaves is the residual risk above: an old key, found and working with others, can still collect a part the payer was granted in its place, into its own frozen balance. The issuer's grant is then money the hold never released. That's the issuer's loss, bounded by its wait and its review limit, and never a payer paid twice.
 
 ## What doesn't move yet
 
 Moving to a new phone keeps the key, so everything stays. On a recovery:
 
-- **Money owed to (or owed back by) the lost key that comes due more than 30 days after its balance was reissued.** The watch ends then.
+- **Payments the lost key held but hadn't settled.** They lapse uncharged (above).
 - **A store's decisions.** Everyone's pay on a delivered order rests on the store's decision about it (`dispatch_types::issues`). If the store's key is lost before it decides, nothing on that order can settle.
 - **Goodie bags** are short-lived and aren't copied.
 
@@ -135,12 +84,8 @@ Moving to a new phone keeps the key, so everything stays. On a recovery:
 - `dnas/handshake/zomes/catalog/coordinator/src/moves.rs`: moving a store (`StoreSuccession`).
 - `dnas/handshake/zomes/account/coordinator/src/device.rs`: `ready_to_move`; each zome's `prepare_device`.
 - `runtime/device/`: the runtime's side of moving to a new phone: keys, codes, restore.
-- `dnas/handshake/zomes/ledger/`: `standing_at`.
 - `dnas/handshake/zomes/dispatch/coordinator/src/accounts.rs`: honest apps refuse moved keys.
 - `dnas/handshake/zomes/reputation/coordinator`: reputation follows the account's lineage.
-- `issuer/src/recovery.ts`: the reissue sweep, the balance then what was owed; `payouts.ts` declines recovered keys' cash-outs.
-- `dnas/handshake/zomes/dispatch/coordinator/src/settlement.rs`: `uncollected_by`, `unreturned_by`; `ledger`'s `decisions_of`.
-- `dnas/handshake/zomes/ledger/integrity`: a grant in place of a part (`validate_in_place_of`), and its payer taking it (`validate_returned`).
 - `web/src/routes/account/`: Account & recovery -- the page, and a sheet for each of the phrase, guardians, moving to a new phone, vouching and moving to a new version.
 - `web/src/components/account/RestoreAccount.tsx`: "I already have an account".
 - `web/src/lib/account/recoveryPhrase.ts`: BIP-39 words in ten languages, and HKDF under HandShake's own label to Ed25519.
@@ -152,7 +97,4 @@ Moving to a new phone keeps the key, so everything stays. On a recovery:
   - `web/test/deviceMove.test.ts`: the codes, as the runtime writes them;
   - `tests/tryorama/src/account.test.ts`: every authority, and the forgeries a modified app would try;
   - `tests/tryorama/src/store-move.test.ts`: a faithful copy, the move's forgeries;
-  - `issuer/test/service.test.ts`: reissue rules, and what was owed or owed back: once per part, one way only, stopped by the old key acting, reviewed as a whole, never from a partial read;
-  - `tests/tryorama/src/uncollected.test.ts`: what a lost key was owed, from its own history: what it collected isn't owed, what it couldn't is, priced right, read only from its own chain;
-  - `tests/tryorama/src/returned.test.ts`: refunds that wait on a lost store: found even on orders it never answered; a grant in a part's place only for exactly that part, to its payer, for a recovered recipient, from an issuer; never collected as well as the part, in either order, nor twice;
   - `web/test/recoveryPhrase.test.ts`.

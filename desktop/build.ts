@@ -11,12 +11,13 @@
 //
 // Kangaroo is a template meant to be forked; this keeps only what's
 // HandShake's own (kangaroo.config.ts, network.json) and lays it over a
-// fresh copy of Kangaroo in desktop/.kangaroo, with three fixes (`PATCHES`).
+// fresh copy of Kangaroo in desktop/.kangaroo, with a few fixes (`PATCHES`)
+// and the payee's payment agent (desktop/payments.ts, payments/).
 // Installers land in desktop/.kangaroo/dist. Releasing is
 // .github/workflows/desktop.yml.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,6 +40,30 @@ const RELEASES = process.env.GITHUB_REPOSITORY ?? "TrevorWysong/HandShake";
 const [OWNER, NAME] = RELEASES.split("/");
 
 const PATCHES = [
+  {
+    // The payment agent starts once the conductor and the app's window are
+    // up (desktop/payments.ts).
+    file: "src/main/launch.ts",
+    from: "import { HolochainManager } from './holochainManager';\n",
+    to: "import { HolochainManager } from './holochainManager';\nimport { startPayments } from './handshakePayments';\n",
+  },
+  {
+    file: "src/main/launch.ts",
+    from: "  return {\n    lairHandle,\n    holochainManager,\n    mainWindow,\n    zomeCallSigner,\n  };",
+    to: "  await startPayments(holochainManager, mainWindow, kangarooFs);\n\n  return {\n    lairHandle,\n    holochainManager,\n    mainWindow,\n    zomeCallSigner,\n  };",
+  },
+  {
+    // ...and the app's window gets its four commands.
+    file: "src/preload/happ.ts",
+    from: "contextBridge.exposeInMainWorld('__HC_ZOME_CALL_SIGNER__', {",
+    to: `${readFileSync(path.join(DESKTOP, "paymentsPreload.ts"), "utf8")}\ncontextBridge.exposeInMainWorld('__HC_ZOME_CALL_SIGNER__', {`,
+  },
+  {
+    // payments/ imports its modules by their .ts names, as Node runs them.
+    file: "tsconfig.node.json",
+    from: '"composite": true',
+    to: '"composite": true,\n    "allowImportingTsExtensions": true',
+  },
   {
     // Kangaroo installs the hApp with one network seed for every role. Ours
     // carries its seeds already (package.ts), and a migration release has
@@ -107,6 +132,12 @@ const patches = macUnsigned
 
 fetchKangaroo();
 copyFileSync(path.join(DESKTOP, "kangaroo.config.ts"), path.join(KANGAROO, "kangaroo.config.ts"));
+// The payment agent, beside Kangaroo's main process: payments/ as it is,
+// with the network's generated types where its import finds them.
+copyFileSync(path.join(DESKTOP, "payments.ts"), path.join(KANGAROO, "src/main/handshakePayments.ts"));
+cpSync(path.join(REPO, "payments/src"), path.join(KANGAROO, "src/main/payments/src"), { recursive: true });
+mkdirSync(path.join(KANGAROO, "src/main/web/src/holochain"), { recursive: true });
+copyFileSync(path.join(REPO, "web/src/holochain/generated.ts"), path.join(KANGAROO, "src/main/web/src/holochain/generated.ts"));
 for (const { file, from, to } of patches) {
   const at = path.join(KANGAROO, file);
   const text = readFileSync(at, "utf8");

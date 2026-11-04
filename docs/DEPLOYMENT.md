@@ -23,15 +23,14 @@ These values are part of the DNA hash. Everyone on a network must install a bund
 
 - **Network seed.** A name for the network, such as `handshake-2026`. Change it to start a fresh network.
 - **Store response window** (`store_response_secs`, default 300). How long a store has to accept an order before the customer's conductor cancels it.
-- **Credit limit** (`credit_limit_cents`, required). How far below zero any balance may go. Use 0: every order is then paid from money already in the account, so a fresh identity can't order -- or post a driver's collateral -- on credit and walk away. Packaging refuses to run without it, and refuses anything above 0 unless built with `HANDSHAKE_ALLOW_CREDIT=1`.
-- **Report window** (`report_window_secs`, default 7200). How long a customer has, once they have their order, to report missing or wrong items. The store's payment for the food waits until it ends; the driver is paid as soon as the store's app records the delivery. The store has the final say on each report: its app refunds those it accepts or never answers and settles the rest. Nobody else reviews them.
-- **Issuers** (`issuers`). The agent keys allowed to put money into the network: the stand-in for a payment processor crediting an account against a real card payment. With a credit limit of 0, nobody can pay for anything until an issuer credits them, so packaging requires at least one. They need keys generated on a conductor you operate before the bundle is built. An issuer calls `ledger::issue_grant` once a payment clears; the recipient's app collects it.
+- **Live payments** (`live_payments`, required by packaging). Whether stores and drivers connect live processor accounts (`true`) or test ones. Payments go straight to each store's and driver's own Stripe, Square or Clover account ([DIRECT_PAYMENTS.md](DIRECT_PAYMENTS.md)); the network holds no money and needs no money server. Packaging refuses a bundle without `true` unless built with `HANDSHAKE_TEST_PAYMENTS=1`.
+- **Report window** (`report_window_secs`, default 7200). How long a customer has, once they have their order, to report missing or wrong items. At most three days, since a card authorization lasts about seven. The store's charge for the food waits until it ends; the driver's as soon as the store's app records the delivery. The store has the final say on each report: its app refunds those it accepts or never answers and settles the rest. Nobody else reviews them.
 
 Every other setting is optional, and the defaults suit most networks. Set only the ones you change:
 
 | Setting | Default | What it governs |
 | --- | --- | --- |
-| `currency` | `"USD"` | The ISO 4217 currency every amount is in, in its minor units. Display only: the ledger is unit-agnostic. |
+| `currency` | `"USD"` | The ISO 4217 currency every amount is in, in its minor units. Every store's and driver's processor account must take it. |
 | `answer_grace_secs` | 1800 | However late a report of missing items comes, the store has at least this long to answer it (never longer than the report window). |
 | `claim_grace_secs` | 1800 | How long a customer's "never arrived" stands before the store's app decides it. The store can decide sooner. |
 | `max_code_attempts` | 5 | Wrong handoff codes a giver's app answers for one order before it stops. |
@@ -41,9 +40,8 @@ Every other setting is optional, and the defaults suit most networks. Set only t
 | `max_delivery_radius_km` | 50 | The furthest any store may deliver. Validation checks every order's drop-off area against its store's radius. |
 | `default_delivery_subsidy_percent` | 50 | A new store's share of each delivery fee. |
 | `suggested_delivery_fees` | `[400, 600, 900, 1200]` | The delivery fee caps checkout suggests, in minor units of `currency`. Set them with the currency. |
-| `store_listing_stake` | 2000 | What listing a store for customers to find sets aside from its owner's balance, in minor units -- returned when the listing closes. Every listing is backed by money while it stands, so nobody can fill a neighbourhood with fake stores. With a credit limit of 0, a store needs funds before it can list. |
 | `max_pending_orders` | 5 | The most orders a customer may place within one store response window. An order costs nothing until a store accepts it, so this keeps one identity from burying a store's queue. |
-| `offer_secs` | 45 | How long a driver whose bid is accepted has to commit (set aside their collateral) before the store's app offers the order to another. |
+| `offer_secs` | 45 | How long a driver whose bid is accepted has to commit (their collateral held) before the store's app offers the order to another. |
 | `pickup_grace_secs` | 900 | How long past when a committed driver is due at the store (its ready time, or as soon as they could arrive from when it confirmed them) before the store's app moves them on and the customer may collect it themselves. A driver may drop an order any time before pickup. |
 | `store_wait_secs` | 900 | How long a checked-in driver waits past the store's ready time before they may call it late, for a store that hasn't set its own (`store_wait_minutes`, part of each order's terms). Late, the driver leaves paid in full by the store, the order goes to another driver, and the customer may cancel for a full refund. |
 | `min_store_wait_secs` | 300 | The shortest wait a store may set. |
@@ -57,10 +55,10 @@ Every other setting is optional, and the defaults suit most networks. Set only t
 | `bid_window_secs` | 30 | How long a customer's app collects bids, from the first, before matching automatically. |
 | `minute_value_cents` | 10 | What each minute of a bid's ETA counts for in the published matching rule, in minor units. |
 | `restricted_min_age` | unset: none sold | The legal age for age-restricted items (alcohol, tobacco) where the network runs. Unset, validation refuses any order with them. Set, they're pickup only: the customer confirms their age and the store checks ID at the counter. Delivery to an adult with an ID check at the door is a licensed activity in most places, and isn't offered. |
-| `verifiers` | none | Keys of the organisations the network trusts to verify drivers (identity, licence, insurance, background), like `issuers`. A verifier uses the app's Account & recovery → Verify a driver: they check the documents in person or through their own provider, then scan the driver's code. |
+| `verifiers` | none | Keys of the organisations the network trusts to verify drivers (identity, licence, insurance, background). A verifier uses the app's Account & recovery → Verify a driver: they check the documents in person or through their own provider, then scan the driver's code. |
 | `require_verified_drivers` | `false` | Whether a driver needs a verifier's current verification to bid. Validation enforces it. Most places' rules for delivery platforms expect it. |
 | `verification_days` | 365 | The longest a verification lasts. A verifier can withdraw one at any time and customers' apps stop accepting that driver at once. Validation itself can't see a withdrawal, though, so this also bounds how long a modified app could still use it. |
-| `arbiters` | none: no appeals | Keys of the people or organisations who rule on appeals of a store's decision. A customer can appeal a store's settlement (the refund it gave for missing or wrong items) once. Each order's appeal goes to an arbiter chosen by the order's hash, so nobody picks their judge. The store gives its side, and the arbiter awards up to what the store kept. The issuer pays the award to the customer out of the store owner's next cash-outs. Arbiters reach their docket from Account & recovery → Appeals. |
+| `arbiters` | none: no appeals | Keys of the people or organisations who rule on appeals of a store's decision. A customer can appeal a store's settlement (the refund it gave for missing or wrong items) once. Each order's appeal goes to an arbiter chosen by the order's hash, so nobody picks their judge. The store gives its side, and the arbiter awards up to what the store kept. The store's payment agent refunds the award to the customer's card; the public ruling is the customer's evidence for a chargeback if it doesn't. Arbiters reach their docket from Account & recovery → Appeals. |
 | `appeal_window_secs` | 14 days | How long after a store settles an order its customer may appeal. |
 | `services` | OpenStreetMap's public servers | The map tiles, address search and routing the app uses, and the push relay that wakes closed apps: `{ map_tiles_url, map_attribution, geocoder_url, routing_url, push_relay_url }` (`routing_url` and `push_relay_url` optional). The tile URL is a `{z}/{x}/{y}` template; the attribution is the tiles' credit line, text with `<a href="https://...">` links (apps show only its text and http(s) links, up to 300 characters, and packaging warns of anything else); the geocoder is a Nominatim-compatible API (your own Nominatim, or Photon); routing is an OSRM-compatible API whose `{profile}` is `car`, `bike` or `foot` (one OSRM instance per profile, as `https://routing.openstreetmap.de/routed-{profile}` runs them), timing drivers' bid ETAs and stores' delivery times by road (https only; apps send each point rounded to about 100 m, a few requests at a time) -- without it, drivers type their ETAs, auto-bid passes orders by, and store cards show only distance. **Set it for production**: OpenStreetMap's public servers don't allow an app's production traffic, and every lookup or route tells them where someone is. Packaging warns when it's unset. Never consulted by validation. |
 | `time_source` | drand quicknet | The public time source deadline claims are proved against: `{ public_key (hex, BLS G2), genesis_secs, period_secs, relays, chain_hash }`. Validation checks a round's signature against the key alone; apps fetch rounds from the relays. |
@@ -78,64 +76,30 @@ Copy `deploy/properties.example.json` to `deploy/properties.json` (gitignored) a
 
 ## 2. Run the network's servers
 
-A network needs three things running on machines you control, and a fourth if it wakes closed apps. Each is small:
+A network needs one thing running on a machine you control, and a second if it wakes closed apps. Each is small, and neither touches money:
 
 1. **Bootstrap and relay** (`kitsune2-bootstrap-srv`) behind TLS. Peers find each other through it, and reach each other through it when NATs are in the way. Holochain refuses a plaintext relay outside development.
-2. **The issuer's conductor**: an always-on Holochain node holding the issuer's agent key, on the same network as everyone else (`issuer/scripts/conductor.ts`). Its admin interface listens on its own machine only.
-3. **The issuer service** (`issuer/`, see its README): card top-ups, payout accounts, cash-outs, recoveries. It runs beside the issuer's conductor, and it's the only thing that talks to it. It's reached by the app over https: its address is published in the issuer's profile.
-4. **A push relay** (`push/`, see its README), optional: wakes a customer's closed app when their order changes, without learning who they are or what they ordered (MOBILE.md). It needs no conductor. Its address goes in the network's `services.push_relay_url`; without one, apps hear of changes only while open.
+2. **A push relay** (`push/`, see its README), optional: wakes a customer's closed app when their order changes, without learning who they are or what they ordered (MOBILE.md). It needs no conductor. Its address goes in the network's `services.push_relay_url`; without one, apps hear of changes only while open.
 
-The issuer's key has to be on the network's roster (`issuers` in `deploy/properties.json`), which is part of the DNA. So the order is:
-
-```sh
-# On the issuer's machine (ISSUER_DATA_DIR short: the keystore's socket path is limited).
-export ISSUER_DATA_DIR=/var/lib/handshake-issuer ISSUER_LAIR_PASSPHRASE=... \
-       BOOTSTRAP_URL=https://bootstrap.example.org RELAY_URL=https://bootstrap.example.org
-node issuer/scripts/conductor.ts &          # the issuer's node
-node issuer/scripts/provision.ts key        # prints its key: add it to deploy/properties.json `issuers`
-
-# Anywhere: build the network's bundle with that roster (step 3 below) -> deploy/handshake.happ and handshake.webhapp
-
-# Back on the issuer's machine:
-node issuer/scripts/provision.ts install deploy/handshake.happ   # same bundle as everyone
-cd issuer && npm start                       # the service (issuer/.env, see .env.example)
-```
-
-**Keep safe:**
-- `ISSUER_DATA_DIR` holds the issuer's key and chain: back it up. Losing it means losing the ability to grant and pay out.
-- The passphrase unlocks the keystore. Keep it in a secret store.
-
-**Stripe** (the issuer README has the details):
-- live keys only once the issuer is cleared to handle real money (`ALLOW_LIVE_STRIPE=1`);
-- a webhook endpoint at `https://<issuer>/webhooks/stripe` with the events `checkout.session.completed`, `charge.dispute.created` and `charge.dispute.closed`;
-- Radar rules.
+Payments need no server: each store's and driver's own device runs its payment agent against their own processor account ([DIRECT_PAYMENTS.md](DIRECT_PAYMENTS.md)).
 
 ### With Docker Compose
 
-`deploy/docker-compose.yml` runs them behind Caddy, which fetches TLS certificates itself:
-- `deploy/issuer/Dockerfile` builds one image: the pinned Holochain binaries, checked against CI's hashes, and the issuer;
-- `deploy/issuer/start.sh` starts the conductor, then prints the key (`key`) or installs the hApp and serves (`serve`).
+`deploy/docker-compose.yml` runs them behind Caddy, which fetches TLS certificates itself. `deploy/bootstrap/Dockerfile` builds the bootstrap server from Holochain's pinned binary, checked against CI's hash.
 
 ```sh
 cd deploy
-cp ../issuer/.env.example issuer.env       # fill in; never commit it (gitignored)
-export BOOTSTRAP_DOMAIN=bootstrap.example.org ISSUER_DOMAIN=issuer.example.org
-docker compose run --rm issuer key         # the issuer's key, for the roster
-#   ...package the network with it, so deploy/handshake.happ exists...
+export BOOTSTRAP_DOMAIN=bootstrap.example.org
 docker compose up -d --build
 ```
 
 For a push relay too: fill in `deploy/push.env` from `push/.env.example` (`npm run keys` in `push/` makes its keys), set `PUSH_DOMAIN`, and start with `docker compose --profile push up -d --build`.
 
-The scripts it runs are tested (a fresh conductor, key, install, admin on localhost only). **The images and Compose file themselves haven't been run yet**: build them once on the target machine and check the logs before relying on them.
+**The images and Compose file haven't been run yet**: build them once on the target machine and check the logs before relying on them.
 
 ### Apple Pay and Google Pay
 
-The card form is Stripe's own (Embedded Checkout). It offers Apple Pay and Google Pay only:
-- in a browser engine that supports them;
-- on a domain registered in Stripe (Settings → Payment methods).
-
-Inside the desktop app (Kangaroo's Electron), they don't appear, and cards still work. In a Tauri mobile build, test them on the device before promising them.
+The card form is each payee's processor's own. Stripe's Payment Element offers Apple Pay and Google Pay only in a browser engine that supports them, on a domain registered with the store's or driver's Stripe account. Inside the desktop app they don't appear, and cards still work. In a Tauri mobile build, test them on the device before promising them.
 
 ## 3. Package
 
@@ -167,4 +131,4 @@ Each order change is signalled straight to the order's other parties, conductor 
 ## Upgrades
 
 - **Coordinator-only changes** (no change to entry types, link types or validation) keep the DNA hash. Ship a new app version and the network carries on.
-- **Integrity changes** produce a new DNA, which is a new network. People move their accounts to it: balances (carried by the issuer), profiles, stores and history. MIGRATION.md has the protocol and the operator's steps.
+- **Integrity changes** produce a new DNA, which is a new network. People move their accounts to it: profiles, stores and history (payments stay on each person's processor account). MIGRATION.md has the protocol and the operator's steps.

@@ -1,6 +1,6 @@
 # Upgrading the network
 
-How HandShake ships a change to its rules without stranding anyone's money, history or store.
+How HandShake ships a change to its rules without stranding anyone's payments, history or store.
 
 ## Two kinds of change
 
@@ -20,30 +20,26 @@ HandShake builds account migration on top of them.
 
 Holochain 0.7.1 adds a fourth, which HandShake uses within a network rather than between them: installing an app with `restore_from_dht` rebuilds an existing key's chain on a new device -- how an account moves to a new phone with its key (RECOVERY.md).
 
-### 1. Announcing the new network
+### 1. The new version names its network
 
-The issuer runs on both networks (the same key, on both rosters). On the old network, it publishes its profile with `next_network`, the new DNA's hash. The service does this itself when `PREVIOUS_ISSUER_APP_ID` names its app there. Old apps then show "A new version of HandShake is out" (a banner, plus Account & recovery → New version).
+Nothing is announced on the old network. The person installs the new version, chooses "I already have an account" → "From the previous version", and the new version shows a **move code**: its network (DNA hash) and the account's new key there (`handshake-move:…`). That code, from an app the person installed themselves, is the only thing that points an account anywhere; nobody else can. In the old version, Account & recovery → New version reads it.
 
 ### 2. Leaving the old network
 
-The person installs the new version, chooses "I already have an account" → "From the previous version", and the new version shows its code. In the old version, they scan or paste that code. The old app then makes one call, `account::migrate_out`:
+The old app makes one call, `account::migrate_out`:
 
 - It refuses while something would be stranded:
   - orders in progress, in any role;
-  - a listed store, whose stake comes back only to this key. The app closes listings first.
+  - payments this account held, as a store or driver, that it hasn't settled yet (`dispatch::my_unsettled_holds`): only this key can charge them, so after the close they'd lapse uncharged.
 - It seals a **parcel** to the new key: the person's name, phone, saved addresses and favourites, which only the old key could read.
-- It writes a validated **`Migration`** entry naming the new network and the new key, with links for the issuer and for the new key.
+- It writes a validated **`Migration`** entry naming the new network and the new key, with a link for the new key.
 - It **closes the chain** (`close_chain`).
 
-Holochain rejects anything after the close: since 0.7.1 the author's own conductor refuses to write it, and the network's authorities reject it. Validation of a *record* doesn't check that, though, so a counterparty fetching a hold written after the close wouldn't notice. So the ledger checks for itself: its validation walks the author's chain since their previous ledger entry, and refuses any entry after a `CloseChain`. The old key can never move money again, even from a modified app.
+Holochain rejects anything after the close: since 0.7.1 the author's own conductor refuses to write it, and the network's authorities reject it.
 
-### 3. Carrying the balance
+### 3. Money
 
-Money can't cross networks on validation's word. The issuer, which holds the money behind it, carries it (`issuer/src/migrations.ts`):
-- It sweeps the old network's migration requests.
-- It waits until each one's chain close is seen. Because the close is final, there's no waiting period, unlike a recovery.
-- It credits what the ledger held at the close (`ledger::standing_at`) to the new key on the new network.
-- It does this once per account: the grant reference is `migration:<old key>`, and the service records each one.
+There's no balance to carry: money never lived on the network ([DIRECT_PAYMENTS.md](DIRECT_PAYMENTS.md)). A store or driver connects their processor account on the new version, and payers' cards are held by whoever they pay there.
 
 ### 4. Arriving
 
@@ -57,36 +53,29 @@ A release made while people move carries the previous network as a second app ro
 
 ### What doesn't move, and the limits
 
-- **Money owed mid-order.** Moving out is refused while orders are active, and a store must close its listings first.
+- **Payments mid-order.** Moving out is refused while orders are active, or while payments this account held are still settling.
 - **Recovery plans, guardians and vouches** are network-scoped. People set them up again on the new network. The app could carry the plan in the parcel; that's not done yet.
 - **History reaches back one version.** The new app reads the network just before it. To reach further back, a release would carry more than one previous role.
-- **Who carries the money.** If several issuers announce the same next network, each carries only the requests made to it (the account picks one), so nobody is paid twice. Running two migrations to different next networks at once isn't supported.
-- **The old network has to stay up during the move.** Its peers serve the history the new network reads. Keep the issuer's old conductor, and the old bootstrap and relay servers, running until everyone who's going to move has moved. History on the old network lasts as long as some peers still hold it.
+- **The old network has to stay up during the move.** Its peers serve the history the new network reads. Keep the old bootstrap and relay servers running until everyone who's going to move has moved. History on the old network lasts as long as some peers still hold it.
 
 ## For the operator, step by step
 
-1. Build the new release with the changed integrity zomes and the same issuers in `deploy/properties.json`. Use a new network seed, such as `handshake-2027`, and carry the previous release:
+1. Build the new release with the changed integrity zomes. Use a new network seed, such as `handshake-2027`, and carry the previous release:
    - `npm run package -- --network-seed handshake-2027 --previous deploy/releases/handshake-2026`
    - Every release writes `deploy/handshake.happ` and `deploy/handshake.network.json`. Keep both for each release, in `deploy/releases/<name>/`.
-2. On the issuer's machine:
-   - install the new network for the issuer's key: `node issuer/scripts/provision.ts install deploy/handshake.happ`, with a new `ISSUER_APP_ID`;
-   - set `PREVIOUS_ISSUER_APP_ID` to the old app's id;
-   - restart the service. It announces the new network on the old one and carries balances over.
-3. Ship the new release. People move when they open it.
-4. Once moving has tailed off, stop the issuer's old app. A later release can drop the `previous` role.
+2. Ship the new release. People move when they open it, from the code it shows.
+3. Once moving has tailed off, a later release can drop the `previous` role.
 
 ## Where it lives
 
-- `dnas/handshake/zomes/account/coordinator/src/migration.rs`: `migrate_out`, `chain_closed`, `get_migration_requests`, `arrive`, `arrived_from`. The `Migration` and `Arrival` entries are in `account_types`.
-- `dnas/handshake/zomes/ledger/integrity`: refuses ledger entries after a chain close.
+- `dnas/handshake/zomes/account/coordinator/src/migration.rs`: `migrate_out`, `chain_closed`, `arrive`, `arrived_from`. The `Migration` and `Arrival` entries are in `account_types`.
 - `dnas/handshake/zomes/catalog/coordinator/src/moves.rs`: `import_store`, `imported_from` (and the shared store copy).
 - `dnas/handshake/zomes/reputation/coordinator`: adds the previous network's summaries.
-- `issuer/src/migrations.ts`: carries balances over.
 - `web/scripts/package.ts`: `--previous`.
 - Web:
-  - `routes/account/UpgradeSheet.tsx`, the move sheet in the old version;
+  - `routes/account/UpgradeSheet.tsx`, the move sheet in the old version, reading the move code (`lib/account/accountMove.ts`, `readMoveCode`);
   - `components/account/RestoreAccount.tsx`, "From the previous version" in the new version;
   - `holochain/client.ts`, calls to the `previous` role.
 - Tests:
   - `tests/tryorama/src/migration.test.ts`, two real networks end to end;
-  - `issuer/test/service.test.ts`, the carry-over rules.
+  - `web/test/accountMove.test.ts`, the move code.

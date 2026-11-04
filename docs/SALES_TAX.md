@@ -33,7 +33,7 @@ Tests:
 ## Who collects in HandShake
 
 A marketplace facilitator is usually defined as someone who facilitates a sale *and* collects payment from the buyer and passes it to the seller. That definition is exactly what HandShake doesn't have:
-- the customer's money moves to the store on the customer's and store's own ledgers;
+- the customer pays the store directly, on the store's own processor account;
 - no company handles it in between.
 
 States split on software that never touches the payment:
@@ -46,7 +46,7 @@ States split on software that never touches the payment:
 - put it on every receipt;
 - produce the store's filing report.
 
-**Risk to raise with an adviser:** the card **issuer** collects money (top-ups), but not per sale. Whether a state could treat it as a facilitator should be checked, especially in Illinois-style states.
+**Risk to raise with an adviser:** HandShake's software computes the price and tells the store's own payment agent what to charge, though it never handles the money. Whether an Illinois-style state could treat that as facilitating should be checked.
 
 ## Recommended design
 
@@ -56,7 +56,7 @@ States split on software that never touches the payment:
   - Some states exempt grocery-type items, such as packaged or bakery goods.
   - Alcohol often has its own rate.
 - **Delivery fee:** **not taxed by default.** It's an independent driver's service, separately stated, and not part of the store's sale. A store in a state that taxes delivery charges can switch on "tax my share of the delivery fee", applied to the share it covers.
-- **Tip:** never taxed. It's voluntary, separately stated, and all of it goes to the driver, which the ledger already guarantees.
+- **Tip:** never taxed. It's voluntary, separately stated, and all of it goes to the driver, which the network's settlement rules already guarantee.
 - **Promotions:** tax is computed on the discounted price. A store-funded discount reduces the taxable amount in most states.
 
 ### Data model
@@ -69,7 +69,7 @@ States split on software that never touches the payment:
 
 ### Validation
 - **Recomputation.** For each line, tax = line price × rate for its category, rounded per line to the nearest cent. The order's `tax_cents` must equal the sum. This is deterministic, so every peer agrees, and neither the store nor the customer can change it.
-- **Holds.** The food hold becomes food + tax, and the store collects both. The ledger records the tax part separately, so the store's filing report can total it.
+- **Holds.** The customer's hold covers food + tax, and the store captures both. The order records the tax part (`tax_cents`), so the store's filing report can total it.
 - **Refunds.** A refund for missing items refunds its share of the tax at the same rate. `claimed_value` gains the tax.
 
 ### Rates
@@ -85,7 +85,7 @@ States split on software that never touches the payment:
 1. Catalog fields, validation bounds (a rate within 0–30%, a few categories at most) and a settings card.
 2. Order tax computation, the shared pricing and validation function, the hold split, and the refund share.
 3. Receipts and checkout display.
-4. The store's tax report, which reads its own ledger.
+4. The store's tax report, which reads its own orders and payment history.
 5. Optional rate lookup.
 
 ## Open questions for you

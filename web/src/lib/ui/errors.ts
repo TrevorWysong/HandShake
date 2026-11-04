@@ -4,7 +4,7 @@
 // e.g. `Wasm runtime error while working with Ribosome: RuntimeError:
 // dispatch::orders:412: Guest("This order isn't taking offers any more.")`.
 // The only part meant for a human is the text inside Guest(...). A refusal
-// a person can meet -- from a zome, the device runtime or the issuer -- is
+// a person can meet -- from a zome, the device runtime or the payment agent -- is
 // in the generated table (`i18n/refusals.ts`), written in English by its
 // source: it's shown translated, its values filled back in (an amount,
 // named `..._cents`, in the network's currency). A zome's lowercase

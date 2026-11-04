@@ -34,3 +34,6 @@ deploy/releases/
 # Desktop builds: Kangaroo, fetched and patched by desktop/build.ts
 desktop/.kangaroo/
 desktop/.kangaroo.tar.gz
+
+# The retired issuer service's local leftovers (its .env and database), if any
+/issuer/
