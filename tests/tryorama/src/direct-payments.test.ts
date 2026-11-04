@@ -63,6 +63,13 @@ await runScenario(async (scenario) => {
   await acceptOrder(store, order, all);
   console.log("[PASS] the customer's card is held on the store's account before it accepts, for exactly what the order needs");
 
+  // The card they kept with the store is theirs to use again -- nobody
+  // else's, and only with that store.
+  assert.equal(await call(customer, "dispatch")("has_saved_card", store.agentPubKey), true, "the customer is offered the card they saved with the store");
+  assert.equal(await call(stranger, "dispatch")("has_saved_card", store.agentPubKey), false, "another account isn't");
+  assert.equal(await call(customer, "dispatch")("has_saved_card", driver.agentPubKey), false, "nor is it saved with anyone else");
+  console.log("[PASS] a saved card is offered only to the account that saved it, with the store it's saved with");
+
   // ===== The driver's collateral, held on the store's account =====
   const bid = actionHash(await retryUntilOk(() => call(driver, "dispatch")<HcRecord>("submit_bid", { order_ref: order, eta_seconds: 600, price_offer: FEE })));
   await sync(driver);

@@ -117,9 +117,11 @@ export function PaySheet({
             <CreditCard size={20} className="text-ink-400" />
             <span className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("pay.savedCard", { payee })}</span>
           </button>
-          <button type="button" onClick={() => setUseNew(true)} className="text-xs font-semibold text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">
-            {t("pay.anotherCard")}
-          </button>
+          {!useNew && (
+            <button type="button" onClick={() => setUseNew(true)} className="text-xs font-semibold text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">
+              {t("pay.anotherCard")}
+            </button>
+          )}
         </div>
       )}
       {useNew && (
