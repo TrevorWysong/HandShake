@@ -15,7 +15,8 @@ const shoot = async (page: Page, name: string) => {
 
 test("a store's owner builds its rewards program, with its card drawn live", async ({ page }) => {
   await signInAs(page, "cara");
-  await page.getByRole("link", { name: "Rewards" }).click();
+  await page.getByRole("link", { name: "Promos" }).click();
+  await page.getByRole("link", { name: "Rewards program" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Rewards" })).toBeVisible();
   await expect(page.getByText("Café Club").first()).toBeVisible();
   await expect(page.getByText("Free Almond Croissant").first()).toBeVisible();

@@ -14,7 +14,7 @@ import { MAX_GROUP_OPTIONS, MAX_NAME_CHARS, MAX_OPTION_QUANTITY } from "../../..
 import { groupProblem, rangeLabel } from "../../../lib/storefront/choices";
 import { currencySymbol, fromMinorUnits, toMinorUnits } from "../../../lib/ui/format";
 import { fadeSlideUp } from "../../../lib/ui/motion";
-import { Button, Card, Field, Input, SectionLabel, Select, Switch } from "../../../components/ui";
+import { Button, Card, Field, GroupHeading, Input, Select, Switch } from "../../../components/ui";
 import { useT, type MessageKey } from "../../../i18n";
 import { useAction } from "../../../lib/hooks/useAction";
 
@@ -31,12 +31,16 @@ export function ChoicesSection({ catalogRef, groups, onChanged }: { catalogRef: 
   const [editing, setEditing] = useState<Editing>(null);
   return (
     <motion.div variants={fadeSlideUp} className="mb-6">
-      <div className="mb-3 flex items-center justify-between">
-        <SectionLabel icon={<ListChecks size={13} />}>{t("choicesEditor.title")}</SectionLabel>
-        <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setEditing(editing ? null : { kind: "new" })}>
-          {editing ? <X size={14} /> : <Plus size={14} />} {editing ? t("common.cancel") : t("choicesEditor.add")}
-        </Button>
-      </div>
+      <GroupHeading
+        icon={ListChecks}
+        title={t("choicesEditor.title")}
+        className="mb-3"
+        action={
+          <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setEditing(editing ? null : { kind: "new" })}>
+            {editing ? <X size={14} /> : <Plus size={14} />} {editing ? t("common.cancel") : t("choicesEditor.add")}
+          </Button>
+        }
+      />
 
       <AnimatePresence initial={false}>
         {editing && (

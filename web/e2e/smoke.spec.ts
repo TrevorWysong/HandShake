@@ -22,7 +22,7 @@ test("a customer browses nearby stores, opens a menu, and sees their orders", as
   await expect(page.getByRole("tab", { name: "Past", selected: true })).toBeVisible();
 });
 
-test("a merchant sees their order queue and manages their menu and promos", async ({ page }) => {
+test("a merchant sees their order queue, menu, promos and store", async ({ page }) => {
   const cafe = store("cafe");
   await signInAs(page, "cara");
 
@@ -31,9 +31,15 @@ test("a merchant sees their order queue and manages their menu and promos", asyn
   await expect(page.getByRole("tab", { name: "History", selected: true })).toBeVisible();
 
   await page.getByRole("link", { name: "Menu" }).click();
-  await expect(page.getByRole("heading", { name: cafe.name })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Menu" })).toBeVisible();
   await expect(page.getByText(cafe.menu[0].name).first()).toBeVisible();
+
+  await page.getByRole("link", { name: "Promos" }).click();
   await expect(page.getByText(cafe.promos![0].code)).toBeVisible();
+
+  await page.getByRole("link", { name: "Store", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: cafe.name })).toBeVisible();
+  await expect(page.getByText("Getting paid")).toBeVisible();
 });
 
 test("a customer's order waits on the store, which can accept or decline it", async ({ page, browser }) => {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PackageOpen, Pencil } from "lucide-react";
+import { Gift, PackageOpen, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createGoodieBag, listGoodieBagsForCatalog, updateGoodieBag } from "../../../holochain/zomes/catalog";
 import { bagStandings } from "../../../holochain/zomes/dispatch";
@@ -7,7 +7,7 @@ import { bytesToHex, decodeEntry, hexToBytes } from "../../../holochain/decode";
 import { useResource } from "../../../lib/hooks/useResource";
 import { formatCents, formatClockTime, toMinorUnits, currencySymbol } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
-import { Button, Card, Checkbox, Field, Input, Notice, SectionLabel, StatNumber, Textarea } from "../../../components/ui";
+import { Button, Card, Checkbox, Field, GroupHeading, Input, Notice, StatNumber, Textarea } from "../../../components/ui";
 import { PhotoInput } from "../../../components/PhotoInput";
 import type { GoodieBag } from "../../../holochain/types";
 import { POLL } from "../../../lib/network/poll";
@@ -38,11 +38,17 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
 
   return (
     <section className="mb-6">
-      <motion.div variants={fadeSlideUp} className="mb-3 flex items-center justify-between">
-        <SectionLabel>{t("bags.title")}</SectionLabel>
-        <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setShowForm((v) => !v)}>
-          <PackageOpen size={14} /> {showForm ? t("common.cancel") : t("bags.add")}
-        </Button>
+      <motion.div variants={fadeSlideUp}>
+        <GroupHeading
+          icon={Gift}
+          title={t("bags.title")}
+          className="mb-3"
+          action={
+            <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setShowForm((v) => !v)}>
+              <PackageOpen size={14} /> {showForm ? t("common.cancel") : t("bags.add")}
+            </Button>
+          }
+        />
       </motion.div>
 
       <AnimatePresence initial={false}>
