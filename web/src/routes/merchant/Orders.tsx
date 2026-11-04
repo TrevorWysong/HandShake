@@ -18,6 +18,7 @@ import {
   getOrderDecisions,
   handOverCollection,
   markNotCollected,
+  markPickupNotCollected,
 } from "../../holochain/zomes/dispatch";
 import { QrScanner } from "../../components/QrScanner";
 import { decodeHandoverCode, decodePickupCode, pickupDigits } from "../../lib/orders/handoverCode";
@@ -335,8 +336,9 @@ function ActiveSteps({ row, busy, onAdvance }: { row: QueueRow; busy: boolean; o
         return <PickupHandoff orderHex={row.hex} orderRef={row.ref} checkedIn />;
       case "PickedUp":
         return note(t("merchantOrders.outForDelivery"));
+      case "Unanswered":
       case "Disputed":
-        return <NeverArrivedClaim orderHex={row.hex} orderRef={row.ref} />;
+        return <NeverArrivedClaim orderHex={row.hex} orderRef={row.ref} disputed={row.order.status === "Disputed"} />;
       case "Collecting":
         return <CollectionHandoff row={row} />;
       default:
@@ -349,7 +351,12 @@ function ActiveSteps({ row, busy, onAdvance }: { row: QueueRow; busy: boolean; o
     case "ReadyForPickup":
       // The customer confirmed their age when ordering; the store checks
       // it, in person, at the counter.
-      return note("age_confirmed" in row.order && row.order.age_confirmed ? t("merchantOrders.waitingCollectId", { age: minAge ?? 18 }) : t("merchantOrders.waitingCollect"));
+      return (
+        <>
+          {note("age_confirmed" in row.order && row.order.age_confirmed ? t("merchantOrders.waitingCollectId", { age: minAge ?? 18 }) : t("merchantOrders.waitingCollect"))}
+          <NeverCameForPickup row={row} />
+        </>
+      );
     case "Disputed":
       return (
         <>
@@ -526,11 +533,15 @@ function PickupHandoff({ orderHex, orderRef, checkedIn }: { orderHex: string; or
   );
 }
 
-/// A customer saying their delivery never arrived. The store decides: the
-/// app does so on its own once the claim has stood a while with no
-/// delivery, refunding the customer and taking the driver's collateral for
-/// the food -- or the store can decide now.
-function NeverArrivedClaim({ orderHex, orderRef }: { orderHex: string; orderRef: Uint8Array }) {
+/// A delivery whose outcome is contested -- the store decides:
+///
+/// - the customer saying it never arrived: the app decides on its own once
+///   the claim has stood a while with no delivery, refunding the customer
+///   and taking the driver's collateral for the food, or the store can now;
+/// - the driver saying nobody came to take it: paid as delivered once the
+///   customer's report window has run -- and if the customer says they were
+///   there, the store can side with them first, as above.
+function NeverArrivedClaim({ orderHex, orderRef, disputed }: { orderHex: string; orderRef: Uint8Array; disputed: boolean }) {
   const t = useT();
   const deciding = useAction();
   const { data: decisions, reload } = useResource(`order-decisions:${orderHex}`, () => getOrderDecisions(orderRef), { pollMs: POLL.signalled });
@@ -540,15 +551,21 @@ function NeverArrivedClaim({ orderHex, orderRef }: { orderHex: string; orderRef:
     await decideNotDelivered(orderRef);
     await reload();
   });
+  const upheld = decisions.no_show_upheld_after;
+  const words = upheld
+    ? { title: t(disputed ? "merchantOrders.noShowDisputedTitle" : "merchantOrders.noShowTitle"), detail: t(disputed ? "merchantOrders.noShowDisputed" : "merchantOrders.noShow", { time: formatDeadline(upheld) }) }
+    : { title: t("merchantOrders.claimTitle"), detail: decisions.claim_decided_after ? t("merchantOrders.claimAt", { time: formatDeadline(decisions.claim_decided_after) }) : t("merchantOrders.claim") };
   return (
     <div className="mt-3 rounded-xl bg-amber-50 p-3 dark:bg-amber-900/20">
       <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">
-        <span className="font-semibold">{t("merchantOrders.claimTitle")}</span>{" "}
-        {decisions.claim_decided_after ? t("merchantOrders.claimAt", { time: formatDeadline(decisions.claim_decided_after) }) : t("merchantOrders.claim")}
+        <span className="font-semibold">{words.title}</span> {words.detail}
       </p>
-      <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={deciding.busy} onClick={decide}>
-        {t("merchantOrders.refundNow")}
-      </Button>
+      {/* Only a customer's claim is the store's to decide for them. */}
+      {disputed && (
+        <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={deciding.busy} onClick={decide}>
+          {t(upheld ? "merchantOrders.sideWithCustomer" : "merchantOrders.refundNow")}
+        </Button>
+      )}
       {deciding.error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{deciding.error}</p>}
     </div>
   );
@@ -564,6 +581,25 @@ function ForTheStore({ orderHex, orderRef }: { orderHex: string; orderRef: Uint8
     <>
       {data.customer_name && <p className="mt-1 text-xs font-semibold text-ink-700 dark:text-ink-200">{t("merchantOrders.forName", { name: data.customer_name })}</p>}
       {data.kitchen_note && <p className="mt-1 text-xs italic text-ink-500">"{data.kitchen_note}"</p>}
+    </>
+  );
+}
+
+/// A ready pickup: once the collection window from its being ready has
+/// passed without the customer, the store can record it uncollected and
+/// keep the food's price.
+function NeverCameForPickup({ row }: { row: QueueRow }) {
+  const windowSecs = useTerms().collection_window_secs;
+  const t = useT();
+  const now = useClock(30_000);
+  const recording = useAction();
+  if (now.getTime() * 1000 < row.writtenAt + windowSecs * 1_000_000) return null;
+  return (
+    <>
+      <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={recording.busy} onClick={() => recording.run(async () => markPickupNotCollected(row.ref, await currentBeacon()))}>
+        {t("merchantOrders.neverCame")}
+      </Button>
+      {recording.error && <p className="mt-2 text-xs text-red-600">{recording.error}</p>}
     </>
   );
 }

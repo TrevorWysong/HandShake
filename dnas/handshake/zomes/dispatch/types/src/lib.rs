@@ -60,6 +60,13 @@ pub enum DeliveryStatus {
     Collecting,
     /// The customer has it, collected from the store. Final.
     Collected,
+    /// The driver reached the drop-off, recorded arriving, waited the
+    /// network's wait (`handshake_governance::dropoff_wait`), and nobody
+    /// came to take it. The customer can still take it (with proof, as from
+    /// `PickedUp`), or dispute it (`Disputed`); otherwise its store upholds
+    /// it once their report window has run, and it's paid as delivered --
+    /// see `Outcome::Delivered`.
+    Unanswered,
 }
 
 /// Who is allowed to *author* a given transition -- deliberately a separate
@@ -148,6 +155,12 @@ impl DeliveryStatus {
             // the driver holding that proof. Final: a delivered order can't
             // be claimed undelivered.
             (PickedUp, Delivered) => Some(RequesterOrProvider),
+            // The driver saying nobody came to take it, once they've waited
+            // at the drop-off. The customer can still take it, on the same
+            // proof -- or dispute it: they say they were there.
+            (PickedUp, Unanswered) => Some(AcceptedProvider),
+            (Unanswered, Delivered) => Some(RequesterOrProvider),
+            (Unanswered, Disputed) => Some(Requester),
             // The customer's claim that it never arrived. The store decides
             // what follows (`OrderOutcome`); until it has, a driver who turns
             // up late can still complete it with proof.
@@ -180,9 +193,11 @@ pub enum Cancellation {
     /// (`handshake_governance::store_response_window`). Written by the
     /// customer's conductor, and only once the window has passed.
     StoreDidNotRespond,
-    /// The customer chose to collect it and never came within the
-    /// collection window. Written by the store, which keeps the food's
-    /// price: it cooked it.
+    /// The customer never came for an order that was theirs to collect --
+    /// a delivery they chose to collect, or a pickup once it was ready --
+    /// within the collection window (`handshake_governance::collection_window`).
+    /// Written by the store, with proof of the time, which keeps the
+    /// food's price: it cooked it.
     NotCollected,
     /// The store kept a checked-in driver waiting past the network's wait
     /// (`handshake_governance::store_wait`) after its ready time. Written by the
@@ -200,6 +215,12 @@ pub enum Cancellation {
     /// reached the store, and nobody owes anything. Validation can't read a
     /// store's hours in its time zone, so it's held against nobody.
     StoreClosed,
+    /// A scheduled order its customer's app couldn't send in time: it came
+    /// back online more than `handshake_governance::SCHEDULE_SEND_GRACE`
+    /// past the order's time. Written by the customer's conductor in place
+    /// of sending it so late; it never reached the store, and nobody owes
+    /// anything.
+    ScheduleMissed,
 }
 
 /// What a store tells the customer when it turns an order down.
@@ -803,6 +824,11 @@ pub struct PickupOrder {
     /// accepting the order -- see `DeliveryOrder::customer_payment`.
     #[serde(default)]
     pub customer_payment: Option<ActionHash>,
+    /// Proof of when the store recorded the order uncollected
+    /// (`Cancellation::NotCollected`), fresh on that update -- see
+    /// `DeliveryOrder::beacon`.
+    #[serde(default)]
+    pub beacon: Option<Beacon>,
 }
 
 /// An order's part in its store's rewards program.

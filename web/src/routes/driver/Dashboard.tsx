@@ -437,7 +437,7 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
         )}
         {ON_THE_WAY.includes(row.order.status) && <StoreCheckIn orderRef={row.hash} order={row.order} location={location} onDone={onAdvanced} />}
         {row.order.status === "DriverAtStore" && <StorePickup orderRef={row.hash} order={row.order} location={location} onDone={onAdvanced} />}
-        {(row.order.status === "PickedUp" || row.order.status === "Disputed") && <HandoffStep orderRef={row.hash} order={row.order} location={location} onDone={onAdvanced} />}
+        {(row.order.status === "PickedUp" || row.order.status === "Disputed" || row.order.status === "Unanswered") && <HandoffStep orderRef={row.hash} order={row.order} location={location} onDone={onAdvanced} />}
       </div>
       <ChatPanel orderRef={row.hash} title={t("drive.chat")} counterpart={t("chat.customer")} />
       {BEFORE_PICKUP.includes(row.order.status) && (

@@ -537,8 +537,12 @@ pub struct NetworkTerms {
     /// Where apps fetch the network's time source from.
     pub time_relays: Vec<String>,
     pub time_chain_hash: String,
-    /// How long a customer collecting an order has to come for it.
+    /// How long a customer collecting an order -- a pickup once it's
+    /// ready, or a delivery they chose to collect -- has to come for it.
     pub collection_window_secs: u64,
+    /// How long a driver waits at the drop-off before they may say nobody
+    /// came to take the order.
+    pub dropoff_wait_secs: u64,
     /// Wrong handoff codes a giver's app answers per order before it stops.
     pub max_code_attempts: u32,
     pub default_prep_minutes: u16,
@@ -598,6 +602,7 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         time_relays: handshake_governance::time_source().relays,
         time_chain_hash: handshake_governance::time_source().chain_hash,
         collection_window_secs: handshake_governance::collection_window().as_secs(),
+        dropoff_wait_secs: handshake_governance::dropoff_wait().as_secs(),
         max_code_attempts: handshake_governance::max_code_attempts(),
         default_prep_minutes: handshake_governance::default_prep_minutes(),
         max_prep_minutes: handshake_governance::max_prep_minutes(),
@@ -705,6 +710,7 @@ pub(crate) enum ReputationTargetWire {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) enum ReputationEventKindWire {
     OrderCompleted,
+    OrderCancelledByThem,
     DisputeRaised,
     DisputeResolvedAgainst,
     CollateralForfeited { amount: u64 },
@@ -712,6 +718,7 @@ pub(crate) enum ReputationEventKindWire {
     StoreLate,
     CheckInRefused,
     OfferLapsed,
+    NoShow,
 }
 
 /// Best-effort reputation bookkeeping shared by every completion/dispute
@@ -750,7 +757,7 @@ pub(crate) fn record_reputation_event(subject: &AgentPubKey, target: ReputationT
 pub fn complete_delivery(input: CompleteDeliveryInput) -> ExternResult<Record> {
     let (order_record, mut order): (_, DeliveryOrder) = resolve_version_decoded(input.order_original_action.clone(), "DeliveryOrder")?;
 
-    if !matches!(order.status, DeliveryStatus::PickedUp | DeliveryStatus::Disputed) {
+    if !matches!(order.status, DeliveryStatus::PickedUp | DeliveryStatus::Disputed | DeliveryStatus::Unanswered) {
         return Err(guest("An order can be completed only once it's picked up."));
     }
     if order.accepted_bid.is_none() {
@@ -765,7 +772,8 @@ pub fn complete_delivery(input: CompleteDeliveryInput) -> ExternResult<Record> {
     let merchant = order.merchant.clone();
     let catalog_ref = order.catalog_ref.clone();
     order.status = DeliveryStatus::Delivered;
-    order.delivery_receipts = vec![proof];
+    // After the driver's arrival, if they'd said nobody came.
+    order.delivery_receipts.push(proof);
     let updated = update_version(&order_record, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)?;
     order_queues::retire(&parties)?;
     // Nothing is paid here: the money was set aside as the order went. The

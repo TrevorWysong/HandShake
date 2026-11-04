@@ -73,7 +73,8 @@ pub(crate) fn validate_carry_ended(ended: &CarryEnded, author: &AgentPubKey, pre
         return invalid("a carry ends on its driver's own commit to that order");
     }
     // The order left their hands: their store decided it never arrived, or
-    // a later version of it is over or no longer theirs.
+    // a later version of it is over, no longer theirs, or theirs to say
+    // nobody came for (what's held for it stays held till the store decides).
     let basis = must_get_valid_record(ended.basis.clone())?;
     let left = if let Some(outcome) = decode::<OrderOutcome>(&basis) {
         outcome.order == ended.order && matches!(outcome.outcome, Outcome::NotDelivered { .. })
@@ -84,7 +85,7 @@ pub(crate) fn validate_carry_ended(ended: &CarryEnded, author: &AgentPubKey, pre
                     Some(bid) => decode::<Bid>(&must_get_valid_record(bid.clone())?).is_some_and(|b| &b.bidder == author),
                     None => false,
                 };
-                version.order.status.is_terminal() || !mine
+                version.order.status.is_terminal() || version.order.status == DeliveryStatus::Unanswered || !mine
             }
             _ => false,
         }

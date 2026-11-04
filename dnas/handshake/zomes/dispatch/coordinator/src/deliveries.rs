@@ -505,7 +505,50 @@ pub fn mark_not_collected(input: TimedStepInput) -> ExternResult<Record> {
     if !past(window_ends, true, input.beacon.as_ref())? {
         return Err(guest("The customer still has time to collect it."));
     }
-    cancel_proved(&version, order, &order_ref, Cancellation::NotCollected, input.beacon)
+    let requester = order.requester.clone();
+    let cancelled = cancel_proved(&version, order, &order_ref, Cancellation::NotCollected, input.beacon)?;
+    // Against the customer who never came.
+    record_reputation_event(&requester, ReputationTargetWire::Customer(requester.clone()), order_ref, ReputationEventKindWire::OrderCancelledByThem, cancelled.action_address().clone())?;
+    Ok(cancelled)
+}
+
+/// The driver saying nobody came to take the order: at the drop-off, once
+/// they've recorded arriving (their drop-off handoff, which tells the
+/// customer) and waited the network's wait since -- with proof of the time,
+/// which validation checks. The customer can still take it, or dispute it;
+/// otherwise the store upholds it once their report window has run
+/// (`issues::decide_order`), and it's paid as delivered.
+#[hdk_extern]
+pub fn customer_not_here(input: TimedStepInput) -> ExternResult<Record> {
+    let order_ref = original_action_of(input.order_ref)?;
+    let (version, mut order) = current(&order_ref)?;
+    let me = me()?;
+    if order.status != DeliveryStatus::PickedUp || driver_of(&order)?.map(|(_, bid)| bid.bidder) != Some(me.clone()) {
+        return Err(guest("Only the order's driver, with it in hand, says nobody came to take it."));
+    }
+    let arrival = arrival_of(&order_ref, &me)?.ok_or(guest("Record that you've arrived first: hand it over at the door, and the customer is told you're there."))?;
+    let waited_until = Timestamp::from_micros(arrival.action().timestamp().as_micros().saturating_add(handshake_governance::dropoff_wait().as_micros() as i64));
+    if !past(waited_until, true, input.beacon.as_ref())? {
+        return Err(guest("The customer still has time to come to the door."));
+    }
+    order.status = DeliveryStatus::Unanswered;
+    order.delivery_receipts = vec![arrival.action_address().clone()];
+    order.beacon = input.beacon;
+    write(&version, order)
+}
+
+/// The caller's latest drop-off handoff for `order_ref` that no code or
+/// door completes: their record of arriving.
+fn arrival_of(order_ref: &ActionHash, driver: &AgentPubKey) -> ExternResult<Option<Record>> {
+    let legs: Vec<Record> = call_local("attestation", "get_legs_for_order", order_ref.clone())?.map_err(|why| guest(format!("couldn't read your handoffs: {why}")))?;
+    Ok(legs
+        .into_iter()
+        .filter(|record| {
+            record.entry().to_app_option::<attestation_types::Leg>().ok().flatten().is_some_and(|leg| {
+                leg.kind == attestation_types::LegKind::CustomerHandoff && &leg.from == driver && record.action().author() == driver && leg.revealed_pin.is_none() && !leg.left_at_door
+            })
+        })
+        .max_by_key(|record| record.action().timestamp()))
 }
 
 /// Cancels a delivery for `reason`, with the proof of the time it needs.
@@ -719,7 +762,8 @@ pub(crate) fn tend_store_delivery(order_ref: &ActionHash, record: &Record, order
 const CARRY_LOOKBACK_MICROS: i64 = 2 * 86_400_000_000;
 
 /// Records each order the caller committed to that has left their hands --
-/// over, no longer theirs, or decided never to have arrived -- so it stops
+/// over, no longer theirs, nobody came for it, or decided never to have
+/// arrived -- so it stops
 /// counting against what they carry. Each in a call of its own. Returns how
 /// many it recorded.
 pub(crate) fn end_carries() -> ExternResult<u32> {
@@ -738,7 +782,7 @@ pub(crate) fn end_carries() -> ExternResult<u32> {
     let mut recorded = 0;
     for (committed, order) in commits.into_iter().filter(|(c, _)| !ended.contains(c)) {
         let latest = resolve_latest(order.clone())?;
-        let left = decode_or::<DeliveryOrder>(&latest).is_some_and(|o| o.status.is_terminal() || driver_of(&o).ok().flatten().is_none_or(|(_, bid)| bid.bidder != me));
+        let left = decode_or::<DeliveryOrder>(&latest).is_some_and(|o| o.status.is_terminal() || o.status == DeliveryStatus::Unanswered || driver_of(&o).ok().flatten().is_none_or(|(_, bid)| bid.bidder != me));
         let basis = if left {
             Some(latest.action_address().clone())
         } else {

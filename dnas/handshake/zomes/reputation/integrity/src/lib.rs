@@ -69,6 +69,11 @@ pub enum ReputationEventKind {
     /// offer lapse, or turned it down. Recorded by the customer, on the
     /// version releasing them: what automatic matching weighs.
     OfferLapsed,
+    /// A customer who wasn't there to take their delivery: its driver
+    /// waited at the drop-off and nobody came, and the store upheld the
+    /// driver's word (`DeliveryStatus::Unanswered`). Recorded by the store,
+    /// citing its decision.
+    NoShow,
 }
 
 /// Append-only by design: a single mutable
@@ -424,6 +429,9 @@ fn validate_review(review: &Review, author: &AgentPubKey, prev_action: Option<&A
 ///   customer who claimed one never arrived that had.
 /// - **CollateralForfeited** -- recorded by the store, citing its decision
 ///   that an order never arrived, for exactly the driver's collateral.
+/// - **NoShow** -- recorded by the store, citing its decision upholding the
+///   driver's word that nobody came to take a delivery, against its
+///   customer.
 ///
 /// Never by the subject about themselves.
 fn validate_event(event: &ReputationEvent, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
@@ -482,6 +490,7 @@ fn validate_event(event: &ReputationEvent, author: &AgentPubKey) -> ExternResult
         (ReputationEventKind::DisputeResolvedAgainst, Some(Outcome::NotDelivered { .. })) => at_driver && by_store,
         (ReputationEventKind::DisputeResolvedAgainst, Some(Outcome::Delivered { proof })) => at_customer && by_store && claimed_before(proof)?,
         (ReputationEventKind::CollateralForfeited { amount }, Some(Outcome::NotDelivered { .. })) => at_driver && by_store && Some(*amount) == order.collateral,
+        (ReputationEventKind::NoShow, Some(Outcome::Delivered { .. })) => at_customer && by_store && decode::<DeliveryOrder>(&version).is_some_and(|o| o.status == DeliveryStatus::Unanswered),
         _ => false,
     };
     if !allowed {
@@ -578,8 +587,10 @@ fn canceller(cancellation: &Option<Cancellation>, requester: &AgentPubKey, merch
         Cancellation::ByStore(_) | Cancellation::StoreDidNotRespond | Cancellation::StoreLate => Some(merchant.clone()),
         // A driver's doing, recorded as a drop.
         Cancellation::NoDriver => None,
-        // Unprovable either way (see `Cancellation::StoreClosed`).
-        Cancellation::StoreClosed => None,
+        // Unprovable either way (see `Cancellation::StoreClosed`), or
+        // nobody's doing: a scheduled order its customer's device was away
+        // for never reached anyone.
+        Cancellation::StoreClosed | Cancellation::ScheduleMissed => None,
     }
 }
 
@@ -621,6 +632,7 @@ pub fn event_tag(kind: &ReputationEventKind, order_original: &ActionHash) -> Lin
         ReputationEventKind::StoreLate => (6, 0),
         ReputationEventKind::CheckInRefused => (7, 0),
         ReputationEventKind::OfferLapsed => (8, 0),
+        ReputationEventKind::NoShow => (9, 0),
     };
     let mut bytes = vec![code];
     bytes.extend_from_slice(&amount.to_be_bytes());

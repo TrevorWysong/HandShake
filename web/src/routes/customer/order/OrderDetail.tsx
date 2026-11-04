@@ -98,12 +98,14 @@ export function OrderDetail() {
     { pollMs: photoStatus === "PickedUp" ? POLL.signalled : undefined, refreshOn: (s) => "HandoffRecorded" in s || isOrderSignal(s) },
   );
   const dropoffPhoto = dropoff?.photo ?? null;
-  // Where a claim that it never arrived stands with the store.
-  const { data: decisions } = useResource(order?.status === "Disputed" ? `order-decisions:${hash}` : null, () => getOrderDecisions(orderRef), { pollMs: POLL.signalled, refreshOn: isOrderOrBidSignal });
+  // Where a claim that it never arrived -- or the driver's word that nobody
+  // came -- stands with the store.
+  const contested = order?.status === "Disputed" || order?.status === "Unanswered";
+  const { data: decisions } = useResource(contested ? `order-decisions:${hash}` : null, () => getOrderDecisions(orderRef), { pollMs: POLL.signalled, refreshOn: isOrderOrBidSignal });
   // The customer's handover code, while a driver's on the way: shown at the
   // door. An order left at the door has no handover.
   const handedOver = order?.dropoff_preference !== "LeaveAtDoor";
-  const awaitingDriver = order && handedOver && ["BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed", "DriverAtStore", "PickedUp"].includes(order.status) && !dropoff;
+  const awaitingDriver = order && handedOver && ["BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed", "DriverAtStore", "PickedUp", "Unanswered"].includes(order.status) && !dropoff;
   // Shown to the driver at the door -- or to the store, collecting it.
   const collecting = order?.status === "Collecting";
   const { data: handoverCode = null } = useResource(awaitingDriver || collecting ? `handover-code:${hash}` : null, () => getMyHandoverCode(orderRef));
@@ -341,6 +343,44 @@ export function OrderDetail() {
               </AnimatePresence>
             </motion.div>
           )}
+
+          {/* The driver says nobody came: the customer can still take it,
+              or say they were there -- which the store decides. */}
+          {order.status === "Unanswered" && (
+            <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-amber-50 p-4 dark:bg-amber-900/20">
+              <div className="flex items-start gap-3">
+                <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600" />
+                <p className="text-sm text-amber-900 dark:text-amber-100">
+                  <span className="font-semibold">{t("noShow.customerTitle")}</span>{" "}
+                  {decisions?.no_show_upheld_after ? t("noShow.customerDetail", { time: formatDeadline(decisions.no_show_upheld_after) }) : t("noShow.customerDetailSoon")}
+                </p>
+              </div>
+              {handedOver && (
+                <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmReceipt}>
+                  {t("order.haveIt")}
+                </Button>
+              )}
+              <AnimatePresence mode="wait" initial={false}>
+                {confirmingClaim ? (
+                  <motion.div key="claim" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-xl bg-white p-3 dark:bg-ink-900">
+                    <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">{t("noShow.disputeWarning")}</p>
+                    <div className="mt-3 flex gap-2">
+                      <Button variant="ghost" className="flex-1 py-2" onClick={() => setConfirmingClaim(false)}>
+                        {t("common.back")}
+                      </Button>
+                      <Button variant="danger" className="flex-1 py-2" loading={action.doing === "claim"} disabled={action.busy} onClick={claimItNeverArrived}>
+                        {t("noShow.dispute")}
+                      </Button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.button key="ask" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConfirmingClaim(true)} className="text-xs font-semibold text-amber-800 underline-offset-4 hover:underline dark:text-amber-200">
+                    {t("noShow.disputeAsk")}
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
         </div>
         <div className="lg:sticky lg:top-6 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           {live && pickup && details?.dropoff && (
@@ -411,7 +451,11 @@ export function OrderDetail() {
                 </p>
               ) : (
                 <p className="text-sm">
-                  {decisions?.claim_decided_after ? t("order.claimedBy", { time: formatDeadline(decisions.claim_decided_after) }) : t("order.claimedSoon")}
+                  {decisions?.no_show_upheld_after
+                    ? t("noShow.disputed", { time: formatDeadline(decisions.no_show_upheld_after) })
+                    : decisions?.claim_decided_after
+                      ? t("order.claimedBy", { time: formatDeadline(decisions.claim_decided_after) })
+                      : t("order.claimedSoon")}
                 </p>
               )}
             </motion.div>

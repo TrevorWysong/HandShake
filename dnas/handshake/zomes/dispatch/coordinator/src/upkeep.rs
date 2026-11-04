@@ -208,8 +208,13 @@ fn tend_order(entry: &OrderEntry, now: DueAt, window: i64) -> ExternResult<Optio
                     if now < due {
                         return Ok(Some(due));
                     }
-                    // A store closed at its time is never sent it: the
+                    // Too late to send -- this device was away when it came
+                    // due -- or a store closed at its time: never sent, the
                     // order is called off, and nobody owes anything.
+                    if now >= due.saturating_add(handshake_governance::SCHEDULE_SEND_GRACE.as_micros() as i64) {
+                        cancel_delivery(order_ref, Cancellation::ScheduleMissed)?;
+                        return Ok(None);
+                    }
                     let (_, store) = crate::stores::current_catalog_version(&order.catalog_ref)?;
                     if crate::stores::closed_reason(&store, now).is_some() {
                         cancel_delivery(order_ref, Cancellation::StoreClosed)?;

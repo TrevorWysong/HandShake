@@ -19,7 +19,7 @@ use super::*;
 use crate::claims::wrote_update_of;
 use dispatch_types::{claimed_value, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome};
 use handshake_integrity_support::chain::wrote_since;
-use handshake_integrity_support::{decode, original_creation};
+use handshake_integrity_support::{decode, original_creation, valid};
 
 /// An order's terms an issue is judged against: its parties, and each line
 /// as (item, unit price, quantity ordered).
@@ -159,13 +159,24 @@ pub(crate) fn validate_outcome(outcome: &OrderOutcome, author: &AgentPubKey, at:
     }
     match &outcome.outcome {
         Outcome::Delivered { proof } => {
-            let delivered = version_of::<DeliveryOrder>(&outcome.order, proof)?.is_some_and(|(_, v)| v.status == DeliveryStatus::Delivered);
-            require(delivered, "a delivered outcome cites the order completed on proof the customer has it")
+            let Some((record, version)) = version_of::<DeliveryOrder>(&outcome.order, proof)? else { return invalid("a delivered outcome cites a version of its order") };
+            match version.status {
+                DeliveryStatus::Delivered => valid(),
+                // The driver's word that nobody came, upheld: only once the
+                // customer's report window from it has run, so they've had
+                // it to dispute -- the store deciding a dispute included.
+                DeliveryStatus::Unanswered => {
+                    let window_ends = (record.action().timestamp() + handshake_governance::report_window()).map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?;
+                    require(at >= window_ends, "a store upholds a driver's word that nobody came only once the customer's report window has run")
+                }
+                _ => invalid("a delivered outcome cites the order completed on proof the customer has it, or the driver's word that nobody came"),
+            }
         }
         Outcome::NotDelivered { claim } => {
             let Some((record, version)) = version_of::<DeliveryOrder>(&outcome.order, claim)? else { return invalid("a claim is a version of its order") };
-            // The only way into Disputed is the customer's claim from
-            // PickedUp, which the driver reached on proof of the pickup.
+            // The only way into Disputed is the customer's claim -- from
+            // PickedUp, which the driver reached on proof of the pickup, or
+            // from the driver's word that nobody came.
             if version.status != DeliveryStatus::Disputed || record.action().author() != &terms.requester {
                 return invalid("not delivered cites the customer's claim that it never arrived");
             }
