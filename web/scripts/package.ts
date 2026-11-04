@@ -65,11 +65,11 @@ if (unknown.length) {
 }
 
 // Money: every payment is held on its payer's card by whoever it pays, on
-// their own processor account (docs/DIRECT_PAYMENTS.md). A network says
-// whether those are live accounts or test ones -- a production bundle takes
-// real payments unless its builder deliberately says otherwise.
-if (properties.live_payments !== true && process.env.HANDSHAKE_TEST_PAYMENTS !== "1") {
-  fail("deploy/properties.json needs \"live_payments\": true -- stores and drivers connect live processor accounts. Build with HANDSHAKE_TEST_PAYMENTS=1 for a network of test accounts.");
+// their own processor account (docs/DIRECT_PAYMENTS.md). A network says,
+// in so many words, whether those are live accounts or test ones: it's
+// never left to a default.
+if (typeof properties.live_payments !== "boolean") {
+  fail("The network's settings need \"live_payments\": true for real money (stores and drivers connect live processor accounts), or false for a network of test accounts.");
 }
 if (!properties.services) {
   console.warn("deploy/properties.json sets no `services`: apps will use OpenStreetMap's public tile and search servers, whose usage policies don't allow production traffic. Set your own (docs/DEPLOYMENT.md).");
