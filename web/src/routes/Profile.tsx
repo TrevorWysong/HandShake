@@ -1,16 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronRight, Fingerprint, KeyRound, LogOut, Pencil, ShieldCheck, Store, Truck, User } from "lucide-react";
+import { ChevronRight, CreditCard, Fingerprint, KeyRound, LogOut, Pencil, Store, Truck, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import clsx from "clsx";
 import { encodeHashToBase64 } from "@holochain/client";
 import { useSession } from "../store/session";
 import { useMerchantStores, useMyStores } from "../store/merchantStores";
 import { useResource } from "../lib/hooks/useResource";
-import { averageRating, getRatingSummary, getReputationSummary, getReviewsFor } from "../holochain/zomes/reputation";
+import { averageRating, getRatingSummary, getReviewsFor } from "../holochain/zomes/reputation";
 import { updateProfile, getMyName, getMyPhone, getProviderCredentialForProfile, registerProviderCredential } from "../holochain/zomes/profiles";
 import { bytesToHex, decodeEntry } from "../holochain/decode";
-import { Button, Card, Input, Notice, SectionLabel, Skeleton, StatNumber, Textarea } from "../components/ui";
+import { Button, Card, Input, Notice, SectionLabel, Textarea } from "../components/ui";
 import { PhotoInput } from "../components/PhotoInput";
 import { StarRating } from "../components/StarRating";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
@@ -45,7 +44,6 @@ export function ProfilePage() {
   // Driver-scoped stats -- `null` key (no read at all) unless this
   // identity actually drives.
   const driverKey = agentHex && isDriver ? `driver:${agentHex}` : null;
-  const { data: rep } = useResource(driverKey && `${driverKey}:rep`, () => getReputationSummary({ Driver: agentPubKey! }));
   const { data: driverRating } = useResource(driverKey && `${driverKey}:rating`, () => getRatingSummary({ Driver: agentPubKey! }));
   const { data: reviews = [] } = useResource<Review[]>(driverKey && `${driverKey}:reviews`, () =>
     getReviewsFor({ Driver: agentPubKey! }).then((page) => page.reviews.map((r) => decodeEntry<Review>(r))),
@@ -69,7 +67,7 @@ export function ProfilePage() {
   function openStore(hex: string) {
     setActiveStore(hex);
     setMode("merchant");
-    navigate("/merchant/catalog");
+    navigate("/merchant/store");
   }
 
   // Drafts are filled from the saved values at the moment editing starts
@@ -229,27 +227,6 @@ export function ProfilePage() {
         </motion.div>
       )}
 
-      <motion.div variants={fadeSlideUp}>
-      <LanguagePicker />
-      <NotificationSettings runsStore={!!profile?.roles.includes("Merchant")} />
-      <Card className="mb-4 p-4">
-        <SectionLabel className="mb-1">{t("profile.identity")}</SectionLabel>
-        <p className="break-all font-mono text-xs text-ink-500">{agentPubKey ? encodeHashToBase64(agentPubKey) : "–"}</p>
-        <p className="mt-2 text-xs text-ink-400">
-          {t("profile.identityDetail")}
-        </p>
-        {/* In the app, the identity is the app's own; these are the dev host's. */}
-        {HOST === "dev" && (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-400">
-            <Fingerprint size={13} className={hasDeviceLock ? "text-presence-600" : "text-ink-300"} />
-            {hasDeviceLock
-              ? "Device lock enabled: reconnecting on this device requires your passkey (Face ID, Touch ID, or Windows Hello)."
-              : "Device lock not set up. This device has no passkey gate, so reconnecting here doesn't ask for one."}
-          </p>
-        )}
-      </Card>
-      </motion.div>
-
       <motion.div variants={fadeSlideUp} whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
         <Link to="/account" className="mb-4 flex items-center gap-3 rounded-2xl border border-ink-100 bg-white p-4 shadow-[var(--shadow-card)] dark:border-ink-800 dark:bg-ink-900">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink-100 text-ink-600 dark:bg-ink-800 dark:text-ink-300">
@@ -263,20 +240,17 @@ export function ProfilePage() {
         </Link>
       </motion.div>
 
-      {/* Payments, beside a driver's deliveries -- alone, the full width. */}
-      <motion.div variants={fadeSlideUp} className={clsx("mb-4 grid gap-3", isDriver && "grid-cols-2")}>
-        <Link to="/payments" className="block rounded-2xl border border-ink-100 bg-white p-4 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 dark:border-ink-800 dark:bg-ink-900">
-          <p className="flex items-center justify-between text-xs text-ink-400">
-            {t("payments.title")} <ChevronRight size={14} className="text-ink-300" />
-          </p>
-          <p className="mt-1 text-sm font-semibold text-ink-900 dark:text-ink-50">{t("payments.tile")}</p>
+      <motion.div variants={fadeSlideUp} whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
+        <Link to="/payments" className="mb-4 flex items-center gap-3 rounded-2xl border border-ink-100 bg-white p-4 shadow-[var(--shadow-card)] dark:border-ink-800 dark:bg-ink-900">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-handshake-100 text-handshake-600 dark:bg-handshake-900/30">
+            <CreditCard size={18} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("payments.title")}</p>
+            <p className="text-xs text-ink-400">{publicFacing ? t("profile.paymentsPayee") : t("profile.paymentsCustomer")}</p>
+          </div>
+          <ChevronRight size={18} className="shrink-0 text-ink-300" />
         </Link>
-        {isDriver && (
-          <Card className="p-4">
-            <p className="text-xs text-ink-400">{t("profile.deliveries")}</p>
-            {rep === undefined ? <Skeleton className="h-6 w-10 mt-1" /> : <StatNumber tone="success" className="text-lg">{rep.completed_count}</StatNumber>}
-          </Card>
-        )}
       </motion.div>
 
       {isMerchant && stores && stores.length > 0 && (
@@ -303,19 +277,6 @@ export function ProfilePage() {
         </motion.div>
       )}
 
-      <motion.div variants={fadeSlideUp} whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
-      <Link to="/transparency" className="mb-4 flex items-center gap-3 rounded-2xl border border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-4 shadow-[var(--shadow-card)]">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-handshake-500 to-presence-500 text-white">
-          <ShieldCheck size={18} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("profile.transparency")}</p>
-          <p className="text-xs text-ink-400">{t("profile.transparencyDetail")}</p>
-        </div>
-        <ChevronRight size={18} className="shrink-0 text-ink-300" />
-      </Link>
-      </motion.div>
-
       {reviews.length > 0 && (
         <motion.div variants={fadeSlideUp}>
         <Card className="mb-4 p-4">
@@ -331,6 +292,27 @@ export function ProfilePage() {
         </Card>
         </motion.div>
       )}
+
+      <motion.div variants={fadeSlideUp}>
+      <LanguagePicker />
+      <NotificationSettings runsStore={!!profile?.roles.includes("Merchant")} />
+      <Card className="mb-4 p-4">
+        <SectionLabel className="mb-1">{t("profile.identity")}</SectionLabel>
+        <p className="break-all font-mono text-xs text-ink-500">{agentPubKey ? encodeHashToBase64(agentPubKey) : "–"}</p>
+        <p className="mt-2 text-xs text-ink-400">
+          {t("profile.identityDetail")}
+        </p>
+        {/* In the app, the identity is the app's own; these are the dev host's. */}
+        {HOST === "dev" && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-400">
+            <Fingerprint size={13} className={hasDeviceLock ? "text-presence-600" : "text-ink-300"} />
+            {hasDeviceLock
+              ? "Device lock enabled: reconnecting on this device requires your passkey (Face ID, Touch ID, or Windows Hello)."
+              : "Device lock not set up. This device has no passkey gate, so reconnecting here doesn't ask for one."}
+          </p>
+        )}
+      </Card>
+      </motion.div>
 
       <motion.div variants={fadeSlideUp} className="mb-4 mt-2 text-center">
         <Link to="/policies" className="text-xs text-ink-400 underline-offset-4 hover:text-ink-600 hover:underline dark:hover:text-ink-200">

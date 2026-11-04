@@ -14,9 +14,10 @@ import { ACCENT_NAMES, ACCENTS, describeHappyHour, starterProgram } from "../../
 import { RewardsCard } from "../../components/rewards/RewardsCard";
 import { HowYouEarn, RewardRail, RewardTile } from "../../components/rewards/RewardPieces";
 import { StoreSwitcher } from "../../components/store/StoreSwitcher";
+import { PromosTabs } from "./Promos";
 import { NoStoreYet } from "../../components/store/NoStoreYet";
 import { ChoiceTermsEditor } from "./catalog/ChoiceTermsEditor";
-import { Button, Card, Field, Input, SectionLabel, Select, Skeleton, Switch } from "../../components/ui";
+import { Button, Card, Field, GroupHeading, Input, SectionLabel, Select, Skeleton, Switch } from "../../components/ui";
 import { MAX_HAPPY_HOURS, MAX_ITEM_BONUSES, MAX_REWARDS, MAX_TIERS, type ChoiceTerms, type MerchantCatalog, type PromoReward, type Reward, type RewardsProgram } from "../../holochain/types";
 import { useT } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
@@ -89,6 +90,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
     return (
       <div className="px-4 pt-4">
         <StoreSwitcher />
+        <PromosTabs />
         <Skeleton className="mt-4 h-52 w-full rounded-[28px]" />
         <Skeleton className="mt-4 h-40 w-full" />
       </div>
@@ -114,6 +116,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-40 pt-4">
       <StoreSwitcher />
+      <PromosTabs />
       <motion.div variants={fadeSlideUp} className="mb-4 mt-3 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-ink-900 dark:text-ink-50">{t("rewardsAdmin.title")}</h1>
@@ -370,10 +373,7 @@ const unusedItem = (menu: ItemRow[], used: Uint8Array[]) => (menu.find((m) => !u
 function Section({ icon: Icon, title, hint, children }: { icon: typeof Sparkles; title: string; hint?: string; children: React.ReactNode }) {
   return (
     <motion.section variants={fadeSlideUp} className="mt-6">
-      <div className="mb-2 flex items-center gap-2 px-1">
-        <Icon size={15} className="text-handshake-500" />
-        <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink-500">{title}</h2>
-      </div>
+      <GroupHeading icon={Icon} title={title} className="min-h-0" />
       {hint && <p className="mb-2 px-1 text-xs text-ink-400">{hint}</p>}
       <Card className="p-4">{children}</Card>
     </motion.section>

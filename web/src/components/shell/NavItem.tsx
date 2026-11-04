@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import clsx from "clsx";
 import type { Home } from "lucide-react";
 
@@ -6,8 +6,10 @@ import type { Home } from "lucide-react";
 /// wide screen.
 export type NavPlacement = "bar" | "side";
 
-/// One place in the navigation, with an optional count badge.
-export function NavItem({ to, icon: Icon, label, badge, placement }: { to: string; icon: typeof Home; label: string; badge?: number; placement: NavPlacement }) {
+/// One place in the navigation, with an optional count badge -- shown as
+/// where you are on `to`, or on any of the pages it also covers (`also`).
+export function NavItem({ to, also = [], icon: Icon, label, badge, placement }: { to: string; also?: readonly string[]; icon: typeof Home; label: string; badge?: number; placement: NavPlacement }) {
+  const here = also.includes(useLocation().pathname);
   const count = !!badge && (
     <span
       className={clsx(
@@ -26,7 +28,7 @@ export function NavItem({ to, icon: Icon, label, badge, placement }: { to: strin
         className={({ isActive }) =>
           clsx(
             "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
-            isActive ? "bg-handshake-50 text-handshake-700 dark:bg-handshake-900/30 dark:text-handshake-300" : "text-ink-500 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-ink-800 dark:hover:text-white",
+            isActive || here ? "bg-handshake-50 text-handshake-700 dark:bg-handshake-900/30 dark:text-handshake-300" : "text-ink-500 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-ink-800 dark:hover:text-white",
           )
         }
       >
@@ -43,7 +45,7 @@ export function NavItem({ to, icon: Icon, label, badge, placement }: { to: strin
       className={({ isActive }) =>
         clsx(
           "relative flex flex-1 flex-col items-center justify-center gap-1 py-2 text-xs font-medium transition",
-          isActive ? "text-handshake-600 dark:text-handshake-400" : "text-ink-400 dark:text-ink-500"
+          isActive || here ? "text-handshake-600 dark:text-handshake-400" : "text-ink-400 dark:text-ink-500"
         )
       }
     >

@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { BellRing, ClipboardList, Gift, Store } from "lucide-react";
+import { BellRing, ClipboardList, Store, Tag, UtensilsCrossed } from "lucide-react";
 import { useMyStores } from "../../store/merchantStores";
 import { awaitsAnswer, fetchActiveQueue, storesKey } from "../../store/merchantQueue";
 import { useResource } from "../../lib/hooks/useResource";
@@ -9,6 +9,7 @@ import clsx from "clsx";
 import { NavItem, type NavPlacement } from "./NavItem";
 import { POLL, isOrderSignal } from "../../lib/network/poll";
 import { useT } from "../../i18n";
+import { PROMO_PAGES } from "../../routes/merchant/promoPages";
 
 /// The store side's navigation, and its alert for orders waiting to be
 /// accepted: a badge on Orders, and -- on any other screen -- a banner
@@ -47,8 +48,9 @@ export function MerchantNav({ placement }: { placement: NavPlacement }) {
         )}
       </AnimatePresence>
       <NavItem to="/merchant" icon={ClipboardList} label={t("nav.orders")} badge={waiting} placement={placement} />
-      <NavItem to="/merchant/catalog" icon={Store} label={t("nav.menu")} placement={placement} />
-      <NavItem to="/merchant/rewards" icon={Gift} label={t("nav.rewards")} placement={placement} />
+      <NavItem to="/merchant/menu" icon={UtensilsCrossed} label={t("nav.menu")} placement={placement} />
+      <NavItem to={PROMO_PAGES[0]} also={PROMO_PAGES} icon={Tag} label={t("nav.promos")} placement={placement} />
+      <NavItem to="/merchant/store" icon={Store} label={t("nav.store")} placement={placement} />
     </>
   );
 }

@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, UtensilsCrossed } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { addMenuItem, updateMenuItem } from "../../../holochain/zomes/catalog";
 import { bytesEqual, bytesToHex, hexToBytes } from "../../../holochain/decode";
 import { groupByCategory, type ItemRow } from "../../../lib/storefront/menu";
 import { formatCents, toMinorUnits, fromMinorUnits, currencySymbol } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
-import { Button, Card, Checkbox, Field, Input, Notice, SectionLabel, Select, StatNumber, Textarea } from "../../../components/ui";
+import { Button, Card, Checkbox, Field, GroupHeading, Input, Notice, SectionLabel, Select, StatNumber, Textarea } from "../../../components/ui";
 import { useTerms } from "../../../store/network";
 import { percentLabel } from "../../../lib/storefront/tax";
 import { PhotoInput } from "../../../components/PhotoInput";
@@ -33,11 +33,17 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
 
   return (
     <section className="mb-6">
-      <motion.div variants={fadeSlideUp} className="mb-3 flex items-center justify-between">
-        <SectionLabel>{t("nav.menu")}</SectionLabel>
-        <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setEditing(editing ? null : { kind: "new" })}>
-          <Plus size={14} /> {editing ? t("common.cancel") : t("menuEditor.add")}
-        </Button>
+      <motion.div variants={fadeSlideUp}>
+        <GroupHeading
+          icon={UtensilsCrossed}
+          title={t("menuPage.items")}
+          className="mb-3"
+          action={
+            <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setEditing(editing ? null : { kind: "new" })}>
+              <Plus size={14} /> {editing ? t("common.cancel") : t("menuEditor.add")}
+            </Button>
+          }
+        />
       </motion.div>
 
       <AnimatePresence initial={false}>

@@ -1,6 +1,6 @@
 import type { HTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
-import { ChevronDown, Minus, Plus } from "lucide-react";
+import { ChevronDown, Minus, Plus, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import clsx from "clsx";
 import { useT } from "../i18n";
@@ -283,6 +283,21 @@ export function SectionLabel({ icon, children, className, as: Tag = "p", id }: {
       {icon}
       {children}
     </Tag>
+  );
+}
+
+/// The heading over a group of cards on a page -- above the cards' own
+/// labels, so a page reads as a few groups -- with what it can add, if
+/// anything (`action`), at its end.
+export function GroupHeading({ icon: Icon, title, action, className }: { icon: LucideIcon; title: string; action?: ReactNode; className?: string }) {
+  return (
+    <div className={clsx("mb-2 flex min-h-9 items-center justify-between gap-3 px-1", className)}>
+      <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-ink-500">
+        <Icon size={15} className="text-handshake-500" />
+        {title}
+      </h2>
+      {action}
+    </div>
   );
 }
 

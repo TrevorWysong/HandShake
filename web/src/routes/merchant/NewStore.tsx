@@ -49,7 +49,7 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
       // phone, hours) -- a freshly published store has nothing but a name
       // and a pin, so this reads as one continuous setup flow. Names the
       // store so only *it* opens in edit mode (see Catalog.tsx).
-      navigate("/merchant/catalog", { state: { editDetails: hex } });
+      navigate("/merchant/store", { state: { editDetails: hex } });
     });
   }
 

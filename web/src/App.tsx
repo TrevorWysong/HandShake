@@ -18,7 +18,9 @@ import { DriverDashboard } from "./routes/driver/Dashboard";
 import { Earnings } from "./routes/driver/Earnings";
 import { Payments } from "./routes/Payments";
 import { MerchantOrders } from "./routes/merchant/Orders";
-import { MerchantCatalog } from "./routes/merchant/Catalog";
+import { MerchantMenu } from "./routes/merchant/Menu";
+import { MerchantStore } from "./routes/merchant/Store";
+import { MerchantPromos } from "./routes/merchant/Promos";
 import { MerchantRewards } from "./routes/merchant/Rewards";
 import { RewardsDetail, RewardsPage } from "./routes/customer/Rewards";
 import { RedeemRewards } from "./routes/customer/RedeemRewards";
@@ -184,8 +186,10 @@ export default function App() {
           <Route path="/driver" element={<Screen width="wide"><DriverDashboard /></Screen>} />
           <Route path="/driver/earnings" element={<Screen width="medium"><Earnings /></Screen>} />
           <Route path="/merchant" element={<Screen width="wide"><MerchantOrders /></Screen>} />
-          <Route path="/merchant/catalog" element={<Screen width="medium"><MerchantCatalog /></Screen>} />
+          <Route path="/merchant/menu" element={<Screen width="medium"><MerchantMenu /></Screen>} />
+          <Route path="/merchant/promos" element={<Screen width="medium"><MerchantPromos /></Screen>} />
           <Route path="/merchant/rewards" element={<Screen width="wide"><MerchantRewards /></Screen>} />
+          <Route path="/merchant/store" element={<Screen width="medium"><MerchantStore /></Screen>} />
           <Route path="/rewards" element={<Screen width="wide"><RewardsPage /></Screen>} />
           <Route path="/rewards/:hash" element={<Screen width="reading"><RewardsDetail /></Screen>} />
           <Route path="/rewards/:hash/redeem" element={<Screen width="reading"><RedeemRewards /></Screen>} />

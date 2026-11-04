@@ -11,7 +11,7 @@ export function NoStoreYet({ detail }: { detail: string }) {
   return (
     <div className="flex flex-col items-center px-4">
       <EmptyState icon={<Store size={32} />} title={t("merchantOrders.noStore")} subtitle={detail} />
-      <Button onClick={() => navigate("/merchant/catalog")}>{t("merchantOrders.setUp")}</Button>
+      <Button onClick={() => navigate("/merchant/store")}>{t("merchantOrders.setUp")}</Button>
     </div>
   );
 }
