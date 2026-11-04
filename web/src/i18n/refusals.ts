@@ -115,7 +115,7 @@ export const REFUSALS = {
   "refusal.that-second-address-line-is-too-long": "That second address line is too long.",
   "refusal.that-store-couldn-t-be-found": "That store couldn't be found.",
   "refusal.that-store-wasn-t-this-account-s": "That store wasn't this account's.",
-  "refusal.that-tip-is-more-than-this-store": "That tip is more than this store passes on to a driver. Choose a smaller one.",
+  "refusal.that-tip-is-more-than-this-order": "That tip is more than this order allows. Choose a smaller one.",
   "refusal.that-website-address-doesn-t-look-right": "That website address doesn't look right. It should start with https://, like https://example.com.",
   "refusal.that-s-a-full-secret-key-create": "That's a full secret key. Create a restricted key instead, so this device can only take payments.",
   "refusal.that-s-more-than-this-store-allows": "That's more than this store allows for delivery. Choose a lower most you'll pay.",

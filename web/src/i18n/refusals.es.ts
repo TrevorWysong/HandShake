@@ -120,7 +120,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.that-second-address-line-is-too-long": "Esa segunda línea de dirección es demasiado larga.",
   "refusal.that-store-couldn-t-be-found": "No se encontró esa tienda.",
   "refusal.that-store-wasn-t-this-account-s": "Esa tienda no era de esta cuenta.",
-  "refusal.that-tip-is-more-than-this-store": "Esa propina supera lo que esta tienda transfiere a un repartidor. Elige una menor.",
+  "refusal.that-tip-is-more-than-this-order": "Esa propina supera lo que permite este pedido. Elige una menor.",
   "refusal.that-website-address-doesn-t-look-right": "Esa dirección web no parece correcta. Debería empezar por https://, como https://ejemplo.com.",
   "refusal.the-access-token-can-t-do-this": "El token de acceso no puede hacer esto. Necesita pagos, clientes y tarjetas.",
   "refusal.the-customer-hasn-t-asked-to-collect": "El cliente no ha pedido recogerlo.",

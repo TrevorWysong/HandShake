@@ -69,6 +69,24 @@ pub fn set_max_delivery_fee(input: SetMaxDeliveryFeeInput) -> ExternResult<Recor
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct SetTipLimitInput {
+    pub original_action: ActionHash,
+    pub percent: u16,
+    pub floor_cents: u64,
+}
+
+/// How big a tip may be on the store's deliveries -- see
+/// `MerchantCatalog::max_tip_percent`.
+#[hdk_extern]
+pub fn set_tip_limit(input: SetTipLimitInput) -> ExternResult<Record> {
+    let (current, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(input.original_action, "MerchantCatalog")?;
+    catalog.max_tip_percent = input.percent;
+    catalog.max_tip_floor = input.floor_cents;
+    let updated = update_version(&current, &EntryTypes::MerchantCatalog(catalog), LinkTypes::Version)?;
+    written(updated)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SetMinimumOrderInput {
     pub original_action: ActionHash,
     /// `None` for any size.

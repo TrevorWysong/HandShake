@@ -93,11 +93,9 @@ export function Cart() {
   const subtotalCents = cart.total();
   const tipCents = tipFor(subtotalCents, options.tipPercent, options.customTip);
   const maxFeeCents = feeCapCents(options.feePreset, options.customFee);
-  // The store's most a delivery fee, or a tip, may be: above it, an order
-  // is refused.
+  // The store's most a delivery fee may be: a cap above it is refused.
   const feeLimitCents = storeInfo?.maxDeliveryFeeCents ?? null;
   const overFeeLimit = feeLimitCents !== null && maxFeeCents > feeLimitCents;
-  const overTipLimit = feeLimitCents !== null && tipCents > feeLimitCents;
   const taxIncluded = storeInfo?.pricesIncludeTax ?? false;
   const taxRates = storeInfo?.taxRates ?? [];
   const price = priceCheckout({
@@ -114,6 +112,11 @@ export function Cart() {
     menuSubtotalCents: menu.reduce((sum, line) => sum + line.priceCents * line.quantity, 0),
     leaveAtDoorMaxCents: storeInfo?.leaveAtDoorMaxCents ?? null,
   });
+  // The store's tip limit (`MerchantCatalog::max_tip`): a tip passes
+  // through its card to the driver.
+  const tipLimit = storeInfo?.tipLimit ?? null;
+  const tipLimitCents = tipLimit && Math.max(Math.floor((price.orderTotalCents * tipLimit.percent) / 100), tipLimit.floorCents);
+  const overTipLimit = tipLimitCents !== null && tipCents > tipLimitCents;
   // The door only where the store allows it for an order this size.
   const dropoffPreference: DropoffPreference = options.chosenPreference === "LeaveAtDoor" && !price.doorAllowed ? "HandToMe" : options.chosenPreference;
   // What it earns, as the program counts it once the store settles: the
@@ -300,7 +303,7 @@ export function Cart() {
               </Section>
               <Section title={t("cart.tipTitle")}>
                 <AmountChoice presets={TIP_PRESETS_PERCENT} label={(p) => (p === 0 ? t("cart.noTip") : `${p}%`)} preset={options.tipPercent} custom={options.customTip} onPreset={options.setTipPercent} onCustom={options.setCustomTip} placeholder={t("cart.custom")} />
-                {overTipLimit && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{t("cart.tipOver", { amount: formatCents(feeLimitCents ?? 0) })}</p>}
+                {overTipLimit && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{t("cart.tipOver", { amount: formatCents(tipLimitCents ?? 0) })}</p>}
               </Section>
             </>
           )}

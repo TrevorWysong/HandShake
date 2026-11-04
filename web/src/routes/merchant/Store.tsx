@@ -14,7 +14,7 @@ import { StoreSwitcher } from "../../components/store/StoreSwitcher";
 import { GettingPaidCard } from "../../components/payments/GettingPaidCard";
 import { InsightsCard } from "./catalog/InsightsCard";
 import { TaxCard, TaxReportCard } from "./catalog/TaxCard";
-import { AutoAcceptCard, BusyCard, DeliverySubsidyCard, LeaveAtDoorCard, ListingCard, MinimumOrderCard, StoreDetailsCard, StoreWaitCard } from "./catalog/StoreDetailsCard";
+import { AutoAcceptCard, BusyCard, DeliverySubsidyCard, LeaveAtDoorCard, ListingCard, MinimumOrderCard, StoreDetailsCard, StoreWaitCard, TipLimitCard } from "./catalog/StoreDetailsCard";
 import { HoursCard } from "./catalog/HoursCard";
 import { StoreReviews } from "./catalog/StoreReviews";
 import { ForActiveStore, StoreSkeleton } from "./ActiveStore";
@@ -109,6 +109,7 @@ function StoreSettings({ storeHex, openDetailsOnArrival }: { storeHex: string; o
 
         <Group icon={Truck} title={t("storePage.delivery")} columns>
           <DeliverySubsidyCard {...card} />
+          <TipLimitCard {...card} />
           <LeaveAtDoorCard {...card} />
         </Group>
 

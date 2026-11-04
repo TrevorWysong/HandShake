@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Globe, Mail, MapPin, Pencil, Phone } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { closeListing, detailsOf, isStoreListed, reopenListing, setAutoAcceptOrders, setBusy, setDeliverySubsidyPercent, setMaxDeliveryFee, setLeaveAtDoorLimit, setMinimumOrder, updateCatalogDetails, setStoreWait } from "../../../holochain/zomes/catalog";
+import { closeListing, detailsOf, isStoreListed, reopenListing, setAutoAcceptOrders, setBusy, setDeliverySubsidyPercent, setMaxDeliveryFee, setTipLimit, setLeaveAtDoorLimit, setMinimumOrder, updateCatalogDetails, setStoreWait } from "../../../holochain/zomes/catalog";
 import { formatCatalogAddress, formatDistance, toMinorUnits, fromMinorUnits, currencySymbol, formatCents } from "../../../lib/ui/format";
 import { useT } from "../../../i18n";
 import { useResource } from "../../../lib/hooks/useResource";
@@ -12,7 +12,7 @@ import { PhotoInput } from "../../../components/PhotoInput";
 import { SplitAddressFields } from "../../../components/places/SplitAddressFields";
 import { fromCatalogAddress, toCatalogAddress } from "../../../lib/places/splitAddress";
 import type { MerchantCatalog } from "../../../holochain/types";
-import { MAX_DESCRIPTION_CHARS, MAX_EMAIL_CHARS, MAX_LABEL_CHARS, MAX_PHONE_CHARS, MAX_WEBSITE_CHARS } from "../../../holochain/types";
+import { MAX_DESCRIPTION_CHARS, MAX_EMAIL_CHARS, MAX_LABEL_CHARS, MAX_PHONE_CHARS, MAX_TIP_PERCENT, MAX_WEBSITE_CHARS } from "../../../holochain/types";
 import { isStoreEmail, isStoreWebsite, normalizeWebsite, websiteLabel } from "../../../lib/storefront/contact";
 import { useTerms } from "../../../store/network";
 
@@ -177,6 +177,39 @@ export function DeliverySubsidyCard({ catalog, catalogRef, onSaved }: { catalog:
           </p>
           <p className="mt-0.5 text-xs text-ink-500 dark:text-ink-400">{t("storeSettings.feesUpTo", { amount: formatCents(catalog.max_delivery_fee) })}</p>
         </>
+      )}
+    </Card>
+  );
+}
+
+/// How big a tip may be on the store's deliveries: a share of the order, or
+/// a set amount, whichever is more. Tips pass through the store's card to
+/// the driver, so this keeps what a reversed charge could cost it in
+/// proportion to the order.
+export function TipLimitCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCatalog; catalogRef: Uint8Array; onSaved: () => Promise<void> }) {
+  const t = useT();
+  const [editing, setEditing] = useState(false);
+  return (
+    <Card className="mb-4 p-4">
+      <div className="mb-1 flex items-center justify-between">
+        <SectionLabel>{t("storeSettings.tips")}</SectionLabel>
+        <button onClick={() => setEditing((v) => !v)} className="text-ink-400 hover:text-handshake-600" aria-label={t("storeSettings.editTips")}>
+          <Pencil size={14} />
+        </button>
+      </div>
+      <p className="mb-2 text-xs text-ink-400">{t("storeSettings.tipsDetail")}</p>
+      {editing ? (
+        <TipLimitEditor
+          initialPercent={catalog.max_tip_percent}
+          initialFloorCents={catalog.max_tip_floor}
+          onSave={async (percent, floorCents) => {
+            await setTipLimit(catalogRef, percent, floorCents);
+            await onSaved();
+            setEditing(false);
+          }}
+        />
+      ) : (
+        <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("storeSettings.tipsUpTo", { percent: catalog.max_tip_percent, amount: formatCents(catalog.max_tip_floor) })}</p>
       )}
     </Card>
   );
@@ -359,6 +392,34 @@ function DeliveryFeeEditor({ initialPercent, initialMaxCents, onSave }: { initia
           <Input type="number" min={0} step={1} value={maxDraft} onChange={(e) => setMaxDraft(e.target.value)} prefix={currencySymbol()} className="w-28" />
         </Field>
         <Button loading={save.busy} disabled={unchanged || maxCents === null} onClick={() => save.run(() => onSave(percent, maxCents!))} className="px-4 py-2 text-xs">
+          {t("common.save")}
+        </Button>
+      </div>
+      {save.error && <Notice className="mt-3">{save.error}</Notice>}
+    </div>
+  );
+}
+
+/// Seeded from the saved limit when it mounts.
+function TipLimitEditor({ initialPercent, initialFloorCents, onSave }: { initialPercent: number; initialFloorCents: number; onSave: (percent: number, floorCents: number) => Promise<void> }) {
+  const t = useT();
+  const [percentDraft, setPercentDraft] = useState(String(initialPercent));
+  const [floorDraft, setFloorDraft] = useState(String(fromMinorUnits(initialFloorCents)));
+  const save = useAction();
+  const percent = Math.min(MAX_TIP_PERCENT, Math.max(0, Math.round(Number(percentDraft || 0))));
+  const dollars = Number(floorDraft || 0);
+  const floorCents = Number.isFinite(dollars) && dollars >= 0 ? toMinorUnits(dollars) : null;
+  const unchanged = percent === initialPercent && floorCents === initialFloorCents;
+  return (
+    <div>
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label={t("storeSettings.tipPercent")}>
+          <Input type="number" min={0} max={MAX_TIP_PERCENT} step={10} value={percentDraft} onChange={(e) => setPercentDraft(e.target.value)} placeholder="100" suffix="%" className="w-24" />
+        </Field>
+        <Field label={t("storeSettings.tipFloor")}>
+          <Input type="number" min={0} step={1} value={floorDraft} onChange={(e) => setFloorDraft(e.target.value)} prefix={currencySymbol()} className="w-28" />
+        </Field>
+        <Button loading={save.busy} disabled={unchanged || floorCents === null} onClick={() => save.run(() => onSave(percent, floorCents!))} className="px-4 py-2 text-xs">
           {t("common.save")}
         </Button>
       </div>

@@ -3,10 +3,11 @@
 // validation refuses an order a modified client writes anyway -- every
 // order cites the store version it was placed under (`catalog_version`),
 // and its public drop-off area must lie within that version's radius, its
-// fee split be that version's, its fee cap and tip within that version's
-// most -- so a customer and a driver can't agree a fee of any size for the
-// store to pay its share of, or pass any tip through its card -- and its
-// sealed notes stay small.
+// fee split be that version's, its fee cap within that version's most --
+// so a customer and a driver can't agree a fee of any size for the store
+// to pay its share of -- its tip within that version's tip limit, so no tip
+// of any size passes through the store's card, and its sealed notes stay
+// small.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
@@ -97,10 +98,10 @@ await runScenario(async (scenario) => {
       max_delivery_fee: 500,
       tip_cents: 2_501,
     }),
-    /more than this store passes on to a driver/,
-    "so is a tip past it",
+    /more than this order allows/,
+    "a tip past the store's tip limit (the whole order, or $10) is refused",
   );
-  console.log("[PASS] request_delivery refuses a fee cap or a tip past the store's most");
+  console.log("[PASS] request_delivery refuses a fee cap past the store's most, and a tip past the order's");
 
   // Same enforcement point also covers a goodie-bag delivery claim
   // finalizing into a DeliveryOrder -- bag deliveries flow through this
@@ -158,11 +159,28 @@ await runScenario(async (scenario) => {
   await assert.rejects(forged({ dropoff_geohash: honest.dropoff_geohash.slice(0, 4) }), /geohash of 6 characters/, "nor a vaguer area, which could stretch the radius");
   await assert.rejects(forged({ catalog_version: actionHash(defaultCatalogRecord) }), /version of the order's own store/, "an order cites its own store's terms, not another's");
   await assert.rejects(forged({ delivery_subsidy_percent: 0 }), /fee split is its store's/, "nor a fee split the store never set");
-  await assert.rejects(forged({ tip_cents: 1_000_000 }), /fee and tip are each at most its store's most/, "nor a tip of any size passed through the store's card");
-  await assert.rejects(forged({ max_delivery_fee: 1_000_000 }), /fee and tip are each at most its store's most/, "nor a fee of any size for the store to pay its share of");
+  await assert.rejects(forged({ tip_cents: 1_000_000 }), /tip is within its store's tip limit/, "nor a tip of any size passed through the store's card");
+  await assert.rejects(forged({ tip_cents: 1_251 }), /tip is within its store's tip limit/, "a cent past the whole order");
+  assert.ok(await forged({ tip_cents: 1_250 }), "a tip of the whole order is within a new store's limit");
+  await assert.rejects(forged({ max_delivery_fee: 1_000_000 }), /fee is at most its store's most/, "nor a fee of any size for the store to pay its share of");
   await assert.rejects(forged({ kitchen_note_bytes: limits.MAX_SEALED_BYTES + 1 }), /kitchen_note is too large/, "a sealed note stays small");
   assert.ok(await forged({}), "the honest order's own copy is still valid");
-  console.log("[PASS] validation holds every order to its store's radius, fee split, most fee and size limits");
+  console.log("[PASS] validation holds every order to its store's radius, fee split, most fee, tip limit and size limits");
+
+  // A store sets its own tip limit: three times the order, say.
+  await catalogOf(merchant)("set_tip_limit", { original_action: catalogRef, percent: 300, floor_cents: 1_000 });
+  await dhtSync(all, customer.cells[0].cell_id[0]);
+  const generous = await dispatchOf(customer)<HcRecord>("request_delivery", {
+    merchant: merchant.agentPubKey,
+    catalog_ref: catalogRef,
+    items: [{ item_ref: menuItemRef, quantity: 1 }],
+    order_total: 1250,
+    dropoff: ST_PETE,
+    max_delivery_fee: 500,
+    tip_cents: 3_750,
+  });
+  assert.equal(decodeEntry<{ tip_cents: number }>(generous).tip_cents, 3_750);
+  console.log("[PASS] a store's own tip limit takes the tips it allows");
 
   console.log("[PASS] delivery radius enforcement test complete");
 });
