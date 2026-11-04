@@ -69,7 +69,7 @@ pub use bids::*;
 pub use deliveries::*;
 pub use issues::*;
 pub use live::*;
-pub use matching::{get_open_orders_near, rank_bids, RankedBid};
+pub use matching::{get_open_orders_near, rank_bids, weigh_my_bid, BidWeight, RankedBid};
 pub use never_arrived::*;
 pub use order_queues::*;
 pub use orders::*;

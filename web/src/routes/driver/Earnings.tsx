@@ -6,6 +6,7 @@ import { bytesToHex } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
 import { Card, Skeleton, StatNumber } from "../../components/ui";
 import { GettingPaidCard } from "../../components/payments/GettingPaidCard";
+import { InfoSheet } from "../../components/InfoSheet";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { EarningsReport } from "./EarningsReport";
 import { useT } from "../../i18n";
@@ -41,9 +42,12 @@ export function Earnings() {
 
       <motion.div variants={fadeSlideUp}>
         <Card className="p-5">
-          <p className="mb-3 flex items-center gap-2 text-sm font-bold text-ink-900 dark:text-ink-50">
-            <ShieldCheck size={16} className="text-presence-600" /> {t("earnings.reputation")}
-          </p>
+          <div className="mb-3 flex items-center gap-1">
+            <p className="flex items-center gap-2 text-sm font-bold text-ink-900 dark:text-ink-50">
+              <ShieldCheck size={16} className="text-presence-600" /> {t("earnings.reputation")}
+            </p>
+            <InfoSheet title={t("earnings.repHow")} sections={(["counts", "matching", "seen", "fair"] as const).map((part) => ({ title: t(`earnings.rep.${part}`), body: t(`earnings.rep.${part}Detail`, { clean: terms.clean_start_deliveries }) }))} />
+          </div>
           <p className="-mt-2 mb-3 text-xs text-ink-400">{t("reputation.window", { count: terms.reputation_window_days })}</p>
           {rep === undefined ? (
             <div className="grid grid-cols-2 gap-3">

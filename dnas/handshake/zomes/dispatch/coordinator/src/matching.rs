@@ -60,12 +60,59 @@ pub fn get_open_orders_near(geohash: String) -> ExternResult<Vec<Record>> {
 
 // --- matching a customer's order automatically ---
 
-/// One bid as the matching rule weighs it.
+/// Every driver starts as if they'd made this many deliveries without
+/// dropping one: a drop among their first few orders weighs on them, not
+/// against them as if it were all they'd ever done.
+pub const CLEAN_START: u64 = 5;
+
+/// What the matching rule counts a bid as, with its working -- what
+/// customers' and drivers' screens show, so nobody has to take the ranking
+/// on trust.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+pub struct BidWeight {
+    /// In minor units: lowest wins. The fee, plus `time_cost`, plus
+    /// `reliability_cost`.
+    pub cost: u64,
+    /// Its minutes to the customer, each at the network's
+    /// `minute_value_cents`.
+    pub time_cost: u64,
+    /// Its fee again, in the share of the orders its driver took on that
+    /// they dropped or let lapse -- counting `CLEAN_START` clean ones.
+    pub reliability_cost: u64,
+    /// Those orders: dropped or lapsed, and taken on in all.
+    pub failed: u32,
+    pub taken_on: u32,
+}
+
+/// The published rule (`rank_bids`), for one bid: `fee` arriving in
+/// `eta_seconds`, by a driver with `record`, each minute worth
+/// `minute_value` (`handshake_governance::minute_value_cents`).
+fn weigh(fee: u64, eta_seconds: u32, record: &DriverRecord, minute_value: u64) -> BidWeight {
+    let failed = record.dropped_count.saturating_add(record.lapsed_count);
+    let taken_on = record.completed_count.saturating_add(failed);
+    let reliability_cost = fee.saturating_mul(u64::from(failed)) / (u64::from(taken_on) + CLEAN_START);
+    let time_cost = u64::from(eta_seconds).div_ceil(60).saturating_mul(minute_value);
+    BidWeight { cost: fee.saturating_add(time_cost).saturating_add(reliability_cost), time_cost, reliability_cost, failed, taken_on }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WeighMyBidInput {
+    pub fee: u64,
+    pub eta_seconds: u32,
+}
+
+/// How a bid the caller is about to make would count, on their record now
+/// -- for their bid sheet.
+#[hdk_extern]
+pub fn weigh_my_bid(input: WeighMyBidInput) -> ExternResult<BidWeight> {
+    Ok(weigh(input.fee, input.eta_seconds, &driver_record(&agent_info()?.agent_initial_pubkey)?, handshake_governance::minute_value_cents()))
+}
+
+/// One bid as the matching rule weighs it, best first in `rank_bids`.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RankedBid {
     pub bid: ActionHash,
-    /// What the rule counts it as, in minor units: lowest wins.
-    pub cost: u64,
+    pub weight: BidWeight,
     /// Why it can't be chosen now, if it can't.
     pub unavailable: Option<String>,
 }
@@ -75,10 +122,12 @@ pub struct RankedBid {
 ///
 /// > its price, plus each minute until the driver would hand it over at
 /// > the network's `minute_value_cents`, plus its price again in the share
-/// > of the orders they took on that they dropped or let lapse
+/// > of the orders they took on that they dropped or let lapse -- every
+/// > driver starting with `CLEAN_START` clean ones
 ///
 /// -- so a faster driver can win at a higher price, and a driver who
-/// drops orders has to bid lower to win. Ties go to the earlier bid. A bid
+/// drops orders has to bid lower to win, without one early drop sinking a
+/// new driver. Ties go to the earlier bid. A bid
 /// over the customer's cap, from a driver who left this order, or from one
 /// who can't take it on now is listed but can't be chosen.
 #[hdk_extern]
@@ -105,7 +154,6 @@ fn ranked(order_ref: &ActionHash, latest: &Record, order: &dispatch_integrity::D
         }
         left
     };
-    let minute_value = handshake_governance::minute_value_cents();
     let max = handshake_governance::max_concurrent_deliveries();
     let mut ranked = Vec::new();
     // The earliest bids, up to the network's limit: a flood of later ones
@@ -120,12 +168,7 @@ fn ranked(order_ref: &ActionHash, latest: &Record, order: &dispatch_integrity::D
         if bid.status != BidStatus::Open || original_action_of(bid.order_ref.clone()).ok().as_ref() != Some(order_ref) || record.action().author() != &bid.bidder {
             continue;
         }
-        let summary = driver_record(&bid.bidder)?;
-        let failed = u64::from(summary.dropped_count) + u64::from(summary.lapsed_count);
-        let attempts = u64::from(summary.completed_count) + failed;
-        let reliability = bid.price_offer.saturating_mul(failed).checked_div(attempts).unwrap_or(0);
-        let minutes = u64::from(bid.eta_seconds).div_ceil(60);
-        let cost = bid.price_offer.saturating_add(minutes.saturating_mul(minute_value)).saturating_add(reliability);
+        let weight = weigh(bid.price_offer, bid.eta_seconds, &driver_record(&bid.bidder)?, handshake_governance::minute_value_cents());
         let unavailable = if order.max_delivery_fee.is_some_and(|cap| bid.price_offer > cap) {
             Some("Over your delivery fee limit.".to_string())
         } else if !crate::verification::bid_verification_stands(&bid)? {
@@ -137,9 +180,9 @@ fn ranked(order_ref: &ActionHash, latest: &Record, order: &dispatch_integrity::D
         } else {
             None
         };
-        ranked.push((RankedBid { bid: bid_ref, cost, unavailable }, link.timestamp));
+        ranked.push((RankedBid { bid: bid_ref, weight, unavailable }, link.timestamp));
     }
-    ranked.sort_by(|(a, at), (b, bt)| (a.unavailable.is_some(), a.cost, *at, &a.bid).cmp(&(b.unavailable.is_some(), b.cost, *bt, &b.bid)));
+    ranked.sort_by(|(a, at), (b, bt)| (a.unavailable.is_some(), a.weight.cost, *at, &a.bid).cmp(&(b.unavailable.is_some(), b.weight.cost, *bt, &b.bid)));
     Ok(ranked)
 }
 
@@ -185,4 +228,38 @@ pub(crate) fn auto_match(order_ref: &ActionHash, order: &dispatch_integrity::Del
     let accept = crate::bids::AcceptBidInput { order_original_action: order_ref.clone(), bid_action: best.bid, override_warrants: false };
     call(CallTargetCell::Local, zome_info()?.name, "accept_bid".into(), None, accept)?;
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RECORD: DriverRecord = DriverRecord { completed_count: 0, dropped_count: 0, lapsed_count: 0 };
+    const MINUTE: u64 = 10;
+
+    #[test]
+    fn a_clean_record_counts_a_bid_at_its_fee_and_time() {
+        let weight = weigh(600, 12 * 60, &DriverRecord { completed_count: 40, ..RECORD }, MINUTE);
+        assert_eq!((weight.time_cost, weight.reliability_cost, weight.cost), (120, 0, 720));
+    }
+
+    #[test]
+    fn every_driver_starts_with_clean_deliveries() {
+        // One drop, all they've done: a sixth of their fee, not all of it.
+        let first = weigh(600, 0, &DriverRecord { dropped_count: 1, ..RECORD }, MINUTE);
+        assert_eq!(first.reliability_cost, 100);
+        // One in ten, over time: a fifteenth.
+        let later = weigh(600, 0, &DriverRecord { completed_count: 9, dropped_count: 1, ..RECORD }, MINUTE);
+        assert_eq!((later.failed, later.taken_on, later.reliability_cost), (1, 10, 40));
+        // Lapsed offers count with drops.
+        let lapsed = weigh(600, 0, &DriverRecord { completed_count: 9, lapsed_count: 1, ..RECORD }, MINUTE);
+        assert_eq!(lapsed.reliability_cost, 40);
+    }
+
+    #[test]
+    fn a_faster_driver_can_win_at_a_higher_fee() {
+        let quick = weigh(700, 10 * 60, &RECORD, MINUTE);
+        let slow = weigh(600, 25 * 60, &RECORD, MINUTE);
+        assert!(quick.cost < slow.cost, "{quick:?} against {slow:?}");
+    }
 }

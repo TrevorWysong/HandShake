@@ -181,6 +181,34 @@ export interface Bid {
 export type BidStatus = "Open" | "Accepted" | "Withdrawn" | "Expired" | "Rejected";
 
 /**
+ * What the matching rule counts a bid as, with its working -- what
+ * customers' and drivers' screens show, so nobody has to take the ranking
+ * on trust.
+ */
+export interface BidWeight {
+  /**
+   * In minor units: lowest wins. The fee, plus `time_cost`, plus
+   * `reliability_cost`.
+   */
+  cost: number;
+  /**
+   * Its minutes to the customer, each at the network's
+   * `minute_value_cents`.
+   */
+  time_cost: number;
+  /**
+   * Its fee again, in the share of the orders its driver took on that
+   * they dropped or let lapse -- counting `CLEAN_START` clean ones.
+   */
+  reliability_cost: number;
+  /**
+   * Those orders: dropped or lapsed, and taken on in all.
+   */
+  failed: number;
+  taken_on: number;
+}
+
+/**
  * The month a member was born in -- kept on their own device only
  * (a private entry), to tell the stores they choose (`BirthdayShare`).
  */
@@ -2017,6 +2045,11 @@ export interface NetworkTerms {
    */
   dropoff_wait_secs: number;
   /**
+   * The clean deliveries every driver starts with, in the matching rule
+   * (`matching::CLEAN_START`).
+   */
+  clean_start_deliveries: number;
+  /**
    * Wrong handoff codes a giver's app answers per order before it stops.
    */
   max_code_attempts: number;
@@ -3251,14 +3284,11 @@ export interface ProviderCredential {
 export const REDEMPTION_WINDOW_SECS = 3600;
 
 /**
- * One bid as the matching rule weighs it.
+ * One bid as the matching rule weighs it, best first in `rank_bids`.
  */
 export interface RankedBid {
   bid: ActionHash;
-  /**
-   * What the rule counts it as, in minor units: lowest wins.
-   */
-  cost: number;
+  weight: BidWeight;
   /**
    * Why it can't be chosen now, if it can't.
    */

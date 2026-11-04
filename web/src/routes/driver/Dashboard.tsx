@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Bike, Link2, MapPin, Power, Route, ShieldCheck, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
-import { getOpenOrdersNear, submitBid, withdrawBid, getMyActiveDeliveries, getOrderPrivateDetails, dropOrder, commitToOrder } from "../../holochain/zomes/dispatch";
+import { getOpenOrdersNear, submitBid, withdrawBid, getMyActiveDeliveries, getOrderPrivateDetails, dropOrder, commitToOrder, weighMyBid } from "../../holochain/zomes/dispatch";
 import { useLocationSharing } from "../../lib/hooks/useLocationSharing";
 import { Sheet } from "../../components/Sheet";
 import { decodeEntry, actionHash, bytesToHex, bytesEqual, hexToBytes } from "../../holochain/decode";
@@ -18,6 +18,7 @@ import { StarRating } from "../../components/StarRating";
 import { ChatPanel } from "../../components/orders/ChatPanel";
 import { DriverPayHeld, OrderPayments } from "../../components/payments/OrderPayments";
 import { HandoffStep } from "./HandoffStep";
+import { BidWeightBreakdown, HowBidsCompare } from "../../components/orders/BidWeights";
 import { StoreCheckIn, StorePickup } from "./AtTheStore";
 import { averageRating, getRatingSummary, getReputationSummary } from "../../holochain/zomes/reputation";
 import { formatCents, formatDistance, formatEta, formatClockTime, toMinorUnits, fromMinorUnits, currencySymbol } from "../../lib/ui/format";
@@ -470,6 +471,25 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
 }
 
 /// Sends an offer on an order, and remembers it on this device.
+/// How the bid being typed would count in customers' apps, on this
+/// driver's record now -- with its working a tap away.
+function MyBidWeight({ fee, etaMinutes }: { fee: number; etaMinutes: number }) {
+  const t = useT();
+  const { data: weight } = useResource(`my-bid-weight:${fee}:${etaMinutes}`, () => weighMyBid(fee, etaMinutes * 60));
+  if (!weight) return null;
+  return (
+    <div className="mt-2 flex items-center gap-1 text-xs text-ink-400">
+      <span>{t("bidWeight.yoursCountsAs", { amount: formatCents(weight.cost) })}</span>
+      <HowBidsCompare>
+        <section className="rounded-2xl bg-ink-50 p-4 dark:bg-ink-800/60">
+          <p className="mb-2 text-sm font-semibold text-ink-900 dark:text-ink-50">{t("bidWeight.yourBid")}</p>
+          <BidWeightBreakdown fee={fee} weight={weight} />
+        </section>
+      </HowBidsCompare>
+    </div>
+  );
+}
+
 async function sendBid(driverHex: string, orderRef: Uint8Array, trip: { etaMinutes: number; toStoreMinutes: number }, feeCents: number) {
   const record = await submitBid({
     order_ref: orderRef,
@@ -596,6 +616,7 @@ function BidCard({
         </Button>
       </div>
       )}
+      {!sent && eta !== null && <MyBidWeight fee={fee} etaMinutes={eta} />}
     </Card>
   );
 }

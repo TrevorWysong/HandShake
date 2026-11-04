@@ -153,7 +153,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       summary: "Like the big delivery apps, your app can choose a driver for you, by a rule anyone can check. Or you choose.",
       points: [
         `Drivers bid on your order with their fee and when they'd get it to you. ${spoken(t.bid_window_secs)} after the first bid, your app takes the best one.`,
-        `The best bid is the lowest fee once each minute until delivery counts as ${formatCents(t.minute_value_cents)} and the driver's dropped orders count against them: a faster driver can win at a higher fee, and one who drops orders has to bid lower to win.`,
+        `The best bid is the lowest fee once each minute until delivery counts as ${formatCents(t.minute_value_cents)} and the driver's dropped orders count against them, every driver starting as if they'd made ${t.clean_start_deliveries} deliveries without a drop: a faster driver can win at a higher fee, one who drops orders has to bid lower to win, and one early slip doesn't sink a new driver. Your order page shows each bid's working.`,
         "Bids over your fee cap, from a driver who left your order before, or from one who can't take another order right now, aren't chosen. Offers a driver lets lapse count against them like dropped orders.",
         "A driver sees your exact address only once they've committed to your order, with their collateral held.",
         "Choose \"I'll choose\" at checkout to see every bid and accept one yourself.",

@@ -543,6 +543,9 @@ pub struct NetworkTerms {
     /// How long a driver waits at the drop-off before they may say nobody
     /// came to take the order.
     pub dropoff_wait_secs: u64,
+    /// The clean deliveries every driver starts with, in the matching rule
+    /// (`matching::CLEAN_START`).
+    pub clean_start_deliveries: u64,
     /// Wrong handoff codes a giver's app answers per order before it stops.
     pub max_code_attempts: u32,
     pub default_prep_minutes: u16,
@@ -603,6 +606,7 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         time_chain_hash: handshake_governance::time_source().chain_hash,
         collection_window_secs: handshake_governance::collection_window().as_secs(),
         dropoff_wait_secs: handshake_governance::dropoff_wait().as_secs(),
+        clean_start_deliveries: crate::matching::CLEAN_START,
         max_code_attempts: handshake_governance::max_code_attempts(),
         default_prep_minutes: handshake_governance::default_prep_minutes(),
         max_prep_minutes: handshake_governance::max_prep_minutes(),
