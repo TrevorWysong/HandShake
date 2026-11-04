@@ -35,15 +35,24 @@ export function nextOpening(schedule: OpeningPeriod[], weekday: number, minute: 
   return null;
 }
 
-/// When the period open at `minute` on `weekday` closes, if one is.
-export function closesAt(schedule: OpeningPeriod[], weekday: number, minute: number): number | null {
-  const yesterday = (weekday + 6) % 7;
-  const current = schedule.find((p) => {
-    const overnight = p.closes <= p.opens;
-    if (p.weekday === weekday) return minute >= p.opens && (overnight || minute < p.closes);
-    return p.weekday === yesterday && overnight && minute < p.closes;
-  });
-  return current ? current.closes : null;
+/// When a store open at `minute` on `weekday` next closes -- following on
+/// through periods that open as one ends (a day open 24 hours, then the
+/// next) -- or `null` if it's open around the clock.
+export function closesAt(schedule: OpeningPeriod[], weekday: number, minute: number): { weekday: number; minute: number } | null {
+  let at = { weekday, minute };
+  for (let day = 0; day < 8; day += 1) {
+    const yesterday = (at.weekday + 6) % 7;
+    const current = schedule.find((p) => {
+      const overnight = p.closes <= p.opens;
+      if (p.weekday === at.weekday) return at.minute >= p.opens && (overnight || at.minute < p.closes);
+      return p.weekday === yesterday && overnight && at.minute < p.closes;
+    });
+    if (!current) return at;
+    const end = { weekday: current.closes <= current.opens ? (current.weekday + 1) % 7 : current.weekday, minute: current.closes };
+    if (!openAt(schedule, end.weekday, end.minute)) return end;
+    at = end;
+  }
+  return null;
 }
 
 /// The local weekday (0 = Sunday) and minute after midnight of `at` in
@@ -85,8 +94,15 @@ export function storeStatus(catalog: Pick<MerchantCatalog, "is_open" | "weekly_h
   if (!catalog.is_open) return { open: false, label: t("hours.notTaking") };
   const { weekday, minute } = localWeekdayMinute(catalog.time_zone, at);
   if (openAt(catalog.weekly_hours, weekday, minute)) {
-    const closes = closesAt(catalog.weekly_hours, weekday, minute);
-    return { open: true, label: closes === null ? t("hours.open") : t("hours.openUntil", { time: formatMinute(closes) }) };
+    // An empty schedule is open whenever ordering's on: no closing time.
+    const closes = catalog.weekly_hours.length > 0 ? closesAt(catalog.weekly_hours, weekday, minute) : undefined;
+    if (closes === undefined) return { open: true, label: t("hours.open") };
+    if (closes === null) return { open: true, label: t("hours.allDay") };
+    // Later today, or tonight a little past midnight: its time. Further
+    // on: its day too.
+    const tonight = closes.weekday === weekday || (closes.weekday === (weekday + 1) % 7 && closes.minute <= 6 * 60);
+    const time = formatMinute(closes.minute);
+    return { open: true, label: tonight ? t("hours.openUntil", { time }) : t("hours.openUntilDay", { time, day: weekdayName(closes.weekday) }) };
   }
   const next = nextOpening(catalog.weekly_hours, weekday, minute);
   if (!next) return { open: false, label: t("hours.closed") };
@@ -107,7 +123,7 @@ export function describeWeek(schedule: OpeningPeriod[]): { days: string; hours: 
     schedule
       .filter((p) => p.weekday === day)
       .sort((a, b) => a.opens - b.opens)
-      .map((p) => `${formatMinute(p.opens)} – ${formatMinute(p.closes)}`)
+      .map((p) => (p.opens === p.closes ? (p.opens === 0 ? t("hours.allDay") : t("hours.fullDayFrom", { time: formatMinute(p.opens) })) : `${formatMinute(p.opens)} – ${formatMinute(p.closes)}`))
       .join(", ") || t("hours.closed");
   const lines: { weekdays: number[]; hours: string }[] = [];
   for (const day of WEEK) {

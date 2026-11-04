@@ -194,6 +194,12 @@ pub enum Cancellation {
     /// Written by the store: the customer is refunded, and that driver's
     /// collateral pays for the food.
     NoDriver,
+    /// A scheduled order whose store was closed -- not taking orders, or
+    /// outside its hours -- when it came due. Written by the customer's
+    /// conductor in place of sending it, at or after its time: it never
+    /// reached the store, and nobody owes anything. Validation can't read a
+    /// store's hours in its time zone, so it's held against nobody.
+    StoreClosed,
 }
 
 /// What a store tells the customer when it turns an order down.

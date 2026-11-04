@@ -317,6 +317,7 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     }
     let cancelled_from = (prior.status != DeliveryStatus::Cancelled && order.status == DeliveryStatus::Cancelled).then_some(match prior.status {
         DeliveryStatus::Placed => CancelledFrom::Placed,
+        DeliveryStatus::Scheduled => CancelledFrom::Scheduled,
         DeliveryStatus::Collecting => CancelledFrom::Collecting,
         DeliveryStatus::DriverAtStore => CancelledFrom::AtStore,
         DeliveryStatus::Open => CancelledFrom::Open,
@@ -393,9 +394,14 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         return Ok(Some("this order has changed drivers as many times as the network allows".into()));
     }
 
-    // A scheduled order opens only once its time has come.
-    if prior.status == DeliveryStatus::Scheduled && order.status == DeliveryStatus::Placed && written_at < prior.requested_delivery_time.unwrap_or(Timestamp(0)) {
+    // A scheduled order opens only once its time has come -- and is found
+    // its store closed only then.
+    let due = written_at >= prior.requested_delivery_time.unwrap_or(Timestamp(0));
+    if prior.status == DeliveryStatus::Scheduled && order.status == DeliveryStatus::Placed && !due {
         return Ok(Some("a scheduled order cannot open for bidding before its requested_delivery_time".into()));
+    }
+    if prior.status == DeliveryStatus::Scheduled && order.cancellation == Some(Cancellation::StoreClosed) && !due {
+        return Ok(Some("a scheduled order finds its store closed only once its time has come".into()));
     }
 
     // Proof of the time: a fresh round of the network's time source on

@@ -1,7 +1,8 @@
 // Proves scheduled/future delivery orders: a Scheduled order is invisible
 // to matching until opened, opening too early is rejected, and opening
 // once the requested time has passed succeeds and makes it discoverable --
-// exactly like a normal order from that point on.
+// exactly like a normal order from that point on -- and one whose store is
+// closed when it comes due is called off instead, never reaching it.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
@@ -81,4 +82,20 @@ await runScenario(async (scenario) => {
   const nearbyAfterOpen = await dispatchOf(driver)<HcRecord[]>("get_open_orders_near", geohash);
   assert.equal(nearbyAfterOpen.length, 1, "the accepted order should be discoverable via get_open_orders_near");
   console.log("[PASS] a due scheduled order is placed with the store, and discoverable once accepted, just like a normal order");
+
+  // Scheduled while the store's open; the store closes before it's due.
+  const closedOrder = actionHash(await dispatchOf(customer)<HcRecord>("request_delivery", {
+    merchant: customer.agentPubKey,
+    catalog_ref: catalogRef,
+    items: [{ item_ref: menuItemRef, quantity: 1 }],
+    order_total: 600,
+    dropoff: ST_PETE,
+    max_delivery_fee: 1_000,
+    requested_delivery_time: Date.now() * 1000 + 8_000_000,
+  }));
+  await catalogOf(customer)("set_catalog_open", { original_action: catalogRef, is_open: false });
+  const ended = await retryUntil(async () => decodeEntry<{ status: string; cancellation: unknown }>(await dispatchOf(customer)<HcRecord>("get_order", closedOrder)), (order) => order.status !== "Scheduled", 60, 1000);
+  assert.equal(ended.status, "Cancelled", "an order due at a closed store is never sent it");
+  assert.equal(ended.cancellation, "StoreClosed", "it's called off as the store being closed, held against nobody");
+  console.log("[PASS] a scheduled order whose store is closed when it comes due is called off, never reaching the store");
 });

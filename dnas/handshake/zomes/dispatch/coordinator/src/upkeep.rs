@@ -208,6 +208,13 @@ fn tend_order(entry: &OrderEntry, now: DueAt, window: i64) -> ExternResult<Optio
                     if now < due {
                         return Ok(Some(due));
                     }
+                    // A store closed at its time is never sent it: the
+                    // order is called off, and nobody owes anything.
+                    let (_, store) = crate::stores::current_catalog_version(&order.catalog_ref)?;
+                    if crate::stores::closed_reason(&store, now).is_some() {
+                        cancel_delivery(order_ref, Cancellation::StoreClosed)?;
+                        return Ok(None);
+                    }
                     open_scheduled_order(order_ref)?;
                     Ok(Some(now + window))
                 }

@@ -239,6 +239,8 @@ pub fn entitlement(part: &Part, amount: u64, basis: &Basis) -> Entitlement {
             // app confirmed it had: the store is paid for the food.
             Cancellation::StoreDidNotRespond if portion == Portion::Food => TakesIf(ChainCheck::ConfirmedCooking, amount).filter_zero(),
             Cancellation::StoreDidNotRespond => No,
+            // It never reached the store.
+            Cancellation::StoreClosed => No,
         },
     }
 }
@@ -405,7 +407,7 @@ mod tests {
             }
             all.push(Basis::Replaced { bid: bid.clone() });
         }
-        let bys = [Cancellation::ByCustomer, Cancellation::ByStore(DeclineReason::OutdatedPrices), Cancellation::StoreDidNotRespond, Cancellation::NotCollected, Cancellation::StoreLate, Cancellation::NoDriver];
+        let bys = [Cancellation::ByCustomer, Cancellation::ByStore(DeclineReason::OutdatedPrices), Cancellation::StoreDidNotRespond, Cancellation::NotCollected, Cancellation::StoreLate, Cancellation::NoDriver, Cancellation::StoreClosed];
         for by in bys {
             for from in [Stage::Waiting, Stage::Accepted, Stage::DriverAssigned, Stage::AtStore, Stage::Other] {
                 for cooking in [false, true] {
@@ -473,6 +475,12 @@ mod tests {
         for (name, terms, bids, bases, checks) in &cases {
             assert_same(name, terms, bids, bases, *checks);
         }
+    }
+
+    #[test]
+    fn a_scheduled_order_its_store_was_closed_for_costs_nobody_anything() {
+        let net = direct(&terms(), &[], &[cancelled(Cancellation::StoreClosed, Stage::Waiting, false, None, None)], false);
+        assert!(net.values().all(|&n| n == 0), "nobody pays or is paid: {net:?}");
     }
 
     #[test]

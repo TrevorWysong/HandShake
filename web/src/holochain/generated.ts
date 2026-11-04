@@ -246,7 +246,15 @@ export type Cancellation =
    * Written by the store: the customer is refunded, and that driver's
    * collateral pays for the food.
    */
-  | "NoDriver";
+  | "NoDriver"
+  /**
+   * A scheduled order whose store was closed -- not taking orders, or
+   * outside its hours -- when it came due. Written by the customer's
+   * conductor in place of sending it, at or after its time: it never
+   * reached the store, and nobody owes anything. Validation can't read a
+   * store's hours in its time zone, so it's held against nobody.
+   */
+  | "StoreClosed";
 
 /**
  * A member's card at a store: where they stand now, and what's coming.
@@ -2054,9 +2062,10 @@ export interface OfferPaymentInput {
 
 /**
  * One period a store is open: from `opens` to `closes` on `weekday`
- * (0 = Sunday), in minutes after local midnight. A `closes` at or before
- * `opens` runs past midnight into the next day -- 18:00 to 02:00 is
- * `opens: 1080, closes: 120`.
+ * (0 = Sunday), in minutes after local midnight. A `closes` before `opens`
+ * runs past midnight into the next day -- 18:00 to 02:00 is
+ * `opens: 1080, closes: 120` -- and one equal to it runs a full 24 hours:
+ * midnight to midnight (`0, 0`) is open all day.
  */
 export interface OpeningPeriod {
   weekday: number;

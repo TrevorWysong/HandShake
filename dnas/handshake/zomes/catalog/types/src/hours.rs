@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 pub const MINUTES_PER_DAY: u16 = 24 * 60;
 
 /// One period a store is open: from `opens` to `closes` on `weekday`
-/// (0 = Sunday), in minutes after local midnight. A `closes` at or before
-/// `opens` runs past midnight into the next day -- 18:00 to 02:00 is
-/// `opens: 1080, closes: 120`.
+/// (0 = Sunday), in minutes after local midnight. A `closes` before `opens`
+/// runs past midnight into the next day -- 18:00 to 02:00 is
+/// `opens: 1080, closes: 120` -- and one equal to it runs a full 24 hours:
+/// midnight to midnight (`0, 0`) is open all day.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpeningPeriod {
     pub weekday: u8,
@@ -26,8 +27,6 @@ impl OpeningPeriod {
             Some("an opening period's weekday must be 0 (Sunday) to 6")
         } else if self.opens >= MINUTES_PER_DAY || self.closes >= MINUTES_PER_DAY {
             Some("an opening period's times must be minutes after midnight, under 1440")
-        } else if self.opens == self.closes {
-            Some("an opening period must have some length")
         } else {
             None
         }
@@ -125,7 +124,19 @@ mod tests {
     fn malformed_periods_are_named() {
         assert!(period(7, 0, 60).problem().is_some());
         assert!(period(1, 1440, 60).problem().is_some());
-        assert!(period(1, 60, 60).problem().is_some());
         assert!(period(1, 18 * H, 2 * H).problem().is_none(), "overnight is fine");
+        assert!(period(1, 0, 0).problem().is_none(), "so is all day");
+    }
+
+    #[test]
+    fn a_period_closing_when_it_opens_runs_a_full_day() {
+        // Friday, all day.
+        let schedule = [period(5, 0, 0)];
+        assert!(open_at(&schedule, 5, 0) && open_at(&schedule, 5, 12 * H) && open_at(&schedule, 5, 24 * H - 1));
+        assert!(!open_at(&schedule, 6, 0), "until Saturday's midnight");
+        assert!(!open_at(&schedule, 4, 23 * H), "and from Friday's");
+        // Every day, all day: never closed.
+        let always: Vec<OpeningPeriod> = (0..7).map(|d| period(d, 0, 0)).collect();
+        assert!((0..7).all(|d| open_at(&always, d, 0) && open_at(&always, d, 18 * H)));
     }
 }

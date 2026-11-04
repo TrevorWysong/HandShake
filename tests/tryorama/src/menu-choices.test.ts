@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, retryUntil, retryUntilOk, ST_PETE, useTestCoordinators, testApp, retryingCaller, customerPaid } from "./helpers.js";
+import { actionHash, retryUntil, retryUntilOk, ST_PETE, useTestCoordinators, appWithProperties, retryingCaller, customerPaid } from "./helpers.js";
 
 interface LineView {
   name: string;
@@ -30,7 +30,11 @@ interface IssueView {
 const option = (id: number, name: string, price_cents: number, extra: Record<string, unknown> = {}) => ({ id, name, price_cents, available: true, nested_group: null, ...extra });
 
 await runScenario(async (scenario) => {
-  const [customer, merchant, rival] = await scenario.addPlayersWithApps([testApp, testApp, testApp]);
+  // A report window long enough for the customer's report to reach the
+  // store before it settles, however slow the machine: nothing here waits
+  // for the settlement.
+  const app = appWithProperties({ report_window_secs: 300 });
+  const [customer, merchant, rival] = await scenario.addPlayersWithApps([app, app, app]);
   const all = [customer, merchant, rival];
   await scenario.shareAllAgents();
   for (const player of all) await useTestCoordinators(player, ["dispatch"]);
