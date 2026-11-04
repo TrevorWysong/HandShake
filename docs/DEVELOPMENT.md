@@ -6,11 +6,11 @@ This is the development setup: the UI in a browser, provisioning identities on a
 
 Needs Holochain 0.7.1 (`holochain`, `hc`, `lair-keystore`, `kitsune2-bootstrap-srv`) on your `PATH`. The official release binaries work; the app uses no unstable Holochain features. The conductor, the HDK and HDI (`Cargo.toml`) and `@holochain/client` move together: a different Holochain patch release builds a different DNA, so mixing versions puts you on a different network.
 
-Money: the dev conductor's DNA sets no `credit_limit_cents`, so every account may go $10,000 into debt and orders work without funding anyone. A production network sets the limit (0 recommended) and names issuers who fund accounts; see DEPLOYMENT.md and SECURITY.md.
+Money: payments go directly to each store's and driver's own processor account ([DIRECT_PAYMENTS.md](DIRECT_PAYMENTS.md)). The dev network takes test payments (`live_payments` unset): stores and drivers are paid on the test processor, and customers pay with test cards (`4242` works; `0002` is declined; `3155` asks the bank to confirm).
 
 Signing in, in dev: the browser remembers one identity on the dev node. **Profile → Switch to another identity** jumps to anyone on the node (the seeded people, or accounts you made). An account made through onboarding is behind a device passkey; reopening the app shows **Unlock HandShake** and only prompts for Touch ID or Windows Hello when you tap it, since Safari refuses or stalls a prompt that fires on page load. After `npm run dev:reset`, an identity the browser remembers is gone: the app notices, forgets it, and asks you to sign in. If the connection to the node drops (a sleeping laptop, a background tab, a conductor restart), the app reconnects with a fresh token by itself and shows "Reconnecting to your node..." meanwhile.
 
-The seed sets up a dev issuer, "HandShake Credits (dev)": it writes the network's properties, naming that issuer, to `web/public/dev-network.json`, and every identity -- seeded, or created in the app's onboarding -- joins that network. Customers start with $100 added through it. Cash-outs wait until you approve or decline them with `npm run issuer`.
+The seed writes the dev network's properties (a five-minute report window, so payments settle while you watch) to `web/public/dev-network.json`, and every identity -- seeded, or created in the app's onboarding -- joins that network. Each seeded store and driver has a payment agent on the test processor, kept under `.dev/payments/`; `npm run dev:payments` keeps them running.
 
 | Command | What it does |
 | --- | --- |
@@ -20,11 +20,10 @@ The seed sets up a dev issuer, "HandShake Credits (dev)": it writes the network'
 | `npm run typegen` | Regenerates `src/holochain/generated.ts` from the Rust types (`tools/typegen`). `npm run backend` runs it for you; CI fails if it's stale. |
 | `npm run seed` | Creates a demo world on an empty conductor: three stores (two with the same owner), a driver, customers, and orders in every state. `-- --at lat,lon` seeds around any location. |
 | `npm run dev:reset` | Wipes all dev data, restarts the conductor on the current build, and seeds it. |
-| `npm start` in `issuer/` | The real issuer service against Stripe's test mode: card top-ups and bank payouts for the dev issuer. Setup in `issuer/README.md`. |
-| `npm run issuer` | The dev network's issuer ("HandShake Credits (dev)"), from the terminal: lists cash-outs waiting; `-- pay 1` (or `pay all`), `-- decline 1 "reason"`, and `-- grant "Sam Patel" 25` to add funds. |
+| `npm run dev:payments` | Runs the payment agent (`payments/`) for every identity on the dev conductor that's connected a processor, standing in for the desktop app's: holds, captures and releases what the network says is due. Leave it running beside `npm run dev`. To try a processor's sandbox, paste its test keys under Profile → Payments. |
 | `npm run package -- --network-seed <name>` | Builds the production `deploy/handshake.webhapp` for a network -- see [DEPLOYMENT.md](DEPLOYMENT.md). |
 
-These are TypeScript files in `web/scripts/`, run by Node directly (Node 24 strips the types itself, so there's no build step), and type-checked with the rest of the app by `npx tsc -b`. So are `tests/tryorama/run.ts`, the issuer's `scripts/` and `desktop/build.ts`.
+These are TypeScript files in `web/scripts/`, run by Node directly (Node 24 strips the types itself, so there's no build step), and type-checked with the rest of the app by `npx tsc -b`. So are `tests/tryorama/run.ts` and `desktop/build.ts`; `payments/` type-checks on its own (`npm run typecheck`).
 
 ## What `npm run backend` does to a running conductor
 
@@ -78,7 +77,7 @@ Every entry on the DHT is readable by every peer, forever. So anything personal 
 Public on purpose: a delivery's drop-off *area* (a ~1.2 km geohash cell, for driver discovery), a store's own address and phone, a store's and driver's names.
 
 Not hidden, and why:
-- **Which key orders from which store.** Every action's author is public on a DHT, and so is each payment's payer and payee. Hiding the link itself would need a different ledger and authorship model. What's hidden is who the key is.
+- **Which key orders from which store.** Every action's author is public on a DHT, and so is each payment's payer and payee. Hiding the link itself would need a different authorship model. What's hidden is who the key is.
 - **A key's own history.** One key's orders are linkable to each other.
 - **Someone who's also a store or a driver.** They have one key and a public name, so their orders are attributable. A person who wants to order privately should use a separate identity for it.
 

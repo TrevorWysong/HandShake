@@ -628,6 +628,24 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
     Ok(out)
 }
 
+/// How many holds the caller made, as a payee, that they haven't settled
+/// yet -- what would lapse uncharged if their chain closed now
+/// (`account::migrate_out` waits for none).
+#[hdk_extern]
+pub fn my_unsettled_holds(_: ()) -> ExternResult<u32> {
+    let me = me()?;
+    let mut unsettled = 0;
+    for order in crate::settlement::candidates(DUE_DAYS)? {
+        let settlements = settlements_on(&order)?;
+        for (hold_ref, payee, ..) in holds_on(&order)? {
+            if payee == me && !settlements.iter().any(|(_, author, s)| author == &me && s.hold == hold_ref) {
+                unsettled += 1;
+            }
+        }
+    }
+    Ok(unsettled)
+}
+
 // --- what a payer owes ---
 
 /// A payment the caller owes on an order: its leg, whom it pays, and

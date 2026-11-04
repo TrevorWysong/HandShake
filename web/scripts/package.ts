@@ -64,20 +64,13 @@ if (unknown.length) {
   fail(`Unknown network settings: ${unknown.map((key) => (near(key) ? `${key} (did you mean ${near(key)}?)` : key)).join(", ")}. The network ignores a name it doesn't know; fix or remove them.`);
 }
 
-// Money: a network states how far into debt anyone may go (0 recommended:
-// everything prepaid, so a fresh identity can't order on credit), and who
-// may issue funds -- without an issuer, nobody with a 0 limit could ever
-// have any. See handshake_governance.
-if (!Number.isInteger(properties.credit_limit_cents) || properties.credit_limit_cents < 0) {
-  fail("deploy/properties.json needs credit_limit_cents: how far below zero any balance may go (0 = everything prepaid, recommended).");
+// Money: every payment is held on its payer's card by whoever it pays, on
+// their own processor account (docs/DIRECT_PAYMENTS.md). A network says
+// whether those are live accounts or test ones -- a production bundle takes
+// real payments unless its builder deliberately says otherwise.
+if (properties.live_payments !== true && process.env.HANDSHAKE_TEST_PAYMENTS !== "1") {
+  fail("deploy/properties.json needs \"live_payments\": true -- stores and drivers connect live processor accounts. Build with HANDSHAKE_TEST_PAYMENTS=1 for a network of test accounts.");
 }
-if (!Array.isArray(properties.issuers) || properties.issuers.some((key: unknown) => typeof key !== "string" || !/^uhCAk[A-Za-z0-9_-]{48}$/.test(key))) {
-  fail("deploy/properties.json needs issuers: the agent keys (uhCAk...) of whoever credits accounts against real payments.");
-}
-// Collateral -- a driver's stake in the food they carry -- is only real if
-// it's money they deposited: on credit, a throwaway identity could post it,
-// walk away and leave the debt. So a network bundle is prepaid unless its
-// builder deliberately says otherwise.
 if (!properties.services) {
   console.warn("deploy/properties.json sets no `services`: apps will use OpenStreetMap's public tile and search servers, whose usage policies don't allow production traffic. Set your own (docs/DEPLOYMENT.md).");
 }
@@ -88,22 +81,6 @@ if (properties.services) {
   const lost = attributionLosses(properties.services.map_attribution);
   if (lost.tags.length) console.warn(`services.map_attribution: apps show only its text and http(s) links, so they'll leave out ${lost.tags.join(" ")}.`);
   if (lost.cut) console.warn("services.map_attribution: apps show only its first 300 characters.");
-}
-if (properties.credit_limit_cents > 0 && process.env.HANDSHAKE_ALLOW_CREDIT !== "1") {
-  fail("credit_limit_cents is above 0: drivers could post collateral on credit and walk away from it. Set it to 0, or build with HANDSHAKE_ALLOW_CREDIT=1 if you mean to extend credit.");
-}
-if (properties.credit_limit_cents === 0 && properties.issuers.length === 0) {
-  fail("With credit_limit_cents 0 and no issuers, nobody could ever have funds -- name at least one issuer.");
-}
-// Separation of powers: whoever rules on an appeal mustn't also be able to
-// pay the award out of thin air. One key holding both could rule for itself
-// and fund the ruling; a stolen one could do both at once.
-const both = (properties.arbiters ?? []).filter((key: string) => properties.issuers.includes(key));
-if (both.length) {
-  fail(`An arbiter can't also be an issuer: ${both.join(", ")}. Give appeals and money different keys, held by different people.`);
-}
-if (properties.issuer_daily_limit_cents !== undefined && (!Number.isInteger(properties.issuer_daily_limit_cents) || properties.issuer_daily_limit_cents <= 0)) {
-  fail("issuer_daily_limit_cents is the most one issuer may issue in a day, in cents -- a whole number above 0.");
 }
 
 function fail(message: string): never {
@@ -142,7 +119,7 @@ try {
   const manifest = { manifest_version: "0", name: "handshake", description: "HandShake -- food delivery with no middleman, on Holochain", roles, bootstrap_url: bootstrapUrl ?? null, relay_url: relayUrl ?? null };
   writeFileSync(path.join(work, "happ.yaml"), JSON.stringify(manifest, null, 2));
   step("Packing hApp", "hc", ["app", "pack", work]);
-  // The issuer's own conductor installs exactly this (issuer/scripts/provision.ts).
+  // What servers that run a node of their own install (docs/DEPLOYMENT.md).
   copyFileSync(path.join(work, "handshake.happ"), path.join(REPO, "deploy/handshake.happ"));
   // What a later release needs to carry this network as its previous one.
   writeFileSync(path.join(REPO, "deploy/handshake.network.json"), `${JSON.stringify({ network_seed: networkSeed, properties }, null, 2)}\n`);
@@ -160,8 +137,7 @@ try {
 
   console.log(`\n✓ ${path.relative(REPO, out)} (${Math.round(statSync(out).size / 1024)} KB)`);
   console.log(`  network seed: ${networkSeed}`);
-  console.log(`  issuers:      ${properties.issuers.length}`);
-  console.log(`  credit limit: ${properties.credit_limit_cents} cents`);
+  console.log(`  payments:     ${properties.live_payments ? "live" : "test"}`);
   console.log(`  previous:     ${previousDir ?? "(none)"}`);
   console.log(`  bootstrap:    ${bootstrapUrl ?? "(runtime default)"}`);
   console.log(`  relay:        ${relayUrl ?? "(runtime default)"}`);

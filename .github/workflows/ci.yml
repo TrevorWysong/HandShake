@@ -71,8 +71,8 @@ jobs:
         run: |
           npm ci
           npx tsc --noEmit -p .
-      - name: Issuer service typecheck and tests
-        working-directory: issuer
+      - name: Payment agent typecheck and tests
+        working-directory: payments
         run: |
           npm ci
           npm run typecheck

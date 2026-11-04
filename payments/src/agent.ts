@@ -84,7 +84,8 @@ export function createAgent(options: AgentOptions) {
       if (processor === "Test" && network.live_payments) throw new Refused("This network takes real payments: connect a live processor account.");
       const connection = await processorFor(processor, keys, network.currency).connect();
       if (connection.live !== network.live_payments) {
-        throw new Refused(network.live_payments ? "This network takes real payments: use your account's live keys." : "This network is for testing: use your account's test keys.");
+        if (network.live_payments) throw new Refused("This network takes real payments: use your account's live keys.");
+        throw new Refused("This network is for testing: use your account's test keys.");
       }
       if (connection.currency.toUpperCase() !== network.currency.toUpperCase()) throw new Refused(`That account takes ${connection.currency.toUpperCase()}; this network pays in ${network.currency.toUpperCase()}.`);
       await dispatch("set_payment_profile", { processor, public_key: connection.publicKey, account: connection.publicAccount, live: connection.live });

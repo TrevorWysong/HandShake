@@ -1,6 +1,8 @@
 # Payment rails: cards and HoloFuel, a plan
 
-How customers can pay, and stores and drivers can get paid out, by card **and** by HoloFuel in a HandShake network with no company in the middle. Research and a proposed design to build from. This complements `CARD_PAYMENTS.md`, which covers the card rail in depth.
+How customers can pay, and stores and drivers can get paid out, by card **and** by HoloFuel in a HandShake network with no company in the middle. Research and a proposed design to build from.
+
+> **Status (2026-11-03): the issuer design below is retired.** HandShake no longer has credits, issuers, balances or cash-outs: payments go directly to each payee's own processor account ([`DIRECT_PAYMENTS.md`](DIRECT_PAYMENTS.md)). The HoloFuel research and the questions for Unyt still stand. If HoloFuel goes ahead, it would be one more processor adapter in `payments/`, paid into the payee's own HoloFuel account, rather than an issuer. The sections that build on `IssuerGrant`, `Redeem` or the old `CARD_PAYMENTS.md` describe the retired design, kept for the record (`git log -- docs/CARD_PAYMENTS.md`).
 
 This is not legal or tax advice. Card money, crypto assets and exchanging between them each carry their own regulation, which counsel should review per country before launch.
 

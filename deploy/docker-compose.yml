@@ -1,8 +1,8 @@
-# A HandShake network's servers: its bootstrap/relay server, an issuer (its
-# conductor and service), and -- with `--profile push` -- a push relay,
-# behind Caddy for TLS. See docs/DEPLOYMENT.md, "Run the
-# servers". Fill in deploy/issuer.env from issuer/.env.example (never commit
-# it), and point both domains' DNS at this machine.
+# A HandShake network's servers: its bootstrap/relay server and -- with
+# `--profile push` -- a push relay, behind Caddy for TLS. See
+# docs/DEPLOYMENT.md, "Run the servers". Point the domains' DNS at this
+# machine. There's no money server: stores and drivers are paid on their own
+# processor accounts (docs/DIRECT_PAYMENTS.md).
 services:
   caddy:
     image: caddy:2
@@ -10,27 +10,14 @@ services:
     ports: ["80:80", "443:443"]
     environment:
       BOOTSTRAP_DOMAIN: ${BOOTSTRAP_DOMAIN:?set BOOTSTRAP_DOMAIN}
-      ISSUER_DOMAIN: ${ISSUER_DOMAIN:?set ISSUER_DOMAIN}
       PUSH_DOMAIN: ${PUSH_DOMAIN:-push.localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
 
   bootstrap:
-    build: { context: .., dockerfile: deploy/issuer/Dockerfile }
+    build: { context: .., dockerfile: deploy/bootstrap/Dockerfile }
     restart: unless-stopped
-    entrypoint: ["kitsune2-bootstrap-srv", "--listen", "0.0.0.0:8888"]
-
-  issuer:
-    build: { context: .., dockerfile: deploy/issuer/Dockerfile }
-    restart: unless-stopped
-    env_file: ./issuer.env
-    environment:
-      BOOTSTRAP_URL: https://${BOOTSTRAP_DOMAIN}
-      RELAY_URL: https://${BOOTSTRAP_DOMAIN}
-      PUBLIC_URL: https://${ISSUER_DOMAIN}
-    volumes:
-      - issuer-data:/var/lib/handshake-issuer
 
   push:
     profiles: [push]
@@ -44,5 +31,4 @@ services:
 
 volumes:
   caddy-data:
-  issuer-data:
   push-data:

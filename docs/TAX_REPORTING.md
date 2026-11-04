@@ -20,13 +20,13 @@ There's no platform paying anyone, so the platform-shaped obligations land diffe
 | Customer → driver (fee share, tip) | A person buying a delivery for themselves | None: personal payments aren't reportable by the payer | Nobody; the driver reports the income |
 | Customer → store (food) | A person buying food | None | Nobody; the store reports its sales |
 | **Store → driver (store's fee share, late-store pay)** | **A business paying a contractor for delivery** | **1099-NEC if ≥ $2,000 to one driver in the year** | **The store** |
-| Issuer payouts to stores and drivers | The issuer, through its payment processor | 1099-K if over $20,000 and 200 payments | The processor (e.g. Stripe, under Connect), not HandShake |
+| Card payments into each store's and driver's own processor account | Their processor | 1099-K if over $20,000 and 200 payments | The processor (Stripe, Square, Clover), not HandShake |
 
 The store-to-driver row is the new one. A store that subsidises deliveries is paying drivers for a service. Paying any one driver $2,000 or more in a year would make it the 1099-NEC filer. Most stores won't cross that with any single driver, but the app should tell them when they do.
 
 ## What the app should provide
 
-All of it is computed **on each person's own device, from their own ledger chain**. Nobody's earnings are compiled anywhere else, which keeps the privacy model intact.
+All of it is computed **on each person's own device, from their own chain and payment history**. Nobody's earnings are compiled anywhere else, which keeps the privacy model intact.
 
 **Drivers: "Earnings & taxes"**
 - **Totals by year:** delivery fees, tips, late-store pay from stores, and collateral forfeited.
@@ -52,10 +52,10 @@ A 1099-NEC needs the driver's legal name, address and taxpayer ID (from a W-9). 
 2. The driver fills in a W-9 form in their app. It's **sealed to that store only**, the same way addresses are sealed to a driver today.
 3. The store's report includes it. Nothing goes on the public network beyond the sealed copy.
 
-**Alternative:** if payouts run through Stripe Connect (see `CARD_PAYMENTS.md`), Stripe already holds each driver's tax details from onboarding. A store could file through a 1099 service using those, and never hold the driver's taxpayer ID itself.
+**Note:** drivers are paid into their own processor accounts (`DIRECT_PAYMENTS.md`), whose processors hold their tax details from onboarding and report card payments to tax authorities themselves where their thresholds apply (a 1099-K in the US). Whether that relieves a store of filing a 1099-NEC for the same payments is a question for a tax adviser.
 
 ## What to build
-1. A shared "statement" module computing yearly and periodic totals from a person's own ledger entries and order records. Pure functions with unit tests, used by both reports.
+1. A shared "statement" module computing yearly and periodic totals from a person's own payment history (`my_payment_history`) and order records. Pure functions with unit tests, used by both reports.
 2. The driver's Earnings & taxes screen, CSV and PDF export, and the opt-in mileage log.
 3. The store's Sales & taxes screen, its sales-tax period report (after `SALES_TAX.md`), driver-payment totals and the threshold flag.
 4. Sealed W-9 exchange between a store and a driver, if stores will file 1099s themselves.

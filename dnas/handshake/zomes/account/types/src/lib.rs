@@ -104,8 +104,7 @@ pub struct Parcel {
 /// author closes their chain (`close_chain`), after which Holochain itself
 /// accepts nothing more from it here: whatever the account held stays
 /// exactly as it was. `successor` is the key that carries the account on
-/// there, which an issuer credits with what the ledger held at the close,
-/// once.
+/// there. No money moves: it was never on the network.
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq, Eq)]
 // Decodes only from its own fields: a record of another type that

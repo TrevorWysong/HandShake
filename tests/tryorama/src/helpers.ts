@@ -281,8 +281,10 @@ export async function settleAll(players: PlayerApp[], order: Uint8Array, rounds 
   for (let round = 0; round < rounds; round++) {
     let done = 0;
     for (const player of players) {
-      done += await player.cells[0].callZome<number>({ zome_name: "dispatch", fn_name: "settle_order", payload: order });
-      done += await payeeAgent(player);
+      // A player's own conductor settles on its schedule too: a write that
+      // raced it is tried again next round.
+      done += await player.cells[0].callZome<number>({ zome_name: "dispatch", fn_name: "settle_order", payload: order }).catch(() => 1);
+      done += await payeeAgent(player).catch(() => 1);
     }
     await dhtSync(players, players[0].cells[0].cell_id[0]);
     if (done === 0 && round > 2) return;

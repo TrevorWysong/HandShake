@@ -1461,11 +1461,6 @@ export const MAX_PROMO_USES_PER_CUSTOMER = 1000;
 export const MAX_PROMO_USES_TOTAL = 1000000;
 
 /**
- * An issuer's reference for a grant (its payment's id).
- */
-export const MAX_REFERENCE_CHARS = 100;
-
-/**
  * The most rewards a program offers.
  */
 export const MAX_REWARDS = 24;
@@ -1757,8 +1752,7 @@ export interface MerchantCatalog {
  * author closes their chain (`close_chain`), after which Holochain itself
  * accepts nothing more from it here: whatever the account held stays
  * exactly as it was. `successor` is the key that carries the account on
- * there, which an issuer credits with what the ledger held at the close,
- * once.
+ * there. No money moves: it was never on the network.
  */
 export interface Migration {
   network: DnaHash;

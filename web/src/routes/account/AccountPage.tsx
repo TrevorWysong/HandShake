@@ -42,7 +42,6 @@ export function AccountPage() {
   const [open, setOpen] = useState<Open>(null);
   const navigate = useNavigate();
   const names = useGuardianNames((s) => s.names);
-  // A new version of the network, once an issuer announces it (docs/MIGRATION.md).
   const { data: verification } = useResource("verification-terms", getVerificationTerms);
   const isVerifier = !!verification?.verifiers.some((v) => bytesToHex(v) === hex);
   // An arbiter has a docket; nobody else's ever has anything on it.

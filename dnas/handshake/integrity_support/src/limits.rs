@@ -30,8 +30,6 @@ pub const MAX_POSTAL_CODE_CHARS: usize = 20;
 pub const MAX_VEHICLE_CHARS: usize = 100;
 pub const MAX_LICENSE_PLATE_CHARS: usize = 20;
 pub const MAX_PROMO_CODE_CHARS: usize = 40;
-/// An issuer's reference for a grant (its payment's id).
-pub const MAX_REFERENCE_CHARS: usize = 100;
 /// An IANA time zone name.
 pub const MAX_TIME_ZONE_CHARS: usize = 64;
 

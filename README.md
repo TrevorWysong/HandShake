@@ -108,7 +108,7 @@ Holochain is agent-centric instead of ledger-centric. Each person's own chain is
 | **Who sets the rules** | The company, and it can change them | The network's published rules, checked by every peer |
 | **The cut** | A commission from the store, fees from the customer, a share of the driver's pay | None. The delivery fee and tip go to the driver; the food's price goes to the store |
 | **Pricing** | Menus can be marked up per platform | The price is the store's own menu, and validation refuses any other |
-| **Who holds the money** | The platform, until it pays out | Escrow in each person's own ledger, released by the order's own outcome |
+| **Who holds the money** | The platform, until it pays out | Nobody in between: each card is held by whoever it pays, on their own processor account, and charged only what the order's outcome says |
 | **Choosing a driver** | An opaque dispatch algorithm | Drivers bid. The customer picks, or the app picks by a published rule |
 | **Your data** | The platform keeps everyone's orders and addresses | The exact address is sealed to the customer and their driver; only a 1 km area is public |
 | **Accounts** | The company can suspend you | No company can. Recovery is through guardians you choose, or a phrase you keep |
@@ -153,25 +153,19 @@ sequenceDiagram
 
 ## Money
 
-HandShake's money is ordinary currency, a dollar is a dollar, kept as a ledger on each person's own chain. Every entry carries the balance it leaves and points at the one before, and validation walks the chain to check that no entry is skipped and the arithmetic holds. Nobody, including the network's operators, can edit someone else's balance.
+HandShake's money is ordinary card payments, straight between the people in an order. Each store and driver connects their own Stripe, Square or Clover account; nobody else's account, including the network's operators', is ever in the way. The network holds no money: it decides **who is owed what**, and each payee's own device carries that out on its own processor ([docs/DIRECT_PAYMENTS.md](docs/DIRECT_PAYMENTS.md)).
 
 ```mermaid
 flowchart LR
-    card(["Card or bank"]) -->|top up| issuer["Issuer<br/>named by the network"]
-    issuer -->|issues credits| customer["Customer's ledger"]
-    customer -->|holds for the food| escrow{{"Held in escrow<br/>on the order"}}
-    customer -->|holds the driver's pay| escrow
-    escrow -->|delivered| store["Store's ledger"]
-    escrow -->|delivered| driver["Driver's ledger"]
-    escrow -.->|refunded| customer
-    store -->|cash out| issuer
-    driver -->|cash out| issuer
-    issuer -->|pays out| bank(["Bank or card"])
+    customer(["Customer's card"]) -->|held by the store| store["Store's processor account"]
+    store -->|its card, held by the driver| driver["Driver's processor account"]
+    driverCard(["Driver's card"]) -->|collateral, held by the store| store
+    store -.->|released, or charged what's due| customer
 ```
 
-- **Escrow at every step.** The customer's money for the food is held when the store accepts; the driver's pay when the customer accepts a bid; the driver's collateral, the food's value, when they commit to carry it; the store's share of the delivery fee when it starts cooking. Each step must cite its hold, or validation refuses it.
-- **Settled by the outcome, once.** After an order ends, each party collects exactly what the order's outcome entitles them to, and can do so only once.
-- **Money in and out goes through issuers.** An issuer is a service the network names in its rules, which turns card payments into credits and credits back into bank transfers ([Stripe](https://stripe.com) today, others later). An issuer can grant money and pay it out, for a published fee that covers card and bank costs. It cannot move anyone's balance, hold an order, or change a settlement.
+- **Held at every step.** The customer's card is held by the store before it accepts; the driver's pay is held on the store's card, and the driver's collateral (the food's value) on theirs, before the driver commits. Each step must cite its hold, or validation refuses it.
+- **Charged by the outcome, once.** After an order ends, each payee charges exactly what the order's outcome entitles them to, and releases the rest. Every charge is a signed record anyone in the order can check.
+- **No cut, no money server.** Processors charge their usual card fee on what's charged; releasing a hold is free; customers pay no fees.
 
 <br>
 
@@ -186,14 +180,12 @@ flowchart TB
         a([Customer]) <--> b([Store]) <--> c([Driver])
     end
     boot["Bootstrap and relay<br/>helps devices find and reach each other"] -.-> peers
-    issuer["Issuer<br/>card money in, bank transfers out"] -.-> peers
     push["Push relay, optional<br/>wakes a closed app"] -.-> peers
 ```
 
 | Server | It can | It can't |
 | --- | --- | --- |
 | **Bootstrap and relay** | Introduce devices to each other, and pass traffic between devices behind firewalls | Read encrypted traffic, change a record, or stop two devices that already know each other |
-| **Issuer** | Turn card payments into credits, and credits into bank transfers | Change a balance, an order or a settlement. Every grant it makes is a public record |
 | **Push relay** | Wake a device whose app is closed | Learn whose device it is, who asked, or what the order was. Wake tokens are encrypted, and a wake carries no content |
 
 <br>
@@ -216,7 +208,7 @@ There is no password to reset and no company to call, so HandShake gives people 
 
 - **Moving to a new phone** carries the same key and the same account across, with nothing to re-list or reissue.
 - **Losing a phone** is recovered through guardians the person chose ahead of time, people they trust who vouch for their new key, or a twelve-word recovery phrase they keep.
-- **Upgrading the network's rules** moves everyone's balance, history and store to the new version, on their own terms.
+- **Upgrading the network's rules** moves everyone's history and stores to the new version, on their own terms.
 
 <br>
 
@@ -225,11 +217,11 @@ There is no password to reset and no company to call, so HandShake gives people 
 | Path | What it is |
 | --- | --- |
 | [`dnas/handshake/`](dnas/handshake) | The network's rules and its API: one DNA. |
-| [`dnas/handshake/zomes/`](dnas/handshake/zomes) | One module per concern, each an **integrity** crate (record types and validation) and a **coordinator** crate (what the app calls): `profiles`, `catalog` (stores, menus, promos, goodie bags), `dispatch` (orders, drivers, bids), `attestation` (handoffs), `ledger` (money), `reputation` (ratings), `account` (recovery, new phones, new networks), `rewards` (stores' rewards programs and members' points). |
-| [`dnas/handshake/governance/`](dnas/handshake/governance) | The network's settings: currency, deadlines, limits, issuers, services. |
+| [`dnas/handshake/zomes/`](dnas/handshake/zomes) | One module per concern, each an **integrity** crate (record types and validation) and a **coordinator** crate (what the app calls): `profiles`, `catalog` (stores, menus, promos, goodie bags), `dispatch` (orders, drivers, bids, payments), `attestation` (handoffs), `reputation` (ratings), `account` (recovery, new phones, new networks), `rewards` (stores' rewards programs and members' points). |
+| [`dnas/handshake/governance/`](dnas/handshake/governance) | The network's settings: currency, live or test payments, deadlines, limits, services. |
 | [`web/`](web) | The app, in React and TypeScript, speaking only to the device's own Holochain node. |
 | [`tests/tryorama/`](tests/tryorama) | The integration suite: real Holochain nodes running the real rules, one scenario per file. |
-| [`issuer/`](issuer) | The issuer service: card top-ups and bank payouts through Stripe. |
+| [`payments/`](payments) | The payment agent a store's or driver's device runs: holds, charges and releases on their own processor account, exactly as the network says. |
 | [`push/`](push) | The push relay: wakes a closed app without learning who asked or about what. |
 | [`runtime/device/`](runtime/device) | What the app's runtime does natively: moving an account's key to a new phone. |
 | [`desktop/`](desktop) | The desktop app for macOS, Windows and Linux: an installer that runs its own Holochain node. |
@@ -259,7 +251,7 @@ To use it rather than work on it, install the desktop app from [Releases](https:
 
 ## Status
 
-HandShake runs end to end on a local network: stores, menus, deliveries and pickups, bidding, handoffs, escrow and settlement, refunds and appeals, ratings, recovery, card top-ups and payouts, two languages, and waking a closed app. It is tested by an integration suite of real Holochain nodes, and it builds as a desktop app for macOS, Windows and Linux.
+HandShake runs end to end on a local network: stores, menus, deliveries and pickups, bidding, handoffs, card holds and settlement, refunds and appeals, ratings, recovery, direct card payments (Stripe; Square and Clover written, awaiting their sandboxes), two languages, and waking a closed app. It is tested by an integration suite of real Holochain nodes, and it builds as a desktop app for macOS, Windows and Linux.
 
 Not yet: signed desktop installers, the phone builds, which wait on Holochain's mobile tooling, and HoloFuel as a second way to pay, which waits on its launch for third-party apps.
 
@@ -271,4 +263,4 @@ Not yet: signed desktop installers, the phone builds, which wait on Holochain's 
 | --- | --- |
 | **Running it** | [Development](docs/DEVELOPMENT.md) &nbsp;&middot;&nbsp; [Deployment](docs/DEPLOYMENT.md) &nbsp;&middot;&nbsp; [Upgrading the network](docs/MIGRATION.md) &nbsp;&middot;&nbsp; [Phones](docs/MOBILE.md) |
 | **How it works** | [Security](docs/SECURITY.md) &nbsp;&middot;&nbsp; [Accounts and recovery](docs/RECOVERY.md) &nbsp;&middot;&nbsp; [Rewards](docs/REWARDS.md) &nbsp;&middot;&nbsp; [Languages](docs/I18N.md) &nbsp;&middot;&nbsp; [Holochain notes](docs/HOLOCHAIN_ISSUES.md) |
-| **Plans** | [Card payments](docs/CARD_PAYMENTS.md) &nbsp;&middot;&nbsp; [Payment rails](docs/PAYMENT_RAILS.md) &nbsp;&middot;&nbsp; [Menu choices](docs/MENU_CUSTOMIZATION.md) &nbsp;&middot;&nbsp; [Sales tax](docs/SALES_TAX.md) &nbsp;&middot;&nbsp; [Tax reporting](docs/TAX_REPORTING.md) |
+| **Plans** | [Direct payments](docs/DIRECT_PAYMENTS.md) &nbsp;&middot;&nbsp; [Payment rails](docs/PAYMENT_RAILS.md) &nbsp;&middot;&nbsp; [Menu choices](docs/MENU_CUSTOMIZATION.md) &nbsp;&middot;&nbsp; [Sales tax](docs/SALES_TAX.md) &nbsp;&middot;&nbsp; [Tax reporting](docs/TAX_REPORTING.md) |

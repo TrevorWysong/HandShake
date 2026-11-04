@@ -2,8 +2,5 @@
   "currency": "USD",
   "store_response_secs": 300,
   "report_window_secs": 7200,
-  "issuers": [
-    "uhCAk_replace_with_each_issuers_agent_key"
-  ],
-  "credit_limit_cents": 0
+  "live_payments": true
 }

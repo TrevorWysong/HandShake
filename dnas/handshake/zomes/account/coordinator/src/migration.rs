@@ -21,17 +21,24 @@ pub struct MigrateInput {
     pub parcel: String,
 }
 
-/// Something that would be stranded by closing the chain now, or `None`.
-fn unfinished() -> ExternResult<Option<String>> {
+/// Refuses, saying why, while something would be stranded by closing the
+/// chain now.
+fn nothing_unfinished() -> ExternResult<()> {
     // Any entry at all: what they are doesn't matter here.
     let busy = |zome: &str, function: &str| -> ExternResult<bool> {
         let entries: Result<Vec<serde::de::IgnoredAny>, _> = call_local(zome, function, ())?;
         Ok(entries.is_ok_and(|entries| !entries.is_empty()))
     };
     if busy("dispatch", "get_my_active_orders")? || busy("dispatch", "get_my_active_deliveries")? {
-        return Ok(Some("Finish your orders in progress first: they can only be settled from this account.".into()));
+        return Err(guest("Finish your orders in progress first: they can only be settled from this account."));
     }
-    Ok(None)
+    // A payment this account held but hasn't charged can only be settled
+    // from here: closed now, it would lapse uncharged.
+    let unsettled: Result<u32, _> = call_local("dispatch", "my_unsettled_holds", ())?;
+    if unsettled.is_ok_and(|n| n > 0) {
+        return Err(guest("Your payments are still settling: move once they've been charged."));
+    }
+    Ok(())
 }
 
 /// Moves the caller's account to the next network: seals `parcel` to its
@@ -41,9 +48,7 @@ pub fn migrate_out(input: MigrateInput) -> ExternResult<ActionHash> {
     if input.network == dna_info()?.hash {
         return Err(guest("That's this network: the account moves to the next one."));
     }
-    if let Some(reason) = unfinished()? {
-        return Err(guest(reason));
-    }
+    nothing_unfinished()?;
     if input.parcel.len() > MAX_PARCEL_BYTES {
         return Err(guest("There's too much to carry over at once."));
     }

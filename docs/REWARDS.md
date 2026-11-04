@@ -60,7 +60,7 @@ People choose their own entries' timestamps, so no rule depends on one where fak
 | A discount without a reward, or a bigger one than the reward | Validation recomputes the order's total, with the named reward or none |
 | Citing an old, more generous program version | The store's app refuses to accept the order |
 | A gift "from" a store, sealed by someone else | The member's app opens a grant with its sealer's key and counts it only if that's the store's owner. The store counts only its own |
-| Fake accounts farming welcome bonuses | Where the network has issuers, a welcome needs a card an issuer vouched for as new to the network (`CardAttestation`): one real card, one account. And it needs a settled order that earns on its own |
+| Fake accounts farming welcome bonuses | A welcome comes only with a settled order that earns on its own: the account has paid the store by card for real food |
 | Fake accounts farming birthdays | 30 days of membership, once a year |
 | A store and a customer colluding | They can only give away the store's own food |
 | Earning on an order, then getting it refunded | Points are earned only after the refund period, on what was finally paid |
