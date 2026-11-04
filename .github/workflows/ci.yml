@@ -205,6 +205,16 @@ jobs:
           done
           cat dev-conductor.log
           exit 1
+      - name: Start the stores' and drivers' payment agents
+        working-directory: web
+        run: |
+          nohup npm run dev:payments > dev-payments.log 2>&1 &
+          for _ in $(seq 1 60); do
+            grep -q "agents for the dev conductor" dev-payments.log && exit 0
+            sleep 1
+          done
+          cat dev-payments.log
+          exit 1
       - name: Smoke tests
         working-directory: web
         run: |
@@ -217,3 +227,4 @@ jobs:
           path: |
             web/test-results/
             web/dev-conductor.log
+            web/dev-payments.log
