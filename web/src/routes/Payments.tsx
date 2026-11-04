@@ -218,7 +218,7 @@ function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: ()
       <Heading icon={<CreditCard size={20} />} title={t("payments.gettingPaid")} detail={t("payments.gettingPaidDetail")} />
 
       <SectionLabel className="mb-2 mt-5">{t("payments.choose")}</SectionLabel>
-      <div role="radiogroup" aria-label={t("payments.choose")} className="grid gap-2 sm:grid-cols-2">
+      <div role="radiogroup" aria-label={t("payments.choose")} className="grid grid-cols-2 gap-2 lg:grid-cols-3">
         {choices.map((p) => (
           <button
             key={p}
@@ -227,12 +227,12 @@ function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: ()
             aria-checked={processor === p}
             onClick={() => choose(p)}
             className={clsx(
-              "rounded-2xl border p-3.5 text-left transition",
+              "flex flex-col items-start justify-start rounded-2xl border p-3 text-left transition sm:p-3.5",
               processor === p ? "border-handshake-500 bg-handshake-50 ring-1 ring-handshake-500 dark:bg-handshake-900/20" : "border-ink-100 hover:border-ink-200 dark:border-ink-800 dark:hover:border-ink-700",
             )}
           >
             <span className="block text-sm font-bold text-ink-900 dark:text-ink-50">{p === "Test" ? t("payments.testProcessor") : p}</span>
-            <span className="mt-0.5 block text-xs leading-snug text-ink-500">{t(PROCESSORS[p].blurb)}</span>
+            <span className="mt-0.5 line-clamp-3 block text-[11px] leading-snug text-ink-500 sm:text-xs">{t(PROCESSORS[p].blurb)}</span>
           </button>
         ))}
       </div>

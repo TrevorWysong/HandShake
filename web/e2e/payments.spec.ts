@@ -60,6 +60,11 @@ test("a store sees where it's paid, and connects again", async ({ page }) => {
   await shoot(page, "payments-connect-stripe");
   await page.getByRole("radio", { name: /Square/ }).click();
   await shoot(page, "payments-connect-square");
+  await page.getByRole("radio", { name: /Clover/ }).click();
+  await shoot(page, "payments-connect-clover");
+  await page.getByRole("radio", { name: /PayPal/ }).click();
+  await expect(page.getByRole("link", { name: /Open Apps & Credentials/ })).toBeVisible();
+  await shoot(page, "payments-connect-paypal");
   await page.getByRole("radio", { name: /Test processor/ }).click();
   await page.getByRole("button", { name: "Use the test processor" }).click();
   await expect(page.getByText(/Paid into your Test account/)).toBeVisible();
@@ -78,7 +83,7 @@ test("a driver's collateral and pay are held -- by themselves, once cards are ke
 test("everyone's record of what they paid and were paid", async ({ page, browser }) => {
   await signInAs(page, "dana");
   await page.goto("/#/driver/earnings");
-  await expect(page.getByText("Getting paid by card")).toBeVisible();
+  await expect(page.getByText("Getting paid")).toBeVisible();
   await shoot(page, "driver-earnings");
   const customer = await (await browser.newContext()).newPage();
   await signInAs(customer, "sam");
@@ -87,6 +92,6 @@ test("everyone's record of what they paid and were paid", async ({ page, browser
   await shoot(customer, "transparency");
   await customer.goto("/#/payments");
   await expect(customer.getByText("Your payments")).toBeVisible();
-  await expect(customer.getByText("Getting paid by card")).toHaveCount(0);
+  await expect(customer.getByText("Getting paid")).toHaveCount(0);
   await shoot(customer, "payments-customer");
 });
