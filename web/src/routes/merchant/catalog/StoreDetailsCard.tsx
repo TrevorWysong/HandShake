@@ -15,6 +15,7 @@ import { fromCatalogAddress, toCatalogAddress } from "../../../lib/places/splitA
 import type { MerchantCatalog } from "../../../holochain/types";
 import { MAX_DESCRIPTION_CHARS, MAX_EMAIL_CHARS, MAX_LABEL_CHARS, MAX_PHONE_CHARS, MAX_TIP_PERCENT, MAX_WEBSITE_CHARS } from "../../../holochain/types";
 import { isStoreEmail, isStoreWebsite, normalizeWebsite, websiteLabel } from "../../../lib/storefront/contact";
+import { normalizePhone } from "../../../lib/phone";
 import { useTerms } from "../../../store/network";
 
 /// The storefront's details: a read-only summary, or the editor.
@@ -101,6 +102,7 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
   const website = normalizeWebsite(draft.website);
   const emailOk = isStoreEmail(email);
   const websiteOk = isStoreWebsite(website);
+  const phone = normalizePhone(draft.phone);
 
   return (
     <div className="flex flex-col gap-2">
@@ -123,7 +125,8 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
       <SectionLabel className="mt-2">{t("storeSettings.contact")}</SectionLabel>
       <p className="-mt-1 text-xs text-ink-400">{t("storeSettings.contactDetail")}</p>
       <Field label={t("profile.phone")}>
-        <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => set({ phone: e.target.value })} type="tel" autoComplete="tel" />
+        <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => set({ phone: e.target.value })} type="tel" inputMode="tel" autoComplete="tel" aria-invalid={phone === null} />
+        {phone === null && <p className="mt-1 text-xs text-amber-600">{t("phone.invalid")}</p>}
       </Field>
       <Field label={t("storeSettings.email")}>
         <Input maxLength={MAX_EMAIL_CHARS} value={draft.email} onChange={(e) => set({ email: e.target.value })} type="email" inputMode="email" autoComplete="email" placeholder="hello@yourstore.com" aria-invalid={!emailOk} />
@@ -136,7 +139,7 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
       <Field label={t("storeSettings.radius")}>
         <Input type="number" min={0} step="any" value={draft.max_delivery_radius_km} onChange={(e) => set({ max_delivery_radius_km: Number(e.target.value) })} placeholder="8" />
       </Field>
-      <Button loading={save.busy} disabled={!emailOk || !websiteOk} onClick={() => save.run(() => onSave({ ...draft, email, website }))} className="py-2 text-xs">
+      <Button loading={save.busy} disabled={!emailOk || !websiteOk || phone === null} onClick={() => save.run(() => onSave({ ...draft, email, website, phone: phone ?? "" }))} className="py-2 text-xs">
         {t("common.save")}
       </Button>
       {save.error && <p className="text-xs text-red-600">{save.error}</p>}

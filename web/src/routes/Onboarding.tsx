@@ -21,6 +21,7 @@ import { useT, type MessageKey } from "../i18n";
 import { useDriverSettings } from "../store/roleSettings";
 import { TRAVEL_MODES } from "../lib/driving/routing";
 import { useAction } from "../lib/hooks/useAction";
+import { normalizePhone } from "../lib/phone";
 
 const ROLE_CARDS: { role: RoleTag; label: MessageKey; blurb: MessageKey; icon: typeof Bike }[] = [
   { role: "Requester", label: "onboarding.role.order", icon: ShoppingBag, blurb: "onboarding.role.orderBlurb" },
@@ -43,6 +44,7 @@ export function Onboarding() {
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [phone, setPhone] = useState("");
+  const phoneNumber = normalizePhone(phone);
   const [avatarDataUri, setAvatarDataUri] = useState("");
   const [location, setLocation] = useState<GeoPoint>(() => useSession.getState().location);
   // `location` is the session's browse and drop-off point; the address
@@ -82,7 +84,7 @@ export function Onboarding() {
   }, { stayBusy: true });
 
   function goToDetailsNext() {
-    if (!displayName.trim()) return;
+    if (!displayName.trim() || phoneNumber === null) return;
     if (roles.includes("Provider")) {
       setStep("vehicle");
     } else {
@@ -91,7 +93,7 @@ export function Onboarding() {
   }
 
   const finish = () => action.run(async () => {
-    await createIdentity(displayName.trim(), roles, location, { bio, avatarDataUri, phone }, adminUrl);
+    await createIdentity(displayName.trim(), roles, location, { bio, avatarDataUri, phone: phoneNumber ?? "" }, adminUrl);
     if (addressDraft.street.trim()) {
       // Its own call, after the profile: an address that doesn't save
       // leaves sign-up done, and it can be added at checkout instead.
@@ -216,7 +218,8 @@ export function Onboarding() {
                   <Textarea maxLength={MAX_NOTE_CHARS} value={bio} onChange={(e) => setBio(e.target.value)} rows={2} placeholder={t("onboarding.bioPlaceholder")} />
                 </Field>
                 <Field label={t("onboarding.phone")} className="mb-4">
-                  <Input maxLength={MAX_PHONE_CHARS} value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" />
+                  <Input maxLength={MAX_PHONE_CHARS} value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" aria-invalid={phoneNumber === null} />
+                  {phoneNumber === null && <p className="mt-1 text-xs text-amber-600">{t("phone.invalid")}</p>}
                 </Field>
                 <div className="mb-4 flex flex-col gap-2">
                   <SplitAddressFields
@@ -250,7 +253,7 @@ export function Onboarding() {
                   <Button variant="ghost" onClick={() => setStep("roles")} disabled={connecting}>
                     {t("common.back")}
                   </Button>
-                  <Button className="flex-1" onClick={goToDetailsNext} disabled={connecting || !displayName.trim() || (devHost && !adminUrl.trim())}>
+                  <Button className="flex-1" onClick={goToDetailsNext} disabled={connecting || !displayName.trim() || phoneNumber === null || (devHost && !adminUrl.trim())}>
                     {connecting ? <Spinner className="h-4 w-4" /> : roles.includes("Provider") ? t("onboarding.nextVehicle") : t("onboarding.enter")}
                   </Button>
                 </div>

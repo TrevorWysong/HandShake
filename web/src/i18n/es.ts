@@ -866,6 +866,7 @@ export const es: Catalog = {
   "role.Merchant": "Tienda",
   "profile.about": "Sobre ti",
   "profile.bio": "Biografía",
+  "phone.invalid": "Ese no es un número de teléfono completo. Incluye el prefijo de zona, o + y el código de país si es del extranjero.",
   "profile.phone": "Teléfono",
   "profile.noBio": "Aún sin biografía.",
   "profile.vehicle": "Vehículo",
