@@ -4,7 +4,7 @@
 // alone; the caller offers it (`offerPayment`), and `PaymentStatus` follows
 // it from there.
 import { useCallback, useState } from "react";
-import { CreditCard } from "lucide-react";
+import { CreditCard, Lock } from "lucide-react";
 import type { PaymentInput, PaymentProfile } from "../../holochain/types";
 import { cardFormFor, type CardForm } from "../../lib/payments/cardForm";
 import { useAction } from "../../lib/hooks/useAction";
@@ -12,7 +12,7 @@ import { formatCents } from "../../lib/ui/format";
 import { describeError } from "../../lib/ui/errors";
 import { useTerms } from "../../store/network";
 import { useT } from "../../i18n";
-import { Button, Switch } from "../ui";
+import { Button, Skeleton, Switch } from "../ui";
 import { Sheet } from "../Sheet";
 
 export function PaySheet({
@@ -49,6 +49,9 @@ export function PaySheet({
   const [form] = useState<CardForm>(() => cardFormFor(profile, { amountCents, currency, label: payee }));
   const [useNew, setUseNew] = useState(!canUseSaved);
   const [save, setSave] = useState(false);
+  // The processor's form arrives from its own servers: a placeholder holds
+  // its place until it's drawn.
+  const [ready, setReady] = useState(false);
   const action = useAction();
   const { setError, run } = action;
   // A wallet pays from its own button, inside the processor's form. A
@@ -62,7 +65,10 @@ export function PaySheet({
       if (!node) return;
       let gone = false;
       const wallet = { onToken: (token: string) => void run(() => offerWallet({ token, save: false })), onError: (err: unknown) => !gone && setError(describeError(err)) };
-      form.mount(node, wallet).catch((err) => !gone && setError(describeError(err)));
+      form.mount(node, wallet).then(
+        () => !gone && setReady(true),
+        (err) => !gone && setError(describeError(err)),
+      );
       return () => {
         gone = true;
         form.destroy();
@@ -86,14 +92,20 @@ export function PaySheet({
       subtitle={subtitle}
       footer={
         <>
-          {action.error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
-          <Button className="w-full" loading={action.busy} onClick={pay}>
+          {action.error && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
+          <Button className="w-full" loading={action.busy} disabled={useNew && !ready} onClick={pay}>
             {t("pay.hold", { amount: formatCents(amountCents) })}
           </Button>
-          <p className="mt-2 text-center text-[11px] text-ink-400">{t("pay.heldNotCharged", { payee })}</p>
+          <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-[11px] text-ink-400">
+            <Lock size={11} className="shrink-0" /> {t("pay.heldNotCharged", { payee })}
+          </p>
         </>
       }
     >
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-ink-50 px-4 py-3 dark:bg-ink-800/60">
+        <span className="min-w-0 text-sm text-ink-500 dark:text-ink-400">{t("pay.heldFor", { payee })}</span>
+        <span className="shrink-0 text-lg font-black tabular-nums text-ink-900 dark:text-ink-50">{formatCents(amountCents)}</span>
+      </div>
       {canUseSaved && (
         <div className="mb-4 flex flex-col gap-2">
           <button
@@ -111,7 +123,10 @@ export function PaySheet({
       )}
       {useNew && (
         <>
-          <div ref={mountForm} className="min-h-[12rem]" />
+          <div className="relative min-h-[3.5rem]">
+            <div ref={mountForm} />
+            {!ready && <Skeleton className="absolute inset-0 rounded-xl" />}
+          </div>
           {offerToSave && (
             <label className="mt-4 flex items-start justify-between gap-3 text-sm">
               <span>
