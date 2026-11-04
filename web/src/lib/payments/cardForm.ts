@@ -91,6 +91,11 @@ function stripeForm(profile: PaymentProfile, charge: Charge): CardForm {
     async complete(challenge) {
       if (!stripe) stripe = await loadStripe(profile.public_key);
       if (!stripe) throw new CardProblem(t("pay.formUnavailable"));
+      // The payee chose what to ask the bank about: confirm only a hold for
+      // exactly what the network says is owed, charged later, never more.
+      const { paymentIntent } = await stripe.retrievePaymentIntent(challenge);
+      const exact = paymentIntent && paymentIntent.amount === charge.amountCents && paymentIntent.currency === charge.currency.toLowerCase() && paymentIntent.capture_method === "manual";
+      if (!exact) throw new CardProblem(t("pay.challengeMismatch"));
       const result = await stripe.handleNextAction({ clientSecret: challenge });
       if (result.error) throw new CardProblem(result.error.message ?? t("pay.actionFailed"));
     },

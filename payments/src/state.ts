@@ -19,9 +19,14 @@ export interface State {
   /// Each recent offer the agent tried on its processor, by offer (hex):
   /// whose, for which order, and when (ms).
   attempts: Record<string, { payer: string; order: string; at: number }>;
+  /// Payers (hex) whose card this payee has held before.
+  known: Record<string, true>;
+  /// When each recent decline of a new payer's card was (ms): a burst of
+  /// them is cards being tested, and pauses new payers for a while.
+  declines: number[];
 }
 
-export const emptyState = (): State => ({ saved: {}, challenged: {}, newcomers: {}, attempts: {} });
+export const emptyState = (): State => ({ saved: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [] });
 
 export interface StateStore {
   load(): Promise<State>;

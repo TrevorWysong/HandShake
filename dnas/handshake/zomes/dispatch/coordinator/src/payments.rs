@@ -265,12 +265,22 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
             settled.push(settlement.hold);
         }
     }
+    // Only what the order still needs: nothing once it's over, and a
+    // driver's legs only for the driver it has -- so nobody can run cards
+    // through a store's account by bidding on orders they'll never carry.
+    let latest = handshake_coordinator_support::resolve_latest(order.clone())?;
+    let (ongoing, accepted_bid) = match (decode_or::<DeliveryOrder>(&latest), decode_or::<PickupOrder>(&latest)) {
+        (Some(o), _) => (!o.status.is_terminal(), o.accepted_bid),
+        (None, Some(o)) => (!o.status.is_terminal(), None),
+        _ => (false, None),
+    };
+    let wanted = |leg: &PaymentLeg| ongoing && leg.bid().is_none_or(|bid| accepted_bid.as_ref() == Some(bid));
     // The newest unanswered offer on each leg I'm paid on, while it isn't
     // held.
     offers.sort_by_key(|(at, ..)| *at);
     let mut seen: Vec<PaymentLeg> = Vec::new();
     for (_, offer_ref, payer, offer) in offers.into_iter().rev() {
-        if seen.contains(&offer.leg) || held_legs.contains(&offer.leg) || answered.contains(&offer_ref) {
+        if seen.contains(&offer.leg) || held_legs.contains(&offer.leg) || answered.contains(&offer_ref) || !wanted(&offer.leg) {
             continue;
         }
         let Ok(Ok(context)) = leg_context(order, &offer.leg) else { continue };

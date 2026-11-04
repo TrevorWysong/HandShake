@@ -902,6 +902,7 @@ export const en = {
   "pay.yourPayWaiting": "Waiting for the store to hold your pay.",
   "pay.applePay": "Pay with Apple Pay",
   "pay.orCard": "or pay by card",
+  "pay.challengeMismatch": "This payment doesn't match what you owe, so it wasn't confirmed. Nothing was charged.",
   "pay.declined.Declined": "Your card was declined. Try another card.",
   "pay.declined.InsufficientFunds": "Your card doesn't have enough funds for this. Try another card.",
   "pay.declined.ActionFailed": "Your bank's check wasn't completed. Try again, or use another card.",
