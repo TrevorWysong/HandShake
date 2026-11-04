@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Globe, Mail, MapPin, Pencil, Phone } from "lucide-react";
+import { Globe, Info, Mail, MapPin, Pencil, Phone } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { closeListing, detailsOf, isStoreListed, reopenListing, setAutoAcceptOrders, setBusy, setDeliverySubsidyPercent, setMaxDeliveryFee, setTipLimit, setLeaveAtDoorLimit, setMinimumOrder, updateCatalogDetails, setStoreWait } from "../../../holochain/zomes/catalog";
 import { formatCatalogAddress, formatDistance, toMinorUnits, fromMinorUnits, currencySymbol, formatCents } from "../../../lib/ui/format";
@@ -9,6 +9,7 @@ import { useAction } from "../../../lib/hooks/useAction";
 import { bytesToHex } from "../../../holochain/decode";
 import { Button, Card, Field, Input, Notice, SectionLabel, Switch, Textarea } from "../../../components/ui";
 import { PhotoInput } from "../../../components/PhotoInput";
+import { Sheet } from "../../../components/Sheet";
 import { SplitAddressFields } from "../../../components/places/SplitAddressFields";
 import { fromCatalogAddress, toCatalogAddress } from "../../../lib/places/splitAddress";
 import type { MerchantCatalog } from "../../../holochain/types";
@@ -151,7 +152,10 @@ export function DeliverySubsidyCard({ catalog, catalogRef, onSaved }: { catalog:
   return (
     <Card className="mb-4 p-4">
       <div className="mb-1 flex items-center justify-between">
-        <SectionLabel>{t("storeSettings.sharing")}</SectionLabel>
+        <span className="flex items-center gap-1">
+          <SectionLabel>{t("storeSettings.sharing")}</SectionLabel>
+          <WhyLimits />
+        </span>
         <button onClick={() => setEditing((v) => !v)} className="text-ink-400 hover:text-handshake-600" aria-label={t("storeSettings.editSharing")}>
           <Pencil size={14} />
         </button>
@@ -192,7 +196,10 @@ export function TipLimitCard({ catalog, catalogRef, onSaved }: { catalog: Mercha
   return (
     <Card className="mb-4 p-4">
       <div className="mb-1 flex items-center justify-between">
-        <SectionLabel>{t("storeSettings.tips")}</SectionLabel>
+        <span className="flex items-center gap-1">
+          <SectionLabel>{t("storeSettings.tips")}</SectionLabel>
+          <WhyLimits />
+        </span>
         <button onClick={() => setEditing((v) => !v)} className="text-ink-400 hover:text-handshake-600" aria-label={t("storeSettings.editTips")}>
           <Pencil size={14} />
         </button>
@@ -397,6 +404,30 @@ function DeliveryFeeEditor({ initialPercent, initialMaxCents, onSave }: { initia
       </div>
       {save.error && <Notice className="mt-3">{save.error}</Notice>}
     </div>
+  );
+}
+
+/// Why a store sets the most a fee and a tip can be: the trade made for a
+/// checkout with one card and one payment, told in a sheet beside both.
+function WhyLimits() {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-label={t("storeSettings.whyLimits")} className="grid h-6 w-6 place-items-center rounded-full text-ink-400 transition hover:bg-ink-100 hover:text-ink-600 dark:hover:bg-ink-800 dark:hover:text-ink-200">
+        <Info size={14} />
+      </button>
+      <Sheet open={open} onClose={() => setOpen(false)} title={t("storeSettings.whyLimits")}>
+        <div className="flex flex-col gap-4 pb-2">
+          {(["oneCard", "passOn", "risk", "limits"] as const).map((part) => (
+            <section key={part}>
+              <h3 className="text-sm font-bold text-ink-900 dark:text-ink-50">{t(`storeSettings.why.${part}`)}</h3>
+              <p className="mt-1 text-sm leading-relaxed text-ink-600 dark:text-ink-300">{t(`storeSettings.why.${part}Detail`)}</p>
+            </section>
+          ))}
+        </div>
+      </Sheet>
+    </>
   );
 }
 
