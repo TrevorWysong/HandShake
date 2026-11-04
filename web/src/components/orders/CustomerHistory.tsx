@@ -10,6 +10,7 @@ import { bytesToHex } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
 import { POLL } from "../../lib/network/poll";
 import { useT } from "../../i18n";
+import { InfoSheet } from "../InfoSheet";
 
 export function CustomerHistory({ customer }: { customer: Uint8Array }) {
   const t = useT();
@@ -21,14 +22,18 @@ export function CustomerHistory({ customer }: { customer: Uint8Array }) {
     summary.cancelled_by_them_count > 0 && t("history.cancelled", { count: summary.cancelled_by_them_count }),
   ].filter((line): line is string => !!line);
   if (lines.length === 0) return null;
+  const sections = (["what", "use"] as const).map((part) => ({ title: t(`history.why.${part}`), body: t(`history.why.${part}Detail`) }));
   return (
-    <ul className="mt-1 flex flex-col gap-0.5">
-      {lines.map((line) => (
-        <li key={line} className="flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-          <ShieldAlert size={12} className="shrink-0" />
-          {line}
-        </li>
-      ))}
-    </ul>
+    <div className="mt-1 flex items-start gap-1">
+      <ul className="flex flex-col gap-0.5">
+        {lines.map((line) => (
+          <li key={line} className="flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+            <ShieldAlert size={12} className="shrink-0" />
+            {line}
+          </li>
+        ))}
+      </ul>
+      <InfoSheet title={t("history.how")} sections={sections} />
+    </div>
   );
 }

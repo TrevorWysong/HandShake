@@ -154,7 +154,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       summary: "Como en las grandes apps de reparto, tu app puede elegir un repartidor por ti, con una regla que cualquiera puede comprobar. O eliges tú.",
       points: [
         `Los repartidores pujan por tu pedido con su tarifa y cuándo te lo llevarían. ${spoken(t.bid_window_secs)} después de la primera oferta, tu app acepta la mejor.`,
-        `La mejor oferta es la de tarifa más baja contando cada minuto hasta la entrega como ${formatCents(t.minute_value_cents)} y teniendo en cuenta los pedidos abandonados del repartidor: un repartidor más rápido puede ganar con una tarifa más alta, y uno que abandona pedidos tiene que pujar más bajo para ganar.`,
+        `La mejor oferta es la de tarifa más baja contando cada minuto hasta la entrega como ${formatCents(t.minute_value_cents)} y teniendo en cuenta los pedidos abandonados del repartidor, empezando cada uno como si hubiera hecho ${t.clean_start_deliveries} entregas sin abandonar ninguna: un repartidor más rápido puede ganar con una tarifa más alta, uno que abandona pedidos tiene que pujar más bajo para ganar, y un tropiezo al principio no hunde a un repartidor nuevo. La página de tu pedido muestra el cálculo de cada oferta.`,
         "No se eligen las ofertas que superan tu tarifa máxima, las de un repartidor que ya dejó tu pedido, ni las de uno que ahora no puede aceptar otro. Las ofertas que un repartidor deja caducar cuentan en su contra como pedidos abandonados.",
         "Un repartidor ve tu dirección exacta solo cuando se ha comprometido con tu pedido y su garantía está retenida.",
         "Elige «Elijo yo» al pagar para ver todas las ofertas y aceptar una tú.",

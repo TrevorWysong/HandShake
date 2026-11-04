@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, AppealView, AppealsPage, BagStanding, Beacon, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
+import type { ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
 
 // --- orders ---
 
@@ -177,6 +177,12 @@ export async function submitBid(input: { order_ref: ActionHash; eta_seconds: num
 
 /// The bids on an order, best first, by the network's published matching
 /// rule -- what an order set to match automatically accepts.
+/// How a bid the caller is about to make would count in the matching rule,
+/// on their record now -- with its working.
+export async function weighMyBid(fee: number, etaSeconds: number): Promise<BidWeight> {
+  return callZome("dispatch", "weigh_my_bid", { fee, eta_seconds: etaSeconds });
+}
+
 export async function rankBids(orderRef: ActionHash): Promise<RankedBid[]> {
   return callZome("dispatch", "rank_bids", orderRef);
 }

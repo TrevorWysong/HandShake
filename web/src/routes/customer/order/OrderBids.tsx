@@ -17,6 +17,7 @@ import { carryRefusal, customerRefusal, describeLoad } from "../../../lib/drivin
 import { useTerms } from "../../../store/network";
 import { POLL, isOrderOrBidSignal } from "../../../lib/network/poll";
 import { useT } from "../../../i18n";
+import { BidWeightBreakdown, HowBidsCompare } from "../../../components/orders/BidWeights";
 
 interface DriverStats {
   completedCount: number;
@@ -91,13 +92,31 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
   // to match automatically accepts once the bid window has run.
   const { data: ranking = [] } = useResource(`order-ranking:${hash}:${bids?.length ?? 0}`, () => rankBids(orderRef));
   const rankOf = new Map(ranking.map((r, i) => [bytesToHex(r.bid), i]));
+  const weightOf = new Map(ranking.map((r) => [bytesToHex(r.bid), r.weight]));
+  const nameOf = (row: BidRow) => row.stats?.displayName || t("order.driverNamed", { id: shortAgentId(row.bid.bidder) });
   const bestMatch = ranking.find((r) => r.unavailable === null);
   const rankedBids = bids && [...bids].sort((a, b) => (rankOf.get(bytesToHex(a.hash)) ?? Infinity) - (rankOf.get(bytesToHex(b.hash)) ?? Infinity));
   const firstBidAt = bids && bids.length > 0 ? Math.min(...bids.map((b) => b.placedAt)) : null;
 
   return (
     <motion.div variants={fadeSlideUp} className="mt-5">
-      <h2 className="mb-2 text-sm font-bold text-ink-900 dark:text-ink-50">{t("order.bids")}</h2>
+      <div className="mb-2 flex items-center gap-1">
+        <h2 className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("order.bids")}</h2>
+        {/* How they're compared, with each bid's working. */}
+        <HowBidsCompare>
+          {rankedBids?.map((row) => {
+            const weight = weightOf.get(bytesToHex(row.hash));
+            return (
+              weight && (
+                <section key={bytesToHex(row.hash)} className="rounded-2xl bg-ink-50 p-4 dark:bg-ink-800/60">
+                  <p className="mb-2 text-sm font-semibold text-ink-900 dark:text-ink-50">{nameOf(row)}</p>
+                  <BidWeightBreakdown fee={row.bid.price_offer} weight={weight} />
+                </section>
+              )
+            );
+          })}
+        </HowBidsCompare>
+      </div>
       {bids === null && (
         <div className="flex flex-col gap-2">
           {Array.from({ length: 2 }).map((_, i) => (
@@ -116,7 +135,9 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
       )}
       <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="flex flex-col gap-2">
         <AnimatePresence initial={false}>
-          {rankedBids?.map(({ hash: bidHash, bid, warrants: w, stats, load }) => {
+          {rankedBids?.map((row) => {
+            const { hash: bidHash, bid, warrants: w, stats, load } = row;
+            const weight = weightOf.get(bytesToHex(bidHash));
             const complaints = w !== null && w.count > 0;
             const refusal = load && carryRefusal(load, order.priority, terms.max_concurrent_deliveries);
             return (
@@ -124,10 +145,13 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
                 <Card className="flex items-center justify-between p-3.5">
                   <div>
                     <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">
-                      {stats?.displayName || t("order.driverNamed", { id: shortAgentId(bid.bidder) })} · {formatEta(bid.eta_seconds)}
+                      {nameOf(row)} · {formatEta(bid.eta_seconds)}
                       {bestMatch && bytesEqual(bestMatch.bid, bidHash) && <span className="ml-2 rounded-full bg-handshake-100 px-2 py-0.5 text-[10px] font-bold text-handshake-700 dark:bg-handshake-900/30 dark:text-handshake-300">{t("order.bestMatch")}</span>}
                     </p>
-                    <p className="text-xs text-ink-400">{t("order.bidFee", { amount: formatCents(bid.price_offer) })}</p>
+                    <p className="text-xs text-ink-400">
+                      {t("order.bidFee", { amount: formatCents(bid.price_offer) })}
+                      {weight && <span> · {t("bidWeight.countsAsShort", { amount: formatCents(weight.cost) })}</span>}
+                    </p>
                     {stats && (
                       <div className="mt-1 flex items-center gap-1.5">
                         {stats.reviewCount > 0 ? (

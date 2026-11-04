@@ -83,7 +83,7 @@ const SOURCES: &[Source] = &[
     only("dnas/handshake/zomes/dispatch/coordinator/src/payments.rs", &["PaymentInput", "OfferPaymentInput", "PaymentDue", "RecordHoldInput", "RecordActionInput", "RecordDeclinedInput", "RecordSettlementInput", "RecordRefundInput", "PaymentStanding", "MyPaymentInput", "PaymentHoldInput", "OrderPayment", "ChargedPart", "PaymentHistoryItem", "PaymentOwed"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/settlement.rs", &["DueClaim"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/deliveries.rs", &["OrderTiming", "StoreStep", "StoreStepDue"]),
-    only("dnas/handshake/zomes/dispatch/coordinator/src/matching.rs", &["RankedBid"]),
+    only("dnas/handshake/zomes/dispatch/coordinator/src/matching.rs", &["RankedBid", "BidWeight"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/live.rs", &["LiveCounterpart"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/promos.rs", &["PromoBlock", "PromoStanding"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/bags.rs", &["BagStanding"]),
