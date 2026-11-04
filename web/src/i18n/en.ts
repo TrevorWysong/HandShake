@@ -1234,7 +1234,7 @@ export const en = {
   "storeSettings.radius": "Delivery radius (km)",
   "storeSettings.sharing": "Delivery cost sharing",
   "storeSettings.editSharing": "Edit delivery cost sharing",
-  "storeSettings.sharingDetail": "Your share of each delivery fee, split with the customer automatically. Defaults to an even 50/50, since there's no platform cut here to offset. Adjust it if your margins call for a different split.",
+  "storeSettings.sharingDetail": "Your share of each delivery fee, split with the customer automatically (50/50 to start, since there's no platform cut to offset), and the most a fee or tip can be, which caps what delivery can cost you.",
   "storeSettings.youCover": "You cover {percent}% of delivery",
   "storeSettings.customerCovers": "Customer covers the full delivery fee",
   "storeSettings.feesUpTo": "Fees and tips up to {amount} each",

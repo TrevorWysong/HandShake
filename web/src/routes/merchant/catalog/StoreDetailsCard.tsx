@@ -352,14 +352,12 @@ function DeliveryFeeEditor({ initialPercent, initialMaxCents, onSave }: { initia
   return (
     <div>
       <div className="flex flex-wrap items-end gap-3">
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-semibold text-ink-500">{t("storeSettings.yourShare")}</span>
+        <Field label={t("storeSettings.yourShare")}>
           <Input type="number" min={0} max={100} step={5} value={percentDraft} onChange={(e) => setPercentDraft(e.target.value)} placeholder="50" suffix="%" className="w-24" />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-semibold text-ink-500">{t("storeSettings.mostFee")}</span>
+        </Field>
+        <Field label={t("storeSettings.mostFee")}>
           <Input type="number" min={0} step={1} value={maxDraft} onChange={(e) => setMaxDraft(e.target.value)} prefix={currencySymbol()} className="w-28" />
-        </label>
+        </Field>
         <Button loading={save.busy} disabled={unchanged || maxCents === null} onClick={() => save.run(() => onSave(percent, maxCents!))} className="px-4 py-2 text-xs">
           {t("common.save")}
         </Button>
