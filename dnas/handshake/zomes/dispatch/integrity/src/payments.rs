@@ -128,11 +128,11 @@ pub fn validate_profile(profile: &PaymentProfile) -> ExternResult<ValidateCallba
         return invalid("the test processor moves no money: it's for test networks only");
     }
     let account_ok = match profile.processor {
-        Processor::Stripe | Processor::Test => profile.account.is_empty(),
+        Processor::Stripe | Processor::PayPal | Processor::Test => profile.account.is_empty(),
         Processor::Square | Processor::Clover => processor_id(&profile.account, 64),
     };
     if !account_ok {
-        return invalid("a Square location or Clover merchant id is its letters and digits; Stripe names none");
+        return invalid("a Square location or Clover merchant id is its letters and digits; Stripe and PayPal name none");
     }
     if !(profile.country.is_empty() || (profile.country.len() == 2 && profile.country.bytes().all(|b| b.is_ascii_uppercase()))) {
         return invalid("a payment account's country is two capital letters (ISO 3166), or none");

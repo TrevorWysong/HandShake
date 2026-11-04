@@ -59,6 +59,23 @@ const PATCHES = [
     to: `${readFileSync(path.join(DESKTOP, "paymentsPreload.ts"), "utf8")}\ncontextBridge.exposeInMainWorld('__HC_ZOME_CALL_SIGNER__', {`,
   },
   {
+    // Kangaroo sends any https navigation, in any frame, to the system
+    // browser -- the processors' card forms included, which live in their
+    // own frames. Frames stay; the app's content security policy says which
+    // may load. (Popups stay refused: one would carry the app's preload.)
+    file: "src/main/windows.ts",
+    from: "  browserWindow.webContents.on('will-frame-navigate', (e) => {\n",
+    to: "  browserWindow.webContents.on('will-frame-navigate', (e) => {\n    if (!e.isMainFrame) return;\n",
+  },
+  {
+    // Kangaroo signs a zome call for whoever asks over IPC. Only a window's
+    // own page may -- never a frame inside it, such as a processor's card
+    // form. (The app's is the only window: popups are refused.)
+    file: "src/main/index.ts",
+    from: "  if (!ZOME_CALL_SIGNER) throw new Error('Zome call signer undefined.');\n",
+    to: "  if (_e.senderFrame !== _e.sender.mainFrame) throw new Error('Not allowed.');\n  if (!ZOME_CALL_SIGNER) throw new Error('Zome call signer undefined.');\n",
+  },
+  {
     // payments/ imports its modules by their .ts names, as Node runs them.
     file: "tsconfig.node.json",
     from: '"composite": true',

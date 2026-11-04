@@ -9,12 +9,16 @@
 // | Stripe | Payment Element, cards only | a PaymentMethod id | `handleNextAction` on the intent's client secret |
 // | Square | Web Payments SDK card, and Apple Pay / Google Pay where the device has them | a nonce, with the buyer's verification | done before tokenizing (`verifyBuyer`) |
 // | Clover | its iframe card fields | a card token | none |
+// | PayPal | PayPal's own buttons, approved in PayPal's window | the approved order's id | none |
 // | Test | a plain field (test networks only) | `tok_test_...` | none |
 import { loadStripe, type Stripe, type StripeElements } from "@stripe/stripe-js";
 import type { PaymentProfile } from "../../holochain/types";
 import { t } from "../../i18n";
 
 export interface CardForm {
+  /// The form pays from its own buttons (PayPal), through `wallet.onToken`:
+  /// the sheet has no button of its own to press, and nothing to keep.
+  paysItself?: boolean;
   /// Shows the form in `element`. A wallet the form offers (Apple Pay,
   /// Google Pay) pays by itself, from its own button: its token goes to
   /// `wallet.onToken`, and what went wrong to `wallet.onError`.
@@ -58,6 +62,8 @@ export function cardFormFor(profile: PaymentProfile, charge: Charge): CardForm {
       return squareForm(profile, charge);
     case "Clover":
       return cloverForm(profile);
+    case "PayPal":
+      return paypalForm(profile, charge);
     case "Test":
       return testForm();
   }
@@ -274,6 +280,61 @@ function cloverForm(profile: PaymentProfile): CardForm {
       throw new CardProblem(t("pay.actionFailed"));
     },
     destroy() {},
+  };
+}
+
+// --- PayPal ---
+
+interface PayPalButtons {
+  render(element: HTMLElement): Promise<void>;
+  close?(): Promise<void>;
+}
+interface PayPalSdk {
+  Buttons(options: {
+    style: Record<string, string>;
+    createOrder: (data: unknown, actions: { order: { create(order: unknown): Promise<string> } }) => Promise<string>;
+    onApprove: (data: { orderID: string }) => Promise<void>;
+    onError: (err: unknown) => void;
+  }): PayPalButtons;
+}
+declare global {
+  interface Window {
+    paypal?: PayPalSdk;
+  }
+}
+
+/// PayPal's own buttons, for the payee's PayPal app: the payer approves an
+/// order for exactly what's held, in PayPal's window, and the approved
+/// order's id is the token. The payee's agent reads the order back and
+/// holds it only if it's for exactly that (`payments/src/adapters/paypal.ts`).
+function paypalForm(profile: PaymentProfile, charge: Charge): CardForm {
+  let buttons: PayPalButtons | null = null;
+  return {
+    paysItself: true,
+    async mount(element, wallet) {
+      // PayPal's approval opens a window of its own, which the desktop app
+      // doesn't allow (it would carry the app's own powers).
+      if (navigator.userAgent.includes("Electron")) throw new CardProblem(t("pay.paypalDesktop"));
+      const query = new URLSearchParams({ "client-id": profile.public_key, currency: charge.currency, intent: "authorize", components: "buttons", "disable-funding": "paylater,credit" });
+      await loadScript(`https://www.paypal.com/sdk/js?${query}`);
+      if (!window.paypal || !wallet) throw new CardProblem(t("pay.formUnavailable"));
+      buttons = window.paypal.Buttons({
+        style: { layout: "vertical", shape: "pill", label: "pay", height: "48" },
+        createOrder: (_, actions) => actions.order.create({ intent: "AUTHORIZE", purchase_units: [{ amount: { currency_code: charge.currency, value: majorUnits(charge.amountCents, charge.currency) } }] }),
+        onApprove: async ({ orderID }) => wallet.onToken(orderID),
+        onError: (err) => wallet.onError(err),
+      });
+      await buttons.render(element);
+    },
+    async tokenize() {
+      throw new CardProblem(t("pay.formUnavailable"));
+    },
+    async complete() {
+      throw new CardProblem(t("pay.actionFailed"));
+    },
+    destroy() {
+      void buttons?.close?.();
+    },
   };
 }
 

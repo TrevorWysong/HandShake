@@ -2,6 +2,7 @@
 import { Refused, type Processor } from "../processor.ts";
 import type { ProcessorName } from "../types.ts";
 import { cloverProcessor, type CloverKeys } from "./clover.ts";
+import { paypalProcessor, type PayPalKeys } from "./paypal.ts";
 import { squareProcessor, type SquareKeys } from "./square.ts";
 import { stripeProcessor, type StripeKeys } from "./stripe.ts";
 import { testProcessor } from "./test.ts";
@@ -11,6 +12,7 @@ export const KEY_NAMES: Record<ProcessorName, readonly string[]> = {
   Stripe: ["publishable_key", "restricted_key"],
   Square: ["application_id", "location_id", "access_token"],
   Clover: ["merchant_id", "public_key", "private_token"],
+  PayPal: ["client_id", "secret"],
   Test: [],
 };
 
@@ -24,6 +26,8 @@ export function processorFor(name: ProcessorName, keys: Record<string, string>, 
       return squareProcessor(keys as unknown as SquareKeys, currency);
     case "Clover":
       return cloverProcessor(keys as unknown as CloverKeys, currency);
+    case "PayPal":
+      return paypalProcessor(keys as unknown as PayPalKeys, currency);
     case "Test":
       return testProcessor(currency);
   }
