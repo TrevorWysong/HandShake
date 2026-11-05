@@ -899,6 +899,11 @@ export type DispatchLocalSignal =
    */
   | { PaymentChanged: ActionHash }
   /**
+   * A recurring order's time has come: the app reminds its customer to
+   * confirm it. Never leaves their own device.
+   */
+  | { RecurringOrderDue: ActionHash }
+  /**
    * A payer (this key) withdrew a card they kept with this agent: its
    * payment agent deletes it (`payments::forget_saved_card`).
    */
@@ -3529,7 +3534,7 @@ export interface RecoveryPlan {
 }
 
 /**
- * How often a `RecurringOrderTemplate` fires. Deliberately just these two
+ * How often a `RecurringOrderTemplate` comes due. Deliberately just these two
  * shapes -- the literal "same order every Monday" ask, plus daily as the
  * same shape with no weekday. `hour`/`minute` are wall-clock time in the
  * template's `time_zone`, and `weekday` counts from Sunday = 0.
@@ -3550,11 +3555,26 @@ export type RecurrenceRule =
     };
 
 /**
+ * Where a template stands. Its customer confirms each order at checkout;
+ * one they don't get to in time is missed, never placed late.
+ */
+export type RecurringDue =
+  | "NotYet"
+  /**
+   * Its time has come, and it's still on time.
+   */
+  | "ConfirmNow"
+  /**
+   * Its time went by unanswered. Nothing was ordered or charged.
+   */
+  | "Missed";
+
+/**
  * A customer's own saved "repeat this order" recipe, linked from their own
  * key (`OwnerToTemplate`) so their conductor finds every one at once --
  * nobody else ever looks for them, and the details are sealed. Their own
- * conductor fires it when `next_run_at` arrives, with no app open, and
- * advances it to the next occurrence (`dispatch::upkeep`).
+ * conductor reminds them when `next_run_at` arrives (`dispatch::recurring`);
+ * they place each order themselves, at checkout.
  */
 export interface RecurringOrderTemplate {
   requester: AgentPubKey;
@@ -3581,8 +3601,8 @@ export interface RecurringOrderTemplate {
    */
   time_zone: string;
   /**
-   * When it next fires: set at creation, and moved forward each time it
-   * fires -- the one field (besides `active`) an update may change, and
+   * When it's next due: set at creation, and moved forward each time it
+   * comes due -- the one field (besides `active`) an update may change, and
    * only ever forward.
    */
   next_run_at: Timestamp;
@@ -3843,9 +3863,10 @@ export interface SavedAddress {
 export interface SavedCard {
   payee: AgentPubKey;
   /**
-   * The store it was last kept or used for -- what the screen names.
+   * The payee's store, when it's one: a driver's card kept with a store
+   * for their collateral. A store's kept with its driver names no store.
    */
-  store: ActionHash;
+  store: ActionHash | null;
   /**
    * When it's forgotten if it isn't used before then.
    */

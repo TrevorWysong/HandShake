@@ -4,7 +4,7 @@
 // alone; the caller offers it (`offerPayment`), and `PaymentStatus` follows
 // it from there.
 import { useCallback, useState } from "react";
-import { CreditCard, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
 import type { PaymentInput, PaymentProfile } from "../../holochain/types";
 import { cardFormFor, type CardForm } from "../../lib/payments/cardForm";
 import { useAction } from "../../lib/hooks/useAction";
@@ -21,9 +21,7 @@ export function PaySheet({
   amountCents,
   title,
   subtitle,
-  canUseSaved = false,
   offerToSave = false,
-  forStandingOrder = false,
   onClose,
   onCard,
 }: {
@@ -35,13 +33,9 @@ export function PaySheet({
   amountCents: number;
   title: string;
   subtitle?: string;
-  /// The payer saved a card with this payee before.
-  canUseSaved?: boolean;
-  /// Whether to offer keeping this card with the payee.
+  /// Whether to offer keeping this card with the payee: between a store and
+  /// its driver, never for a customer.
   offerToSave?: boolean;
-  /// The card is offered to keep for a standing order -- which is paid with
-  /// it while the payer's away: so keeping it starts switched on.
-  forStandingOrder?: boolean;
   onClose: () => void;
   /// The card, to offer: resolves once it's offered.
   onCard: (card: PaymentInput) => Promise<void>;
@@ -51,8 +45,7 @@ export function PaySheet({
   // One form for the sheet's life: re-rendering mustn't rebuild a form
   // someone's typing into.
   const [form] = useState<CardForm>(() => cardFormFor(profile, { amountCents, currency, label: payee }));
-  const [useNew, setUseNew] = useState(!canUseSaved);
-  const [save, setSave] = useState(forStandingOrder);
+  const [save, setSave] = useState(false);
   // The processor's form arrives from its own servers: a placeholder holds
   // its place until it's drawn.
   const [ready, setReady] = useState(false);
@@ -83,7 +76,6 @@ export function PaySheet({
 
   const pay = () =>
     action.run(async () => {
-      if (!useNew) return onCard({ token: null, save: false });
       const token = await form.tokenize();
       await onCard({ token, save: offerToSave && save });
     });
@@ -97,7 +89,7 @@ export function PaySheet({
       footer={
         <>
           {action.error && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
-          <Button className="w-full" loading={action.busy} disabled={useNew && !ready} onClick={pay}>
+          <Button className="w-full" loading={action.busy} disabled={!ready} onClick={pay}>
             {t("pay.hold", { amount: formatCents(amountCents) })}
           </Button>
           <p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">
@@ -111,25 +103,7 @@ export function PaySheet({
         <span className="min-w-0 text-sm text-ink-500 dark:text-ink-400">{t("pay.heldFor", { payee })}</span>
         <span className="shrink-0 text-lg font-black tabular-nums text-ink-900 dark:text-ink-50">{formatCents(amountCents)}</span>
       </div>
-      {canUseSaved && (
-        <div className="mb-4 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => setUseNew(false)}
-            className={`flex items-center gap-3 rounded-2xl border p-4 text-left ${!useNew ? "border-handshake-500 bg-handshake-50 dark:bg-handshake-900/20" : "border-ink-100 dark:border-ink-800"}`}
-          >
-            <CreditCard size={20} className="text-ink-400" />
-            <span className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("pay.savedCard", { payee })}</span>
-          </button>
-          {!useNew && (
-            <button type="button" onClick={() => setUseNew(true)} className="text-xs font-semibold text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">
-              {t("pay.anotherCard")}
-            </button>
-          )}
-        </div>
-      )}
-      {useNew && (
-        <>
+      <>
           <div className="relative min-h-[3.5rem]">
             <div ref={mountForm} />
             {!ready && <Skeleton className="absolute inset-0 rounded-xl" />}
@@ -137,14 +111,13 @@ export function PaySheet({
           {offerToSave && (
             <label className="mt-4 flex items-start justify-between gap-3 text-sm">
               <span>
-                <span className="font-semibold text-ink-800 dark:text-ink-100">{t(forStandingOrder ? "pay.rememberStanding" : "pay.remember", { payee })}</span>
-                <span className="mt-0.5 block text-xs text-ink-400">{t(forStandingOrder ? "pay.rememberStandingDetail" : "pay.rememberDetail", { payee })}</span>
+                <span className="font-semibold text-ink-800 dark:text-ink-100">{t("pay.remember", { payee })}</span>
+                <span className="mt-0.5 block text-xs text-ink-400">{t("pay.rememberDetail", { payee })}</span>
               </span>
               <Switch checked={save} label={t("pay.remember", { payee })} onChange={setSave} />
             </label>
           )}
-        </>
-      )}
+      </>
     </Sheet>
   );
 }

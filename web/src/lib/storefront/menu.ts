@@ -1,6 +1,6 @@
 import { bytesEqual, bytesToHex, decodeEntry } from "../../holochain/decode";
 import { getModifierGroups, listMenuItems, type MenuItemsPage } from "../../holochain/zomes/catalog";
-import type { ActionHash, ModifierGroup, OrderLine, Selection, SelectionInput } from "../../holochain/types";
+import type { ActionHash, ModifierGroup, OrderItem, OrderLine, Selection, SelectionInput } from "../../holochain/types";
 import type { MenuItem } from "../../holochain/types";
 import type { CartLine } from "../../store/cart";
 import { choiceLabels, linePrice, type Groups } from "./choices";
@@ -70,7 +70,7 @@ function selectionInputs(selections: Selection[]): SelectionInput[] {
   return selections.map((s) => ({ group: s.group, options: s.options.map((c) => ({ option: c.option, quantity: c.quantity, nested: selectionInputs(c.nested) })) }));
 }
 
-function groupRefs(selections: Selection[]): ActionHash[] {
+function groupRefs(selections: SelectionInput[]): ActionHash[] {
   return selections.flatMap((s) => [s.group, ...s.options.flatMap((c) => groupRefs(c.nested))]);
 }
 
@@ -78,6 +78,11 @@ function groupRefs(selections: Selection[]): ActionHash[] {
 /// since removed or sold out, or whose choices are no longer on offer, is
 /// left out; one repriced takes its new price.
 export async function cartLinesFromOrder(catalogRef: ActionHash, lines: OrderLine[], menu: ItemRow[]): Promise<CartLine[]> {
+  return cartLinesFromItems(catalogRef, lines.map((line) => ({ item_ref: line.item_ref, quantity: line.quantity, selections: selectionInputs(line.selections) })), menu);
+}
+
+/// The same, of an order not yet placed: a recurring order's items.
+export async function cartLinesFromItems(catalogRef: ActionHash, lines: OrderItem[], menu: ItemRow[]): Promise<CartLine[]> {
   const refs = new Map(lines.flatMap((line) => groupRefs(line.selections)).map((ref) => [bytesToHex(ref), ref]));
   const groups: Groups = new Map();
   if (refs.size > 0) {
@@ -86,7 +91,7 @@ export async function cartLinesFromOrder(catalogRef: ActionHash, lines: OrderLin
   return lines.flatMap((line) => {
     const row = menu.find((m) => bytesEqual(m.hash, line.item_ref));
     if (!row || !row.item.available) return [];
-    const selections = selectionInputs(line.selections);
+    const { selections } = line;
     const priced = linePrice(row.item, selections, groups);
     if (!priced.ok) return [];
     return [{ itemRef: row.hash, name: row.item.name, basePriceCents: row.item.price_cents, priceCents: priced.price, choiceCharges: priced.choices, quantity: line.quantity, selections, choiceLabels: choiceLabels(selections, groups) }];

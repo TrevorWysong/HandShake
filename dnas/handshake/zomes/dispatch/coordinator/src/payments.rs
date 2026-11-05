@@ -93,21 +93,13 @@ pub(crate) fn saved_with(payee: &AgentPubKey) -> ExternResult<Option<Timestamp>>
     dispatch_integrity::payments::saved_card_with(&me.agent_initial_pubkey, &me.chain_head.0, sys_time()?, payee)
 }
 
-/// Whether the caller has a card saved with `payee` -- for a payer's
-/// checkout, to offer it in one tap. Read from the caller's own chain: only
-/// the account that saved a card is ever offered it, and the payee's agent
-/// uses it only for an offer that account made.
-#[hdk_extern]
-pub fn has_saved_card(payee: AgentPubKey) -> ExternResult<bool> {
-    Ok(saved_with(&payee)?.is_some())
-}
-
 /// A card the caller keeps with a payee, as their Payments screen lists it.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SavedCard {
     pub payee: AgentPubKey,
-    /// The store it was last kept or used for -- what the screen names.
-    pub store: ActionHash,
+    /// The payee's store, when it's one: a driver's card kept with a store
+    /// for their collateral. A store's kept with its driver names no store.
+    pub store: Option<ActionHash>,
     /// When it's forgotten if it isn't used before then.
     pub stands_until: Timestamp,
 }
@@ -124,7 +116,7 @@ pub fn my_saved_cards(_: ()) -> ExternResult<Vec<SavedCard>> {
             continue;
         }
         let Some(last) = saved_with(&offer.payee)? else { continue };
-        let Some(store) = store_of(&offer.order)? else { continue };
+        let store = if matches!(offer.leg, PaymentLeg::Collateral { .. }) { store_of(&offer.order)? } else { None };
         let stands_until = Timestamp::from_micros(last.as_micros() + dispatch_integrity::payments::SAVED_CARD_DAYS * 86_400_000_000);
         cards.push(SavedCard { payee: offer.payee, store, stands_until });
     }

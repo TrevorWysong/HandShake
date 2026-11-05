@@ -192,7 +192,6 @@ export const REFUSALS = {
   "refusal.this-store-s-rewards-program-isn-t": "This store's rewards program isn't running.",
   "refusal.those-keys-aren-t-in-a-form": "Those keys aren't in a form HandShake reads.",
   "refusal.to-have-it-left-at-your-door": "To have it left at your door, accept that it's delivered once it's left there.",
-  "refusal.to-have-these-orders-left-at-your": "To have these orders left at your door, accept that each is delivered once it's left there.",
   "refusal.too-many-wrong-codes-ask-the-store": "Too many wrong codes. Ask the store to hand the order over by scanning your code.",
   "refusal.too-many-wrong-codes-scan-their-code": "Too many wrong codes. Scan their code, or ask them to confirm in their app.",
   "refusal.you-aren-t-one-of-this-account": "You aren't one of this account's guardians.",

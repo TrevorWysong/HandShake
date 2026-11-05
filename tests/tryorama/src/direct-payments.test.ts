@@ -50,7 +50,7 @@ await runScenario(async (scenario) => {
   const order = actionHash(
     await call(customer, "dispatch")<HcRecord>("request_delivery", {
       merchant: store.agentPubKey, catalog_ref: shop, items: [{ item_ref: empanada, quantity: 1 }], order_total: FOOD,
-      dropoff: ST_PETE, max_delivery_fee: CAP, tip_cents: TIP, payment: { token: TEST_CARD, save: true },
+      dropoff: ST_PETE, max_delivery_fee: CAP, tip_cents: TIP, payment: { token: TEST_CARD, save: false },
     }),
   );
   await sync();
@@ -64,27 +64,11 @@ await runScenario(async (scenario) => {
   await acceptOrder(store, order, all);
   console.log("[PASS] the customer's card is held on the store's account before it accepts, for exactly what the order needs");
 
-  // The card they kept with the store is theirs to use again -- nobody
-  // else's, and only with that store.
-  assert.equal(await call(customer, "dispatch")("has_saved_card", store.agentPubKey), true, "the customer is offered the card they saved with the store");
-  assert.equal(await call(stranger, "dispatch")("has_saved_card", store.agentPubKey), false, "another account isn't");
-  assert.equal(await call(customer, "dispatch")("has_saved_card", driver.agentPubKey), false, "nor is it saved with anyone else");
-  console.log("[PASS] a saved card is offered only to the account that saved it, with the store it's saved with");
-
-  // ...and theirs to withdraw: the network refuses it from then on, and the
-  // store's agent is told to delete it from its processor.
-  const listed = await call(customer, "dispatch")<{ payee: Uint8Array; store: Uint8Array }[]>("my_saved_cards", null);
-  assert.deepEqual([listed.length, Buffer.from(listed[0].store).equals(Buffer.from(shop))], [1, true], "listed under the store it was kept for");
-  await assert.rejects(call(stranger, "dispatch")("forget_saved_card", store.agentPubKey), /no card kept with them/, "nobody forgets a card they never kept");
-  await assert.rejects(raw(stranger, { Forgotten: { payee: stranger.agentPubKey } }), /kept with someone else/, "a card is withdrawn from someone else");
-  await call(customer, "dispatch")("forget_saved_card", store.agentPubKey);
-  assert.equal(await call(customer, "dispatch")("has_saved_card", store.agentPubKey), false, "withdrawn, it's offered no more");
-  assert.equal((await call(customer, "dispatch")<unknown[]>("my_saved_cards", null)).length, 0);
-  await assert.rejects(call(customer, "dispatch")("offer_payment", { order, leg: "Customer", payment: { token: null, save: false } }), /no card kept with this payee/, "and the network refuses it");
-  await sync();
-  const forgets = await retryUntil(() => call(store, "dispatch")<{ Forget?: { payer: Uint8Array } }[]>("payments_due", null), (due) => due.some((d) => d.Forget));
-  assert.ok(Buffer.from(forgets.find((d) => d.Forget)!.Forget!.payer).equals(Buffer.from(customer.agentPubKey)), "the store's agent is told to delete it");
-  console.log("[PASS] a kept card is its payer's to withdraw: refused from then on, and deleted by the store's agent");
+  // A customer pays with a card they have with them: no store keeps it, so
+  // none can charge it from its own dashboard.
+  await assert.rejects(call(customer, "dispatch")("offer_payment", { order, leg: "Customer", payment: { token: null, save: false } }), /no store keeps it/, "a customer's offer always carries a card");
+  await assert.rejects(call(customer, "dispatch")("offer_payment", { order, leg: "Customer", payment: { token: TEST_CARD, save: true } }), /no store keeps it/, "and no store's asked to keep it");
+  console.log("[PASS] a customer's card is never kept by a store");
 
   // ===== The driver's collateral, held on the store's account =====
   const bid = actionHash(await retryUntilOk(() => call(driver, "dispatch")<HcRecord>("submit_bid", { order_ref: order, eta_seconds: 600, price_offer: FEE })));
@@ -99,6 +83,21 @@ await runScenario(async (scenario) => {
   await offerCard(store, order, { DriverPay: { bid } }, true);
   await sync(store);
   await heldBy(driver, order, { DriverPay: { bid } }, all);
+
+  // The card a store kept with its driver is its own to withdraw: listed for
+  // nobody else, refused from then on, and deleted by the driver's agent.
+  const listed = await call(store, "dispatch")<{ payee: Uint8Array; store: Uint8Array | null }[]>("my_saved_cards", null);
+  assert.deepEqual([listed.length, Buffer.from(listed[0].payee).equals(Buffer.from(driver.agentPubKey)), listed[0].store], [1, true, null], "listed under the driver it's kept with");
+  assert.equal((await call(stranger, "dispatch")<unknown[]>("my_saved_cards", null)).length, 0, "another account keeps none");
+  await assert.rejects(call(stranger, "dispatch")("forget_saved_card", driver.agentPubKey), /no card kept with them/, "nobody forgets a card they never kept");
+  await assert.rejects(raw(stranger, { Forgotten: { payee: stranger.agentPubKey } }), /kept with someone else/, "a card is withdrawn from someone else");
+  await call(store, "dispatch")("forget_saved_card", driver.agentPubKey);
+  assert.equal((await call(store, "dispatch")<unknown[]>("my_saved_cards", null)).length, 0, "withdrawn, it's listed no more");
+  await assert.rejects(raw(store, { Offer: { order, leg: { DriverPay: { bid } }, payee: driver.agentPubKey, sealed_token: null, save: false, resumes: null } }), /no card kept with this payee/, "and the network refuses it");
+  await sync(store);
+  const forgets = await retryUntil(() => call(driver, "dispatch")<{ Forget?: { payer: Uint8Array } }[]>("payments_due", null), (due) => due.some((d) => d.Forget));
+  assert.ok(Buffer.from(forgets.find((d) => d.Forget)!.Forget!.payer).equals(Buffer.from(store.agentPubKey)), "the driver's agent is told to delete it");
+  console.log("[PASS] a kept card is its payer's to withdraw: refused from then on, and deleted by its payee's agent");
   await commitAndCook(driver, store, order, all);
   console.log("[PASS] a driver sets off once the store holds their collateral and they hold their pay");
 

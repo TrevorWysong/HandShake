@@ -7,7 +7,8 @@
 // What's sent is checked again by the network: totals, discount, range,
 // hours, and what the store may hold on the card.
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import type { CheckoutDraft } from "../../../lib/orders/recurring";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { Button, Checkbox, Notice } from "../../../components/ui";
@@ -18,7 +19,7 @@ import { useSession } from "../../../store/session";
 import { useCustomerSettings } from "../../../store/roleSettings";
 import { useTerms } from "../../../store/network";
 import { createRecurringTemplate, requestDelivery, requestPickupOrder } from "../../../holochain/zomes/dispatch";
-import { hasSavedCard, paymentProfileOf } from "../../../holochain/zomes/payments";
+import { paymentProfileOf } from "../../../holochain/zomes/payments";
 import { actionHash, bytesEqual, bytesToHex } from "../../../holochain/decode";
 import type { DropoffPreference, PaymentInput, RecurrenceRule } from "../../../holochain/types";
 import { earnedFor, pointsEarned } from "../../../lib/rewards/rewards";
@@ -54,9 +55,6 @@ export function Cart() {
   const setSessionLocation = useSession((s) => s.setLocation);
   // Placing the order, or saving it to repeat -- one at a time.
   const action = useAction();
-  // A standing order set up from this cart: paid with a card kept with the
-  // store, which its checkout then offers to keep.
-  const [standingOrder, setStandingOrder] = useState(false);
 
   const catalogRef = cart.catalogRef;
   const { data: storeInfo } = useResource(catalogRef && `cart-store:${bytesToHex(catalogRef)}`, () => fetchCartStoreInfo(catalogRef!));
@@ -67,10 +65,10 @@ export function Cart() {
   const ownStore = !!agentPubKey && !!merchant && bytesEqual(agentPubKey, merchant);
   // A card this account saved with the store, offered in one tap -- keyed by
   // the account, so nobody else signed in here is ever offered it.
-  const savedCardKey = agentPubKey && merchant && !ownStore ? `saved-card:${bytesToHex(agentPubKey)}:${bytesToHex(merchant)}` : null;
-  const { data: savedCard = false } = useResource(savedCardKey, () => hasSavedCard(merchant!));
 
-  const options = useDeliveryOptions();
+  // A recurring order brought here to confirm starts as it was set up.
+  const draft = (useLocation().state as { recurring?: CheckoutDraft } | null)?.recurring;
+  const options = useDeliveryOptions(draft);
   const discounts = useDiscounts(storeInfo, now);
   // Pickup orders skip the whole driver half of this screen: there's no
   // driver in that vertical at all.
@@ -78,8 +76,8 @@ export function Cart() {
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   // Two notes, each readable only by who it's for: the store (sealed to
   // it) and, for a delivery, the driver (sealed with the address).
-  const [kitchenNotes, setKitchenNotes] = useState("");
-  const [dropoffNotes, setDropoffNotes] = useState("");
+  const [kitchenNotes, setKitchenNotes] = useState(draft?.kitchenNotes ?? "");
+  const [dropoffNotes, setDropoffNotes] = useState(draft?.dropoffNotes ?? "");
   const [editing, setEditing] = useState<LineEdit | null>(null);
   /// Choosing the card it's paid with.
   const [paying, setPaying] = useState(false);
@@ -226,8 +224,8 @@ export function Cart() {
     if (!cart.catalogRef || !cart.merchant) return;
     const [catalog_ref, merchant] = [cart.catalogRef, cart.merchant];
     return action.run(
-      async () => {
-        await createRecurringTemplate({
+      () =>
+        createRecurringTemplate({
           merchant,
           catalog_ref,
           items: cartItems(cart.lines),
@@ -238,14 +236,11 @@ export function Cart() {
           dropoff_line2: options.dropoffLine2.trim(),
           tip_cents: tipCents,
           dropoff_preference: dropoffPreference,
-          door_risk_accepted: dropoffPreference === "LeaveAtDoor" && options.doorRiskAccepted,
           priority: options.priority,
           promo_code_ref: discounts.appliedPromo?.hash ?? null,
           recurrence,
           time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        });
-        setStandingOrder(true);
-      },
+        }),
       { as: "recurring" },
     );
   }
@@ -360,11 +355,6 @@ export function Cart() {
           profile={storeProfile}
           payee={cart.merchantName ?? t("cart.theStore")}
           amountCents={price.holdCents}
-          canUseSaved={savedCard}
-          // A card is kept with a store only for a standing order, which is
-          // paid with it while the customer's away.
-          offerToSave={standingOrder && !savedCard}
-          forStandingOrder={standingOrder && !savedCard}
           title={t("cart.payTitle", { payee: cart.merchantName ?? t("cart.theStore") })}
           subtitle={delivery ? t("cart.paySubtitleDelivery") : t("cart.paySubtitlePickup")}
           onClose={() => setPaying(false)}

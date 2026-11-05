@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Bike, ClipboardList, Pause, Play, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
-import { getMyActiveOrders, getMyOrderHistory, listMyRecurringTemplates, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
+import { getMyActiveOrders, getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
 import { getCatalog } from "../../holochain/zomes/catalog";
 import { decodeEntry, bytesToHex } from "../../holochain/decode";
 import { useCart } from "../../store/cart";
@@ -16,9 +16,12 @@ import { StatusBadge, PickupStatusBadge } from "../../components/orders/OrderSta
 import { formatCents } from "../../lib/ui/format";
 import { describeRecurrence } from "../../lib/orders/recurrence";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import type { MerchantCatalog, RecurringOrderTemplate, Timestamp } from "../../holochain/types";
+import { fetchRecurringOrders } from "../../lib/orders/recurring";
+import { RecurringDue } from "../../components/orders/RecurringDue";
+import { InfoSheet } from "../../components/InfoSheet";
+import type { MerchantCatalog, Timestamp } from "../../holochain/types";
 import { POLL } from "../../lib/network/poll";
-import { t as translate, useT, type MessageKey } from "../../i18n";
+import { useT, type MessageKey } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
 
 
@@ -42,6 +45,7 @@ export function Orders() {
         <h1 className="text-xl font-black tracking-tight text-ink-900 dark:text-ink-50">{t("orders.title")}</h1>
         <SegmentedTabs tabs={TABS.map((x) => ({ ...x, label: t(x.label) }))} value={tab} onChange={setTab} />
       </motion.div>
+      <RecurringDue />
       <RecurringOrders />
       {tab === "active" ? <ActiveOrders /> : <PastOrders />}
     </motion.div>
@@ -175,17 +179,8 @@ function ReorderButton({ row }: { row: OrderRow }) {
 function RecurringOrders() {
   const t = useT();
   const toggling = useAction();
-  const { data: templates, reload } = useResource("customer-recurring", async () =>
-    Promise.all(
-      (await listMyRecurringTemplates()).map(async (view) => {
-        const template = decodeEntry<RecurringOrderTemplate>(view.record);
-        const storeName = await getCatalog(template.catalog_ref)
-          .then((cr) => decodeEntry<MerchantCatalog>(cr).business_name)
-          .catch(() => translate("orders.restaurant"));
-        return { hash: view.original_action, hex: bytesToHex(view.original_action), template, storeName };
-      }),
-    ),
-  );
+  const { data: templates, reload } = useResource("customer-recurring", fetchRecurringOrders);
+  const sections = (["ask", "pay", "closed"] as const).map((part) => ({ title: t(`recurring.why.${part}`), body: t(`recurring.why.${part}Detail`) }));
 
   const toggle = (hash: Uint8Array, hex: string, active: boolean) => toggling.run(async () => {
     await setRecurringTemplateActive(hash, !active);
@@ -195,7 +190,10 @@ function RecurringOrders() {
   if (!templates?.length) return null;
   return (
     <div className="mb-5">
-      <SectionLabel icon={<Repeat size={13} />} className="mb-2">{t("orders.recurring")}</SectionLabel>
+      <div className="mb-2 flex items-center justify-between">
+        <SectionLabel icon={<Repeat size={13} />}>{t("orders.recurring")}</SectionLabel>
+        <InfoSheet title={t("recurring.how")} sections={sections} />
+      </div>
       <div className="flex flex-col gap-2">
         {templates.map(({ hash, hex, template, storeName }) => (
           <Card key={hex} className="flex items-center justify-between p-3.5">

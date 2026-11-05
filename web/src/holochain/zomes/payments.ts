@@ -30,12 +30,6 @@ export async function orderPayments(order: ActionHash): Promise<OrderPayment[]> 
   return callZome("dispatch", "order_payments", order);
 }
 
-/// Whether the caller saved a card with `payee` -- their own, offered in one
-/// tap at checkout.
-export async function hasSavedCard(payee: AgentPubKey): Promise<boolean> {
-  return callZome("dispatch", "has_saved_card", payee);
-}
-
 /// The cards the caller keeps with a payee that still stand.
 export async function mySavedCards(): Promise<SavedCard[]> {
   return callZome("dispatch", "my_saved_cards", null);
