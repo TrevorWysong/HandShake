@@ -36,11 +36,39 @@ const sealer: Sealer = {
   },
 };
 
-export async function startPayments(holochain: HolochainManager, window: BrowserWindow, fs: KangarooFileSystem): Promise<void> {
+/// Starts the agent beside the app, never in its way: the app's window is
+/// already up and waiting to sign its calls, which a slow or failed start here
+/// mustn't hold back. Until the agent's up its commands wait for it, and if it
+/// can't start they say so.
+export function startPayments(holochain: HolochainManager, window: BrowserWindow, fs: KangarooFileSystem): void {
+  const started = startAgent(holochain, window, fs);
+  started.catch((err) => console.error(`[payments] didn't start: ${err instanceof Error ? err.stack : String(err)}`));
+
+  // Only the app's own page, in its own window -- never a frame inside it.
+  const fromTheApp = (event: IpcMainInvokeEvent) => !window.isDestroyed() && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame;
+  ipcMain.handle('handshake-payments', async (event, command: unknown, ...args: unknown[]) => {
+    if (!fromTheApp(event)) throw new Error('Not allowed.');
+    const agent = await started;
+    switch (command) {
+      case 'status':
+        return agent.status();
+      case 'connect':
+        return agent.connect(args[0], args[1]);
+      case 'disconnect':
+        return agent.disconnect();
+      case 'wake':
+        return agent.wake();
+      default:
+        throw new Error('No such command.');
+    }
+  });
+}
+
+async function startAgent(holochain: HolochainManager, window: BrowserWindow, fs: KangarooFileSystem) {
   const admin = holochain.adminWebsocket;
   const app = (await admin.listApps({})).find((a) => a.installed_app_id === HAPP_APP_ID);
   const cell = app?.cell_info[ROLE_NAME]?.find((c) => c.type === CellType.Provisioned);
-  if (!cell || cell.type !== CellType.Provisioned) return;
+  if (!cell || cell.type !== CellType.Provisioned) throw new Error(`The app has no ${ROLE_NAME} cell.`);
   const cellId = cell.value.cell_id;
   await admin.authorizeSigningCredentials(cellId);
   const { token } = await admin.issueAppAuthenticationToken({ installed_app_id: HAPP_APP_ID });
@@ -69,22 +97,5 @@ export async function startPayments(holochain: HolochainManager, window: Browser
   });
   appWs.on('signal', () => agent.wake());
   await agent.start();
-
-  // Only the app's own page, in its own window -- never a frame inside it.
-  const fromTheApp = (event: IpcMainInvokeEvent) => !window.isDestroyed() && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame;
-  ipcMain.handle('handshake-payments', async (event, command: unknown, ...args: unknown[]) => {
-    if (!fromTheApp(event)) throw new Error('Not allowed.');
-    switch (command) {
-      case 'status':
-        return agent.status();
-      case 'connect':
-        return agent.connect(args[0], args[1]);
-      case 'disconnect':
-        return agent.disconnect();
-      case 'wake':
-        return agent.wake();
-      default:
-        throw new Error('No such command.');
-    }
-  });
+  return agent;
 }

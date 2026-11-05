@@ -17,6 +17,8 @@ Kangaroo is meant to be forked. Keeping only HandShake's own files here, with Ka
 
 - **The network seed.** Kangaroo installs the hApp with one seed for every role. HandShake's bundle carries its own seeds, and an upgrade release has two roles on different seeds (docs/MIGRATION.md), so the override is removed.
 - **Updates.** Releases and the app's update checks point at this repo's GitHub, not Kangaroo's.
+- **The Holochain client.** Kangaroo's lockfile pins a client that sends capability grants in a form the conductor can't read, which the payment agent needs. It's moved to the version `web/` uses, hash and all.
+- **Signing at start-up.** The page's first calls come before Kangaroo keeps its signer. They wait for it, and the payment agent starts beside the app rather than ahead of it, so a problem in the agent never stops the app's own calls.
 - **The macOS update manifest**, which Kangaroo's script merges for Holochain's own launcher repo.
 - **Linux packages** need a homepage, which Kangaroo's `package.json` leaves out.
 - **Unsigned builds.** Without a certificate, an empty signing secret is unset rather than read as a path, and a macOS build is signed ad hoc -- whole, though anonymous -- so it opens rather than being reported "damaged".
