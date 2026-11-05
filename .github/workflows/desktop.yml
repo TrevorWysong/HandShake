@@ -67,6 +67,9 @@ jobs:
             echo "v$VERSION is already published; bump desktop/kangaroo.config.ts's version for a new release." >&2
             exit 1
           fi
+          # A draft already there is built again from this commit, and is
+          # tagged at it when published: never at the one that first drafted it.
+          gh release edit "v$VERSION" --target "$GITHUB_SHA"
 
   installers:
     name: Installer (${{ matrix.target }})
