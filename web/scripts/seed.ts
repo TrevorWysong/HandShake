@@ -127,10 +127,11 @@ function itemOf(store: SeededStore, name: string) {
 const DEV_PROPERTIES = { report_window_secs: 300 };
 
 /// The test processor's card that always works, kept with whoever it pays.
-const TEST_CARD = { token: "tok_test_4242", save: true };
+const TEST_CARD = { token: "tok_test_4242", save: false };
 
-/// `payer` offering their card for `leg` of an order.
-const offerCard = (payer: Agent, order: ActionHash, leg: unknown) => payer.call("dispatch", "offer_payment", { order, leg, payment: TEST_CARD, resumes: null });
+/// A store or driver offering their card for `leg` of an order, kept with
+/// the other from then on (customers keep no card).
+const offerCard = (payer: Agent, order: ActionHash, leg: unknown) => payer.call("dispatch", "offer_payment", { order, leg, payment: { ...TEST_CARD, save: true }, resumes: null });
 
 /// `step`, once `payees`' agents have held what's offered them.
 const once = (payees: Agent[], label: string, step: () => Promise<unknown>) =>
