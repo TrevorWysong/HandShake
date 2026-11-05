@@ -81,7 +81,7 @@ fn review_links(target: &ReviewTarget) -> (AnyLinkableHash, LinkTypes) {
 /// (with a modified client) reviewed the same order twice still counts
 /// once. Read from the links' validated tags alone -- one network read,
 /// however many reviews there are.
-fn ratings(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Vec<u8>> {
+fn ratings(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Vec<(AgentPubKey, u8)>> {
     let mut votes: BTreeMap<(AgentPubKey, Vec<u8>), u8> = BTreeMap::new();
     for link in recent(bases, link_type)? {
         let tag = link.tag.into_inner();
@@ -90,7 +90,18 @@ fn ratings(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Ve
             votes.entry((link.author, order.to_vec())).or_insert(rating);
         }
     }
-    Ok(votes.into_values().collect())
+    Ok(votes.into_iter().map(|((author, _), rating)| (author, rating)).collect())
+}
+
+/// Whether `reviewer` has rated an order from a store none of `owners` owns
+/// -- each such review is of a real order they had, from someone else. One
+/// who's only ever rated this store could be its owner's second account.
+/// With its owners unknown, two stores rated stand in for one elsewhere.
+fn rated_elsewhere(reviewer: &AgentPubKey, owners: &[AgentPubKey]) -> ExternResult<bool> {
+    let links = get_links(LinkQuery::try_new(reviewer.clone(), LinkTypes::ReviewerToReview)?, GetStrategy::default())?;
+    let rated: std::collections::BTreeSet<Vec<u8>> = links.into_iter().filter(|link| &link.author == reviewer).map(|link| link.tag.into_inner()).collect();
+    let elsewhere = rated.iter().filter(|tag| !owners.iter().any(|owner| &reviewer_tag(owner).into_inner() == *tag)).count();
+    Ok(elsewhere >= if owners.is_empty() { 2 } else { 1 })
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -324,6 +335,12 @@ pub fn submit_review(input: SubmitReviewInput) -> ExternResult<Record> {
     let action_hash = create_entry(&EntryTypes::Review(review))?;
     let (base, review_link) = review_links(&input.target);
     create_link(base, action_hash.clone(), review_link, review_tag(input.rating, &input.order_original_action))?;
+    // Under its author too, with whose store it was: what lets a rating
+    // tell a customer who's ordered elsewhere from a store's own account.
+    if matches!(input.target, ReviewTarget::Store(_)) {
+        let merchant = reviewed_store_owner(order_record.action_address())?.ok_or(guest("You can rate an order once you have it."))?;
+        create_link(agent_info()?.agent_initial_pubkey, action_hash.clone(), LinkTypes::ReviewerToReview, reviewer_tag(&merchant))?;
+    }
     create_link(input.order_original_action, action_hash.clone(), LinkTypes::OrderToReview, ())?;
     written(action_hash)
 }
@@ -384,8 +401,13 @@ pub fn get_reviews_for(input: GetReviewsInput) -> ExternResult<ReviewsPage> {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct RatingSummary {
+    /// The reviews the rating's made of, and their stars.
     pub count: u32,
     pub rating_sum: u32,
+    /// A store's reviews left out of its rating: from customers who haven't
+    /// rated an order from another store yet. Shown, but not counted.
+    #[serde(default)]
+    pub uncounted: u32,
 }
 
 /// The star rating shown on a store card/page or a driver's bid.
@@ -396,8 +418,41 @@ pub fn get_rating_summary(target: ReviewTarget) -> ExternResult<RatingSummary> {
         ReviewTarget::Driver(agent) => Subject::Person(agent),
         ReviewTarget::Store(catalog) => Subject::Store(catalog),
     };
-    let ratings = ratings(bases_of(base, subject)?, review_link)?;
-    let mut summary = RatingSummary { count: ratings.len() as u32, rating_sum: ratings.iter().map(|&r| r as u32).sum() };
+    let bases = bases_of(base, subject)?;
+    // A store's owners -- of it, and of each store it was moved from -- whose
+    // other accounts' reviews don't count. A driver's reviews all do: each
+    // comes from a different store's order.
+    let owners: Option<Vec<AgentPubKey>> = match &target {
+        ReviewTarget::Store(_) => {
+            let mut owners = Vec::new();
+            for catalog in bases.iter().filter_map(|base| base.clone().into_action_hash()) {
+                owners.extend(get(catalog, GetOptions::default())?.map(|record| record.action().author().clone()));
+            }
+            Some(owners)
+        }
+        ReviewTarget::Driver(_) => None,
+    };
+    let mut summary = RatingSummary::default();
+    let mut elsewhere: BTreeMap<AgentPubKey, bool> = BTreeMap::new();
+    for (reviewer, rating) in ratings(bases, review_link)? {
+        let counts = match &owners {
+            None => true,
+            Some(owners) => match elsewhere.get(&reviewer) {
+                Some(counts) => *counts,
+                None => {
+                    let counts = rated_elsewhere(&reviewer, owners)?;
+                    elsewhere.insert(reviewer, counts);
+                    counts
+                }
+            },
+        };
+        if counts {
+            summary.count += 1;
+            summary.rating_sum += rating as u32;
+        } else {
+            summary.uncounted += 1;
+        }
+    }
     let as_reputation = match &target {
         ReviewTarget::Store(catalog) => ReputationTarget::Store(catalog.clone()),
         ReviewTarget::Driver(agent) => ReputationTarget::Driver(agent.clone()),
@@ -412,6 +467,7 @@ pub fn get_rating_summary(target: ReviewTarget) -> ExternResult<RatingSummary> {
     if let Some(earlier) = earlier {
         summary.count += earlier.count;
         summary.rating_sum += earlier.rating_sum;
+        summary.uncounted += earlier.uncounted;
     }
     Ok(summary)
 }
@@ -471,7 +527,7 @@ pub struct ItemRatingSummary {
 #[hdk_extern]
 pub fn get_item_rating_summary(item_ref: ActionHash) -> ExternResult<ItemRatingSummary> {
     let ratings = ratings(vec![item_ref.into()], LinkTypes::ItemToReview)?;
-    Ok(ItemRatingSummary { count: ratings.len() as u32, rating_sum: ratings.iter().map(|&r| r as u32).sum() })
+    Ok(ItemRatingSummary { count: ratings.len() as u32, rating_sum: ratings.iter().map(|&(_, r)| r as u32).sum() })
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -494,7 +550,7 @@ pub fn get_item_reviews(input: ItemReviewsInput) -> ExternResult<ReviewsPage> {
 mod test_utils {
     use hdk::prelude::*;
     use reputation_integrity::{EntryTypes, LinkTypes, Review};
-    handshake_coordinator_support::raw_link_test_externs!(StoreToEvent, DriverToEvent, CustomerToEvent, StoreToReview, DriverToReview, OrderToReview, ItemToReview);
+    handshake_coordinator_support::raw_link_test_externs!(StoreToEvent, DriverToEvent, CustomerToEvent, StoreToReview, DriverToReview, OrderToReview, ItemToReview, ReviewerToReview);
 
     /// Writes a review exactly as given, past the coordinator's checks --
     /// what a modified client could -- so a test can prove what validation

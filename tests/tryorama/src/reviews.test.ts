@@ -7,10 +7,13 @@
 // actually on that order, at most once per target per order, and never a
 // merchant rating their own store -- each enforced by validate() itself
 // except the one-per-order rule (coordinator-level, see `submit_review`).
+// And a store's rating counts only customers who've rated an order from
+// someone else too: a store's owner can't rate itself up with second
+// accounts that only ever order from it.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, decodeEntry, handOff, retryUntilOk, ST_PETE, testApp, retryingCaller } from "./helpers.js";
+import { acceptOrder, actionHash, collectFromStore, commitAndCook, customerPaid, decodeEntry, handOff, retryUntilOk, ST_PETE, testApp, retryingCaller } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [customer, merchant, driver] = await scenario.addPlayersWithApps([
@@ -26,7 +29,7 @@ await runScenario(async (scenario) => {
   const catalogOf = (p: typeof customer) => retryingCaller(p.cells[0], "catalog");
   const dispatchOf = (p: typeof customer) => retryingCaller(p.cells[0], "dispatch");
   const reputationOf = (p: typeof customer) => retryingCaller(p.cells[0], "reputation");
-  type Summary = { count: number; rating_sum: number };
+  type Summary = { count: number; rating_sum: number; uncounted: number };
   type Page = { reviews: HcRecord[]; next_before: number | null };
 
   const now = Date.now() * 1000;
@@ -124,20 +127,34 @@ await runScenario(async (scenario) => {
 
   await sync();
 
+  // --- A customer who's only ever rated this owner's stores could be its
+  // owner's second account: shown, not counted -- until they rate an order
+  // from someone else. ---
+  await retryUntilOk(async () => assert.deepEqual(await reputationOf(merchant)<Summary>("get_rating_summary", { Store: storeA }), { count: 0, rating_sum: 0, uncounted: 1 }));
+  const elsewhere = actionHash(await catalogOf(driver)<HcRecord>("publish_catalog", { business_name: "Dana's Donuts", location: ST_PETE }));
+  const donut = actionHash(await catalogOf(driver)<HcRecord>("add_menu_item", { catalog_ref: elsewhere, name: "Donut", price_cents: 300, available: true }));
+  await sync();
+  const pickup = actionHash(await dispatchOf(customer)<HcRecord>("request_pickup_order", { merchant: driver.agentPubKey, catalog_ref: elsewhere, items: [{ item_ref: donut, quantity: 1 }], order_total: 300 }));
+  await sync();
+  await customerPaid(driver, pickup, all);
+  await dispatchOf(driver)("accept_pickup_order", { order_original_action: pickup });
+  await dispatchOf(driver)("mark_ready_for_pickup", pickup);
+  await sync();
+  await dispatchOf(customer)("complete_pickup", pickup);
+  await sync();
+  await reputationOf(customer)("submit_review", { target: { Store: elsewhere }, order_original_action: pickup, rating: 3, comment: "Fine donut" });
+  await sync();
+  console.log("[PASS] a store's review from a customer who's only rated its owner is shown but not counted");
+
   // --- The point of scoping: every target only sees its own reviews. ---
-  const storeASummary = await retryUntilOk(async () => {
-    const s = await reputationOf(merchant)<Summary>("get_rating_summary", { Store: storeA });
-    assert.equal(s.count, 1);
-    return s;
-  });
-  assert.equal(storeASummary.rating_sum, 4);
-  assert.deepEqual(await reputationOf(merchant)<Summary>("get_rating_summary", { Store: storeB }), { count: 0, rating_sum: 0 }, "store B must not inherit store A's rating");
+  await retryUntilOk(async () => assert.deepEqual(await reputationOf(merchant)<Summary>("get_rating_summary", { Store: storeA }), { count: 1, rating_sum: 4, uncounted: 0 }, "rated elsewhere, the customer's review counts"));
+  assert.deepEqual(await reputationOf(merchant)<Summary>("get_rating_summary", { Store: storeB }), { count: 0, rating_sum: 0, uncounted: 0 }, "store B must not inherit store A's rating");
   assert.deepEqual(
     await reputationOf(merchant)<Summary>("get_rating_summary", { Driver: merchant.agentPubKey }),
-    { count: 0, rating_sum: 0 },
+    { count: 0, rating_sum: 0, uncounted: 0 },
     "the merchant's own driver rating must not include their store's review",
   );
-  assert.deepEqual(await reputationOf(driver)<Summary>("get_rating_summary", { Driver: driver.agentPubKey }), { count: 1, rating_sum: 5 });
+  assert.deepEqual(await reputationOf(driver)<Summary>("get_rating_summary", { Driver: driver.agentPubKey }), { count: 1, rating_sum: 5, uncounted: 0 });
   console.log("[PASS] get_rating_summary is scoped: store A 4★ (1), store B none, the merchant-as-driver none, the driver 5★ (1)");
 
   const driverPage = await reputationOf(driver)<Page>("get_reviews_for", { target: { Driver: driver.agentPubKey }, before: null });

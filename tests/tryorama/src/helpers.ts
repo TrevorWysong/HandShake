@@ -251,6 +251,9 @@ export async function payeeAgent(payee: PlayerApp): Promise<number> {
       await call("record_settlement", { hold: item.Settle.hold, claims: item.Settle.claims });
     } else if ("Refund" in item) {
       await call("record_refund", { settlement: item.Refund.settlement, ruling: item.Refund.ruling, amount: item.Refund.amount });
+    } else {
+      // A withdrawn card: nothing kept on a made-up processor to delete.
+      continue;
     }
     done += 1;
   }

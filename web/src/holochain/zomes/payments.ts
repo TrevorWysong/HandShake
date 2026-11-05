@@ -3,7 +3,7 @@
 // holds it on its own processor, asks for more, or declines it -- and later
 // captures exactly what it's owed. Amounts are always the network's.
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, OrderPayment, PaymentHistoryItem, PaymentInput, PaymentLeg, PaymentOwed, PaymentProfile, PaymentStanding } from "../types";
+import type { ActionHash, AgentPubKey, OrderPayment, PaymentHistoryItem, PaymentInput, PaymentLeg, PaymentOwed, PaymentProfile, PaymentStanding, SavedCard } from "../types";
 
 /// Offers a card for `leg` of `order`: a single-use token from the payee's
 /// processor's card form (or `null` for the card saved with them), sealed to
@@ -34,6 +34,17 @@ export async function orderPayments(order: ActionHash): Promise<OrderPayment[]> 
 /// tap at checkout.
 export async function hasSavedCard(payee: AgentPubKey): Promise<boolean> {
   return callZome("dispatch", "has_saved_card", payee);
+}
+
+/// The cards the caller keeps with a payee that still stand.
+export async function mySavedCards(): Promise<SavedCard[]> {
+  return callZome("dispatch", "my_saved_cards", null);
+}
+
+/// Withdraws the card the caller keeps with `payee`: it pays nothing more
+/// through HandShake, and the payee's agent deletes it.
+export async function forgetSavedCard(payee: AgentPubKey): Promise<ActionHash> {
+  return callZome("dispatch", "forget_saved_card", payee);
 }
 
 /// How `agent` is paid -- their processor and its public card-form details

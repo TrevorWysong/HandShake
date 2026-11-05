@@ -78,6 +78,8 @@ export function testProcessor(currency: string): Processor & { held: Map<string,
         hold.captured = amount;
       });
     },
+    async forget() {},
+
     async refund(ref, amount, idempotencyKey) {
       await once(idempotencyKey, "refund", () => {
         const hold = held.get(ref);

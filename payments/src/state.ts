@@ -11,6 +11,9 @@ import { dirname } from "node:path";
 export interface State {
   /// The processor's id for each payer's saved card, by payer (hex).
   saved: Record<string, string>;
+  /// When each saved card was last kept or used (ms), by payer (hex): one
+  /// unused for `SAVED_CARD_MS` is deleted.
+  savedAt: Record<string, number>;
   /// A challenged authorization's reference, by the challenge's action (hex).
   challenged: Record<string, string>;
   /// Each store's first-order deal: the order (hex) each card fingerprint
@@ -26,7 +29,7 @@ export interface State {
   declines: number[];
 }
 
-export const emptyState = (): State => ({ saved: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [] });
+export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [] });
 
 export interface StateStore {
   load(): Promise<State>;

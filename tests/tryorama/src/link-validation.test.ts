@@ -124,10 +124,12 @@ await runScenario(async (scenario) => {
 
   // --- Positive control: the honest links are all still there and counted. ---
   await sync();
-  const ratingA = await call(merchant, "reputation")<{ count: number; rating_sum: number }>("get_rating_summary", { Store: storeA });
-  const ratingB = await call(merchant, "reputation")<{ count: number; rating_sum: number }>("get_rating_summary", { Store: storeB });
-  assert.deepEqual(ratingA, { count: 1, rating_sum: 1 });
-  assert.deepEqual(ratingB, { count: 0, rating_sum: 0 }, "store B's rating must be untouched by every attempt above");
+  type Rating = { count: number; rating_sum: number; uncounted: number };
+  const ratingA = await call(merchant, "reputation")<Rating>("get_rating_summary", { Store: storeA });
+  const ratingB = await call(merchant, "reputation")<Rating>("get_rating_summary", { Store: storeB });
+  // From a customer who's only rated this owner: shown, not counted (reviews.test.ts).
+  assert.deepEqual(ratingA, { count: 0, rating_sum: 0, uncounted: 1 });
+  assert.deepEqual(ratingB, { count: 0, rating_sum: 0, uncounted: 0 }, "store B's rating must be untouched by every attempt above");
   const menuB = await call(merchant, "catalog")<{ items: unknown[] }>("list_menu_items", { catalog_ref: storeB, after: null });
   assert.equal(menuB.items.length, 0, "store B's menu must still be empty");
   console.log("[PASS] honest links still count; every attacked read is unchanged");

@@ -188,6 +188,10 @@ pub enum LinkTypes {
     /// exactly once).
     OrderToReview,
     ItemToReview,
+    /// A store review under its author, tagged with the reviewed store's
+    /// owner -- so a store's rating can count only reviewers who've also
+    /// rated an order from someone else (`get_rating_summary`).
+    ReviewerToReview,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -216,6 +220,17 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
 /// is generic over which vertical it's about, so this
 /// resolves either `DeliveryOrder` or `PickupOrder` to the same shape
 /// rather than duplicating both review functions once per order type.
+/// A `ReviewerToReview` link's tag: the reviewed store's owner.
+pub fn reviewer_tag(merchant: &AgentPubKey) -> LinkTag {
+    LinkTag::new(merchant.get_raw_39().to_vec())
+}
+
+/// The owner of the store a review's order was from, once it's reviewable:
+/// what its `ReviewerToReview` link is tagged with.
+pub fn reviewed_store_owner(order_ref: &ActionHash) -> ExternResult<Option<AgentPubKey>> {
+    Ok(resolve_reviewable_order(order_ref, "not delivered", "not picked up")?.ok().map(|order| order.merchant))
+}
+
 struct ReviewableOrder {
     requester: AgentPubKey,
     merchant: AgentPubKey,

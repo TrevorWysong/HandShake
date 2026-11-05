@@ -57,6 +57,9 @@ export interface Processor {
   capture(reference: string, amount: number, idempotencyKey: string): Promise<void>;
   /// Refunds `amount` of a captured payment.
   refund(reference: string, amount: number, idempotencyKey: string): Promise<void>;
+  /// Deletes the card kept as `savedAs` from the account, where the
+  /// processor allows it -- its payer withdrew it, or it went unused too long.
+  forget(savedAs: string): Promise<void>;
 }
 
 /// A failure that passes on its own -- the processor unreachable, or busy:
@@ -65,3 +68,6 @@ export class Retry extends Error {}
 
 /// A failure the agent can't fix by trying again, in words for the payee.
 export class Refused extends Error {}
+
+/// The processor has no record of what was asked about.
+export class NotFound extends Refused {}

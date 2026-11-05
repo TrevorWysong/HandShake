@@ -17,6 +17,7 @@ import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
 import { useSession } from "../store/session";
 import { useTerms } from "../store/network";
 import { useT, type MessageKey } from "../i18n";
+import { SavedCards } from "../components/payments/SavedCards";
 
 /// One step of connecting a processor: what to do, and where, if there's
 /// a page to open.
@@ -94,6 +95,10 @@ export function Payments() {
       </motion.div>
 
       {paid && <GettingPaid />}
+
+      <motion.div variants={fadeSlideUp}>
+        <SavedCards />
+      </motion.div>
 
       <motion.div variants={fadeSlideUp}>
         <Link to="/transparency" className="flex items-center gap-3 rounded-2xl border border-ink-100 bg-white p-4 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 dark:border-ink-800 dark:bg-ink-900">

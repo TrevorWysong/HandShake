@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { AlertTriangle, Bike, DoorOpen, ShieldCheck, Zap } from "lucide-react";
+import { AlertTriangle, Bike, DoorOpen, MapPin, ShieldCheck, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cancelOrder, claimNeverArrived, getMyHandoverCode, getOrder, getOrderDecisions, getOrderPrivateDetails, listBidsForOrder, acceptBid, confirmCollected } from "../../../holochain/zomes/dispatch";
 import { confirmDeliveryReceived, HandoffNotYetHere } from "../../../lib/orders/handoffs";
@@ -15,7 +15,9 @@ import { ChatPanel } from "../../../components/orders/ChatPanel";
 import { NetworkReach } from "../../../components/orders/NetworkReach";
 import { LiveMap } from "../../../components/places/LiveMap";
 import { WaitingForStore } from "../../../components/orders/WaitingForStore";
-import { formatCatalogAddress, formatCents, formatClockTime, formatDeadline } from "../../../lib/ui/format";
+import { formatCatalogAddress, formatCents, formatClockTime, formatDeadline, formatDistance } from "../../../lib/ui/format";
+import { distanceKm } from "../../../lib/places/geohash";
+import { ARRIVAL_NEAR_KM } from "../../../lib/orders/arrival";
 import { received } from "../../../lib/orders/orderEntries";
 import { LateOrder } from "../../../components/orders/LateOrder";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
@@ -83,21 +85,26 @@ export function OrderDetail() {
   // The exact drop-off and notes are sealed; the zome opens them for us.
   const { data: details } = useResource(`order-details:${hash}`, () => getOrderPrivateDetails(orderRef));
   const { data: itemNames = {} } = useResource(order ? `order-items:${hash}` : null, () => fetchOrderItemNames(order!));
-  // The drop-off photo can only appear once the order's picked up; polled
-  // until the handoff leg is attested, then read once more on delivery.
-  const photoStatus = order && (order.status === "PickedUp" || order.status === "Delivered") ? order.status : null;
+  // The driver's drop-off -- where they recorded it, and its photo -- can
+  // only appear once the order's picked up; polled until it's recorded,
+  // then read once more as the order moves on.
+  const photoStatus = order && ["PickedUp", "Unanswered", "Disputed", "Delivered"].includes(order.status) ? order.status : null;
   const { data: dropoff = null } = useResource(
     photoStatus && `order-dropoff:${hash}:${photoStatus}`,
     async () => {
-      const record = (await getLegsForOrder(orderRef)).find((r) => decodeEntry<Leg>(r).kind === "CustomerHandoff");
+      const legs = (await getLegsForOrder(orderRef)).filter((r) => decodeEntry<Leg>(r).kind === "CustomerHandoff");
+      const record = legs.sort((a, b) => timestampOf(b) - timestampOf(a))[0];
       if (!record) return null;
       // Sealed to this customer; only they and the driver can open it.
       const evidence = await getHandoffEvidence(actionHash(record));
-      return { at: timestampOf(record), photo: evidence?.photo_data_uri || null };
+      return { at: timestampOf(record), photo: evidence?.photo_data_uri || null, geo: evidence?.geo ?? null };
     },
     { pollMs: photoStatus === "PickedUp" ? POLL.signalled : undefined, refreshOn: (s) => "HandoffRecorded" in s || isOrderSignal(s) },
   );
   const dropoffPhoto = dropoff?.photo ?? null;
+  // How far from this customer's own drop-off point the driver recorded
+  // being -- worked out here, the only place both are known.
+  const arrivedKm = dropoff?.geo && details?.dropoff ? distanceKm(dropoff.geo, details.dropoff.point) : null;
   // Where a claim that it never arrived -- or the driver's word that nobody
   // came -- stands with the store.
   const contested = order?.status === "Disputed" || order?.status === "Unanswered";
@@ -355,6 +362,7 @@ export function OrderDetail() {
                   {decisions?.no_show_upheld_after ? t("noShow.customerDetail", { time: formatDeadline(decisions.no_show_upheld_after) }) : t("noShow.customerDetailSoon")}
                 </p>
               </div>
+              {arrivedKm !== null && <ArrivalDistance km={arrivedKm} />}
               {handedOver && (
                 <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmReceipt}>
                   {t("order.haveIt")}
@@ -467,5 +475,18 @@ export function OrderDetail() {
         </div>
       </div>
     </motion.div>
+  );
+}
+
+/// How far from the customer's address their driver recorded arriving:
+/// plainly, and loudly when it's too far to have been at their door.
+function ArrivalDistance({ km }: { km: number }) {
+  const t = useT();
+  const far = km > ARRIVAL_NEAR_KM;
+  return (
+    <p className={far ? "flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 dark:bg-red-900/20 dark:text-red-300" : "flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200"}>
+      <MapPin size={14} className="mt-0.5 shrink-0" />
+      {far ? t("noShow.far", { distance: formatDistance(km) }) : t("noShow.near")}
+    </p>
   );
 }

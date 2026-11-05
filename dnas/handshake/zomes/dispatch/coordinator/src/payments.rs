@@ -58,7 +58,7 @@ fn offer_resuming(order: &ActionHash, leg_of: PaymentLeg, input: PaymentInput, r
         Some(token) => Some(seal(&context.payee, token)?),
         None => None,
     };
-    let offer = PaymentOffer { order: order.clone(), leg: leg_of, sealed_token, save: input.save && input.token.is_some(), resumes };
+    let offer = PaymentOffer { order: order.clone(), leg: leg_of, payee: context.payee.clone(), sealed_token, save: input.save && input.token.is_some(), resumes };
     let hash = create_entry(&EntryTypes::PaymentOffer(offer))?;
     create_link(order.clone(), hash.clone(), LinkTypes::OrderToPayment, ())?;
     let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, vec![context.payee]);
@@ -85,22 +85,12 @@ pub fn offer_payment(input: OfferPaymentInput) -> ExternResult<ActionHash> {
     offer_resuming(&order, input.leg, input.payment, input.resumes)
 }
 
-/// How far back a payer's app looks for a card they saved with a payee.
-const SAVED_CARD_DAYS: i64 = 365;
-
-/// Whether the caller saved a card with `payee`: offered one with `save`,
-/// for a leg `payee` was paid on, and `payee` held it.
-fn saved_with(payee: &AgentPubKey) -> ExternResult<bool> {
-    let since = Timestamp::from_micros(sys_time()?.as_micros() - SAVED_CARD_DAYS * 86_400_000_000);
-    let offers = handshake_coordinator_support::chain::mine(&[EntryType::try_from(UnitEntryTypes::PaymentOffer)?]).creates().since(since).records()?;
-    for record in offers {
-        let Some(offer) = decode_or::<PaymentOffer>(&record).filter(|o| o.save) else { continue };
-        let held = holds_on(&offer.order)?.into_iter().any(|(_, author, hold, _)| &author == payee && &hold.offer == record.action_address());
-        if held {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+/// When the caller's card kept with `payee` was last kept or used, if it
+/// still stands -- the rule validation holds every saved-card offer to
+/// (`dispatch_integrity::payments::saved_card_with`), on their own chain.
+pub(crate) fn saved_with(payee: &AgentPubKey) -> ExternResult<Option<Timestamp>> {
+    let me = agent_info()?;
+    dispatch_integrity::payments::saved_card_with(&me.agent_initial_pubkey, &me.chain_head.0, sys_time()?, payee)
 }
 
 /// Whether the caller has a card saved with `payee` -- for a payer's
@@ -109,7 +99,56 @@ fn saved_with(payee: &AgentPubKey) -> ExternResult<bool> {
 /// uses it only for an offer that account made.
 #[hdk_extern]
 pub fn has_saved_card(payee: AgentPubKey) -> ExternResult<bool> {
-    saved_with(&payee)
+    Ok(saved_with(&payee)?.is_some())
+}
+
+/// A card the caller keeps with a payee, as their Payments screen lists it.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SavedCard {
+    pub payee: AgentPubKey,
+    /// The store it was last kept or used for -- what the screen names.
+    pub store: ActionHash,
+    /// When it's forgotten if it isn't used before then.
+    pub stands_until: Timestamp,
+}
+
+/// Every card the caller keeps with a payee that still stands.
+#[hdk_extern]
+pub fn my_saved_cards(_: ()) -> ExternResult<Vec<SavedCard>> {
+    let since = Timestamp::from_micros(sys_time()?.as_micros() - dispatch_integrity::payments::SAVED_CARD_DAYS * 86_400_000_000);
+    let offers = handshake_coordinator_support::chain::mine(&[EntryType::try_from(UnitEntryTypes::PaymentOffer)?]).creates().since(since).records()?;
+    let mut cards: Vec<SavedCard> = Vec::new();
+    for record in offers.iter().rev() {
+        let Some(offer) = decode_or::<PaymentOffer>(record) else { continue };
+        if cards.iter().any(|c| c.payee == offer.payee) {
+            continue;
+        }
+        let Some(last) = saved_with(&offer.payee)? else { continue };
+        let Some(store) = store_of(&offer.order)? else { continue };
+        let stands_until = Timestamp::from_micros(last.as_micros() + dispatch_integrity::payments::SAVED_CARD_DAYS * 86_400_000_000);
+        cards.push(SavedCard { payee: offer.payee, store, stands_until });
+    }
+    Ok(cards)
+}
+
+/// The store an order is from.
+fn store_of(order: &ActionHash) -> ExternResult<Option<ActionHash>> {
+    let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
+    Ok(decode_or::<DeliveryOrder>(&record).map(|o| o.catalog_ref).or_else(|| decode_or::<PickupOrder>(&record).map(|o| o.catalog_ref)))
+}
+
+/// The caller withdrawing the card they keep with `payee`: it pays nothing
+/// more through HandShake, and the payee's agent deletes it from its
+/// processor -- on the caller's record either way.
+#[hdk_extern]
+pub fn forget_saved_card(payee: AgentPubKey) -> ExternResult<ActionHash> {
+    if saved_with(&payee)?.is_none() {
+        return Err(guest("There's no card kept with them to forget."));
+    }
+    let hash = create_entry(&EntryTypes::SavedCardForgotten(SavedCardForgotten { payee: payee.clone() }))?;
+    create_link(payee.clone(), hash.clone(), LinkTypes::AgentToForgottenCard, ())?;
+    let _ = send_remote_signal(crate::signals::RemoteSignal::CardForgotten, vec![payee]);
+    Ok(hash)
 }
 
 /// The caller's app offering their saved card for `leg` of `order`, by
@@ -124,7 +163,7 @@ pub(crate) fn offer_saved(order: &ActionHash, leg_of: PaymentLeg) -> ExternResul
     let offered = get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToPayment)?.author(me), GetStrategy::Local)?.into_iter().any(|link| {
         link.target.into_action_hash().and_then(|h| get(h, GetOptions::local()).ok().flatten()).and_then(|r| decode_or::<PaymentOffer>(&r)).is_some_and(|o| o.leg == leg_of)
     });
-    if offered || !saved_with(&context.payee)? {
+    if offered || saved_with(&context.payee)?.is_none() {
         return Ok(false);
     }
     offer(order, leg_of, PaymentInput { token: None, save: false })?;
@@ -219,12 +258,17 @@ pub enum PaymentDue {
         /// card each, which the agent checks by its processor's card
         /// fingerprint (on-chain, a first order is one per account).
         newcomer_deal: Option<ActionHash>,
+        /// When the payer made the offer: what a kept card is dated by.
+        offered_at: Timestamp,
     },
     /// Capture `captured` of a hold -- releasing the rest; nothing, to
     /// release it all -- and record the claims.
     Settle { hold: ActionHash, reference: String, held: u64, captured: u64, claims: Vec<DueClaim> },
     /// Refund an arbiter's award from a captured payment.
     Refund { settlement: ActionHash, reference: String, ruling: ActionHash, amount: u64 },
+    /// Delete the card `payer` kept here from the processor -- they withdrew
+    /// it `at`. A card they kept again after that stays.
+    Forget { payer: AgentPubKey, at: Timestamp },
 }
 
 /// How many days of orders the agent looks through: a card authorization
@@ -241,6 +285,32 @@ pub fn payments_due(_: ()) -> ExternResult<Vec<PaymentDue>> {
         due.extend(due_on(&order, &me).unwrap_or_default());
     }
     due.extend(refunds_due(&me)?);
+    due.extend(forgotten_cards(&me)?);
+    Ok(due)
+}
+
+/// The cards payers have withdrawn from the caller, within the time a card
+/// could still stand: each payer's latest withdrawal.
+fn forgotten_cards(me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>> {
+    let since = sys_time()?.as_micros() - dispatch_integrity::payments::SAVED_CARD_DAYS * 86_400_000_000;
+    let mut due: Vec<PaymentDue> = Vec::new();
+    for link in get_links(LinkQuery::try_new(me.clone(), LinkTypes::AgentToForgottenCard)?, GetStrategy::default())? {
+        if link.timestamp.as_micros() < since {
+            continue;
+        }
+        let Some(record) = link.target.into_action_hash().and_then(|hash| get(hash, GetOptions::default()).ok().flatten()) else { continue };
+        if decode_or::<SavedCardForgotten>(&record).is_none_or(|f| &f.payee != me) {
+            continue;
+        }
+        let (payer, at) = (record.action().author().clone(), record.action().timestamp());
+        match due.iter_mut().find_map(|d| match d {
+            PaymentDue::Forget { payer: p, at: a } if p == &payer => Some(a),
+            _ => None,
+        }) {
+            Some(latest) => *latest = (*latest).max(at),
+            None => due.push(PaymentDue::Forget { payer, at }),
+        }
+    }
     Ok(due)
 }
 
@@ -290,7 +360,7 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
     // held.
     offers.sort_by_key(|(at, ..)| *at);
     let mut seen: Vec<PaymentLeg> = Vec::new();
-    for (_, offer_ref, payer, offer) in offers.into_iter().rev() {
+    for (offered_at, offer_ref, payer, offer) in offers.into_iter().rev() {
         if seen.contains(&offer.leg) || held_legs.contains(&offer.leg) || answered.contains(&offer_ref) || !wanted(&offer.leg) {
             continue;
         }
@@ -307,7 +377,7 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
             None => None,
         };
         let newcomer_deal = if offer.leg == PaymentLeg::Customer { newcomer_deal(order)? } else { None };
-        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, newcomer_deal });
+        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, newcomer_deal, offered_at });
     }
     // Each of my holds, once nothing can change what it's owed.
     for (hold_ref, hold) in my_holds {

@@ -54,6 +54,9 @@ export function Cart() {
   const setSessionLocation = useSession((s) => s.setLocation);
   // Placing the order, or saving it to repeat -- one at a time.
   const action = useAction();
+  // A standing order set up from this cart: paid with a card kept with the
+  // store, which its checkout then offers to keep.
+  const [standingOrder, setStandingOrder] = useState(false);
 
   const catalogRef = cart.catalogRef;
   const { data: storeInfo } = useResource(catalogRef && `cart-store:${bytesToHex(catalogRef)}`, () => fetchCartStoreInfo(catalogRef!));
@@ -223,8 +226,8 @@ export function Cart() {
     if (!cart.catalogRef || !cart.merchant) return;
     const [catalog_ref, merchant] = [cart.catalogRef, cart.merchant];
     return action.run(
-      () =>
-        createRecurringTemplate({
+      async () => {
+        await createRecurringTemplate({
           merchant,
           catalog_ref,
           items: cartItems(cart.lines),
@@ -240,7 +243,9 @@ export function Cart() {
           promo_code_ref: discounts.appliedPromo?.hash ?? null,
           recurrence,
           time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }),
+        });
+        setStandingOrder(true);
+      },
       { as: "recurring" },
     );
   }
@@ -356,6 +361,10 @@ export function Cart() {
           payee={cart.merchantName ?? t("cart.theStore")}
           amountCents={price.holdCents}
           canUseSaved={savedCard}
+          // A card is kept with a store only for a standing order, which is
+          // paid with it while the customer's away.
+          offerToSave={standingOrder && !savedCard}
+          forStandingOrder={standingOrder && !savedCard}
           title={t("cart.payTitle", { payee: cart.merchantName ?? t("cart.theStore") })}
           subtitle={delivery ? t("cart.paySubtitleDelivery") : t("cart.paySubtitlePickup")}
           onClose={() => setPaying(false)}

@@ -11,6 +11,7 @@ import { formatCents, nowMicros } from "../../lib/ui/format";
 import { Chip, ChipRow, Skeleton } from "../../components/ui";
 import { useTerms } from "../../store/network";
 import { useT } from "../../i18n";
+import { RatingCounted } from "../../components/store/RatingCounted";
 import { StoreContact } from "../../components/store/StoreContact";
 import { StarRating } from "../../components/StarRating";
 import { StoreRewardsStrip } from "./Rewards";
@@ -249,6 +250,7 @@ function StorePage({ hash }: { hash: string }) {
             </motion.div>
 
             <motion.div variants={fadeSlideUp}>
+              {rating && <RatingCounted rating={rating} />}
               <ReviewList className="mt-6" feedKey={`store:${hash}`} fetchPage={(before) => getReviewsFor({ Store: catalogHash }, before)} />
             </motion.div>
           </div>

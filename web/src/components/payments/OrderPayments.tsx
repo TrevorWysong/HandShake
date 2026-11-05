@@ -62,6 +62,7 @@ function OwedPayment({ order, owed, delivery, compact }: { order: ActionHash; ow
           profile={profile}
           payee={payee}
           amountCents={owed.amount}
+          offerToSave
           title={t(words.action, { amount: formatCents(owed.amount) })}
           subtitle={t(words.subtitle)}
           onClose={() => setPaying(false)}

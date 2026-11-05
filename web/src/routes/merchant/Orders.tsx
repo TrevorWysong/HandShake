@@ -39,6 +39,7 @@ import { Button, Card, Chip, ChipRow, EmptyState, Notice, SegmentedTabs, Skeleto
 import { StatusBadge, PickupStatusBadge } from "../../components/orders/OrderStatus";
 import { ChatPanel } from "../../components/orders/ChatPanel";
 import { OrderPayments } from "../../components/payments/OrderPayments";
+import { NoShowEvidence } from "../../components/orders/NoShowEvidence";
 import { bytesEqual } from "../../holochain/decode";
 import { formatCents, formatClockTime, formatDeadline, formatEta } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
@@ -560,6 +561,7 @@ function NeverArrivedClaim({ orderHex, orderRef, disputed }: { orderHex: string;
       <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">
         <span className="font-semibold">{words.title}</span> {words.detail}
       </p>
+      {disputed && upheld && <NoShowEvidence orderHex={orderHex} orderRef={orderRef} />}
       {/* Only a customer's claim is the store's to decide for them. */}
       {disputed && (
         <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={deciding.busy} onClick={decide}>

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, decodeEntry, retryUntilOk, ST_PETE, useTestCoordinators, testApp, retryingCaller, customerPaid } from "./helpers.js";
+import { acceptOrder, actionHash, agentAsLinkBase, decodeEntry, retryUntilOk, ST_PETE, useTestCoordinators, testApp, retryingCaller, customerPaid } from "./helpers.js";
 
 await runScenario(async (scenario) => {
   const [merchant, customer, attacker, driver] = await scenario.addPlayersWithApps([
@@ -96,13 +96,15 @@ await runScenario(async (scenario) => {
   // The rating rides on the link, checked against the review it points at.
   const fiveStars = new Uint8Array([5, ...pickup]);
   await assert.rejects(call(customer, "reputation")("test_create_link", { link_type: "StoreToReview", base: store, target: review, tag: Array.from(fiveStars) }), /must carry exactly what its entry says/);
-  const rating = await retryUntilOk(async () => {
-    const r = await call(merchant, "reputation")<{ count: number; rating_sum: number }>("get_rating_summary", { Store: store });
-    assert.equal(r.count, 1);
-    return r;
+  // Nor can a reviewer claim to have rated another store's order, to have
+  // their review counted: the tag is the reviewed order's real store owner.
+  await assert.rejects(call(customer, "reputation")("test_create_link", { link_type: "ReviewerToReview", base: agentAsLinkBase(customer.agentPubKey), target: review, tag: Array.from(attacker.agentPubKey) }), /must carry exactly what its entry says/);
+  await assert.rejects(call(attacker, "reputation")("test_create_link", { link_type: "ReviewerToReview", base: agentAsLinkBase(attacker.agentPubKey), target: review, tag: Array.from(merchant.agentPubKey) }), /authored by the author/, "nor borrow someone else's review");
+  await retryUntilOk(async () => {
+    const r = await call(merchant, "reputation")<{ count: number; rating_sum: number; uncounted: number }>("get_rating_summary", { Store: store });
+    assert.deepEqual(r, { count: 0, rating_sum: 0, uncounted: 1 }, "one real review, from a customer who's rated nowhere else: shown, not counted");
   });
-  assert.equal(rating.rating_sum, 1, "one real one-star review is a one-star rating");
-  console.log("[PASS] a rating can't be inflated by a forged link, and is the sum of real reviews");
+  console.log("[PASS] a rating can't be inflated by a forged link, nor a review counted by a forged claim to have ordered elsewhere");
 
   // --- Nobody records reputation about an order they weren't part of. ---
   await assert.rejects(

@@ -59,6 +59,11 @@ pub fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target
             Some(r) => Some((LinkTypes::ItemToReview, r.item_ref.into(), Some(review_tag(r.rating, &original_creation(r.order_ref)?)))),
             None => None,
         },
+        // Tagged with the owner of the store the order was really from.
+        LinkTypes::ReviewerToReview => match decode::<Review>(&record) {
+            Some(r) if matches!(r.target, ReviewTarget::Store(_)) => reviewed_store_owner(&r.order_ref)?.map(|owner| (LinkTypes::ReviewerToReview, r.author.into(), Some(reviewer_tag(&owner)))),
+            _ => None,
+        },
     };
     let Some((expected_type, expected_base, expected_tag)) = expected else {
         return invalid("a reputation link's target is not the entry type its link type indexes");

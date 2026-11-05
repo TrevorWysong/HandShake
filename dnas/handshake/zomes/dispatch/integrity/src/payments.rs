@@ -11,7 +11,10 @@
 //!   more than was held; a part the store passes on to a driver, exactly
 //!   what the driver took;
 //! - one hold per leg, one settlement per hold, and a bounded number of
-//!   offers per leg, so a store's account can't be used to test cards.
+//!   offers per leg, so a store's account can't be used to test cards;
+//! - a card kept with a payee pays them only while it stands: saved or used
+//!   in the last `SAVED_CARD_DAYS`, and not withdrawn since
+//!   (`saved_card_with`).
 //!
 //! A payee recording what its processor didn't do only shortchanges itself;
 //! one charging what isn't recorded leaves the record as its payer's proof.
@@ -19,7 +22,7 @@
 use super::*;
 use crate::basis::{basis_of, chain_check, part_bid};
 use dispatch_types::direct::{entitlement, part_share, Entitlement, PaymentLeg, Part};
-use dispatch_types::{Claim, PaymentAction, PaymentDeclined, PaymentHold, PaymentOffer, PaymentProfile, PaymentRefund, PaymentSettlement, Processor};
+use dispatch_types::{Claim, PaymentAction, PaymentDeclined, PaymentHold, PaymentOffer, PaymentProfile, PaymentRefund, PaymentSettlement, Processor, SavedCardForgotten};
 use handshake_integrity_support::chain::entries_since;
 use handshake_integrity_support::limits::MAX_SEALED_BYTES;
 use handshake_integrity_support::{decode, original_creation, sealed_problem, valid};
@@ -28,6 +31,15 @@ use handshake_integrity_support::{decode, original_creation, sealed_problem, val
 /// declined card or two, and a 3-D Secure retry, without letting anyone run
 /// card after card through a store's account.
 pub const MAX_OFFERS_PER_LEG: usize = 6;
+
+/// How long a card kept with a payee stands unused: past it, it's forgotten,
+/// and the payer pays with a card again.
+pub const SAVED_CARD_DAYS: i64 = 180;
+
+/// The most actions a payer's chain is walked for their saved card -- the
+/// walk stops at its latest save, use or withdrawal, which for a card in use
+/// is near the top. Past it, it doesn't stand.
+const MAX_SAVED_CARD_WALK: usize = 20_000;
 
 /// The longest a processor's id for an authorization may be.
 const MAX_REFERENCE_CHARS: usize = 120;
@@ -100,6 +112,46 @@ fn written_since<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(auth
     Ok(entries_since(author, chain_top, since, &[entry_type(unit)?])?.into_iter().filter_map(|bytes| T::try_from(bytes).ok()).collect())
 }
 
+/// When `payer` last kept or used a card with `payee`, if it still stands as
+/// of `at` -- by their own chain from `chain_top`, newest first, to the
+/// first save, use or withdrawal for `payee`: a save or a use within
+/// `SAVED_CARD_DAYS` stands; a withdrawal, anything older, or nothing, doesn't.
+/// Validation of every saved-card offer, and the payer's own app, ask this.
+pub fn saved_card_with(payer: &AgentPubKey, chain_top: &ActionHash, at: Timestamp, payee: &AgentPubKey) -> ExternResult<Option<Timestamp>> {
+    let since = Timestamp::from_micros(at.as_micros().saturating_sub(SAVED_CARD_DAYS * 86_400_000_000));
+    let [offer_type, forgotten_type] = [entry_type(UnitEntryTypes::PaymentOffer)?, entry_type(UnitEntryTypes::SavedCardForgotten)?];
+    let mut found: Option<Option<Timestamp>> = None;
+    let mut walked = 0;
+    handshake_integrity_support::chain::walk_back(payer, chain_top, |item| {
+        walked += 1;
+        let action = &item.action.hashed.content;
+        if action.timestamp() < since || walked > MAX_SAVED_CARD_WALK {
+            return Ok(std::ops::ControlFlow::Break(()));
+        }
+        let Some(entry_hash) = action.entry_hash() else { return Ok(std::ops::ControlFlow::Continue(())) };
+        let bytes = || -> ExternResult<Option<SerializedBytes>> {
+            Ok(match handshake_integrity_support::chain::entry_of(&item, entry_hash)? {
+                Entry::App(bytes) => Some(SerializedBytes::from(bytes)),
+                _ => None,
+            })
+        };
+        if handshake_integrity_support::chain::creates_one_of(action, &[forgotten_type]) {
+            if bytes()?.and_then(|b| SavedCardForgotten::try_from(b).ok()).is_some_and(|f| &f.payee == payee) {
+                found = Some(None);
+                return Ok(std::ops::ControlFlow::Break(()));
+            }
+        } else if handshake_integrity_support::chain::creates_one_of(action, &[offer_type]) {
+            let kept = bytes()?.and_then(|b| PaymentOffer::try_from(b).ok()).is_some_and(|o| &o.payee == payee && (o.save || (o.sealed_token.is_none() && o.resumes.is_none())));
+            if kept {
+                found = Some(Some(action.timestamp()));
+                return Ok(std::ops::ControlFlow::Break(()));
+            }
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    })?;
+    Ok(found.flatten())
+}
+
 /// Whether `text` is an id a processor would issue: a short run of letters,
 /// digits, `_` and `-`.
 fn processor_id(text: &str, max: usize) -> bool {
@@ -148,7 +200,7 @@ pub fn validate_profile(profile: &PaymentProfile) -> ExternResult<ValidateCallba
     valid()
 }
 
-pub fn validate_offer(offer: &PaymentOffer, author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
+pub fn validate_offer(offer: &PaymentOffer, author: &AgentPubKey, at: Timestamp, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
     let Some(prev_action) = prev_action else { return invalid("a payment record can't open a chain") };
     let context = match leg_context(&offer.order, &offer.leg)? {
         Ok(context) => context,
@@ -156,6 +208,14 @@ pub fn validate_offer(offer: &PaymentOffer, author: &AgentPubKey, prev_action: O
     };
     if author != &context.payer {
         return invalid("a payment is offered by whoever pays that leg");
+    }
+    if offer.payee != context.payee {
+        return invalid("a payment is offered to whoever that leg pays");
+    }
+    // A kept card pays only while it stands.
+    let saved_card = offer.sealed_token.is_none() && offer.resumes.is_none();
+    if saved_card && saved_card_with(author, prev_action, at, &offer.payee)?.is_none() {
+        return invalid("there's no card kept with this payee: it was never kept, it was withdrawn, or it went unused too long");
     }
     if let Some(sealed) = &offer.sealed_token {
         if let Some(problem) = sealed_problem("sealed_token", sealed, MAX_SEALED_BYTES) {

@@ -347,6 +347,35 @@ pub struct DropoffShare {
     pub sealed: XSalsa20Poly1305EncryptedData,
 }
 
+/// What a party to a no-show tells the order's store, sealed to it, so it
+/// can decide a dispute on more than each side's word: the driver's photo
+/// of the door, as they say nobody came; how far from the drop-off point
+/// they recorded arriving, as the customer's app worked it out when they
+/// say they were there. Never anyone's coordinates.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+// Decodes only from its own fields: a record of another type that
+// happens to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct ArrivalEvidence {
+    /// The order's original action.
+    pub order: ActionHash,
+    /// A version of the order showing the author is its customer, or its
+    /// driver.
+    pub version: ActionHash,
+    /// An `ArrivalNote`, sealed to the store.
+    pub sealed: handshake_integrity_support::SealedChunks,
+}
+
+/// What's sealed in an `ArrivalEvidence`. The store's app reads each only
+/// from the party it's theirs to give: the photo from the driver, the
+/// distance from the customer.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum ArrivalNote {
+    DoorPhoto(String),
+    ArrivedMetres(u32),
+}
+
 /// Prices an order's lines with their choices, reading each choice group
 /// version the order names once however many lines name it.
 #[derive(Default)]
@@ -866,5 +895,9 @@ mod type_confusion_tests {
         assert!(CollectRequest::try_from(bytes).is_err());
         let request = SerializedBytes::try_from(CollectRequest { order: hash(1) }).unwrap();
         assert!(CollectRequest::try_from(request).is_ok());
+        // Nor does evidence for the store read as either.
+        let evidence = SerializedBytes::try_from(ArrivalEvidence { order: hash(1), version: hash(2), sealed: handshake_integrity_support::SealedChunks(vec![]) }).unwrap();
+        assert!(CollectRequest::try_from(evidence.clone()).is_err());
+        assert!(DropoffShare::try_from(evidence).is_err());
     }
 }

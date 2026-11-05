@@ -130,3 +130,29 @@ test("a payer's token is only ever a fresh one from the card form -- never a sav
     }
   }
 });
+
+test("a withdrawn card is detached at Stripe and disabled at Square -- and only a card the agent kept is touched", async () => {
+  const { stripeProcessor } = await import("../src/adapters/stripe.ts");
+  const stripe = api([[200, {}]]);
+  await stripeProcessor({ publishable_key: "pk_test_abcdefghijklmnop", restricted_key: "rk_test_abcdefghijklmnop" }, "USD", stripe.fetchImpl).forget("cus_A1:pm_B2");
+  assert.match(stripe.sent[0].url, /\/v1\/payment_methods\/pm_B2\/detach$/);
+  await assert.rejects(stripeProcessor({ publishable_key: "pk_test_abcdefghijklmnop", restricted_key: "rk_test_abcdefghijklmnop" }, "USD", api([]).fetchImpl).forget("cus_A1:../../v1/charges"), /isn't a card kept here/);
+  const square = api([[200, {}]]);
+  await squareProcessor(SQUARE, "USD", square.fetchImpl).forget("CUST1:ccof:CARD2");
+  assert.match(square.sent[0].url, /\/cards\/ccof:CARD2\/disable$/);
+  await assert.rejects(squareProcessor(SQUARE, "USD", api([]).fetchImpl).forget("CUST1:a/b"), /isn't a card kept here/);
+});
+
+test("clover: a withdrawn card is revoked; a customer already gone is no failure", async () => {
+  const clover = (answers: [number, unknown][]) => {
+    const made = api([[200, { name: "Shop", defaultCurrency: "USD" }], ...answers]);
+    return { ...made, processor: cloverProcessor(CLOVER, "USD", made.fetchImpl) };
+  };
+  const kept = clover([[200, { id: "CUST1", sources: { data: [{ id: "CARD2" }] } }], [200, {}]]);
+  await kept.processor.forget("CUST1");
+  assert.equal(kept.sent.at(-1)!.method, "DELETE");
+  assert.match(kept.sent.at(-1)!.url, /\/v1\/customers\/CUST1\/sources\/CARD2$/);
+  await clover([[404, {}]]).processor.forget("CUST1");
+  await assert.rejects(clover([]).processor.forget("../v1/charges"), /isn't a card kept here/);
+  await assert.rejects(clover([[200, { id: "CUST1" }]]).processor.forget("CUST1"), /didn't list/, "never quietly done without having deleted it");
+});

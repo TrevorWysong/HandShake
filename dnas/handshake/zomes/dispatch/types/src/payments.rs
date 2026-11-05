@@ -61,6 +61,10 @@ pub struct PaymentOffer {
     /// The order's original action.
     pub order: ActionHash,
     pub leg: PaymentLeg,
+    /// Who it's offered to: the leg's payee, as validation checks -- so a
+    /// payer's own chain says, without reading any order, whom they've kept
+    /// a card with (`payments::saved_card_with`).
+    pub payee: AgentPubKey,
     /// A single-use token from the payee's processor's card form, sealed to
     /// the payee. `None`: the card the payer saved with this payee.
     pub sealed_token: Option<XSalsa20Poly1305EncryptedData>,
@@ -139,6 +143,19 @@ pub struct PaymentSettlement {
     pub claims: Vec<Claim>,
     /// The sum of the claims: what the payee's processor captured.
     pub captured: u64,
+}
+
+/// A payer withdrawing the card they kept with `payee`: from here on it
+/// pays nothing through HandShake, and the payee's agent deletes it from
+/// its processor account. Written on the payer's own chain, so the
+/// withdrawal is on their record -- the evidence for any charge after it.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+// Decodes only from its own fields: a record of another type that happens
+// to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct SavedCardForgotten {
+    pub payee: AgentPubKey,
 }
 
 /// A store refunding an arbiter's award to its customer, from what it

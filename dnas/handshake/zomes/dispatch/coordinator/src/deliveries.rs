@@ -523,14 +523,23 @@ pub fn customer_not_here(input: TimedStepInput) -> ExternResult<Record> {
         return Err(guest("Only the order's driver, with it in hand, says nobody came to take it."));
     }
     let arrival = arrival_of(&order_ref, &me)?.ok_or(guest("Record that you've arrived first: hand it over at the door, and the customer is told you're there."))?;
+    // With a photo of the door: the customer's evidence, and the store's if
+    // they dispute it. (Sealed to the customer, so only the apps check it.)
+    let evidence: Option<attestation_types::HandoffEvidence> = call_local("attestation", "get_handoff_evidence", arrival.action_address().clone())?.map_err(|why| guest(format!("couldn't read your arrival: {why}")))?;
+    let photo = evidence.map(|e| e.photo_data_uri).filter(|photo| !photo.is_empty());
+    let photo = photo.ok_or(guest("Take a photo of the door as you arrive: it's what shows the customer, and the store, that you were there."))?;
     let waited_until = Timestamp::from_micros(arrival.action().timestamp().as_micros().saturating_add(handshake_governance::dropoff_wait().as_micros() as i64));
     if !past(waited_until, true, input.beacon.as_ref())? {
         return Err(guest("The customer still has time to come to the door."));
     }
+    let merchant = order.merchant.clone();
     order.status = DeliveryStatus::Unanswered;
     order.delivery_receipts = vec![arrival.action_address().clone()];
     order.beacon = input.beacon;
-    write(&version, order)
+    let unanswered = write(&version, order)?;
+    // The store sees the door too, should the customer say they were there.
+    crate::never_arrived::give_store_evidence(&order_ref, version.record.action_address(), &merchant, ArrivalNote::DoorPhoto(photo))?;
+    Ok(unanswered)
 }
 
 /// The caller's latest drop-off handoff for `order_ref` that no code or
