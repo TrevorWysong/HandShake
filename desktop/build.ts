@@ -82,6 +82,12 @@ const PATCHES = [
     to: '"composite": true,\n    "allowImportingTsExtensions": true',
   },
   {
+    // Its web typecheck names no files, so it reads the main process's too.
+    file: "tsconfig.web.json",
+    from: '"composite": true',
+    to: '"composite": true,\n    "allowImportingTsExtensions": true',
+  },
+  {
     // Kangaroo installs the hApp with one network seed for every role. Ours
     // carries its seeds already (package.ts), and a migration release has
     // two roles on different seeds -- overriding both would put the

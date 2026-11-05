@@ -107,7 +107,9 @@ export class Engine {
 
   async #authorize(due: Extract<PaymentDue, { Authorize: unknown }>["Authorize"], state: State) {
     const { dispatch, processor, currency, now } = this.#o;
-    const decline = (code: DeclineCode) => dispatch("record_declined", { offer: due.offer, code });
+    const decline = async (code: DeclineCode) => {
+      await dispatch("record_declined", { offer: due.offer, code });
+    };
     const payer = hex(due.payer);
     const order = hex(due.order);
     const offerKey = idempotencyKey("authorize", due.offer);
