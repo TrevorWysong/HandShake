@@ -189,20 +189,25 @@ export class Engine {
     const { processor, state: store, now, onProblem } = this.#o;
     const state = await store.load();
     let expired = 0;
+    let changed = false;
     for (const [payer, savedAs] of Object.entries(state.saved)) {
       // Kept before cards were dated: from now.
-      state.savedAt[payer] ??= now();
+      if (state.savedAt[payer] === undefined) {
+        state.savedAt[payer] = now();
+        changed = true;
+      }
       if (now() - state.savedAt[payer] < SAVED_CARD_MS) continue;
       try {
         await processor.forget(savedAs);
         delete state.saved[payer];
         delete state.savedAt[payer];
         expired += 1;
+        changed = true;
       } catch (err) {
         onProblem("Forget", err);
       }
     }
-    await store.save(state);
+    if (changed) await store.save(state);
     return expired;
   }
 
