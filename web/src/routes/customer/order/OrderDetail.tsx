@@ -358,7 +358,6 @@ export function OrderDetail() {
               <div className="flex items-start gap-3">
                 <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600" />
                 <p className="text-sm text-amber-900 dark:text-amber-100">
-                  <span className="font-semibold">{t("noShow.customerTitle")}</span>{" "}
                   {decisions?.no_show_upheld_after ? t("noShow.customerDetail", { time: formatDeadline(decisions.no_show_upheld_after) }) : t("noShow.customerDetailSoon")}
                 </p>
               </div>

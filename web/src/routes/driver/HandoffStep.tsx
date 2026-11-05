@@ -17,7 +17,7 @@ import { HANDOFF_CODE_DIGITS, type DeliveryOrder, type GeoPoint, type Leg, type 
 import { useResource } from "../../lib/hooks/useResource";
 import { useClock } from "../../lib/hooks/useClock";
 import { useTerms } from "../../store/network";
-import { currentBeacon } from "../../lib/network/timeSource";
+import { currentBeacon, PROOF_MARGIN_MICROS } from "../../lib/network/timeSource";
 import { formatClockTime, formatDeadline } from "../../lib/ui/format";
 import { POLL } from "../../lib/network/poll";
 import { decodeHandoverCode, matchesCommitment } from "../../lib/orders/handoverCode";
@@ -265,7 +265,7 @@ async function arrivalOf(orderRef: Uint8Array): Promise<number | null> {
 function NobodyCame({ arrivedAt, busy, onSay }: { arrivedAt: number; busy: boolean; onSay: () => void }) {
   const t = useT();
   const now = useClock(15_000).getTime() * 1000;
-  const canSay = arrivedAt + useTerms().dropoff_wait_secs * 1_000_000;
+  const canSay = arrivedAt + useTerms().dropoff_wait_secs * 1_000_000 + PROOF_MARGIN_MICROS;
   const waited = now >= canSay;
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-amber-50 p-4 dark:bg-amber-900/20">

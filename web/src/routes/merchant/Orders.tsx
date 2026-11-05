@@ -32,7 +32,7 @@ import { useClock } from "../../lib/hooks/useClock";
 import { DECLINE_REASONS, declineLabel, responseDeadlineMs } from "../../lib/orders/storeAnswers";
 import { useTerms } from "../../store/network";
 import { useStoreSteps } from "../../lib/orders/storeSteps";
-import { currentBeacon } from "../../lib/network/timeSource";
+import { currentBeacon, PROOF_MARGIN_MICROS } from "../../lib/network/timeSource";
 import { ResponseCountdown } from "../../components/orders/ResponseCountdown";
 import { NoStoreYet } from "../../components/store/NoStoreYet";
 import { Button, Card, Chip, ChipRow, EmptyState, Notice, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
@@ -595,7 +595,7 @@ function NeverCameForPickup({ row }: { row: QueueRow }) {
   const t = useT();
   const now = useClock(30_000);
   const recording = useAction();
-  if (now.getTime() * 1000 < row.writtenAt + windowSecs * 1_000_000) return null;
+  if (now.getTime() * 1000 < row.writtenAt + windowSecs * 1_000_000 + PROOF_MARGIN_MICROS) return null;
   return (
     <>
       <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={recording.busy} onClick={() => recording.run(async () => markPickupNotCollected(row.ref, await currentBeacon()))}>
