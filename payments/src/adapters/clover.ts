@@ -12,7 +12,7 @@
 // sandbox: see DIRECT_PAYMENTS.md.
 import { createHash } from "node:crypto";
 import type { Authorization, AuthorizeRequest, Connection, Processor } from "../processor.ts";
-import { Refused, Retry } from "../processor.ts";
+import { NotFound, Refused, Retry } from "../processor.ts";
 import type { DeclineCode } from "../types.ts";
 
 export interface CloverKeys {
@@ -57,7 +57,7 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
   /// The merchant, as Clover described it when the keys were first used.
   let found: Json = {};
 
-  async function call(host: string, method: "GET" | "POST", path: string, body?: Json, idempotencyKey?: string): Promise<Json> {
+  async function call(host: string, method: "GET" | "POST" | "DELETE", path: string, body?: Json, idempotencyKey?: string): Promise<Json> {
     let response: Response;
     try {
       response = await fetchImpl(`${host}${path}`, {
@@ -77,6 +77,7 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
     if (response.status === 429 || response.status >= 500) throw new Retry(`Clover is busy (${response.status})`);
     if (response.status === 401) throw new Unauthorized("Clover no longer accepts this device's token. Connect again.");
     if (response.status === 402 || json.error?.type === "card_error") throw new CardDeclined(declineCode(json.error));
+    if (response.status === 404) throw new NotFound(json.error?.message ?? "Clover has no record of that.");
     throw new Refused(json.error?.message ?? `Clover refused (${response.status})`);
   }
 
@@ -95,7 +96,7 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
     }
     throw new Refused("Clover doesn't recognise this token for that merchant.");
   }
-  const charges = async (method: "GET" | "POST", path: string, body?: Json, key?: string) => call((await environment()).charges, method, path, body, key);
+  const charges = async (method: "GET" | "POST" | "DELETE", path: string, body?: Json, key?: string) => call((await environment()).charges, method, path, body, key);
 
   return {
     async connect(): Promise<Connection> {
@@ -145,6 +146,20 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
       }
       if (amount > charge.amount) throw new Refused("more than was held");
       await charges("POST", `/v1/charges/${encodeURIComponent(reference)}/capture`, { amount }, idempotencyKey);
+    },
+
+    /// Revokes every card on the customer kept for this payer (one, as the
+    /// agent makes them). A customer already gone is a card already gone.
+    async forget(savedAs) {
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(savedAs)) throw new Refused("That isn't a card kept here.");
+      const customer = `/v1/customers/${savedAs}`;
+      try {
+        const { sources } = await charges("GET", customer);
+        if (!Array.isArray(sources?.data)) throw new Refused("Clover didn't list that customer's cards.");
+        for (const source of sources.data) await charges("DELETE", `${customer}/sources/${encodeURIComponent(source.id)}`);
+      } catch (err) {
+        if (!(err instanceof NotFound)) throw err;
+      }
     },
 
     async refund(reference, amount, idempotencyKey) {

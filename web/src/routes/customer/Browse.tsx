@@ -84,7 +84,7 @@ export function Browse() {
       return Promise.all(
         page.catalogs.map(async (view) => {
           const catalog = decodeEntry<MerchantCatalog>(view.record);
-          const summary = await getRatingSummary({ Store: view.original_action }).catch(() => ({ count: 0, rating_sum: 0 }));
+          const summary = await getRatingSummary({ Store: view.original_action }).catch(() => ({ count: 0, rating_sum: 0, uncounted: 0 }));
           return { hash: view.original_action, catalog, rating: averageRating(summary) ?? 0, reviewCount: summary.count };
         }),
       );

@@ -105,6 +105,38 @@ export interface Arrival {
   migration: ActionHash;
 }
 
+/**
+ * What a party to a no-show tells the order's store, sealed to it, so it
+ * can decide a dispute on more than each side's word: the driver's photo
+ * of the door, as they say nobody came; how far from the drop-off point
+ * they recorded arriving, as the customer's app worked it out when they
+ * say they were there. Never anyone's coordinates.
+ */
+export interface ArrivalEvidence {
+  /**
+   * The order's original action.
+   */
+  order: ActionHash;
+  /**
+   * A version of the order showing the author is its customer, or its
+   * driver.
+   */
+  version: ActionHash;
+  /**
+   * An `ArrivalNote`, sealed to the store.
+   */
+  sealed: SealedChunks;
+}
+
+/**
+ * What's sealed in an `ArrivalEvidence`. The store's app reads each only
+ * from the party it's theirs to give: the photo from the driver, the
+ * distance from the customer.
+ */
+export type ArrivalNote =
+  | { DoorPhoto: string }
+  | { ArrivedMetres: number };
+
 export type Authority =
   /**
    * The recovery phrase: its key's signature over `phrase_message`.
@@ -866,6 +898,11 @@ export type DispatchLocalSignal =
    * read it again.
    */
   | { PaymentChanged: ActionHash }
+  /**
+   * A payer (this key) withdrew a card they kept with this agent: its
+   * payment agent deletes it (`payments::forget_saved_card`).
+   */
+  | { CardForgotten: AgentPubKey }
   /**
    * Something changed on an order whose customer's app may be closed:
    * hand this wake token to the network's push relay (docs/MOBILE.md). Only
@@ -2435,6 +2472,10 @@ export type PaymentDue =
          * fingerprint (on-chain, a first order is one per account).
          */
         newcomer_deal: ActionHash | null;
+        /**
+         * When the payer made the offer: what a kept card is dated by.
+         */
+        offered_at: Timestamp;
       };
     }
   /**
@@ -2459,6 +2500,16 @@ export type PaymentDue =
         reference: string;
         ruling: ActionHash;
         amount: number;
+      };
+    }
+  /**
+   * Delete the card `payer` kept here from the processor -- they withdrew
+   * it `at`. A card they kept again after that stays.
+   */
+  | {
+      Forget: {
+        payer: AgentPubKey;
+        at: Timestamp;
       };
     };
 
@@ -2564,6 +2615,12 @@ export interface PaymentOffer {
    */
   order: ActionHash;
   leg: PaymentLeg;
+  /**
+   * Who it's offered to: the leg's payee, as validation checks -- so a
+   * payer's own chain says, without reading any order, whom they've kept
+   * a card with (`payments::saved_card_with`).
+   */
+  payee: AgentPubKey;
   /**
    * A single-use token from the payee's processor's card form, sealed to
    * the payee. `None`: the card the payer saved with this payee.
@@ -3296,8 +3353,16 @@ export interface RankedBid {
 }
 
 export interface RatingSummary {
+  /**
+   * The reviews the rating's made of, and their stars.
+   */
   count: number;
   rating_sum: number;
+  /**
+   * A store's reviews left out of its rating: from customers who haven't
+   * rated an order from another store yet. Shown, but not counted.
+   */
+  uncounted: number;
 }
 
 export interface Receipt {
@@ -3773,6 +3838,31 @@ export interface SavedAddress {
 }
 
 /**
+ * A card the caller keeps with a payee, as their Payments screen lists it.
+ */
+export interface SavedCard {
+  payee: AgentPubKey;
+  /**
+   * The store it was last kept or used for -- what the screen names.
+   */
+  store: ActionHash;
+  /**
+   * When it's forgotten if it isn't used before then.
+   */
+  stands_until: Timestamp;
+}
+
+/**
+ * A payer withdrawing the card they kept with `payee`: from here on it
+ * pays nothing through HandShake, and the payee's agent deletes it from
+ * its processor account. Written on the payer's own chain, so the
+ * withdrawal is on their record -- the evidence for any charge after it.
+ */
+export interface SavedCardForgotten {
+  payee: AgentPubKey;
+}
+
+/**
  * A value sealed between two agents in order, a box per
  * `SEAL_CHUNK_BYTES` of it -- for anything that may be larger than one box
  * holds (a photo). Sealed with `handshake_coordinator_support::seal_chunked`.
@@ -3805,6 +3895,16 @@ export interface Selection {
 export interface SelectionInput {
   group: ActionHash;
   options: ChosenInput[];
+}
+
+/**
+ * What the store has been told of a no-show: its driver's photo of the
+ * door, and how far from the drop-off point the customer's app says the
+ * driver recorded arriving.
+ */
+export interface StoreArrivalEvidence {
+  door_photo: string | null;
+  arrived_metres: number | null;
 }
 
 /**

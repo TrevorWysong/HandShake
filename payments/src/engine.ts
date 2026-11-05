@@ -27,6 +27,9 @@ export const NEW_PAYER_WINDOW_MS = 15 * 60_000;
 const HOUR_MS = 3_600_000;
 /// Attempts older than an authorization can live are forgotten.
 const ATTEMPTS_KEPT_MS = 8 * 24 * HOUR_MS;
+/// A card kept here and unused this long is deleted -- the network refuses
+/// it by then too (`dispatch_integrity::payments::SAVED_CARD_DAYS`).
+export const SAVED_CARD_MS = 180 * 24 * HOUR_MS;
 
 export interface EngineOptions {
   dispatch: Dispatch;
@@ -80,14 +83,18 @@ export class Engine {
   async #round(): Promise<number> {
     const { dispatch, state: store, onProblem } = this.#o;
     const due = await dispatch<PaymentDue[]>("payments_due", null);
-    let done = 0;
-    for (const item of due) {
+    let done = await this.#expireSavedCards();
+    // Withdrawals first: a card withdrawn is charged by no offer still waiting.
+    for (const item of [...due].sort((a, b) => Number("Forget" in b) - Number("Forget" in a))) {
       // Each payment on its own: one failing never holds up the rest.
       const state = await store.load();
       try {
         if ("Authorize" in item) await this.#authorize(item.Authorize, state);
         else if ("Settle" in item) await this.#settle(item.Settle);
-        else await this.#refund(item.Refund);
+        else if ("Refund" in item) await this.#refund(item.Refund);
+        // A withdrawal stays listed for as long as its card could stand:
+        // done only when there was a card to delete.
+        else if (!(await this.#forget(item.Forget, state))) continue;
         done += 1;
       } catch (err) {
         onProblem(Object.keys(item)[0], err);
@@ -153,9 +160,50 @@ export class Engine {
       }
       state.newcomers[store][result.fingerprint] = order;
     }
+    // A new card takes the old one's place: not left behind at the processor.
+    const replaced = state.saved[payer];
+    if (result.savedAs && replaced && replaced !== result.savedAs) await processor.forget(replaced).catch((err) => this.#o.onProblem("Forget", err));
     if (result.savedAs) state.saved[payer] = result.savedAs;
+    // Kept, or used: dated by the offer -- as a withdrawal is, by its payer --
+    // so an offer answered after a withdrawal never reads as later than it.
+    if (result.savedAs || (due.token === null && !due.resumes)) state.savedAt[payer] = Math.min(now(), due.offered_at / 1000);
     state.known[payer] = true;
     await dispatch("record_hold", { offer: due.offer, reference: result.reference });
+  }
+
+  /// A payer withdrew the card they kept here, `at` (µs): deleted from the
+  /// processor -- unless they kept one again since.
+  async #forget(due: Extract<PaymentDue, { Forget: unknown }>["Forget"], state: State): Promise<boolean> {
+    const payer = hex(due.payer);
+    const savedAs = state.saved[payer];
+    if (!savedAs || due.at / 1000 < (state.savedAt[payer] ?? 0)) return false;
+    await this.#o.processor.forget(savedAs);
+    delete state.saved[payer];
+    delete state.savedAt[payer];
+    return true;
+  }
+
+  /// Deletes each card kept here that's gone unused too long. Returns how
+  /// many.
+  async #expireSavedCards(): Promise<number> {
+    const { processor, state: store, now, onProblem } = this.#o;
+    const state = await store.load();
+    let expired = 0;
+    for (const [payer, savedAs] of Object.entries(state.saved)) {
+      // Kept before cards were dated: from now.
+      state.savedAt[payer] ??= now();
+      if (now() - state.savedAt[payer] < SAVED_CARD_MS) continue;
+      try {
+        await processor.forget(savedAs);
+        delete state.saved[payer];
+        delete state.savedAt[payer];
+        expired += 1;
+      } catch (err) {
+        onProblem("Forget", err);
+      }
+    }
+    await store.save(state);
+    return expired;
   }
 
   async #settle(due: Extract<PaymentDue, { Settle: unknown }>["Settle"]) {

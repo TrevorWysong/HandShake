@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { acceptOrder, actionHash, collectFromStore, commitAndCook, currentBeacon, customerPaid, decodeEntry, netOn, retryUntil, retryUntilOk, settleAll, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { FULL_SIZE_PHOTO, acceptOrder, actionHash, collectFromStore, commitAndCook, currentBeacon, customerPaid, decodeEntry, netOn, retryUntil, retryUntilOk, settleAll, setupPlayersWithProperties, ST_PETE, useTestCoordinators, retryingCaller } from "./helpers.js";
 
 const FOOD = 1000;
 const FEE = 400;
@@ -34,6 +34,8 @@ interface Summary {
   dispute_resolved_against_count: number;
 }
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/// A photo of the door -- one pixel's worth.
+const DOOR = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 await runScenario(async (scenario) => {
   const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ dropoff_wait_secs: DOOR_WAIT, collection_window_secs: COLLECT_WAIT, report_window_secs: 20 }));
@@ -72,12 +74,15 @@ await runScenario(async (scenario) => {
     return ref;
   }
   /// The driver at the door: arriving recorded (the customer's told).
-  const arrive = (ref: Uint8Array) => call(driver, "attestation")<HcRecord>("record_leg", { order_ref: ref, sequence: 1, kind: "CustomerHandoff", to: customer.agentPubKey, geo_at_completion: ST_PETE });
+  const arrive = (ref: Uint8Array, photo = DOOR) => call(driver, "attestation")<HcRecord>("record_leg", { order_ref: ref, sequence: 1, kind: "CustomerHandoff", to: customer.agentPubKey, geo_at_completion: ST_PETE, photo_data_uri: photo });
   const notHere = async (ref: Uint8Array) => call(driver, "dispatch")<HcRecord>("customer_not_here", { order_ref: ref, beacon: await currentBeacon() });
 
   // ===== Nobody comes to the door =====
   const unanswered = await outForDelivery();
   await assert.rejects(notHere(unanswered), /Record that you've arrived first/, "a driver says nobody came only once they've recorded arriving");
+  await arrive(unanswered, "");
+  await sleep(past(DOOR_WAIT));
+  await assert.rejects(notHere(unanswered), /Take a photo of the door/, "with a photo of the door");
   await arrive(unanswered);
   await assert.rejects(notHere(unanswered), /still has time to come to the door/, "nor before the network's wait");
   await assert.rejects(call(customer, "dispatch")("customer_not_here", { order_ref: unanswered, beacon: await currentBeacon() }), /Only the order's driver/, "and only its driver");
@@ -111,12 +116,25 @@ await runScenario(async (scenario) => {
 
   // ===== The customer says they were there; the store sides with them =====
   const disputed = await outForDelivery();
-  await arrive(disputed);
+  // A full-size photo: the store's sealed copy of it fits as the customer's does.
+  await arrive(disputed, FULL_SIZE_PHOTO);
   await sleep(past(DOOR_WAIT));
   await retryUntilOk(() => notHere(disputed));
   await sync();
   await call(customer, "dispatch")("claim_never_arrived", disputed);
   await sync();
+  // The store decides on more than each side's word: the driver's photo of
+  // the door, and how far off they were by the customer's app -- never
+  // anyone's coordinates. Nobody else sees either.
+  type Evidence = { door_photo: string | null; arrived_metres: number | null };
+  const evidence = await retryUntil(() => call(merchant, "dispatch")<Evidence>("arrival_evidence", disputed), (e) => e.door_photo !== null && e.arrived_metres !== null);
+  assert.equal(evidence.door_photo, FULL_SIZE_PHOTO, "the store sees the driver's photo of the door");
+  assert.ok(evidence.arrived_metres! < 50, "and that the driver recorded arriving at the customer's address");
+  assert.deepEqual(await call(driver, "dispatch")<Evidence>("arrival_evidence", disputed), { door_photo: null, arrived_metres: null }, "only the store reads it");
+  // And only the order's customer and driver give it: not the store itself.
+  const version = actionHash(await call(merchant, "dispatch")<HcRecord>("get_order", disputed));
+  const sealed = [{ nonce: Array(24).fill(0), encrypted_data: new Uint8Array(16) }];
+  await assert.rejects(merchant.cells[0].callZome({ zome_name: "dispatch", fn_name: "create_raw_payment_record_for_testing", payload: { Evidence: { order: disputed, version, sealed } } }), /only an order's customer or its driver/, "nobody else gives a store evidence");
   const decisions = await call(merchant, "dispatch")<{ no_show_upheld_after: number | null; claim_decided_after: number | null }>("get_order_decisions", disputed);
   assert.ok(decisions.no_show_upheld_after !== null && decisions.claim_decided_after === null, "a disputed no-show is upheld unless the store sides with the customer -- not refunded by default");
   await retryUntilOk(() => call(merchant, "dispatch")("decide_not_delivered", disputed));
@@ -125,7 +143,7 @@ await runScenario(async (scenario) => {
   assert.equal(await netOn(driver, disputed), -FOOD, "the driver's collateral pays for the food");
   assert.equal(await netOn(merchant, disputed), FOOD, "the store is paid for the food either way");
   await retryUntil(() => summary({ Driver: driver.agentPubKey }), (s) => s.dispute_resolved_against_count === 1);
-  console.log("[PASS] a customer who says they were there is decided by the store -- sided with, refunded, against the driver");
+  console.log("[PASS] a customer who says they were there is decided by the store, on the driver's photo and how far off they were -- sided with, refunded, against the driver");
 
   // ===== A pickup nobody comes for =====
   const pickup = async () => {

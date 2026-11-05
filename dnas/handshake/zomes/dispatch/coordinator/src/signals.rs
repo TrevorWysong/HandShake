@@ -98,6 +98,9 @@ pub enum LocalSignal {
     /// A payment on this order changed: the payment agent and the screens
     /// read it again.
     PaymentChanged(ActionHash),
+    /// A payer (this key) withdrew a card they kept with this agent: its
+    /// payment agent deletes it (`payments::forget_saved_card`).
+    CardForgotten(AgentPubKey),
     /// Something changed on an order whose customer's app may be closed:
     /// hand this wake token to the network's push relay (docs/MOBILE.md). Only
     /// the store and the driver hold one, each their own.
@@ -133,6 +136,9 @@ pub enum RemoteSignal {
     HandedOver { order_hash: ActionHash },
     /// From the customer to the store: they've asked to collect it.
     CollectRequested { order_hash: ActionHash },
+    /// From a payer to the payee they kept a card with: they've withdrawn
+    /// it. It carries nothing; the payee's agent reads the withdrawal itself.
+    CardForgotten,
 }
 
 /// An order's parties and what it is now, from one version of it.
@@ -278,6 +284,9 @@ pub fn recv_remote_signal(payload: RemoteSignal) -> ExternResult<()> {
             upkeep::tend_my_stores_soon()?;
             emit_signal(LocalSignal::PaymentChanged(order_hash))
         }
+        // Wakes the payment agent, which reads the withdrawals for itself
+        // (`payments_due`): from anyone, it costs at most a round.
+        RemoteSignal::CardForgotten => emit_signal(LocalSignal::CardForgotten(sender)),
         RemoteSignal::HandoffRecorded { order_hash } => {
             // Carries a message for the customer, so it must check out.
             match current_state(&order_hash) {

@@ -712,6 +712,29 @@ pub(crate) fn validate_collect_request(request: &CollectRequest, author: &AgentP
     Ok(ValidateCallbackResult::Valid)
 }
 
+/// Evidence for a no-show's store, from the order's customer or its driver
+/// -- named as such by a version of the order -- no larger than a photo.
+/// Sealed, so what it says is checked by the store's app as it opens it.
+pub(crate) fn validate_arrival_evidence(evidence: &ArrivalEvidence, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    if handshake_integrity_support::original_creation(evidence.order.clone())? != evidence.order || handshake_integrity_support::original_creation(evidence.version.clone())? != evidence.order {
+        return Ok(ValidateCallbackResult::Invalid("evidence names an order by its original action, and one of its versions".into()));
+    }
+    let Some(order) = decode::<DeliveryOrder>(&must_get_valid_record(evidence.version.clone())?) else {
+        return Ok(ValidateCallbackResult::Invalid("evidence of arriving is for a delivery".into()));
+    };
+    let driver = match &order.accepted_bid {
+        Some(bid) => decode::<Bid>(&must_get_valid_record(bid.clone())?).is_some_and(|bid| &bid.bidder == author),
+        None => false,
+    };
+    if &order.requester != author && !driver {
+        return Ok(ValidateCallbackResult::Invalid("only an order's customer or its driver gives its store evidence".into()));
+    }
+    if handshake_integrity_support::sealed_chunks_problem("evidence", &evidence.sealed, handshake_integrity_support::max_sealed_image_bytes()).is_some() {
+        return Ok(ValidateCallbackResult::Invalid("evidence may hold at most one photo, within the network's image limit".into()));
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
 /// A customer sharing their address with a driver: theirs to share, with a
 /// driver the order shows committed, and no larger than an address.
 pub(crate) fn validate_dropoff_share(share: &DropoffShare, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {

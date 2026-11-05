@@ -12,7 +12,7 @@
 // against Square's sandbox: see DIRECT_PAYMENTS.md.
 import { createHash } from "node:crypto";
 import type { Authorization, AuthorizeRequest, Connection, Processor } from "../processor.ts";
-import { Refused, Retry } from "../processor.ts";
+import { NotFound, Refused, Retry } from "../processor.ts";
 import type { DeclineCode } from "../types.ts";
 
 export interface SquareKeys {
@@ -62,6 +62,14 @@ function readToken(token: string): { nonce: string; verification: string | null;
   throw new CardDeclined("Declined");
 }
 
+/// A card kept here, as the agent names it: `customer:card` -- split at the
+/// first colon only, since Square's card ids have one of their own
+/// (`ccof:...`).
+function keptCard(savedAs: string): [string, string] {
+  const at = savedAs.indexOf(":");
+  return at < 0 ? [savedAs, ""] : [savedAs.slice(0, at), savedAs.slice(at + 1)];
+}
+
 export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: Fetch = fetch): Processor {
   const { live } = checkKeys(keys);
   const base = live ? "https://connect.squareup.com/v2" : "https://connect.squareupsandbox.com/v2";
@@ -84,6 +92,7 @@ export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: F
     if (response.status === 401) throw new Refused("Square no longer accepts this device's access token. Connect again.");
     if (response.status === 403) throw new Refused("The access token can't do this. It needs payments, customers and cards.");
     if (json.errors?.some((e: Json) => e.category === "PAYMENT_METHOD_ERROR")) throw new CardDeclined(declineCode(json.errors));
+    if (response.status === 404) throw new NotFound(json.errors?.[0]?.detail ?? "Square has no record of that.");
     throw new SquareError(json.errors?.[0]?.code ?? "", json.errors?.[0]?.detail ?? `Square refused (${response.status})`);
   }
 
@@ -106,7 +115,7 @@ export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: F
         let customer: string | undefined;
         let verification: string | null = null;
         let wallet = false;
-        if (request.savedAs) [customer, source] = request.savedAs.split(":");
+        if (request.savedAs) [customer, source] = keptCard(request.savedAs);
         else ({ nonce: source, verification, wallet } = readToken(request.token ?? ""));
         const { payment } = await call("POST", "/payments", {
           idempotency_key: request.idempotencyKey,
@@ -160,6 +169,15 @@ export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: F
         await call("PUT", path, { idempotency_key: idempotencyKey, payment: { amount_money: { amount, currency: payment.amount_money.currency } } });
       }
       await call("POST", `${path}/complete`, {});
+    },
+
+    async forget(savedAs) {
+      const [, card] = keptCard(savedAs);
+      if (!/^[A-Za-z0-9_:-]{1,192}$/.test(card ?? "")) throw new Refused("That isn't a card kept here.");
+      // A card already gone is what's asked for.
+      await call("POST", `/cards/${card}/disable`).catch((err) => {
+        if (!(err instanceof NotFound)) throw err;
+      });
     },
 
     async refund(reference, amount, idempotencyKey) {

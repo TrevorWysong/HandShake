@@ -18,6 +18,7 @@ import {
   offerCard,
   paymentsOn,
   pickUp,
+  retryUntil,
   retryUntilOk,
   retryingCaller,
   settleAll,
@@ -69,6 +70,21 @@ await runScenario(async (scenario) => {
   assert.equal(await call(stranger, "dispatch")("has_saved_card", store.agentPubKey), false, "another account isn't");
   assert.equal(await call(customer, "dispatch")("has_saved_card", driver.agentPubKey), false, "nor is it saved with anyone else");
   console.log("[PASS] a saved card is offered only to the account that saved it, with the store it's saved with");
+
+  // ...and theirs to withdraw: the network refuses it from then on, and the
+  // store's agent is told to delete it from its processor.
+  const listed = await call(customer, "dispatch")<{ payee: Uint8Array; store: Uint8Array }[]>("my_saved_cards", null);
+  assert.deepEqual([listed.length, Buffer.from(listed[0].store).equals(Buffer.from(shop))], [1, true], "listed under the store it was kept for");
+  await assert.rejects(call(stranger, "dispatch")("forget_saved_card", store.agentPubKey), /no card kept with them/, "nobody forgets a card they never kept");
+  await assert.rejects(raw(stranger, { Forgotten: { payee: stranger.agentPubKey } }), /kept with someone else/, "a card is withdrawn from someone else");
+  await call(customer, "dispatch")("forget_saved_card", store.agentPubKey);
+  assert.equal(await call(customer, "dispatch")("has_saved_card", store.agentPubKey), false, "withdrawn, it's offered no more");
+  assert.equal((await call(customer, "dispatch")<unknown[]>("my_saved_cards", null)).length, 0);
+  await assert.rejects(call(customer, "dispatch")("offer_payment", { order, leg: "Customer", payment: { token: null, save: false } }), /no card kept with this payee/, "and the network refuses it");
+  await sync();
+  const forgets = await retryUntil(() => call(store, "dispatch")<{ Forget?: { payer: Uint8Array } }[]>("payments_due", null), (due) => due.some((d) => d.Forget));
+  assert.ok(Buffer.from(forgets.find((d) => d.Forget)!.Forget!.payer).equals(Buffer.from(customer.agentPubKey)), "the store's agent is told to delete it");
+  console.log("[PASS] a kept card is its payer's to withdraw: refused from then on, and deleted by the store's agent");
 
   // ===== The driver's collateral, held on the store's account =====
   const bid = actionHash(await retryUntilOk(() => call(driver, "dispatch")<HcRecord>("submit_bid", { order_ref: order, eta_seconds: 600, price_offer: FEE })));

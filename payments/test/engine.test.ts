@@ -4,7 +4,7 @@
 // payer shouldn't get (card testing, a first-order deal twice on one card).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Engine, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, idempotencyKey } from "../src/engine.ts";
+import { Engine, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, SAVED_CARD_MS, idempotencyKey } from "../src/engine.ts";
 import { testProcessor } from "../src/adapters/test.ts";
 import { memoryStore } from "../src/state.ts";
 import type { PaymentDue } from "../src/types.ts";
@@ -45,11 +45,12 @@ function zome() {
 function answers(d: PaymentDue, fn: string, payload: Record<string, unknown>) {
   if ("Authorize" in d) return ["record_hold", "record_declined", "record_action"].includes(fn) && payload.offer === d.Authorize.offer;
   if ("Settle" in d) return fn === "record_settlement" && payload.hold === d.Settle.hold;
-  return fn === "record_refund" && payload.settlement === d.Refund.settlement;
+  if ("Refund" in d) return fn === "record_refund" && payload.settlement === d.Refund.settlement;
+  return false;
 }
 
 const authorize = (offer: number, order: number, more: Partial<Extract<PaymentDue, { Authorize: unknown }>["Authorize"]> = {}): PaymentDue => ({
-  Authorize: { offer: h(offer), order: h(order), leg: "Customer", amount: 2500, payer, token: "tok_test_4242", save: false, resumes: null, newcomer_deal: null, ...more },
+  Authorize: { offer: h(offer), order: h(order), leg: "Customer", amount: 2500, payer, token: "tok_test_4242", save: false, resumes: null, newcomer_deal: null, offered_at: Date.now() * 1000, ...more },
 });
 
 function setup() {
@@ -244,4 +245,72 @@ test("idempotency keys fit every processor, and differ by what they're for", () 
   assert.equal(key.length, 40);
   assert.notEqual(key, idempotencyKey("capture", h(1), 101));
   assert.notEqual(key, idempotencyKey("refund", h(1), 100));
+});
+
+test("a card its payer withdraws is deleted from the processor -- one they kept again since isn't", async () => {
+  const z = zome();
+  const forgotten: string[] = [];
+  const processor = { ...testProcessor("USD"), forget: async (savedAs: string) => void forgotten.push(savedAs) };
+  let clock = 1_000_000;
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", now: () => clock });
+  z.due = [authorize(10, 50, { save: true })];
+  await engine.round();
+  // Withdrawn before it was kept again: deleted.
+  clock += 1000;
+  z.due = [{ Forget: { payer, at: (clock - 500) * 1000 } }];
+  await engine.round();
+  assert.equal(forgotten.length, 1, "deleted from the processor");
+  z.due = [authorize(11, 51, { token: null })];
+  await engine.round();
+  assert.deepEqual(z.recorded("record_declined").map((d) => d.code), ["NoSavedCard"], "and never charged again");
+  // Kept again after an older withdrawal: that withdrawal doesn't touch it.
+  z.due = [authorize(12, 52, { save: true })];
+  await engine.round();
+  z.due = [{ Forget: { payer, at: (clock - 500) * 1000 } }];
+  await engine.round();
+  assert.equal(forgotten.length, 1, "a card kept again after it stays");
+});
+
+test("a card kept here unused for six months is deleted; one in use stays", async () => {
+  const z = zome();
+  const forgotten: string[] = [];
+  const processor = { ...testProcessor("USD"), forget: async (savedAs: string) => void forgotten.push(savedAs) };
+  let clock = 1_000_000;
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", now: () => clock });
+  z.due = [authorize(10, 50, { save: true })];
+  await engine.round();
+  clock += SAVED_CARD_MS - 1000;
+  z.due = [authorize(11, 51, { token: null })];
+  await engine.round();
+  assert.equal(z.recorded("record_hold").length, 2, "used just inside six months");
+  clock += SAVED_CARD_MS - 1000;
+  z.due = [];
+  await engine.round();
+  assert.equal(forgotten.length, 0, "its use kept it");
+  clock += 2000;
+  await engine.round();
+  assert.equal(forgotten.length, 1, "six months unused: deleted");
+});
+
+test("a withdrawal outranks an offer still waiting; a card replaced isn't left at the processor", async () => {
+  const z = zome();
+  const forgotten: string[] = [];
+  const processor = { ...testProcessor("USD"), forget: async (savedAs: string) => void forgotten.push(savedAs) };
+  let clock = 1_000_000;
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", now: () => clock });
+  const at = (ms: number) => ms * 1000;
+  z.due = [authorize(10, 50, { save: true, offered_at: at(clock) })];
+  await engine.round();
+  // Offered on the kept card, then withdrawn, with the agent away: it deletes the card, and declines.
+  clock += 5000;
+  z.due = [authorize(11, 51, { token: null, offered_at: at(clock - 3000) }), { Forget: { payer, at: at(clock - 1000) } }];
+  await engine.round();
+  assert.equal(forgotten.length, 1, "the withdrawal is honoured, however late it's read");
+  assert.deepEqual(z.recorded("record_declined").map((d) => d.code), ["NoSavedCard"], "and the waiting offer isn't charged");
+  // Kept again, then another card kept over it.
+  z.due = [authorize(12, 52, { save: true, offered_at: at(clock) })];
+  await engine.round();
+  z.due = [authorize(13, 53, { save: true, token: "tok_test_5555", offered_at: at(clock) })];
+  await engine.round();
+  assert.equal(forgotten.length, 2, "the card it replaced is deleted");
 });

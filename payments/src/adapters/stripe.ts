@@ -155,6 +155,15 @@ export function stripeProcessor(keys: StripeKeys, currency: string, fetchImpl: F
       }
     },
 
+    async forget(savedAs) {
+      const [, paymentMethod] = savedAs.split(":");
+      if (!/^pm_[A-Za-z0-9_]{1,250}$/.test(paymentMethod ?? "")) throw new Refused("That isn't a card kept here.");
+      // A card already gone is what's asked for.
+      await call("POST", `/v1/payment_methods/${paymentMethod}/detach`).catch((err) => {
+        if (!(err instanceof StripeError && err.code === "resource_missing")) throw err;
+      });
+    },
+
     async refund(reference, amount, idempotencyKey) {
       await call("POST", "/refunds", { payment_intent: reference, amount }, idempotencyKey);
     },

@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
+import type { ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
 
 // --- orders ---
 
@@ -372,6 +372,12 @@ export async function claimNeverArrived(orderOriginalAction: ActionHash): Promis
 }
 
 /// The store deciding now that a claimed delivery never arrived.
+/// What the store's been told of a no-show it's deciding: the driver's
+/// photo of the door, and how far off they were by the customer's app.
+export async function getArrivalEvidence(orderOriginalAction: ActionHash): Promise<StoreArrivalEvidence> {
+  return callZome("dispatch", "arrival_evidence", orderOriginalAction);
+}
+
 export async function decideNotDelivered(orderOriginalAction: ActionHash): Promise<ActionHash> {
   return callZome("dispatch", "decide_not_delivered", orderOriginalAction);
 }

@@ -218,9 +218,12 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
       {order.status !== "PickedUp" ? (
         <NoShowStanding orderRef={orderRef} />
       ) : arrivedAt === null ? (
-        <button onClick={nobodyAnswering} disabled={action.busy} className="-mt-1 text-center text-xs font-semibold text-ink-500 underline-offset-4 hover:underline disabled:opacity-50">
-          {t("noShow.nobodyAnswering")}
-        </button>
+        <div className="-mt-1 flex flex-col items-center gap-1">
+          <button onClick={nobodyAnswering} disabled={action.busy || !photo} className="text-center text-xs font-semibold text-ink-500 underline-offset-4 hover:underline disabled:opacity-50 disabled:no-underline">
+            {t("noShow.nobodyAnswering")}
+          </button>
+          {!photo && <p className="text-center text-[11px] text-ink-400">{t("noShow.photoFirst")}</p>}
+        </div>
       ) : (
         <NobodyCame arrivedAt={arrivedAt} busy={action.busy} onSay={sayNotHere} />
       )}

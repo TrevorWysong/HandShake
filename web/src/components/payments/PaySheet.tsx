@@ -22,7 +22,8 @@ export function PaySheet({
   title,
   subtitle,
   canUseSaved = false,
-  offerToSave = true,
+  offerToSave = false,
+  forStandingOrder = false,
   onClose,
   onCard,
 }: {
@@ -38,6 +39,9 @@ export function PaySheet({
   canUseSaved?: boolean;
   /// Whether to offer keeping this card with the payee.
   offerToSave?: boolean;
+  /// The card is offered to keep for a standing order -- which is paid with
+  /// it while the payer's away: so keeping it starts switched on.
+  forStandingOrder?: boolean;
   onClose: () => void;
   /// The card, to offer: resolves once it's offered.
   onCard: (card: PaymentInput) => Promise<void>;
@@ -48,7 +52,7 @@ export function PaySheet({
   // someone's typing into.
   const [form] = useState<CardForm>(() => cardFormFor(profile, { amountCents, currency, label: payee }));
   const [useNew, setUseNew] = useState(!canUseSaved);
-  const [save, setSave] = useState(false);
+  const [save, setSave] = useState(forStandingOrder);
   // The processor's form arrives from its own servers: a placeholder holds
   // its place until it's drawn.
   const [ready, setReady] = useState(false);
@@ -133,8 +137,8 @@ export function PaySheet({
           {offerToSave && (
             <label className="mt-4 flex items-start justify-between gap-3 text-sm">
               <span>
-                <span className="font-semibold text-ink-800 dark:text-ink-100">{t("pay.remember", { payee })}</span>
-                <span className="mt-0.5 block text-xs text-ink-400">{t("pay.rememberDetail", { payee })}</span>
+                <span className="font-semibold text-ink-800 dark:text-ink-100">{t(forStandingOrder ? "pay.rememberStanding" : "pay.remember", { payee })}</span>
+                <span className="mt-0.5 block text-xs text-ink-400">{t(forStandingOrder ? "pay.rememberStandingDetail" : "pay.rememberDetail", { payee })}</span>
               </span>
               <Switch checked={save} label={t("pay.remember", { payee })} onChange={setSave} />
             </label>

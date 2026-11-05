@@ -168,6 +168,8 @@ mod test_utils {
         Settlement(dispatch_integrity::PaymentSettlement),
         Refund(dispatch_integrity::PaymentRefund),
         CarryEnded(dispatch_integrity::CarryEnded),
+        Forgotten(dispatch_integrity::SavedCardForgotten),
+        Evidence(dispatch_integrity::ArrivalEvidence),
     }
 
     #[hdk_extern]
@@ -180,6 +182,8 @@ mod test_utils {
             RawPaymentRecord::Settlement(r) => EntryTypes::PaymentSettlement(r),
             RawPaymentRecord::Refund(r) => EntryTypes::PaymentRefund(r),
             RawPaymentRecord::CarryEnded(r) => EntryTypes::CarryEnded(r),
+            RawPaymentRecord::Forgotten(r) => EntryTypes::SavedCardForgotten(r),
+            RawPaymentRecord::Evidence(r) => EntryTypes::ArrivalEvidence(r),
         })
     }
 
