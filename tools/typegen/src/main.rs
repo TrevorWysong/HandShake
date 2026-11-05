@@ -77,6 +77,7 @@ const SOURCES: &[Source] = &[
     only("dnas/handshake/zomes/dispatch/coordinator/src/orders.rs", &["NetworkTerms"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/issues.rs", &["IssueView", "OrderDecisions", "IssueItems"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/never_arrived.rs", &["StoreArrivalEvidence"]),
+    only("dnas/handshake/zomes/dispatch/coordinator/src/recurring.rs", &["RecurringDue"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/lines.rs", &["LineView"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/verification.rs", &["VerificationView", "VerificationTerms"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/appeals.rs", &["AppealView", "RulingView", "AppealsPage"]),

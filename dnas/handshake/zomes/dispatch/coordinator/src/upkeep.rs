@@ -151,7 +151,7 @@ fn tend_customer_orders() -> ExternResult<Option<Duration>> {
     }
     // What the app has seen of them: a store starting, or declining.
     let _ = crate::confirmations::tend_confirmations();
-    // Standing orders that are due fire too.
+    // Standing orders whose time has come ask their customer to confirm.
     if let Some(due) = crate::recurring::tend_templates(now)? {
         next = Some(next.map_or(due, |earliest| earliest.min(due)));
     }

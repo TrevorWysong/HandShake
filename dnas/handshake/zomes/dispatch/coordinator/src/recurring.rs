@@ -1,10 +1,12 @@
 //! Recurring order templates ("same order every Monday") -- see
 //! `RecurringOrderTemplate`'s own doc comment in `dispatch_integrity` for
-//! why this needs no DHT link at all. The customer's own conductor fires
-//! them when due (`tend_templates`, run by `upkeep`), with no app open.
+//! why this needs no DHT link at all. At its time a template asks its
+//! customer to confirm it (`RecurringDue`, `tend_templates`): an order is
+//! only ever placed by them, at checkout, paying with a card they have with
+//! them -- so no store keeps a customer's card, and one that's missed
+//! charges nobody.
 
-use crate::orders::{ensure_promo_usable, request_delivery, RequestDeliveryInput};
-use crate::pricing::{price_menu_order, OrderItem};
+use crate::pricing::OrderItem;
 use chrono::{Datelike, Duration as Days, NaiveDate, TimeZone};
 use chrono_tz::Tz;
 use dispatch_integrity::*;
@@ -30,11 +32,6 @@ pub struct CreateRecurringTemplateInput {
     pub tip_cents: u64,
     #[serde(default)]
     pub dropoff_preference: DropoffPreference,
-    /// Required to choose `LeaveAtDoor`: the customer accepting, once for
-    /// every order the template places, that an order left at their door is
-    /// delivered once it's left.
-    #[serde(default)]
-    pub door_risk_accepted: bool,
     /// Each order asks for a driver of its own.
     #[serde(default)]
     pub priority: bool,
@@ -49,9 +46,6 @@ pub struct CreateRecurringTemplateInput {
 #[hdk_extern]
 pub fn create_recurring_template(input: CreateRecurringTemplateInput) -> ExternResult<Record> {
     let requester = agent_info()?.agent_initial_pubkey;
-    if input.dropoff_preference == DropoffPreference::LeaveAtDoor && !input.door_risk_accepted {
-        return Err(guest("To have these orders left at your door, accept that each is delivered once it's left there."));
-    }
     let (_, store) = crate::stores::current_catalog_version(&input.catalog_ref)?;
     if input.max_delivery_fee.is_some_and(|cap| cap > store.max_delivery_fee) {
         return Err(guest("That's more than this store allows for delivery. Choose a lower most you'll pay."));
@@ -79,7 +73,7 @@ pub fn create_recurring_template(input: CreateRecurringTemplateInput) -> ExternR
     let owner = template.requester.clone();
     let action_hash = create_entry(&EntryTypes::RecurringOrderTemplate(template))?;
     create_link(owner, action_hash.clone(), LinkTypes::OwnerToTemplate, ())?;
-    // The conductor fires it when it's due -- see `upkeep`.
+    // The conductor reminds them when it's due -- see `upkeep`.
     crate::upkeep::tend_my_orders_soon()?;
     written(action_hash)
 }
@@ -93,6 +87,11 @@ pub struct SetRecurringTemplateActiveInput {
 #[hdk_extern]
 pub fn set_recurring_template_active(input: SetRecurringTemplateActiveInput) -> ExternResult<Record> {
     let (current, mut template): (_, RecurringOrderTemplate) = resolve_version_decoded(input.original_action, "RecurringOrderTemplate")?;
+    let now = sys_time()?.as_micros();
+    // Paused, its times went by unasked: back on, it's next due from now.
+    if input.active && !template.active && template.next_run_at.as_micros() <= now {
+        template.next_run_at = Timestamp::from_micros(next_occurrence(&template.recurrence, &template.time_zone, now));
+    }
     template.active = input.active;
     let updated = update_version(&current, &EntryTypes::RecurringOrderTemplate(template), LinkTypes::Version)?;
     written(updated)
@@ -106,6 +105,18 @@ pub struct RecurringTemplateView {
     pub record: Record,
     /// The template's sealed details, opened for its owner.
     pub details: Option<TemplateDetails>,
+    pub due: RecurringDue,
+}
+
+/// Where a template stands. Its customer confirms each order at checkout;
+/// one they don't get to in time is missed, never placed late.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecurringDue {
+    NotYet,
+    /// Its time has come, and it's still on time.
+    ConfirmNow,
+    /// Its time went by unanswered. Nothing was ordered or charged.
+    Missed,
 }
 
 /// Every template the caller has created, at its latest state -- found by
@@ -116,121 +127,62 @@ pub fn list_my_recurring_templates(_: ()) -> ExternResult<Vec<RecurringTemplateV
     let query = LinkQuery::try_new(me.clone(), LinkTypes::OwnerToTemplate)?.author(me.clone());
     let mut links = get_links(query, GetStrategy::Local)?;
     links.sort_by_key(|link| link.timestamp);
+    let now = sys_time()?.as_micros();
     let mut views = Vec::new();
     for link in links {
         let Some(original_action) = link.target.into_action_hash() else { continue };
         let Ok(record) = resolve_latest(original_action.clone()) else { continue };
-        let details = match record.entry().to_app_option::<RecurringOrderTemplate>().ok().flatten() {
-            Some(template) => open_chunked(&me, &template.sealed_details)?,
-            None => None,
-        };
-        views.push(RecurringTemplateView { original_action, record, details });
+        let Some(template) = decode_or::<RecurringOrderTemplate>(&record) else { continue };
+        let details = open_chunked(&me, &template.sealed_details)?;
+        let due = if template.active { standing_due(template.next_run_at.as_micros(), now) } else { RecurringDue::NotYet };
+        views.push(RecurringTemplateView { original_action, record, details, due });
     }
     Ok(views)
 }
 
-/// Fires each of the caller's active templates that's due -- placing its
-/// order and moving it to its next occurrence -- and returns when the
-/// next one is due, in microseconds since the epoch.
-///
-/// Firing and moving on are each a call of their own
-/// (`handshake_coordinator_support::isolated`): best-effort, like a person
-/// reordering, a store that's closed or out of everything misses this
-/// occurrence, and an order that doesn't validate never undoes the template
-/// moving on -- so one bad day can't wedge every later one.
+/// Where a template stands at `now`, from when it's next due.
+fn standing_due(due: i64, now: i64) -> RecurringDue {
+    if now < due {
+        RecurringDue::NotYet
+    } else if now < due.saturating_add(handshake_governance::SCHEDULE_SEND_GRACE.as_micros() as i64) {
+        RecurringDue::ConfirmNow
+    } else {
+        RecurringDue::Missed
+    }
+}
+
+/// Reminds this person of each active template whose time has come, and
+/// returns when the next one is due, in microseconds since the epoch. It
+/// never orders: that takes them, at checkout, paying then (`RecurringDue`).
 pub(crate) fn tend_templates(now: i64) -> ExternResult<Option<i64>> {
     let mut next: Option<i64> = None;
     for view in list_my_recurring_templates(())? {
-        let Some(template) = decode_or::<RecurringOrderTemplate>(&view.record) else { continue };
-        if !template.active {
-            continue;
+        let Some(template) = decode_or::<RecurringOrderTemplate>(&view.record).filter(|template| template.active) else { continue };
+        let due = template.next_run_at.as_micros();
+        match standing_due(due, now) {
+            RecurringDue::NotYet => next = Some(next.map_or(due, |earliest| earliest.min(due))),
+            // Heard only by this person's own app, if it's running.
+            RecurringDue::ConfirmNow => {
+                let _ = emit_signal(crate::signals::LocalSignal::RecurringOrderDue(view.original_action));
+            }
+            RecurringDue::Missed => {}
         }
-        let mut due = template.next_run_at.as_micros();
-        if due <= now {
-            let version = view.record.action_address().clone();
-            handshake_coordinator_support::isolated::<_, ()>("fire_template", version.clone());
-            due = next_occurrence(&template.recurrence, &template.time_zone, now);
-            handshake_coordinator_support::isolated::<_, ActionHash>("advance_template", AdvanceInput { version, next_run_at: Timestamp::from_micros(due) });
-        }
-        next = Some(next.map_or(due, |earliest| earliest.min(due)));
     }
     Ok(next)
 }
 
-/// Places the order a template (`version`, the one a sweep read) stands
-/// for, in a call of its own.
+/// Moves a template that's come due on to its next occurrence: its customer
+/// has taken it to checkout, or passed on it. One not yet due stays as it is,
+/// so a second tap can't lose a later occurrence.
 #[hdk_extern]
-pub fn fire_template(version: ActionHash) -> ExternResult<()> {
-    let record = get(version, GetOptions::default())?.ok_or(guest("couldn't read that standing order"))?;
-    let template = decode_or::<RecurringOrderTemplate>(&record).ok_or(guest("that isn't a standing order"))?;
-    match open_chunked::<TemplateDetails>(&agent_info()?.agent_initial_pubkey, &template.sealed_details)? {
-        Some(details) => fire(&template, &details),
-        None => Ok(()),
+pub fn advance_recurring_template(original_action: ActionHash) -> ExternResult<Record> {
+    let (current, mut template): (_, RecurringOrderTemplate) = resolve_version_decoded(original_action, "RecurringOrderTemplate")?;
+    let now = sys_time()?.as_micros();
+    if standing_due(template.next_run_at.as_micros(), now) == RecurringDue::NotYet {
+        return Ok(current.record);
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct AdvanceInput {
-    pub version: ActionHash,
-    pub next_run_at: Timestamp,
-}
-
-/// Moves a template (`version`) on to its next occurrence, in a call of its
-/// own.
-#[hdk_extern]
-pub fn advance_template(input: AdvanceInput) -> ExternResult<ActionHash> {
-    let version = handshake_coordinator_support::version_at(input.version)?;
-    let mut template = decode_or::<RecurringOrderTemplate>(&version.record).ok_or(guest("that isn't a standing order"))?;
-    template.next_run_at = input.next_run_at;
-    update_version(&version, &EntryTypes::RecurringOrderTemplate(template), LinkTypes::Version)
-}
-
-fn fire(template: &RecurringOrderTemplate, details: &TemplateDetails) -> ExternResult<()> {
-    let (_, store) = crate::stores::current_catalog_version(&template.catalog_ref)?;
-    let mut items = template.items.clone();
-    items.retain(|item| price_menu_order(&template.catalog_ref, &store, std::slice::from_ref(item), None, None).is_ok());
-    if items.is_empty() {
-        return Ok(());
-    }
-    // A code the customer can't use now (used up, once a period, scheduled
-    // orders aside) is left off rather than holding up their standing order.
-    let promo = template.promo_code_ref.clone().filter(|promo| ensure_promo_usable(promo, &template.catalog_ref).is_ok() && crate::promos::ensure_promo_allowed(promo, &template.catalog_ref).is_ok());
-    let (priced, promo) = match price_menu_order(&template.catalog_ref, &store, &items, promo.as_ref(), None) {
-        Ok(priced) => (priced, promo),
-        Err(_) if promo.is_some() => (price_menu_order(&template.catalog_ref, &store, &items, None, None)?, None),
-        Err(err) => return Err(err),
-    };
-    request_delivery(RequestDeliveryInput {
-        merchant: template.merchant.clone(),
-        catalog_ref: template.catalog_ref.clone(),
-        items,
-        order_total: priced.order_total,
-        dropoff: details.dropoff,
-        // Within the store's limits as they are now -- a store may have
-        // lowered them since -- rather than holding up the standing order:
-        // a lower cap only ever costs the customer less.
-        max_delivery_fee: template.max_delivery_fee.map(|cap| cap.min(store.max_delivery_fee)),
-        kitchen_notes: details.kitchen_notes.clone(),
-        dropoff_notes: details.dropoff_notes.clone(),
-        dropoff_line2: details.dropoff_line2.clone(),
-        tip_cents: template.tip_cents.min(store.max_tip(priced.order_total)),
-        requested_delivery_time: None,
-        promo_code_ref: promo,
-        dropoff_preference: template.dropoff_preference,
-        // Accepted when the template was made (`create_recurring_template`).
-        door_risk_accepted: template.dropoff_preference == DropoffPreference::LeaveAtDoor,
-        priority: details.priority,
-        // Paid with the card the customer kept with the store for it. One
-        // they've since withdrawn, or left unused too long, the network
-        // refuses: the order's placed for them to pay, as after a decline.
-        payment: crate::payments::saved_with(&template.merchant)?.is_some().then_some(crate::payments::PaymentInput { token: None, save: false }),
-        // A standing order runs unattended.
-        auto_match: true,
-        wake_for_store: None,
-        reward: None,
-        wake_for_driver: None,
-    })?;
-    Ok(())
+    template.next_run_at = Timestamp::from_micros(next_occurrence(&template.recurrence, &template.time_zone, now));
+    written(update_version(&current, &EntryTypes::RecurringOrderTemplate(template), LinkTypes::Version)?)
 }
 
 /// The first time `rule` fires strictly after `after` (microseconds since
@@ -275,6 +227,16 @@ fn local_to_micros(tz: Tz, date: NaiveDate, hour: u8, minute: u8) -> Option<i64>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_template_asks_on_time_and_is_missed_after_never_placed_late() {
+        let due = 1_000_000_000_000;
+        let grace = handshake_governance::SCHEDULE_SEND_GRACE.as_micros() as i64;
+        assert_eq!(standing_due(due, due - 1), RecurringDue::NotYet);
+        assert_eq!(standing_due(due, due), RecurringDue::ConfirmNow);
+        assert_eq!(standing_due(due, due + grace - 1), RecurringDue::ConfirmNow);
+        assert_eq!(standing_due(due, due + grace), RecurringDue::Missed);
+    }
 
     /// 2026-03-07 12:00 UTC, a Saturday -- the day before the US springs
     /// forward (2026-03-08).

@@ -9,7 +9,7 @@ use handshake_integrity_support::{sealed_chunks_problem, SealedChunks};
 /// longest, and room for the drop-off and its encoding.
 const MAX_DETAILS_BYTES: usize = 2 * MAX_NOTE_BYTES + 1_024;
 
-/// How often a `RecurringOrderTemplate` fires. Deliberately just these two
+/// How often a `RecurringOrderTemplate` comes due. Deliberately just these two
 /// shapes -- the literal "same order every Monday" ask, plus daily as the
 /// same shape with no weekday. `hour`/`minute` are wall-clock time in the
 /// template's `time_zone`, and `weekday` counts from Sunday = 0.
@@ -36,8 +36,8 @@ pub struct TemplateDetails {
 /// A customer's own saved "repeat this order" recipe, linked from their own
 /// key (`OwnerToTemplate`) so their conductor finds every one at once --
 /// nobody else ever looks for them, and the details are sealed. Their own
-/// conductor fires it when `next_run_at` arrives, with no app open, and
-/// advances it to the next occurrence (`dispatch::upkeep`).
+/// conductor reminds them when `next_run_at` arrives (`dispatch::recurring`);
+/// they place each order themselves, at checkout.
 #[hdk_entry_helper]
 #[derive(Clone)]
 // Decodes only from its own fields: a record of another type that
@@ -65,8 +65,8 @@ pub struct RecurringOrderTemplate {
     /// from before this read as UTC.
     #[serde(default = "utc")]
     pub time_zone: String,
-    /// When it next fires: set at creation, and moved forward each time it
-    /// fires -- the one field (besides `active`) an update may change, and
+    /// When it's next due: set at creation, and moved forward each time it
+    /// comes due -- the one field (besides `active`) an update may change, and
     /// only ever forward.
     pub next_run_at: Timestamp,
     pub active: bool,
@@ -123,8 +123,8 @@ pub(crate) fn validate_new_recurring_template(template: &RecurringOrderTemplate,
 /// Only `active` and `next_run_at` may change -- the recipe itself
 /// (merchant, items, dropoff, ...) is fixed at creation, mirroring
 /// `PromoCode`'s "only active may change" immutability pattern, with one
-/// addition: `next_run_at` must be allowed to advance too, since that's
-/// exactly what firing the template is supposed to do each time.
+/// addition: `next_run_at` must be allowed to advance too, as its customer
+/// takes each occurrence to checkout or passes on it.
 pub(crate) fn validate_recurring_template_update(
     template: &RecurringOrderTemplate,
     author: &AgentPubKey,

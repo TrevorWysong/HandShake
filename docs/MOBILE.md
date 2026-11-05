@@ -72,7 +72,7 @@ To notify a phone whose app is closed, the phone has to be woken through Apple's
 
 **Not woken (yet):**
 - A driver's bid on an order: drivers hold no token until they commit. A customer who matches automatically is matched when their app next runs.
-- Orders the customer's conductor places on its own (standing orders): no app is there to give them tokens.
+- A recurring order's reminder for a closed app: nothing's running to raise it, and no server holds the schedule. A phone build should schedule a local notification for the template's next time; until then it shows on opening the app.
 
 ## Running the spike
 

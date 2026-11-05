@@ -25,14 +25,18 @@ export function NoShowEvidence({ orderHex, orderRef }: { orderHex: string; order
         <InfoSheet title={t("noShowEvidence.how")} sections={sections} />
       </div>
       {km !== null && (
-        <p className={clsx("flex items-start gap-2 text-xs", far ? "font-semibold text-red-700 dark:text-red-300" : "text-ink-600 dark:text-ink-300")}>
-          <MapPin size={14} className="mt-0.5 shrink-0" />
-          {t(far ? "noShowEvidence.far" : "noShowEvidence.near", { distance: formatDistance(km) })}
-        </p>
+        <div className="flex items-start gap-2 text-xs">
+          <MapPin size={14} className={clsx("mt-0.5 shrink-0", far ? "text-red-600 dark:text-red-300" : "text-ink-400")} />
+          <div>
+            <p className={far ? "font-semibold text-red-700 dark:text-red-300" : "text-ink-700 dark:text-ink-200"}>{t(far ? "noShowEvidence.far" : "noShowEvidence.near", { distance: formatDistance(km) })}</p>
+            <p className="mt-0.5 text-[11px] text-ink-400">{t("noShowEvidence.fromApp")}</p>
+          </div>
+        </div>
       )}
       {data.door_photo ? (
         <figure>
-          <img src={data.door_photo} alt={t("noShowEvidence.photo")} className="max-h-56 w-full rounded-lg object-cover" />
+          {/* All of it, uncropped: a house number at its edge may be the point. */}
+          <img src={data.door_photo} alt={t("noShowEvidence.photo")} className="max-h-72 w-full rounded-lg bg-ink-900/90 object-contain" />
           <figcaption className="mt-1 flex items-center gap-1.5 text-[11px] text-ink-400">
             <Camera size={12} />
             {t("noShowEvidence.photo")}

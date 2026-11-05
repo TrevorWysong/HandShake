@@ -237,3 +237,11 @@
     display: none !important;
   }
 }
+
+/* The picker icons native date and time fields draw, legible in either theme.
+   Only these: a page-wide color-scheme would paint card forms' frames white. */
+input[type="time"],
+input[type="date"],
+input[type="datetime-local"] {
+  color-scheme: light dark;
+}

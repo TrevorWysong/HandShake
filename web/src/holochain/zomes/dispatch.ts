@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
+import type { ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
 
 // --- orders ---
 
@@ -250,8 +250,6 @@ export async function createRecurringTemplate(input: {
   dropoff_line2?: string;
   tip_cents?: number;
   dropoff_preference?: DropoffPreference;
-  /// Required for `LeaveAtDoor` -- see `requestDelivery`.
-  door_risk_accepted?: boolean;
   /// Each order asks for a driver of its own -- see `requestDelivery`.
   priority?: boolean;
   promo_code_ref?: ActionHash | null;
@@ -272,6 +270,12 @@ export async function createRecurringTemplate(input: {
   });
 }
 
+/// Moves a recurring order that's come due on to its next time: taken to
+/// checkout, or passed on.
+export async function advanceRecurringTemplate(originalAction: ActionHash): Promise<HcRecord> {
+  return callZome("dispatch", "advance_recurring_template", originalAction);
+}
+
 export async function setRecurringTemplateActive(originalAction: ActionHash, active: boolean): Promise<HcRecord> {
   return callZome("dispatch", "set_recurring_template_active", { original_action: originalAction, active });
 }
@@ -283,6 +287,7 @@ export interface RecurringTemplateView {
   record: HcRecord;
   /// The template's sealed details, opened for its owner.
   details: TemplateDetails | null;
+  due: RecurringDue;
 }
 
 /// What the caller may read of an order's sealed details: the drop-off

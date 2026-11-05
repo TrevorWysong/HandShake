@@ -214,6 +214,11 @@ pub fn validate_offer(offer: &PaymentOffer, author: &AgentPubKey, at: Timestamp,
     }
     // A kept card pays only while it stands.
     let saved_card = offer.sealed_token.is_none() && offer.resumes.is_none();
+    // A customer is there to pay, every time: no store keeps their card, so
+    // none can charge it from its own dashboard.
+    if offer.leg == PaymentLeg::Customer && (saved_card || offer.save) {
+        return invalid("a customer pays with a card they have with them; no store keeps it");
+    }
     if saved_card && saved_card_with(author, prev_action, at, &offer.payee)?.is_none() {
         return invalid("there's no card kept with this payee: it was never kept, it was withdrawn, or it went unused too long");
     }

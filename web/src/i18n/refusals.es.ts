@@ -194,7 +194,6 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.this-store-s-rewards-program-isn-t": "El programa de recompensas de esta tienda no está activo.",
   "refusal.those-keys-aren-t-in-a-form": "Esas claves no están en un formato que HandShake lea.",
   "refusal.to-have-it-left-at-your-door": "Para que lo dejen en tu puerta, acepta que se da por entregado en cuanto lo dejan allí.",
-  "refusal.to-have-these-orders-left-at-your": "Para que dejen estos pedidos en tu puerta, acepta que cada uno se da por entregado en cuanto lo dejan allí.",
   "refusal.too-many-wrong-codes-ask-the-store": "Demasiados códigos incorrectos. Pide a la tienda que entregue el pedido escaneando tu código.",
   "refusal.too-many-wrong-codes-scan-their-code": "Demasiados códigos incorrectos. Escanea su código o pídeles que lo confirmen en su app.",
   "refusal.you-aren-t-one-of-this-account": "No eres uno de los guardianes de esta cuenta.",

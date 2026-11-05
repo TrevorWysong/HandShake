@@ -138,12 +138,6 @@ struct MenuPrice {
     loyalty_proof: Vec<ActionHash>,
 }
 
-/// An order from the menu alone at current prices, less `promo_ref` -- what
-/// a recurring order is placed at (`recurring::fire`).
-pub(crate) fn price_menu_order(catalog_ref: &ActionHash, store: &MerchantCatalog, items: &[OrderItem], promo_ref: Option<&ActionHash>, reward: Option<&PromoReward>) -> ExternResult<PricedOrder> {
-    Ok(finish(store, Some(price_menu(catalog_ref, items_merged(items)?, promo_ref, reward)?), Vec::new()))
-}
-
 /// The order's lines and totals: the menu's, then each goodie bag's -- a
 /// bag is food at the store's default rate -- taxed together.
 fn finish(store: &MerchantCatalog, menu: Option<MenuPrice>, bags: Vec<(OrderLine, u64)>) -> PricedOrder {

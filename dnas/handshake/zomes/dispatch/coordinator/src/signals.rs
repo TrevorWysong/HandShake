@@ -98,6 +98,9 @@ pub enum LocalSignal {
     /// A payment on this order changed: the payment agent and the screens
     /// read it again.
     PaymentChanged(ActionHash),
+    /// A recurring order's time has come: the app reminds its customer to
+    /// confirm it. Never leaves their own device.
+    RecurringOrderDue(ActionHash),
     /// A payer (this key) withdrew a card they kept with this agent: its
     /// payment agent deletes it (`payments::forget_saved_card`).
     CardForgotten(AgentPubKey),

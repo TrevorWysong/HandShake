@@ -69,6 +69,9 @@ function cancelledText(role: OrderRole, change: OrderChange): string {
 
 /// The notification a signal calls for, if any.
 export function notificationFor(signal: LocalSignal | LiveSignal): AppNotification | null {
+  if ("RecurringOrderDue" in signal) {
+    return { title: t("recurring.notifyTitle"), body: t("recurring.notifyBody"), tag: `recurring-${bytesToHex(signal.RecurringOrderDue)}`, route: "/customer/orders", urgent: false };
+  }
   if ("OrderPlaced" in signal) {
     return { title: t("notify.newOrder.title"), body: t("notify.newOrder.body"), tag: `order-${bytesToHex(signal.OrderPlaced)}`, route: "/merchant", urgent: true };
   }

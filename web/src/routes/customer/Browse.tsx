@@ -4,6 +4,7 @@ import { Heart, PackageOpen, Search } from "lucide-react";
 import { motion } from "framer-motion";
 import clsx from "clsx";
 import { getNearbyMerchants, getNearbyGoodieBags } from "../../holochain/zomes/catalog";
+import { RecurringDue } from "../../components/orders/RecurringDue";
 import { averageRating, getRatingSummary } from "../../holochain/zomes/reputation";
 import { decodeEntry, bytesToHex } from "../../holochain/decode";
 import { encodeGeohash } from "../../lib/places/geohash";
@@ -153,6 +154,8 @@ export function Browse() {
   return (
     <div className="px-4 pt-4">
       <AddressSwitcher />
+
+      <RecurringDue />
 
       <div className="mb-4 flex items-center gap-2 rounded-full border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-900 px-4 py-2.5 transition focus-within:border-handshake-400 focus-within:ring-2 focus-within:ring-handshake-100">
         <Search size={16} className="text-ink-400" />

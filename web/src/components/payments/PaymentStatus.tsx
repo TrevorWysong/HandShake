@@ -86,21 +86,6 @@ export function PaymentStatus({
     <PaySheet profile={profile} payee={payee} amountCents={amountCents} offerToSave={leg !== "Customer"} title={t("pay.anotherCardTitle")} onClose={() => setRetrying(false)} onCard={async (card) => void (await offer(card))} />
   );
 
-  // An order is placed with its card, so one with none was a standing
-  // order whose kept card was withdrawn, or went unused too long.
-  if (standing === null && leg === "Customer") {
-    return (
-      <>
-        <Panel tone="warn" icon={<CreditCard size={16} />}>
-          <p>{t("pay.unpaid", { payee })}</p>
-          <Button className="mt-3 px-3.5 py-1.5 text-xs" disabled={!profile} onClick={() => setRetrying(true)}>
-            {t("pay.payNow", { amount: formatCents(amountCents) })}
-          </Button>
-        </Panel>
-        {retry}
-      </>
-    );
-  }
   if (standing === null || "Waiting" in standing) {
     if (compact) return null;
     return (

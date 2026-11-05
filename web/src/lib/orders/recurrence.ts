@@ -1,4 +1,4 @@
-// How a recurring order's rule reads. When it fires is the conductor's
+// How a recurring order's rule reads. When it's due is the conductor's
 // business (`dispatch::recurring::next_occurrence`, in the template's own
 // time zone); `weekday` counts from Sunday = 0 on both sides.
 import type { RecurrenceRule } from "../../holochain/types";

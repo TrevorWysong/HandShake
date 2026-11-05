@@ -1,25 +1,30 @@
 // How a delivery is to be made, as the customer chooses it at checkout:
 // where to, how it's handed over, how fast, who picks the driver, when, and
 // what they'll pay the driver at most and tip. It starts as they last left
-// it (`useCustomerSettings().checkout`), the drop-off at their saved place.
+// it (`useCustomerSettings().checkout`), the drop-off at their saved place --
+// or, for a recurring order brought here to confirm, as it was set up.
 import { useState } from "react";
 import { useSession } from "../../../store/session";
 import { useCustomerSettings } from "../../../store/roleSettings";
 import { useTerms } from "../../../store/network";
 import { fromMinorUnits } from "../../../lib/ui/format";
 import type { DropoffPreference, GeoPoint } from "../../../holochain/types";
+import type { CheckoutDraft } from "../../../lib/orders/recurring";
 
-export function useDeliveryOptions() {
+export function useDeliveryOptions(draft?: CheckoutDraft) {
   const location = useSession((s) => s.location);
   const feePresets = useTerms().suggested_delivery_fees;
-  const [usual] = useState(() => useCustomerSettings.getState().checkout);
+  const [usual] = useState(() => {
+    const last = useCustomerSettings.getState().checkout;
+    return draft ? { ...last, dropoffPreference: draft.preference, priority: draft.priority, tipPercent: null, feeCapCents: draft.feeCapCents ?? last.feeCapCents } : last;
+  });
 
   // Editable per order -- a friend's place, say -- and kept as the default
   // only if asked.
-  const [dropoff, setDropoff] = useState<GeoPoint>(location);
+  const [dropoff, setDropoff] = useState<GeoPoint>(draft?.dropoff ?? location);
   // Its second line -- the apartment, suite or unit -- typed, or a saved
   // address's own.
-  const [dropoffLine2, setDropoffLine2] = useState("");
+  const [dropoffLine2, setDropoffLine2] = useState(draft?.dropoffLine2 ?? "");
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [chosenPreference, setChosenPreference] = useState<DropoffPreference>(usual.dropoffPreference);
   // Leaving it at the door means accepting it's delivered once it's left --
@@ -30,7 +35,7 @@ export function useDeliveryOptions() {
   const [scheduled, setScheduled] = useState(false);
   const [scheduledFor, setScheduledFor] = useState("");
   const [tipPercent, setTipPercent] = useState<number | null>(usual.tipPercent);
-  const [customTip, setCustomTip] = useState("");
+  const [customTip, setCustomTip] = useState(draft ? String(fromMinorUnits(draft.tipCents)) : "");
   // The last cap, as a preset if it's one, else typed in; at first, the
   // second suggestion.
   const [feePreset, setFeePreset] = useState<number | null>(() => {
