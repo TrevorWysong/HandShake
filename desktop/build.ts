@@ -50,7 +50,7 @@ const PATCHES = [
   {
     file: "src/main/launch.ts",
     from: "  return {\n    lairHandle,\n    holochainManager,\n    mainWindow,\n    zomeCallSigner,\n  };",
-    to: "  await startPayments(holochainManager, mainWindow, kangarooFs);\n\n  return {\n    lairHandle,\n    holochainManager,\n    mainWindow,\n    zomeCallSigner,\n  };",
+    to: "  startPayments(holochainManager, mainWindow, kangarooFs);\n\n  return {\n    lairHandle,\n    holochainManager,\n    mainWindow,\n    zomeCallSigner,\n  };",
   },
   {
     // ...and the app's window gets its four commands.
@@ -70,10 +70,12 @@ const PATCHES = [
   {
     // Kangaroo signs a zome call for whoever asks over IPC. Only a window's
     // own page may -- never a frame inside it, such as a processor's card
-    // form. (The app's is the only window: popups are refused.)
+    // form. (The app's is the only window: popups are refused.) And Kangaroo
+    // keeps the signer only once the window has loaded, by when the page's
+    // first calls have come: they wait, rather than fail.
     file: "src/main/index.ts",
     from: "  if (!ZOME_CALL_SIGNER) throw new Error('Zome call signer undefined.');\n",
-    to: "  if (_e.senderFrame !== _e.sender.mainFrame) throw new Error('Not allowed.');\n  if (!ZOME_CALL_SIGNER) throw new Error('Zome call signer undefined.');\n",
+    to: "  if (_e.senderFrame !== _e.sender.mainFrame) throw new Error('Not allowed.');\n  while (!ZOME_CALL_SIGNER) await new Promise((resolve) => setTimeout(resolve, 50));\n",
   },
   {
     // payments/ imports its modules by their .ts names, as Node runs them.
@@ -119,6 +121,18 @@ const PATCHES = [
     file: "templates/electron-builder-template.yml",
     from: "  maintainer: electronjs.org",
     to: `  maintainer: ${OWNER}`,
+  },
+  {
+    // Its lockfile's Holochain client still sends a capability grant in the
+    // form before 0.7, which the conductor can't read. The same dependencies,
+    // and the hash web/package-lock.json has.
+    file: "yarn.lock",
+    from: `  version "0.21.0"
+  resolved "https://registry.yarnpkg.com/@holochain/client/-/client-0.21.0.tgz#e19c780702043892287655b7cdb70a3896dd47d9"
+  integrity sha512-o1Fzu/9LXWSb1zP21sLXvhTihUKs/5r4ZEFKQW/e9MPogHiMsyt3/6AYKB+X0ZcUilC5sBSFODIAifRu0XMQqA==`,
+    to: `  version "0.21.1"
+  resolved "https://registry.yarnpkg.com/@holochain/client/-/client-0.21.1.tgz#d4e9daac0fd700ce5bc557a633fbe5f3b8be9bb8"
+  integrity sha512-Y+x3vO5Rgl++SUS20ZzG7jsmO/yp1bfkR4fiKfHfjL/NUr5s7lBn/N+ZrZbAHZ+3jFU+gPKWzukMtLzHx9bbLg==`,
   },
   {
     // A Linux package names its project's homepage; electron-builder reads
