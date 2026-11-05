@@ -288,7 +288,8 @@ export function Cart() {
               <MatchingSection autoMatch={options.autoMatch} onChange={options.setAutoMatch} />
               {/* A goodie bag is for now, and once. */}
               {!hasBags && <WhenSection options={options} />}
-              {!hasBags && <RepeatSection saving={action.doing === "recurring"} busy={action.busy} onSave={saveRecurring} />}
+              {/* Brought here from a recurring order: it already repeats. */}
+              {!hasBags && !draft && <RepeatSection saving={action.doing === "recurring"} busy={action.busy} onSave={saveRecurring} />}
             </>
           )}
 

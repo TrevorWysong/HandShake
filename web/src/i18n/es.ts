@@ -556,7 +556,6 @@ export const es: Catalog = {
   "noShow.canSay": "Ya esperaste lo que pide la red: puedes indicar que no salió nadie. Cobras como entregado, salvo que lo dispute y la tienda le dé la razón.",
   "noShow.notHere": "El cliente no está",
   "noShow.driverSaid": "Indicaste que no salió nadie. Cobras como entregado a las {time}, salvo que el cliente diga que estaba y la tienda le dé la razón. Si sale a la puerta, aún puedes entregárselo.",
-  "noShow.customerTitle": "Tu repartidor no pudo encontrarte.",
   "noShow.customerDetail": "Te esperó en tu puerta. Si estás ahí, muéstrale tu código o confirma que lo tienes. Si no, se cobra como entregado a las {time}, salvo que digas que estabas: entonces decide la tienda.",
   "noShow.customerDetailSoon": "Te esperó en tu puerta. Si estás ahí, muéstrale tu código o confirma que lo tienes. Si no, se cobra como entregado en breve, salvo que digas que estabas: entonces decide la tienda.",
   "noShow.disputeAsk": "Yo estaba ahí",

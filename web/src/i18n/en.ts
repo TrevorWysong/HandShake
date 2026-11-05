@@ -562,7 +562,6 @@ export const en = {
   "noShow.canSay": "You've waited the network's wait: you can say nobody came. You're paid as delivered unless they dispute it and the store sides with them.",
   "noShow.notHere": "Customer not here",
   "noShow.driverSaid": "You said nobody came. You're paid as delivered at {time}, unless the customer says they were there and the store sides with them. If they come to the door, you can still hand it over.",
-  "noShow.customerTitle": "Your driver couldn't reach you.",
   "noShow.customerDetail": "They waited at your door. If you're there, show them your code or confirm you have it. Otherwise it's paid as delivered at {time}, unless you say you were there: then the store decides.",
   "noShow.customerDetailSoon": "They waited at your door. If you're there, show them your code or confirm you have it. Otherwise it's paid as delivered soon, unless you say you were there: then the store decides.",
   "noShow.disputeAsk": "I was there",

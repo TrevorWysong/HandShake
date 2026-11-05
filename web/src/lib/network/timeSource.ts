@@ -9,6 +9,11 @@ import type { Beacon } from "../../holochain/types";
 import { currentTerms } from "../../store/network";
 import { withTimeout } from "../util/timeout";
 
+/// How long past a deadline, in microseconds, the latest round can be relied
+/// on to prove it's passed: a round is published seconds after its time, and a
+/// device's clock can run a little ahead. A screen offers such a step only then.
+export const PROOF_MARGIN_MICROS = 15_000_000;
+
 /// How long one relay gets before the next is tried.
 const RELAY_TIMEOUT_MS = 5_000;
 
