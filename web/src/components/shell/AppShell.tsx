@@ -6,12 +6,17 @@ import { Home, ClipboardList, ShoppingCart, User, Car, DollarSign, Gift } from "
 import { useSession, type Mode } from "../../store/session";
 import { useCart } from "../../store/cart";
 import { pageVariants } from "../../lib/ui/motion";
+import { bytesToHex } from "../../holochain/decode";
 import { PresenceDot } from "../ui";
 import { NavItem, type NavPlacement } from "./NavItem";
 import { MerchantNav } from "./MerchantNav";
 import { Notifier } from "./Notifier";
 import { Toaster } from "./Toaster";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { ActiveOrderCard } from "./ActiveOrderCard";
+import { CustomerDock } from "./CustomerDock";
+import { dockFits, useCardOrders } from "../../lib/hooks/useCardOrders";
+import { useActiveOrders } from "../../store/activeOrders";
 import { usePolling } from "../../lib/hooks/useResource";
 import { POLL } from "../../lib/network/poll";
 import { reaffirmRecoveryPlan } from "../../holochain/zomes/account";
@@ -71,6 +76,12 @@ export function AppShell() {
   // pages every mode shares (profile, account) keep the mode last used.
   const routeMode = MODES.find((m) => pathname === `/${m}` || pathname.startsWith(`/${m}/`));
   const mode = routeMode && availableModes.includes(routeMode) ? routeMode : chosenMode;
+  // Their orders in progress follow a customer around the app.
+  const owner = agentPubKey ? bytesToHex(agentPubKey) : null;
+  const refreshActiveOrders = useActiveOrders((s) => s.refresh);
+  usePolling(() => owner && refreshActiveOrders(owner).catch(() => undefined), { pollMs: POLL.signalled, refreshOn: () => true }, mode === "customer" && !!owner, owner ?? undefined);
+  const cards = useCardOrders(pathname, owner);
+  const docked = mode === "customer" && dockFits(pathname);
   // Remember it, so those shared pages, and home, follow the mode last seen.
   useEffect(() => {
     if (mode !== chosenMode) setMode(mode);
@@ -114,6 +125,7 @@ export function AppShell() {
             <ModeNav mode={mode} cartCount={cartCount} placement="side" />
           </nav>
           <div className="mt-auto flex flex-col gap-1">
+            {mode === "customer" && <ActiveOrderCard cards={cards} className="mb-3" />}
             <NavItem to="/profile" icon={User} label={t("nav.profile")} placement="side" />
             {agentPubKey && (
               <p className="flex items-center gap-2 px-3 pt-2 text-[11px] text-ink-400">
@@ -141,7 +153,7 @@ export function AppShell() {
 
         <Notifier />
         <ConnectionBanner />
-        <main className="flex-1 pb-20 lg:px-6 lg:pt-4 lg:pb-12">
+        <main className={clsx("flex-1 lg:px-6 lg:pt-4 lg:pb-12", docked && cards.length > 0 ? "pb-40" : "pb-20")}>
           <AnimatedOutlet />
         </main>
       </div>
@@ -151,6 +163,7 @@ export function AppShell() {
           <ModeNav mode={mode} cartCount={cartCount} placement="bar" />
         </nav>
       )}
+      {docked && <CustomerDock cards={cards} pathname={pathname} wide={wide} />}
       <Toaster />
     </div>
   );

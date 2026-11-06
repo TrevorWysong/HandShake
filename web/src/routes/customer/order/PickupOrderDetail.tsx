@@ -7,7 +7,10 @@ import { fetchOrderItemNames } from "../../../lib/storefront/menu";
 import { decodeEntry, bytesEqual, bytesToHex, hexToBytes, timestampOf } from "../../../holochain/decode";
 import { getCatalog } from "../../../holochain/zomes/catalog";
 import { myAgentPubKey } from "../../../holochain/client";
-import { PickupStatusTimeline, PickupStatusBadge } from "../../../components/orders/OrderStatus";
+import { PickupStatusTimeline } from "../../../components/orders/OrderStatus";
+import { OrderHero } from "../../../components/orders/OrderHero";
+import { customerProgress, orderEstimate } from "../../../lib/orders/progress";
+import { useClock } from "../../../lib/hooks/useClock";
 import { Button, Card, Notice, Skeleton, StatNumber } from "../../../components/ui";
 import { WaitingForStore } from "../../../components/orders/WaitingForStore";
 import { formatCents, formatClockTime } from "../../../lib/ui/format";
@@ -33,6 +36,7 @@ import { OrderPayments } from "../../../components/payments/OrderPayments";
 /// inside `OrderDetail`.
 export function PickupOrderDetail() {
   const { hash = "" } = useParams<{ hash: string }>();
+  const now = useClock();
   const orderRef = hexToBytes(hash);
   const t = useT();
   // One step on the order at a time: no cancelling it while confirming it.
@@ -89,27 +93,20 @@ export function PickupOrderDetail() {
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-10 pt-4">
-      <motion.div variants={fadeSlideUp} className="mb-4 flex items-center justify-between">
-        <div className="min-w-0">
-          <h1 className="flex items-baseline gap-1.5 text-xl font-black text-ink-900 dark:text-ink-50">
-            {t("pickup.heading")}<StatNumber className="text-xl">{formatCents(order.order_total)}</StatNumber>
-          </h1>
-          {storeName && <p className="truncate text-xs text-ink-400">{t("cart.from", { store: storeName })}</p>}
-        </div>
-        <PickupStatusBadge status={order.status} />
+      <motion.div variants={fadeSlideUp}>
+        <OrderHero progress={customerProgress({ kind: "Pickup", order })} eyebrow={storeName} estimate={orderEstimate({ kind: "Pickup", order }, null, now.getTime() * 1000)}>
+          <PickupStatusTimeline status={order.status} cancellation={order.cancellation} />
+        </OrderHero>
       </motion.div>
 
+      <motion.div variants={fadeSlideUp} className="mt-3 flex items-baseline justify-between gap-3 px-1">
+        <h2 className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("pickup.heading")}<StatNumber className="ml-1.5 text-sm">{formatCents(order.order_total)}</StatNumber></h2>
+      </motion.div>
       {order.status !== "PickedUp" && (
-        <motion.div variants={fadeSlideUp} className="-mt-2 mb-4">
+        <motion.div variants={fadeSlideUp} className="mt-1 mb-1">
           <OrderSummary orderRef={orderRef} count={order.lines.reduce((n, l) => n + l.quantity, 0)} />
         </motion.div>
       )}
-
-      <motion.div variants={fadeSlideUp}>
-        <Card className="p-4">
-          <PickupStatusTimeline status={order.status} cancellation={order.cancellation} />
-        </Card>
-      </motion.div>
 
       {/* Their card, held by the store: confirming, or what it needs. */}
       {order.status !== "Cancelled" && (

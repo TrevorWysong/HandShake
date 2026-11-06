@@ -9,7 +9,7 @@ test("a recurring order reminds its customer, who confirms and pays at checkout"
   test.setTimeout(300_000);
   const tacos = store("tacos");
   await signInAs(page, "ana");
-  await page.getByText(tacos.name, { exact: true }).first().click();
+  await page.locator("main").getByText(tacos.name, { exact: true }).first().click();
   await page.getByRole("button", { name: `Add ${tacos.menu[0].name}` }).click();
   await page.getByRole("link", { name: "Cart" }).click();
   await page.getByRole("button", { name: "Set up" }).click();

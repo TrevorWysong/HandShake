@@ -14,6 +14,8 @@ import { encodeGeohash, distanceKm, geohashCenter } from "../../lib/places/geoha
 import { useSession } from "../../store/session";
 import { Button, Card, EmptyState, Input, Notice, PresenceDot, SectionLabel, Skeleton, StatNumber } from "../../components/ui";
 import { OrderStatusTimeline } from "../../components/orders/OrderStatus";
+import { OrderHero } from "../../components/orders/OrderHero";
+import { driverProgress } from "../../lib/orders/progress";
 import { StarRating } from "../../components/StarRating";
 import { ChatPanel } from "../../components/orders/ChatPanel";
 import { DriverPayHeld, OrderPayments } from "../../components/payments/OrderPayments";
@@ -393,8 +395,11 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
   const commit = () => run(() => commitToOrder(row.hash));
 
   return (
-    <Card className="border-2 border-handshake-400 p-4">
+    <div className="flex flex-col gap-3">
+    <OrderHero progress={driverProgress(row.order.status)}>
       <OrderStatusTimeline status={row.order.status} />
+    </OrderHero>
+    <Card className="p-4">
       {row.order.ready_by !== null && BEFORE_PICKUP.includes(row.order.status) && <p className="mt-2 text-xs text-ink-500">{t("drive.readyBy", { time: formatClockTime(row.order.ready_by) })}</p>}
       {row.dropoff?.recipient && <p className="mt-2 text-sm font-semibold text-ink-900 dark:text-ink-50">{t("drive.deliverTo", { name: row.dropoff.recipient })}</p>}
       {!row.dropoff && row.order.status === "BidAccepted" && <p className="mt-2 text-xs text-ink-400">{t("drive.addressAfterCommit")}</p>}
@@ -467,6 +472,7 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
         )}
       </Sheet>
     </Card>
+    </div>
   );
 }
 

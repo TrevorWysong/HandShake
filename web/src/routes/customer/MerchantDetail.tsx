@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Clock, Heart, ShoppingBag } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { ArrowLeft, ChevronRight, Clock, Heart } from "lucide-react";
+import { motion } from "framer-motion";
 import { averageRating, getItemRatingSummary, type ItemRatingSummary } from "../../holochain/zomes/reputation";
 import { useResource } from "../../lib/hooks/useResource";
 import { useGoBack } from "../../lib/hooks/useGoBack";
@@ -40,7 +40,6 @@ export function MerchantDetail() {
 }
 
 function StorePage({ hash }: { hash: string }) {
-  const navigate = useNavigate();
   const goBack = useGoBack("/customer");
   const minAge = useTerms().restricted_min_age;
   const t = useT();
@@ -114,7 +113,6 @@ function StorePage({ hash }: { hash: string }) {
     );
   }
 
-  const cartCount = cart.lines.reduce((n, l) => n + l.quantity, 0);
   /// An item without choices goes straight in the cart; one with choices
   /// opens its sheet.
   const addItem = (row: ItemRow) => {
@@ -240,30 +238,6 @@ function StorePage({ hash }: { hash: string }) {
           }}
         />
       )}
-
-      {/* The cart, until the window has room to show it beside the menu. */}
-      <AnimatePresence>
-        {cartCount > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 30 }}
-            className="fixed inset-x-0 bottom-20 z-20 mx-auto flex max-w-md justify-center px-4 lg:bottom-6 lg:left-sidebar 2xl:hidden"
-          >
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={() => navigate("/customer/cart")}
-              className="flex w-full items-center justify-between rounded-full bg-handshake-500 px-5 py-3.5 font-semibold text-white shadow-[var(--shadow-glow)] transition hover:bg-handshake-600"
-            >
-              <span className="flex items-center gap-2">
-                <ShoppingBag size={18} />
-                {t("store.viewCart")} · {t("orders.items", { count: cartCount })}
-              </span>
-              <span>{formatCents(cart.total())}</span>
-            </motion.button>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 }

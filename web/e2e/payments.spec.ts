@@ -29,7 +29,7 @@ async function shoot(page: Page, name: string) {
 test("a customer's card is held by the store before it takes the order", async ({ page, browser }) => {
   const tacos = store("tacos");
   await signInAs(page, "ana");
-  await page.getByText(tacos.name, { exact: true }).first().click();
+  await page.locator("main").getByText(tacos.name, { exact: true }).first().click();
   await page.getByRole("button", { name: `Add ${tacos.menu[0].name}` }).click();
   await page.getByRole("link", { name: "Cart" }).click();
   await page.getByText("Pickup", { exact: true }).click();

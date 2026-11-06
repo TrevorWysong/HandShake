@@ -30,7 +30,7 @@ test("a store's owner builds its rewards program, with its card drawn live", asy
 test("a customer finds a store's program on its page, in Rewards, and at checkout", async ({ page }) => {
   const cafe = store("cafe");
   await signInAs(page, "lee");
-  await page.getByText(cafe.name, { exact: true }).first().click();
+  await page.locator("main").getByText(cafe.name, { exact: true }).first().click();
   const strip = page.getByRole("button", { name: /Café Club|beans/ }).first();
   await expect(strip).toBeVisible();
   await shoot(page, "store-strip");
