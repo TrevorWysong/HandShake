@@ -17,6 +17,9 @@ Built on [Holochain](https://www.holochain.org)
 
 </div>
 
+> **Experimental software, with no warranty.** HandShake isn't a food-safety or medical tool: what a store says about its food, allergens included, is that store's own word. It's provided as is, and nobody here runs a network for you or stands behind an order. See [LICENSE](LICENSE) and [NOTICE](NOTICE.md).
+
+
 <br>
 
 ## The idea
@@ -264,3 +267,7 @@ Not yet: signed desktop installers, the phone builds, which wait on Holochain's 
 | **Running it** | [Development](docs/DEVELOPMENT.md) &nbsp;&middot;&nbsp; [Deployment](docs/DEPLOYMENT.md) &nbsp;&middot;&nbsp; [Upgrading the network](docs/MIGRATION.md) &nbsp;&middot;&nbsp; [Phones](docs/MOBILE.md) |
 | **How it works** | [Security](docs/SECURITY.md) &nbsp;&middot;&nbsp; [Accounts and recovery](docs/RECOVERY.md) &nbsp;&middot;&nbsp; [Rewards](docs/REWARDS.md) &nbsp;&middot;&nbsp; [Languages](docs/I18N.md) &nbsp;&middot;&nbsp; [Holochain notes](docs/HOLOCHAIN_ISSUES.md) |
 | **Plans** | [Direct payments](docs/DIRECT_PAYMENTS.md) &nbsp;&middot;&nbsp; [Allergens](docs/ALLERGENS.md) &nbsp;&middot;&nbsp; [Payment rails](docs/PAYMENT_RAILS.md) &nbsp;&middot;&nbsp; [Menu choices](docs/MENU_CUSTOMIZATION.md) &nbsp;&middot;&nbsp; [Sales tax](docs/SALES_TAX.md) &nbsp;&middot;&nbsp; [Tax reporting](docs/TAX_REPORTING.md) |
+
+## License
+
+HandShake is [source-available under the PolyForm Shield License 1.0.0](LICENSE), not open source. You can read it, use it, including to run a store or drive, and change it, but not use it to provide anything that competes with it. Third-party components keep their own licenses, including Holochain's: see [NOTICE](NOTICE.md).

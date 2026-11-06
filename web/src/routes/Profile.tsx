@@ -320,9 +320,12 @@ export function ProfilePage() {
       </motion.div>
 
       <motion.div variants={fadeSlideUp} className="mb-4 mt-2 text-center">
-        <Link to="/policies" className="text-xs text-ink-400 underline-offset-4 hover:text-ink-600 hover:underline dark:hover:text-ink-200">
+        <span className="inline-flex flex-wrap justify-center gap-x-4 gap-y-1">
+          <Link to="/policies" className="text-xs text-ink-400 underline-offset-4 hover:text-ink-600 hover:underline dark:hover:text-ink-200">
           {t("profile.policies")}
         </Link>
+        <Link to="/terms" className="text-xs text-ink-400 underline-offset-4 hover:text-ink-600 hover:underline dark:hover:text-ink-200">{t("terms.title")}</Link>
+        </span>
       </motion.div>
 
       {HOST === "dev" && (

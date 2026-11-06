@@ -2,6 +2,7 @@
 // phrase -- each as two devices (two browser contexts) on the dev
 // conductor, through the real screens. The rules themselves are proved in
 // tests/tryorama/src/device-move.test.ts and account.test.ts.
+import { acceptTerms } from "./seed.ts";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 /// A fresh device: its own browser storage, with a platform authenticator
@@ -20,6 +21,7 @@ async function newDevice(browser: Browser): Promise<Page> {
 
 /// Signs up as a new customer called `name`.
 async function signUp(page: Page, name: string) {
+  await acceptTerms(page);
   await page.goto("/#/onboarding");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByPlaceholder("Alex Rivera").fill(name);
@@ -34,6 +36,7 @@ async function openAccount(page: Page) {
 
 /// Starts "I already have an account" on a new device, by `method`.
 async function startRestore(page: Page, method: RegExp) {
+  await acceptTerms(page);
   await page.goto("/#/onboarding");
   await page.getByRole("button", { name: "I already have an account" }).click();
   await page.getByRole("button", { name: method }).click();

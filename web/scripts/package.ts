@@ -25,6 +25,7 @@
 // network seed are part of the DNA hash, so a different value is a
 // different, separate network.
 import { execFileSync } from "node:child_process";
+import { TERMS_DRAFT } from "../src/lib/policies/termsVersion.ts";
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -91,6 +92,12 @@ function fail(message: string): never {
 function step(label: string, cmd: string, cmdArgs: string[], cwd = REPO) {
   console.log(`\n▸ ${label}`);
   execFileSync(cmd, cmdArgs, { cwd, stdio: "inherit", env: { ...process.env, VITE_HANDSHAKE_DEV_HOST: "false" } });
+}
+
+// A network taking real payments has real customers: not on placeholder terms.
+if (properties.live_payments && TERMS_DRAFT) {
+  console.error("✗ This network takes live payments, but the terms of use are still a draft awaiting legal review (web/src/lib/policies/termsVersion.ts).");
+  process.exit(1);
 }
 
 const work = mkdtempSync(path.join(tmpdir(), "handshake-package-"));

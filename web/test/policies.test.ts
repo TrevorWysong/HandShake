@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { POLICIES, POLICY_VERSION } from "../src/lib/policies";
+import { TERMS } from "../src/lib/policies/terms";
 import type { NetworkTerms } from "../src/holochain/types";
 
 const base = {
@@ -28,4 +29,10 @@ for (const terms of [base, { ...base, appeals: true, drivers_verified: true, res
 
 test("the latest change is the current version, in every language", () => {
   for (const [locale, content] of Object.entries(POLICIES)) assert.equal(content.changes[0].version, POLICY_VERSION, locale);
+});
+
+test("every language's terms have the same sections and points", () => {
+  for (const [locale, sections] of Object.entries(TERMS)) {
+    assert.deepEqual(sections.map((s) => s.points.length), TERMS.en.map((s) => s.points.length), locale);
+  }
 });
