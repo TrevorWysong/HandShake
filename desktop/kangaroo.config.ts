@@ -22,7 +22,7 @@ export default defineConfig({
   // Semver-compatible versions share one node and its data (0.1.0 -> 0.1.3);
   // a breaking bump (0.1 -> 0.2) starts a separate one. Bump the minor for a
   // new network or Holochain line, the patch for anything else.
-  version: '0.1.0',
+  version: '0.2.0',
   macOSCodeSigning: macSigned,
   windowsEVCodeSigning: false,
   // The UI routes by hash, so a missing file is really missing.

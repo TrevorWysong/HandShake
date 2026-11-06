@@ -2,12 +2,13 @@ import { readFile } from 'node:fs/promises'
 import tailwindcss from '@tailwindcss/postcss'
 import react from '@vitejs/plugin-react'
 import { defineConfig, transformWithOxc, type Plugin } from 'vite'
+import { networkOrigins } from './scripts/lib/csp.ts'
 
 // What a production build may load, and from where. Everything a store,
 // driver or customer publishes is shown in this app -- names, photos,
 // notes -- so the browser itself refuses anything but this app's own code,
-// inline images, the conductor's local websocket, and OpenStreetMap's tiles
-// and geocoder (src/components/LiveMap.tsx, src/lib/places/geocoding.ts). Even if a
+// inline images, the conductor's local websocket, and the outside services the
+// network's own settings name. Even if a
 // published entry ever slipped past validation, it couldn't load a tracking
 // pixel or a script. Build-only: Vite's dev server needs inline scripts.
 //
@@ -22,14 +23,19 @@ const CARD_FORMS = {
   connect: ["https://api.stripe.com", "https://pci-connect.squareup.com", "https://pci-connect.squareupsandbox.com", "https://token.clover.com", "https://token-sandbox.dev.clover.com", "https://pay.google.com"],
   font: ["https://*.squarecdn.com"],
 }
+// The servers this network's own settings name: its map tiles, address search,
+// routing, push relay and time relays (scripts/lib/csp.ts). `npm run package`
+// passes the properties it's packaging; otherwise, the network's defaults.
+const NETWORK = networkOrigins(JSON.parse(process.env.HANDSHAKE_NETWORK_PROPERTIES ?? '{}'))
+
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   `script-src 'self' ${CARD_FORMS.script.join(' ')}`,
   `frame-src ${CARD_FORMS.frame.join(' ')}`,
   // Leaflet and the UI's animations set inline style attributes.
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.stripe.com",
-  `connect-src 'self' ws://localhost:* ws://127.0.0.1:* https://nominatim.openstreetmap.org ${CARD_FORMS.connect.join(' ')}`,
+  `img-src 'self' data: blob: ${NETWORK.img.join(' ')} https://*.stripe.com`,
+  `connect-src 'self' ws://localhost:* ws://127.0.0.1:* ${NETWORK.connect.join(' ')} ${CARD_FORMS.connect.join(' ')}`,
   `font-src 'self' ${CARD_FORMS.font.join(' ')}`,
   "object-src 'none'",
   "base-uri 'none'",
