@@ -39,6 +39,7 @@ export function CartLines({ menuItems, program, rewardCost, onEdit }: { menuItem
                 {line.choiceLabels.length > 0 && <p className="line-clamp-2 text-xs text-ink-500 dark:text-ink-400">{line.choiceLabels.join(", ")}</p>}
                 <p className="text-xs text-ink-400">
                   {t("cart.each", { price: formatCents(line.priceCents) })}
+                  {!line.bag && menuItems.find((row) => bytesEqual(row.hash, line.itemRef))?.fullPriceCents && <span className="ml-1.5 font-semibold text-handshake-600 dark:text-handshake-400">{t("sale.onLine")}</span>}
                   {row && (
                     <button type="button" onClick={() => onEdit({ key, line, row })} className="ml-2 font-semibold text-handshake-600 hover:underline dark:text-handshake-400">
                       {t("common.edit")}

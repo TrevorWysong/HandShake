@@ -337,6 +337,7 @@ mod tests {
             category: String::new(),
             dietary_tags: Vec::new(),
             allergens: None,
+            sale: None,
             modifier_groups: groups.iter().map(|&g| hash(g)).collect(),
             tax_category: String::new(),
             age_restricted: false,

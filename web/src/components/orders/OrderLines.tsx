@@ -21,6 +21,7 @@ export function OrderLines({ orderRef, prices = false, allergens = false, classN
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-ink-800 dark:text-ink-100">
               {line.name}
+              {line.on_sale && <span className="ml-1.5 whitespace-nowrap rounded-full bg-handshake-100 px-1.5 py-0.5 align-middle text-[10px] font-bold text-handshake-700 dark:bg-handshake-500/20 dark:text-handshake-300">{t("sale.onLine")}</span>}
               {line.goodie_bag && <span className="ml-1.5 whitespace-nowrap rounded-full bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-bold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">🎁 {t("lines.goodieBag")}</span>}
             </p>
             {allergens && (line.goodie_bag || line.allergens) && (

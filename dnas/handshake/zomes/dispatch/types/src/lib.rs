@@ -317,6 +317,10 @@ pub struct OrderLine {
     /// item without choices, or a goodie bag.
     #[serde(default)]
     pub selections: Vec<Selection>,
+    /// Priced at the version's sale price (`catalog_types::ItemSale`), which it
+    /// was running when the order was placed.
+    #[serde(default)]
+    pub on_sale: bool,
 }
 
 /// Something to order -- an item, how many, and what was chosen -- before

@@ -77,6 +77,12 @@ pub(crate) fn closed_reason(catalog: &catalog_types::MerchantCatalog, at: i64) -
     Some(format!("{} is closed then{opens}", catalog.business_name))
 }
 
+/// Whether a sale's running at `at` (microseconds), in the store's own time zone.
+pub(crate) fn sale_running(sale: &catalog_types::ItemSale, time_zone: &str, at: i64) -> bool {
+    let (weekday, minute) = local_weekday_minute(time_zone, at);
+    sale.within_dates(at, 0) && sale.runs_at(weekday, minute)
+}
+
 /// `at` (microseconds since the epoch) as wall-clock time in `time_zone`
 /// (an IANA name); an unknown zone reads as UTC, and a time out of range as
 /// the epoch. An instant always has exactly one local time -- only the

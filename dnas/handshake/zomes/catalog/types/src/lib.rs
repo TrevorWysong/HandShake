@@ -11,6 +11,8 @@
 
 use hdi::prelude::*;
 use handshake_integrity_support::allergens::{AllergenFacts, AllergyPolicy};
+use handshake_integrity_support::limits::{MAX_LABEL_CHARS, MAX_OPENING_PERIODS};
+use handshake_integrity_support::text_problem;
 use handshake_types::GeoPoint;
 
 mod hours;
@@ -224,6 +226,9 @@ pub struct MenuItem {
     pub category: String,
     #[serde(default)]
     pub dietary_tags: Vec<String>,
+    /// A lower price, for a while or on a schedule.
+    #[serde(default)]
+    pub sale: Option<ItemSale>,
     /// What the store says this item has in it -- `None` until it says, which
     /// reads as not stated, never as none. An order line's version keeps what
     /// was said when it was ordered.
@@ -426,6 +431,64 @@ pub struct GoodieBag {
     pub supports_pickup: bool,
     pub supports_delivery: bool,
     pub created_at: Timestamp,
+}
+
+/// An item's sale: a lower price, from when and until when, and, if it's weekly,
+/// on which days and times in the store's own time zone ("Happy hour"). Whether
+/// a line claims it is on the order (`OrderLine::on_sale`). Validation can check
+/// the fixed dates, which need no time zone; the store checks the week before
+/// accepting, and it's the store's own money if it doesn't.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ItemSale {
+    pub price_cents: u64,
+    /// What it's called, if anything: "Happy hour".
+    pub label: String,
+    pub starts_at: Option<Timestamp>,
+    pub ends_at: Option<Timestamp>,
+    /// The times it runs each week. Empty: all the time between its dates.
+    pub weekly: Vec<OpeningPeriod>,
+}
+
+impl ItemSale {
+    /// What's wrong with this sale on an item priced at `full_price`, if anything.
+    pub fn problem(&self, full_price: u64) -> Option<String> {
+        if self.price_cents == 0 || self.price_cents >= full_price {
+            return Some("a sale price is more than nothing, and less than the item's price".into());
+        }
+        if let Some(problem) = text_problem("a sale's name", &self.label, MAX_LABEL_CHARS) {
+            return Some(problem);
+        }
+        if matches!((self.starts_at, self.ends_at), (Some(starts), Some(ends)) if starts >= ends) {
+            return Some("a sale ends after it starts".into());
+        }
+        if self.weekly.len() > MAX_OPENING_PERIODS {
+            return Some(format!("a sale runs in at most {MAX_OPENING_PERIODS} periods a week"));
+        }
+        self.weekly.iter().find_map(|period| period.problem().map(str::to_string))
+    }
+
+    /// Whether `at`, in microseconds, falls between its dates, give or take
+    /// `tolerance`: an order's clock is its customer's.
+    pub fn within_dates(&self, at: i64, tolerance: i64) -> bool {
+        self.starts_at.is_none_or(|starts| at + tolerance >= starts.as_micros()) && self.ends_at.is_none_or(|ends| at - tolerance < ends.as_micros())
+    }
+
+    /// Whether it's running at `weekday` and `minute` in the store's time zone.
+    pub fn runs_at(&self, weekday: u8, minute: u16) -> bool {
+        open_at(&self.weekly, weekday, minute)
+    }
+}
+
+impl MenuItem {
+    /// This item as a line sells it: at its sale price, if the line claims it
+    /// and it has one -- what every total, refund and reward is worked out from.
+    pub fn as_sold(&self, on_sale: bool) -> std::borrow::Cow<'_, MenuItem> {
+        match self.sale.as_ref().filter(|_| on_sale) {
+            Some(sale) => std::borrow::Cow::Owned(MenuItem { price_cents: sale.price_cents, ..self.clone() }),
+            None => std::borrow::Cow::Borrowed(self),
+        }
+    }
 }
 
 impl MerchantCatalog {

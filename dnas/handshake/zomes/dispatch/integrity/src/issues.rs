@@ -52,7 +52,7 @@ pub(crate) fn order_for_issues(order: &ActionHash) -> ExternResult<Option<OrderF
         let version = must_get_valid_record(line.priced_version.clone())?;
         let price = if let Some(item) = decode::<MenuItem>(&version) {
             // The order was valid, so its choices price.
-            match pricer.unit_price(&item, &line.selections)? {
+            match pricer.unit_price(&item.as_sold(line.on_sale), &line.selections)? {
                 Ok(price) => price,
                 Err(_) => return Ok(None),
             }

@@ -86,7 +86,7 @@ pub fn line_totals(order: &OrderForRewards) -> ExternResult<Result<Vec<(ActionHa
     for line in &order.lines {
         let version = must_get_valid_record(line.priced_version.clone())?;
         let unit = if let Some(item) = decode::<MenuItem>(&version) {
-            match pricer.unit_price(&item, &line.selections)? {
+            match pricer.unit_price(&item.as_sold(line.on_sale), &line.selections)? {
                 Ok(price) => price,
                 Err(_) => return Ok(Err("that order's lines don't price")),
             }

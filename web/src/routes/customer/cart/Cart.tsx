@@ -27,7 +27,7 @@ import { storeStatus } from "../../../lib/storefront/storeHours";
 import { wakeTokensForOrder } from "../../../lib/network/push";
 import { useAction } from "../../../lib/hooks/useAction";
 import { useClock } from "../../../lib/hooks/useClock";
-import { useResource } from "../../../lib/hooks/useResource";
+import { usePolling, useResource } from "../../../lib/hooks/useResource";
 import { formatCents } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useT } from "../../../i18n";
@@ -39,6 +39,7 @@ import { CartTotals } from "./CartTotals";
 import { CheckoutBar } from "./CheckoutBar";
 import { AllergySection } from "./AllergySection";
 import { useCartAllergies } from "./useCartAllergies";
+import { repricedLine, soldRow } from "../../../lib/storefront/sales";
 import { useMyAllergies } from "../../../lib/hooks/useMyAllergies";
 import { hasAllergies, NO_ALLERGIES } from "../../../lib/storefront/allergens";
 import type { AllergySet } from "../../../holochain/types";
@@ -94,7 +95,18 @@ export function Cart() {
   /// Choosing the card it's paid with.
   const [paying, setPaying] = useState(false);
 
-  const menuItems = storeInfo?.menuItems ?? NO_ITEMS;
+  const rawMenuItems = storeInfo?.menuItems ?? NO_ITEMS;
+  const storeClock = storeInfo?.hours ?? null;
+  const menuItems = storeClock ? rawMenuItems.map((row) => soldRow(row, storeClock, now)) : rawMenuItems;
+  // A sale can start or stop while something waits in the cart: it's priced as
+  // the order will be, which is what the network checks its total against.
+  usePolling(() => {
+    if (!storeClock) return;
+    cart.repriceLines((line) => {
+      const row = line.bag ? undefined : rawMenuItems.find((candidate) => bytesEqual(candidate.hash, line.itemRef));
+      return row ? repricedLine(line, soldRow(row, storeClock, new Date()).item.price_cents) : line;
+    });
+  }, { pollMs: 30_000 }, !!storeClock && cart.lines.length > 0, storeClock ? String(rawMenuItems.length) : undefined);
   const allergyPolicy = storeInfo?.allergyPolicy ?? null;
   const allergiesRefused = tellingStore && hasAllergies(allergies) && allergyPolicy?.requests === "NotAccepted";
   const allergyMatches = useCartAllergies(catalogRef, cart.lines, menuItems, allergyPolicy, tellingStore ? allergies : mine);

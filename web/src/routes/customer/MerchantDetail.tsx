@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Clock, Heart, HeartPulse } from "lucide-react";
+import { ArrowLeft, ChevronRight, Clock, Heart, HeartPulse, Tag } from "lucide-react";
 import { motion } from "framer-motion";
 import { averageRating, getItemRatingSummary, type ItemRatingSummary } from "../../holochain/zomes/reputation";
 import { useResource } from "../../lib/hooks/useResource";
 import { useGoBack } from "../../lib/hooks/useGoBack";
+import { soldRow } from "../../lib/storefront/sales";
 import { useMyAllergies } from "../../lib/hooks/useMyAllergies";
 import { hasAllergies, honestTags, matchAllergies, needsALook } from "../../lib/storefront/allergens";
 import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
@@ -60,7 +61,8 @@ function StorePage({ hash }: { hash: string }) {
   const catalog = menu?.catalog ?? routerState?.catalog ?? null;
   const now = useClock();
   const status = catalog ? storeStatus(catalog, now) : null;
-  const items = menu?.items ?? null;
+  // As they sell right now: a sale's price, while it's running.
+  const items = menu && catalog ? menu.items.map((row) => soldRow(row, catalog, now)) : null;
   const bags = menu?.bags ?? [];
   // Bounded by the menu page itself (a merchant's own menu, already capped
   // -- see list_menu_items' own pagination). Keyed by the exact item set,
@@ -102,6 +104,8 @@ function StorePage({ hash }: { hash: string }) {
     const match = matchAllergies(row.item.allergens, null, mine);
     return match.contains.length === 0 && match.containsOther.length === 0;
   });
+  // Filtered too: what someone's asked not to see stays out of the sale as well.
+  const onSale = filteredItems.filter((row) => row.fullPriceCents && row.item.available);
   const setFilters = (diet: string[], hide: boolean) => setParams({ ...(diet.length ? { diet } : {}), ...(hide ? { hide: "1" } : {}) }, { replace: true });
 
   if (!catalog || !items) {
@@ -134,7 +138,8 @@ function StorePage({ hash }: { hash: string }) {
   };
   const avgRating = rating ? averageRating(rating) : null;
   const grouped = groupByCategory(filteredItems);
-  const categories = [...grouped.keys()].map((name, i) => ({ id: `menu-${i}`, name }));
+  const groupedCategories = [...grouped.keys()].map((name, i) => ({ id: `menu-${i}`, name }));
+  const categories = onSale.length > 0 ? [{ id: "menu-sale", name: t("store.onSale") }, ...groupedCategories] : groupedCategories;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pb-24 lg:pb-8">
@@ -227,13 +232,24 @@ function StorePage({ hash }: { hash: string }) {
               </div>
             )}
 
+            {onSale.length > 0 && (
+              <section id="menu-sale" className="mt-4 scroll-mt-32 rounded-2xl bg-handshake-50 p-3 lg:scroll-mt-6 dark:bg-handshake-500/10">
+                <h2 className="mb-3 flex items-center gap-1.5 text-lg font-bold tracking-tight text-ink-900 dark:text-ink-50"><Tag size={17} className="text-handshake-500" /> {t("store.onSale")}</h2>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                  {onSale.map((row) => (
+                    <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && catalog.is_open} match={matchAllergies(row.item.allergens, catalog.allergy_policy, mine)} store={catalog} now={now} onAdd={() => addItem(row)} />
+                  ))}
+                </div>
+              </section>
+            )}
+
             {[...grouped.entries()].map(([category, rows], i) => (
-              <section key={category} id={categories[i].id} className="mt-6 scroll-mt-32 first:mt-4 lg:scroll-mt-6">
+              <section key={category} id={groupedCategories[i].id} className="mt-6 scroll-mt-32 first:mt-4 lg:scroll-mt-6">
                 <h2 className="mb-3 text-lg font-bold tracking-tight text-ink-900 dark:text-ink-50">{category}</h2>
                 {/* One column on a phone; two on a tablet, or a wide screen with room beside the categories. */}
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                   {rows.map((row) => (
-                    <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && catalog.is_open} match={matchAllergies(row.item.allergens, catalog.allergy_policy, mine)} onAdd={() => addItem(row)} />
+                    <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && catalog.is_open} match={matchAllergies(row.item.allergens, catalog.allergy_policy, mine)} store={catalog} now={now} onAdd={() => addItem(row)} />
                   ))}
                 </div>
               </section>

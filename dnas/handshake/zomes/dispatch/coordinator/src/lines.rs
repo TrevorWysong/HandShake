@@ -29,6 +29,8 @@ pub struct LineView {
     /// What the chosen options add, as the store said of them.
     pub choices_contain: Vec<String>,
     pub choices_contain_other: Vec<String>,
+    /// Priced at the item's sale price.
+    pub on_sale: bool,
 }
 
 /// An order's lines, described -- public, as the lines themselves are.
@@ -51,7 +53,7 @@ pub(crate) fn describe(lines: &[OrderLine]) -> ExternResult<Vec<LineView>> {
 fn describe_line(line: &OrderLine, pricer: &mut LinePricer) -> ExternResult<LineView> {
     let version = fetch(&line.priced_version)?;
     let (name, unit_price_cents, goodie_bag, allergens) = if let Some(item) = decode_or::<MenuItem>(&version) {
-        let price = pricer.unit_price(&item, &line.selections)?.map_err(guest)?;
+        let price = pricer.unit_price(&item.as_sold(line.on_sale), &line.selections)?.map_err(guest)?;
         (item.name, price, false, item.allergens)
     } else if let Some(bag) = decode_or::<GoodieBag>(&version) {
         (bag.title, bag.price_cents, true, bag.allergens)
@@ -64,7 +66,7 @@ fn describe_line(line: &OrderLine, pricer: &mut LinePricer) -> ExternResult<Line
         choices.extend(labels(selection)?);
         collect_allergens(selection, &mut choices_contain, &mut choices_contain_other)?;
     }
-    Ok(LineView { item_ref: line.item_ref.clone(), name, quantity: line.quantity, unit_price_cents, choices, goodie_bag, allergens, choices_contain, choices_contain_other })
+    Ok(LineView { item_ref: line.item_ref.clone(), name, quantity: line.quantity, unit_price_cents, choices, goodie_bag, allergens, choices_contain, choices_contain_other, on_sale: line.on_sale })
 }
 
 /// What was chosen from one group, an entry per option: "2 x Extra shot",

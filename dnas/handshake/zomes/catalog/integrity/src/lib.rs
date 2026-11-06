@@ -319,6 +319,9 @@ fn validate_menu_item(item: &MenuItem, author: &AgentPubKey) -> ExternResult<Val
     if let Some(problem) = item_groups_problem(item)? {
         return Ok(ValidateCallbackResult::Invalid(problem));
     }
+    if let Some(problem) = item.sale.as_ref().and_then(|sale| sale.problem(item.price_cents)) {
+        return Ok(ValidateCallbackResult::Invalid(problem));
+    }
     if item.price_cents == 0 {
         return Ok(ValidateCallbackResult::Invalid("price_cents must be greater than zero".into()));
     }

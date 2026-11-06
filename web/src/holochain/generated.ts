@@ -1389,6 +1389,27 @@ export interface ItemReview {
 }
 
 /**
+ * An item's sale: a lower price, from when and until when, and, if it's weekly,
+ * on which days and times in the store's own time zone ("Happy hour"). Whether
+ * a line claims it is on the order (`OrderLine::on_sale`). Validation can check
+ * the fixed dates, which need no time zone; the store checks the week before
+ * accepting, and it's the store's own money if it doesn't.
+ */
+export interface ItemSale {
+  price_cents: number;
+  /**
+   * What it's called, if anything: "Happy hour".
+   */
+  label: string;
+  starts_at: Timestamp | null;
+  ends_at: Timestamp | null;
+  /**
+   * The times it runs each week. Empty: all the time between its dates.
+   */
+  weekly: OpeningPeriod[];
+}
+
+/**
  * What an order's food payment comes to, written once by its store: the
  * customer is refunded `refund` for the `issues` it cites, the store
  * collects the rest.
@@ -1476,6 +1497,10 @@ export interface LineView {
    */
   choices_contain: string[];
   choices_contain_other: string[];
+  /**
+   * Priced at the item's sale price.
+   */
+  on_sale: boolean;
 }
 
 /**
@@ -1819,6 +1844,10 @@ export interface MenuItem {
   photo_data_uri: string;
   category: string;
   dietary_tags: string[];
+  /**
+   * A lower price, for a while or on a schedule.
+   */
+  sale: ItemSale | null;
   /**
    * What the store says this item has in it -- `None` until it says, which
    * reads as not stated, never as none. An order line's version keeps what
@@ -2417,6 +2446,11 @@ export interface OrderLine {
    * item without choices, or a goodie bag.
    */
   selections: Selection[];
+  /**
+   * Priced at the version's sale price (`catalog_types::ItemSale`), which it
+   * was running when the order was placed.
+   */
+  on_sale: boolean;
 }
 
 /**

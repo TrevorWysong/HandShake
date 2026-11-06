@@ -12,6 +12,8 @@ import { percentLabel } from "../../../lib/storefront/tax";
 import { PhotoInput } from "../../../components/PhotoInput";
 import { AllergenFactsEditor } from "../../../components/store/AllergenFactsEditor";
 import { tagConflict } from "../../../lib/storefront/allergens";
+import { saleProblem } from "../../../lib/storefront/sales";
+import { SaleEditor } from "./SaleEditor";
 import { MAX_DESCRIPTION_CHARS, MAX_ITEM_GROUPS, MAX_LABEL_CHARS, MAX_NAME_CHARS, type TaxRate } from "../../../holochain/types";
 import { Check } from "lucide-react";
 import type { GroupRow } from "./ChoicesSection";
@@ -95,6 +97,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{row.item.name}</p>
                     {row.item.description && <p className="truncate text-xs text-ink-400">{row.item.description}</p>}
+                    {row.item.sale && <p className="text-[11px] font-semibold text-handshake-600 dark:text-handshake-400">{t("sale.badge", { price: formatCents(row.item.sale.price_cents) })}{row.item.sale.label && ` · ${row.item.sale.label}`}</p>}
                     {!row.item.allergens && <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{t("menuEditor.allergensNotStated")}</p>}
                     {row.item.modifier_groups.length > 0 && (
                       <p className="truncate text-xs text-ink-400">
@@ -133,6 +136,7 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
     category: row?.item.category ?? "",
     dietary_tags: (row?.item.dietary_tags ?? []).join(", "),
     allergens: row?.item.allergens ?? null,
+    sale: row?.item.sale ?? null,
     /// The item's choice groups, by hex, in the order customers see them.
     groups: (row?.item.modifier_groups ?? []).map(bytesToHex),
     tax_category: row?.item.tax_category ?? "",
@@ -143,8 +147,10 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
   const saving = useAction();
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
+  const salePrice = form.sale ? saleProblem(form.sale, toMinorUnits(form.price)) : null;
+
   const save = () => saving.run(async () => {
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || salePrice) return;
     const fields = {
       name: form.name.trim(),
       price_cents: toMinorUnits(form.price),
@@ -152,6 +158,7 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
       photo_data_uri: form.photo_data_uri,
       category: form.category,
       dietary_tags: form.dietary_tags.split(",").map((t) => t.trim()).filter(Boolean),
+      sale: form.sale ? { ...form.sale, label: form.sale.label.trim() } : null,
       allergens: form.allergens ? { ...form.allergens, note: form.allergens.note.trim() } : null,
       modifier_groups: form.groups.map(hexToBytes),
       tax_category: form.tax_category,
@@ -174,6 +181,7 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
       <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={form.description} onChange={(e) => set({ description: e.target.value })} rows={2} placeholder={t("storeSettings.description")} />
       <Input maxLength={MAX_LABEL_CHARS} value={form.category} onChange={(e) => set({ category: e.target.value })} placeholder={t("menuEditor.category")} />
       <Input value={form.dietary_tags} onChange={(e) => set({ dietary_tags: e.target.value })} placeholder={t("menuEditor.tags")} />
+      <SaleEditor value={form.sale} fullCents={toMinorUnits(form.price)} problem={salePrice} onChange={(sale) => set({ sale })} />
       <AllergenFactsEditor
         value={form.allergens}
         onChange={(allergens) => set({ allergens })}

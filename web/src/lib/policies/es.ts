@@ -6,6 +6,11 @@ import { spoken, type PolicyChange, type PolicyContent, type PolicySection } fro
 
 const changes: PolicyChange[] = [
   {
+    version: "1.6",
+    date: "2026-11-06",
+    summary: "Precios de oferta: una tienda puede bajar el precio de un producto durante un tiempo o según un horario.",
+  },
+  {
     version: "1.5",
     date: "2026-11-06",
     summary: "Alergias: una tienda dice qué lleva su comida, puedes guardar una lista sellada y decírselo a una tienda al pagar, y lo que eso puede y no puede prometer. Cada una es su propia palabra, y que no haya señal no significa que sea seguro.",
@@ -49,6 +54,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       title: "Pagos y retenciones",
       summary: "Las tarjetas se retienen en cada paso y solo se cobran con una prueba o con la decisión de la tienda sobre el pedido. HandShake no cobra comisión.",
       points: [
+        "Una tienda puede poner un producto en oferta, ahora, entre fechas o ciertos días de la semana. El precio de oferta se aplica si pides mientras está activa, y es la base de cualquier reembolso y recompensa. La red comprueba las fechas; la tienda comprueba sus horas semanales antes de aceptar.",
         "Al hacer tu pedido, la tienda retiene tu tarjeta, en su propio procesador de tarjetas, por la comida, como mucho tu parte del envío, y tu propina. Aún no se cobra nada, y la tienda acepta tu pedido solo cuando la retención está hecha.",
         "Cuando un repartidor se compromete con un pedido, antes de que la tienda empiece a cocinar, la tienda retiene su tarjeta por el valor de la comida. Esa es su garantía: se libera cuando el pedido se entrega.",
         "Al comprometerse, el repartidor también retiene la tarjeta de la tienda por su tarifa y tu propina, así sabe que cobrará antes de salir.",

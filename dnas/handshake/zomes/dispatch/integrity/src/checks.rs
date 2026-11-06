@@ -100,6 +100,9 @@ pub(crate) fn check_pricing(order: OrderPricing<'_>) -> ExternResult<Option<Stri
         }
         let record = must_get_valid_record(line.priced_version.clone())?;
         if let Some(bag) = decode::<GoodieBag>(&record) {
+            if line.on_sale {
+                return Ok(Some("a goodie bag has no sale to claim".into()));
+            }
             if let Some(reason) = bag_line_problem(&order, line, &bag) {
                 return Ok(Some(reason));
             }
@@ -112,7 +115,13 @@ pub(crate) fn check_pricing(order: OrderPricing<'_>) -> ExternResult<Option<Stri
         if &item.catalog_ref != order.catalog_ref {
             return Ok(Some("every item must be on this store's menu".into()));
         }
-        match pricer.priced_line(line.item_ref.clone(), &item, &line.selections, line.quantity)? {
+        if line.on_sale {
+            let tolerance = handshake_governance::clock_tolerance().as_micros() as i64;
+            if !item.sale.as_ref().is_some_and(|sale| sale.within_dates(order.placed_at.as_micros(), tolerance)) {
+                return Ok(Some("a line can only claim a sale its item had running".into()));
+            }
+        }
+        match pricer.priced_line(line.item_ref.clone(), &item.as_sold(line.on_sale), &line.selections, line.quantity)? {
             Ok(priced_line) => priced.push(priced_line),
             Err(reason) => return Ok(Some(reason)),
         }

@@ -45,7 +45,7 @@ test("a customer's allergies are flagged on a menu, and it's their call what's s
   // Hiding what contains them leaves what hasn't said, still flagged.
   await page.getByRole("button", { name: "Hide what contains them" }).click();
   await expect(page.getByRole("button", { name: "Add Smash Burger" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Add Pancake Stack" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Pancake Stack" }).first()).toBeVisible();
 
   await setAllergy(page, "Milk", false);
 });
