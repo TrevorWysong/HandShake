@@ -27,6 +27,8 @@ import { useT } from "../../i18n";
 /// How far down each recent history entry was scrolled.
 const SCROLLS_KEPT = 32;
 const scrolledTo = new Map<string, number>();
+// It's done here, so the browser's own restoring doesn't race it.
+if (typeof history !== "undefined") history.scrollRestoration = "manual";
 
 /// Goes to `y`, and keeps at it for a moment as a screen coming back fills in
 /// beneath: until then its page may be too short to get there.
@@ -66,7 +68,14 @@ function AnimatedOutlet() {
       if (scrolledTo.size > SCROLLS_KEPT) scrolledTo.delete(scrolledTo.keys().next().value!);
     };
     window.addEventListener("scroll", remember, { passive: true });
-    return () => window.removeEventListener("scroll", remember);
+    // Scroll events come a frame late, and a tap can leave before one does.
+    document.addEventListener("click", remember, { capture: true });
+    window.addEventListener("popstate", remember, { capture: true });
+    return () => {
+      window.removeEventListener("scroll", remember);
+      document.removeEventListener("click", remember, { capture: true });
+      window.removeEventListener("popstate", remember, { capture: true });
+    };
   }, [location.key]);
   // As the screen arrives, not when its animation starts: that can come late on
   // a slow device, and undo a person who's already scrolled. By its path, so a
