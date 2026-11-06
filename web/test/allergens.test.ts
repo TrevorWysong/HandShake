@@ -55,7 +55,8 @@ test("words as typed are tidied, once each and within the limit", () => {
 test("a tag its own statement contradicts doesn't reach a customer", () => {
   assert.equal(tagConflict("Gluten-free", facts({ contains: ["Gluten"] })), true);
   assert.equal(tagConflict("Vegan", facts({ contains: ["Milk"] })), true);
-  assert.equal(tagConflict("Vegan", facts({ may_contain: ["Milk"] })), false, "a shared kitchen isn't a contradiction");
+  assert.equal(tagConflict("Vegan", facts({ may_contain: ["Milk"] })), false, "a shared kitchen doesn't change a diet");
+  assert.equal(tagConflict("Gluten-free", facts({ may_contain: ["Gluten"] })), true, "but it does contradict a claim to be free of something");
   assert.equal(tagConflict("Spicy", facts({ contains: ["Milk"] })), false);
   assert.equal(tagConflict("Vegan", null), false, "nothing said, nothing contradicted");
   assert.deepEqual(honestTags(["Vegan", "Spicy"], facts({ contains: ["Eggs"] })), ["Spicy"]);

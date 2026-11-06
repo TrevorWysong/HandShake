@@ -6,6 +6,11 @@ import { spoken, type PolicyChange, type PolicyContent, type PolicySection } fro
 
 const changes: PolicyChange[] = [
   {
+    version: "1.5",
+    date: "2026-11-06",
+    summary: "Alergias: una tienda dice qué lleva su comida, puedes guardar una lista sellada y decírselo a una tienda al pagar, y lo que eso puede y no puede prometer. Cada una es su propia palabra, y que no haya señal no significa que sea seguro.",
+  },
+  {
     version: "1.4",
     date: "2026-11-03",
     summary:
@@ -93,11 +98,11 @@ function sections(t: NetworkTerms): PolicySection[] {
       summary: "Una tienda dice qué lleva su comida y tú puedes contarle tus alergias. Ambas cosas quedan entre tú y ella: HandShake las transporta y no puede comprobar una cocina.",
       points: [
         "Lo que una tienda dice de un producto o de su cocina es su propia palabra. Un producto sobre el que no ha dicho nada aparece como sin indicar, nunca como seguro.",
-        "Tu lista está sellada para que solo tu cuenta pueda leerla. Tu app la compara con los menús en tu dispositivo, así que nadie sabe qué buscaste.",
-        "Si le cuentas tus alergias a una tienda, van selladas para ella en tu pedido. Tu repartidor no puede leerlas y nada público muestra que las enviaste.",
-        "Un pedido con alergias espera a una persona en la tienda, salvo que esta haya elegido trabajar con sus tiques. Puede rechazarlo si no puede hacerlo como se pidió, y no se te cobra.",
+        "Tu lista está sellada para que solo tu cuenta pueda leerla, y tu app la compara con los menús en tu dispositivo. Las copias selladas anteriores siguen en la red cuando la cambias: nadie más puede abrirlas y no se pueden borrar.",
+        "Si le cuentas tus alergias a una tienda, van selladas para ella en tu pedido, y puede seguir leyéndolas mientras tenga el pedido. Tu repartidor no puede leerlas y nada en el pedido las nombra. Alguien que observe una tienda podría notar un pedido esperando a una persona.",
+        "Un pedido con alergias espera a una persona en la tienda, salvo que esta haya elegido trabajar con sus tiques. Puede rechazarlo si no puede hacerlo como se pidió, y se libera cualquier retención en tu tarjeta.",
         "Una tienda que no puede atender peticiones por alergia lo dice antes de que pidas. Las bolsas sorpresa pueden contener cualquier alérgeno, salvo que la tienda diga otra cosa.",
-        "Si un producto llevaba un alérgeno que la tienda no dijo, repórtalo. Solo la tienda sabe que fue un alérgeno; para los demás aparece como un producto incorrecto. Tu pedido conserva lo que dijo la tienda cuando pediste, y responde al informe como a cualquier otro. Si tienes una reacción, busca primero ayuda médica.",
+        "Si un producto llevaba un alérgeno que la tienda no dijo, repórtalo. Solo la tienda sabe que fue un alérgeno; para los demás aparece como un producto incorrecto. Tu pedido conserva lo que dijo la tienda cuando pediste, y responde al informe como a cualquier otro. Si tienes una reacción, busca primero ayuda médica y llama a emergencias si es grave. Reportarlo no afecta a ningún otro derecho que tengas.",
       ],
       effects: [
         { who: "customers", good: "Ves lo que ha dicho una tienda antes de pedir, y tus alergias quedan entre tú y ella.", bad: "Que no haya señal no significa que sea seguro. Si tu alergia es grave, pregunta siempre a la tienda." },

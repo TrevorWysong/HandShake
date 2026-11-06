@@ -14,7 +14,7 @@ async function keep(page: Page, name: string) {
 /// Says whether they're allergic to one thing, whatever an earlier run left.
 async function setAllergy(page: Page, allergen: string, allergic: boolean) {
   await page.goto("/#/profile");
-  const chip = page.getByRole("group", { name: "Your allergies" }).getByRole("button", { name: allergen });
+  const chip = page.getByRole("group", { name: "Your allergies" }).getByRole("button", { name: allergen, exact: false });
   await expect(chip).toBeVisible();
   if ((await chip.getAttribute("aria-pressed")) === String(allergic)) return;
   await chip.click();

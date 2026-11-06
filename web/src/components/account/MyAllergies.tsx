@@ -46,6 +46,7 @@ function AllergyForm({ mine, onSaved }: { mine: AllergySet; onSaved: () => Promi
     <>
       <AllergenSetPicker value={allergens} onChange={setAllergens} label={t("myAllergies.title")} />
       <Input className="mt-3" value={words} onChange={(e) => setWords(e.target.value)} placeholder={t("myAllergies.other")} aria-label={t("myAllergies.other")} />
+      {changed && <p className="mt-3 text-xs leading-relaxed text-ink-500">{t("myAllergies.consent")}</p>}
       {changed && <Button className="mt-3 w-full py-2 text-sm" disabled={tooLong} loading={saving.busy} onClick={save}>{t("myAllergies.save")}</Button>}
       {saving.error && <Notice className="mt-2">{saving.error}</Notice>}
     </>

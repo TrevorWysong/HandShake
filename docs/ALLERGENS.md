@@ -35,4 +35,4 @@ A report that an item had an allergen the store didn't list is public only as a 
 
 - A store can be wrong, or lie. The record shows what it said.
 - No flag doesn't mean safe.
-- Wording here isn't legal advice. Labelling rules differ by place, and meeting them is the store's to do; whoever runs a network should have this wording reviewed.
+- Wording here isn't legal advice, and labelling rules differ by place. See [ALLERGY_LEGAL_REVIEW.md](ALLERGY_LEGAL_REVIEW.md) for what a first-pass review found and what counsel still needs to answer.
