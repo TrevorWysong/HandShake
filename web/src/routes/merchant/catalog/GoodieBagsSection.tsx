@@ -238,15 +238,14 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       <Field label={t("bags.quantity")}>
         <Input type="number" min={1} step={1} value={form.quantity_total} onChange={(e) => set({ quantity_total: Number(e.target.value) })} className="w-32" />
       </Field>
-      <div className="flex gap-2">
-        <Field label={t("bags.windowStart")}>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Field label={t("bags.windowStart")} className="min-w-0 flex-1">
           <Input type="datetime-local" value={form.start} onChange={(e) => set({ start: e.target.value })} />
         </Field>
-        <Field label={t("bags.windowEnd")}>
+        <Field label={t("bags.windowEnd")} className="min-w-0 flex-1">
           <Input type="datetime-local" value={form.end} onChange={(e) => set({ end: e.target.value })} />
         </Field>
       </div>
-      <AllergenFactsEditor value={form.allergens} onChange={(allergens) => setForm((f) => ({ ...f, allergens }))} unstatedDetail="bags.allergensVary" />
       <p className="text-[11px] text-ink-400">{t("bags.fixed")}</p>
       <div className="flex gap-4 pt-1">
         <label className="flex items-center gap-2 text-xs text-ink-500">
