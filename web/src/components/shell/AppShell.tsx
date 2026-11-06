@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { NavigationType, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { motion } from "framer-motion";
 import clsx from "clsx";
 import { Home, ClipboardList, ShoppingCart, User, Car, DollarSign, Gift } from "lucide-react";
@@ -19,16 +19,31 @@ import { useWideScreen } from "../../lib/hooks/useMediaQuery";
 import { useT } from "../../i18n";
 
 
+/// How far down each recent history entry was scrolled.
+const SCROLLS_KEPT = 32;
+const scrolledTo = new Map<string, number>();
+
 /// Wraps whichever route is active in a short fade+rise, so navigating
 /// between screens (Browse -> cart, an order's detail page, switching
 /// modes) feels like one continuous app rather than a hard page swap. Only
 /// the arriving screen animates: the one leaving goes at once, so no screen
 /// can be left behind mid-exit -- invisible -- however it was left. Each
-/// screen starts at its top, as a page does.
+/// screen starts at its top, as a page does -- or, gone back to, where it
+/// was left.
 function AnimatedOutlet() {
   const location = useLocation();
+  const backTo = useNavigationType() === NavigationType.Pop ? (scrolledTo.get(location.key) ?? 0) : 0;
+  useEffect(() => {
+    const remember = () => {
+      scrolledTo.delete(location.key);
+      scrolledTo.set(location.key, window.scrollY);
+      if (scrolledTo.size > SCROLLS_KEPT) scrolledTo.delete(scrolledTo.keys().next().value!);
+    };
+    window.addEventListener("scroll", remember, { passive: true });
+    return () => window.removeEventListener("scroll", remember);
+  }, [location.key]);
   return (
-    <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" onAnimationStart={() => window.scrollTo(0, 0)}>
+    <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" onAnimationStart={() => window.scrollTo(0, backTo)}>
       <Outlet />
     </motion.div>
   );

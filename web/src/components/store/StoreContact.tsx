@@ -24,8 +24,8 @@ export function StoreContact({ catalog }: { catalog: MerchantCatalog }) {
   const appLinks = opensAppLinks();
 
   return (
-    <section aria-labelledby="store-contact" className="mt-6">
-      <SectionLabel as="h2" id="store-contact" className="mb-2">
+    <section className="mt-6">
+      <SectionLabel as="h2" className="mb-2">
         {t("storeContact.title")}
       </SectionLabel>
       <div className="divide-y divide-ink-100 overflow-hidden rounded-2xl border border-ink-100 bg-white dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-900">

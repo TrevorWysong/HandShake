@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import L from "leaflet";
-import { networkServices } from "../../store/network";
-import { safeAttribution } from "../../lib/places/attribution";
+import { baseMap, emojiIcon } from "../../lib/places/baseMap";
 import { t as translate } from "../../i18n";
 import "leaflet/dist/leaflet.css";
 import { PresenceDot } from "../ui";
@@ -17,14 +16,6 @@ import { useLiveSignal } from "../../lib/hooks/useResource";
 // no API key, no vendor account, consistent with this project's "0
 // overhead" stance on infrastructure costs --
 // the same provider `AddressSearch`'s Nominatim-backed geocoding uses.
-
-function emojiIcon(emoji: string): L.DivIcon {
-  return L.divIcon({
-    html: `<div style="font-size:22px;line-height:1;transform:translate(-50%,-50%);">${emoji}</div>`,
-    className: "",
-    iconSize: [0, 0],
-  });
-}
 
 const PICKUP_ICON = emojiIcon("🏪");
 const DROPOFF_ICON = emojiIcon("🏁");
@@ -54,9 +45,7 @@ export function LiveMap({ orderRef, pickup, dropoff, className }: Props) {
   const mountMap = useCallback(
     (container: HTMLDivElement | null) => {
       if (!container) return;
-      const map = L.map(container, { zoomControl: false, attributionControl: true, scrollWheelZoom: false });
-      const services = networkServices();
-      L.tileLayer(services.map_tiles_url, { maxZoom: 19, attribution: safeAttribution(services.map_attribution) }).addTo(map);
+      const map = baseMap(container);
       L.marker([fromLat, fromLon], { icon: PICKUP_ICON }).addTo(map).bindPopup(translate("cart.pickup"));
       L.marker([toLat, toLon], { icon: DROPOFF_ICON }).addTo(map).bindPopup(translate("cart.dropoff"));
       // A themed, dashed connector rather than a bare pair of pins -- gives
