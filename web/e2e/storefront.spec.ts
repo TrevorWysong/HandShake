@@ -21,7 +21,9 @@ test("a store's name opens its info, and going back keeps the menu's place", asy
   await expect.poll(() => page.evaluate<number>("window.scrollY")).toBeGreaterThan(60);
   const left = await page.evaluate<number>("window.scrollY");
 
-  await page.getByRole("link", { name: `Reviews, hours and address for ${kitchen.name}` }).click();
+  // A direct click: Playwright's own would scroll the link into view first,
+  // which moves the very position this test is about.
+  await page.getByRole("link", { name: `Reviews, hours and address for ${kitchen.name}` }).dispatchEvent("click");
   await expect(page).toHaveURL(/\/about$/);
   await expect(page.getByRole("heading", { level: 1, name: kitchen.name })).toBeVisible();
   await expect(page.getByText("Info & contact")).toBeVisible();
