@@ -13,7 +13,7 @@ async function keep(page: Page, name: string) {
 test("a store's name opens its info, and going back keeps the menu's place", async ({ page }) => {
   const kitchen = store("kitchen");
   await signInAs(page, "sam");
-  await page.getByText(kitchen.name, { exact: true }).first().click();
+  await page.locator("main").getByText(kitchen.name, { exact: true }).first().click();
   const item = page.getByText(kitchen.menu[0].name).first();
   await expect(item).toBeVisible();
 
@@ -32,4 +32,21 @@ test("a store's name opens its info, and going back keeps the menu's place", asy
   await expect(item).toBeVisible();
   await expect.poll(() => page.evaluate<number>("window.scrollY")).toBe(left);
   await keep(page, "store-menu");
+});
+
+test("a customer's order in progress follows them round the app, and opens from anywhere", async ({ page }) => {
+  await signInAs(page, "sam");
+  // Sam's seeded delivery is still waiting on a driver or its store.
+  const card = page.locator('a[href*="/customer/orders/"]').first();
+  await expect(card).toBeVisible();
+  await keep(page, "active-card-browse");
+  await page.getByRole("link", { name: "Rewards" }).click();
+  await expect(card).toBeVisible();
+  await card.click();
+  await expect(page).toHaveURL(/\/customer\/orders\/[0-9a-f]+$/);
+  // On its own page, its hero takes over from the card.
+  await expect(page.getByRole("status").first()).toBeVisible();
+  await keep(page, "order-hero");
+  await page.getByRole("button", { name: "All steps" }).click();
+  await expect(page.getByText("Order placed")).toBeVisible();
 });

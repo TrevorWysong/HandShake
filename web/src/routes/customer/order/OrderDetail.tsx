@@ -9,7 +9,10 @@ import { fetchOrderItemNames } from "../../../lib/storefront/menu";
 import { getHandoffEvidence, getLegsForOrder } from "../../../holochain/zomes/attestation";
 import { decodeEntry, actionHash, bytesEqual, bytesToHex, hexToBytes, timestampOf } from "../../../holochain/decode";
 import { myAgentPubKey } from "../../../holochain/client";
-import { OrderStatusTimeline, StatusBadge } from "../../../components/orders/OrderStatus";
+import { OrderStatusTimeline } from "../../../components/orders/OrderStatus";
+import { useClock } from "../../../lib/hooks/useClock";
+import { OrderHero } from "../../../components/orders/OrderHero";
+import { customerProgress, orderEstimate } from "../../../lib/orders/progress";
 import { Button, Card, Notice, SectionLabel, Skeleton, StatNumber } from "../../../components/ui";
 import { ChatPanel } from "../../../components/orders/ChatPanel";
 import { NetworkReach } from "../../../components/orders/NetworkReach";
@@ -57,6 +60,7 @@ export function OrderDetail() {
   const { hash = "" } = useParams<{ hash: string }>();
   const orderRef = hexToBytes(hash);
   const t = useT();
+  const now = useClock();
   const [confirmingClaim, setConfirmingClaim] = useState(false);
   // One step on the order at a time: no cancelling it while confirming it.
   const action = useAction();
@@ -119,11 +123,13 @@ export function OrderDetail() {
   // The accepted bid's driver -- found among the order's bids, since bids
   // are only ever read through their order.
   const acceptedHex = order?.accepted_bid ? bytesToHex(order.accepted_bid) : null;
-  const { data: driver = null } = useResource(acceptedHex && `order-driver:${acceptedHex}`, async () => {
+  const { data: wonBid = null } = useResource(acceptedHex && `order-driver:${acceptedHex}`, async () => {
     const page = await listBidsForOrder(orderRef);
     const won = page.bids.find((record) => bytesToHex(actionHash(record)) === acceptedHex);
-    return won ? decodeEntry<Bid>(won).bidder : null;
+    return won ? decodeEntry<Bid>(won) : null;
   });
+  const driver = wonBid?.bidder ?? null;
+  const driverDueAt = wonBid ? wonBid.created_at + wonBid.eta_seconds * 1_000_000 : null;
 
   if (!order) {
     return (
@@ -193,46 +199,51 @@ export function OrderDetail() {
           screen while it's on its way; one column, in this order, on a phone. */}
       <div className={live ? "lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start lg:gap-x-8" : "lg:mx-auto lg:max-w-2xl"}>
         <div className="min-w-0 lg:col-start-1">
-          <motion.div variants={fadeSlideUp} className="mb-4 flex items-center justify-between">
-            <div className="min-w-0">
-              <h1 className="flex items-baseline gap-1.5 text-xl font-black text-ink-900 dark:text-ink-50">
-                {t("order.heading")}<StatNumber className="text-xl">{formatCents(order.order_total)}</StatNumber>
-              </h1>
-              {store && <p className="truncate text-xs text-ink-400">{t("cart.from", { store: store.name })}</p>}
-            </div>
-            <div className="flex items-center gap-1.5">
-              {order.priority && (
+          <motion.div variants={fadeSlideUp}>
+            <OrderHero
+              progress={customerProgress({ kind: "Delivery", order })}
+              eyebrow={store?.name}
+              estimate={orderEstimate({ kind: "Delivery", order }, driverDueAt, now.getTime() * 1000)}
+              chips={order.priority ? (
                 <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
                   <Zap size={11} /> {t("cart.speed.priority")}
                 </span>
-              )}
-              <StatusBadge status={order.status} />
-            </div>
-          </motion.div>
-
-          {order.status !== "Delivered" && (
-            <motion.div variants={fadeSlideUp} className="-mt-2 mb-4">
-              <OrderSummary orderRef={orderRef} count={order.lines.reduce((n, l) => n + l.quantity, 0)} />
-            </motion.div>
-          )}
-
-          <motion.div variants={fadeSlideUp}>
-            <Card className="p-4">
+              ) : undefined}
+            >
               <OrderStatusTimeline status={order.status} cancellation={order.cancellation} />
-              {order.ready_by !== null && ["Open", "BidAccepted", "DriverEnRouteToMerchant", "MerchantConfirmed", "DriverAtStore"].includes(order.status) && (
-                <p className="mt-3 border-t border-ink-100 dark:border-ink-800 pt-3 text-xs text-ink-500">
-                  {t("order.readyBy", { time: formatClockTime(order.ready_by) })}
-                </p>
-              )}
               {order.ready_by === null && order.prep_minutes !== null && ["Open", "BidAccepted"].includes(order.status) && (
                 <p className="mt-3 border-t border-ink-100 dark:border-ink-800 pt-3 text-xs text-ink-500">
                   {t("order.prepAfterDriver", { minutes: order.prep_minutes })}
                 </p>
               )}
               {order.status === "Placed" && <NetworkReach action={orderRef} />}
-            </Card>
+            </OrderHero>
           </motion.div>
 
+          {/* What it is and comes to. */}
+          <motion.div variants={fadeSlideUp} className="mt-3 flex items-baseline justify-between gap-3 px-1">
+            <h2 className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("order.heading")}<StatNumber className="ml-1.5 text-sm">{formatCents(order.order_total)}</StatNumber></h2>
+          </motion.div>
+          {order.status !== "Delivered" && (
+            <motion.div variants={fadeSlideUp} className="mt-1 mb-1">
+              <OrderSummary orderRef={orderRef} count={order.lines.reduce((n, l) => n + l.quantity, 0)} />
+            </motion.div>
+          )}
+        </div>
+        <div className="lg:sticky lg:top-6 lg:col-start-2 lg:row-span-3 lg:row-start-1">
+          {live && pickup && details?.dropoff && (
+            <motion.div variants={fadeSlideUp} className="mt-4 lg:mt-0">
+              <LiveMap orderRef={orderRef} pickup={pickup} dropoff={details.dropoff.point} />
+            </motion.div>
+          )}
+
+          {live && (
+            <motion.div variants={fadeSlideUp} className="mt-1">
+              <ChatPanel orderRef={orderRef} title={t("order.chat")} counterpart={t("chat.driver")} />
+            </motion.div>
+          )}
+        </div>
+        <div className="min-w-0 lg:col-start-1">
           {/* Their card, held by the store: confirming, or what it needs. */}
           {order.status !== "Cancelled" && (
             <motion.div variants={fadeSlideUp} className="mt-3">
@@ -386,19 +397,6 @@ export function OrderDetail() {
                   </motion.button>
                 )}
               </AnimatePresence>
-            </motion.div>
-          )}
-        </div>
-        <div className="lg:sticky lg:top-6 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-          {live && pickup && details?.dropoff && (
-            <motion.div variants={fadeSlideUp} className="mt-4 lg:mt-0">
-              <LiveMap orderRef={orderRef} pickup={pickup} dropoff={details.dropoff.point} />
-            </motion.div>
-          )}
-
-          {live && (
-            <motion.div variants={fadeSlideUp} className="mt-1">
-              <ChatPanel orderRef={orderRef} title={t("order.chat")} counterpart={t("chat.driver")} />
             </motion.div>
           )}
         </div>

@@ -9,7 +9,7 @@ test("a customer browses nearby stores, opens a menu, and sees their orders", as
   await signInAs(page, "sam");
 
   await expect(page.getByRole("heading", { name: "Restaurants near you" })).toBeVisible();
-  await page.getByText(kitchen.name, { exact: true }).first().click();
+  await page.locator("main").getByText(kitchen.name, { exact: true }).first().click();
   await expect(page.getByText(kitchen.menu[0].name).first()).toBeVisible();
 
   await page.getByRole("link", { name: "Orders" }).click();
@@ -45,7 +45,7 @@ test("a merchant sees their order queue, menu, promos and store", async ({ page 
 test("a customer's order waits on the store, which can accept or decline it", async ({ page, browser }) => {
   const tacos = store("tacos");
   await signInAs(page, "ana");
-  await page.getByText(tacos.name, { exact: true }).first().click();
+  await page.locator("main").getByText(tacos.name, { exact: true }).first().click();
   await page.getByRole("button", { name: `Add ${tacos.menu[0].name}` }).click();
   await page.getByRole("link", { name: "Cart" }).click();
   await page.getByText("Pickup", { exact: true }).click();

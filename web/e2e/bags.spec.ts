@@ -7,7 +7,7 @@ import { signInAs, store } from "./seed.ts";
 test("a goodie bag is added to the cart, and checkout steers a pickup-only bag to pickup", async ({ page }) => {
   const cafe = store("cafe");
   await signInAs(page, "sam");
-  await page.getByText(cafe.name, { exact: true }).first().click();
+  await page.locator("main").getByText(cafe.name, { exact: true }).first().click();
   await page.getByRole("button", { name: /^Add$/ }).click();
   await expect(page.getByText("In cart")).toBeVisible();
 

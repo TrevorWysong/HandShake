@@ -4,11 +4,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { Bike, ClipboardList, Pause, Play, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
-import { getMyActiveOrders, getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
+import { getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
 import { getCatalog } from "../../holochain/zomes/catalog";
 import { decodeEntry, bytesToHex } from "../../holochain/decode";
 import { useCart } from "../../store/cart";
-import { useResource } from "../../lib/hooks/useResource";
+import { usePolling, useResource } from "../../lib/hooks/useResource";
+import { useActiveOrders } from "../../store/activeOrders";
+import { useSession } from "../../store/session";
 import { cartLinesFromOrder, fetchMenu } from "../../lib/storefront/menu";
 import { customerOrderPath, isFinished, itemCount, mergeNewestFirst, toOrderRow, type OrderRow } from "../../lib/orders/orderEntries";
 import { Button, Card, EmptyState, Notice, SectionLabel, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
@@ -20,7 +22,6 @@ import { fetchRecurringOrders } from "../../lib/orders/recurring";
 import { RecurringDue } from "../../components/orders/RecurringDue";
 import { InfoSheet } from "../../components/InfoSheet";
 import type { MerchantCatalog, Timestamp } from "../../holochain/types";
-import { POLL } from "../../lib/network/poll";
 import { useT, type MessageKey } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
 
@@ -55,8 +56,13 @@ export function Orders() {
 function ActiveOrders() {
   const t = useT();
   // Scheduled orders are sent to their stores by the customer's conductor
-  // when due (`dispatch::upkeep`) -- nothing to do here but show them.
-  const { data: rows } = useResource("customer-active-orders", async () => (await getMyActiveOrders()).map(toOrderRow), { pollMs: POLL.signalled, refreshOn: () => true });
+  // when due (`dispatch::upkeep`) -- nothing to do here but show them. Read
+  // for the whole app (`AppShell`), and the moment this screen's opened.
+  const { agentPubKey } = useSession();
+  const owner = agentPubKey ? bytesToHex(agentPubKey) : null;
+  const { owner: readFor, orders, refresh } = useActiveOrders();
+  usePolling(() => owner && refresh(owner).catch(() => undefined), {}, !!owner);
+  const rows = readFor === owner ? orders?.map((o) => o.row) : undefined;
 
   if (rows === undefined) return <ListSkeleton />;
   return (

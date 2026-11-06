@@ -30,17 +30,21 @@ export function itemCount(order: { lines: OrderLine[] }): number {
   return order.lines.reduce((sum, line) => sum + line.quantity, 0);
 }
 
-const TERMINAL = new Set(["Delivered", "Collected", "PickedUp", "Cancelled"]);
-
 /// Whether a delivery reached its customer: brought to them, or collected
 /// from the store when no driver came.
 export function received(status: DeliveryStatus): boolean {
   return status === "Delivered" || status === "Collected";
 }
 
-/// Finished -- the mirror of the Rust `is_terminal` on both status enums.
+/// Finished -- the mirror of the Rust `is_terminal` on both status enums. A
+/// delivery that's been picked up is on its way; a pickup that has is done.
 export function isFinished(row: OrderRow): boolean {
-  return TERMINAL.has(row.order.status);
+  return row.kind === "Delivery" ? received(row.order.status) || row.order.status === "Cancelled" : row.order.status === "PickedUp" || row.order.status === "Cancelled";
+}
+
+/// Whether the store's done with an order: finished, or gone with its driver.
+export function leftTheStore(row: OrderRow): boolean {
+  return isFinished(row) || row.order.status === "PickedUp";
 }
 
 /// The customer-facing detail route for an order.

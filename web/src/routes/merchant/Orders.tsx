@@ -22,7 +22,9 @@ import {
 } from "../../holochain/zomes/dispatch";
 import { QrScanner } from "../../components/QrScanner";
 import { decodeHandoverCode, decodePickupCode, pickupDigits } from "../../lib/orders/handoverCode";
-import { isFinished, itemCount, mergeNewestFirst, received } from "../../lib/orders/orderEntries";
+import { storeProgress } from "../../lib/orders/progress";
+import { OrderProgressBar } from "../../components/orders/OrderProgressBar";
+import { itemCount, leftTheStore, mergeNewestFirst, received } from "../../lib/orders/orderEntries";
 import { useMyStores, type StoreRow } from "../../store/merchantStores";
 import { fetchActiveQueue, storesKey, toRow, type QueueRow } from "../../store/merchantQueue";
 import { useResource } from "../../lib/hooks/useResource";
@@ -437,7 +439,7 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
   const t = useT();
   const count = itemCount(order);
   return (
-    <Card className="p-4">
+    <Card className={clsx("p-4", !leftTheStore(row) && storeProgress(row).tone === "needsYou" && "ring-2 ring-amber-400/70 dark:ring-amber-600/60")}>
       <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide">
         <span className={clsx("flex items-center gap-1", row.kind === "Delivery" ? "text-handshake-600" : "text-presence-600")}>
           {row.kind === "Delivery" ? <Bike size={11} /> : <ShoppingBag size={11} />}
@@ -450,17 +452,23 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
         )}
         {showTime && <span className="ml-auto font-normal normal-case tracking-normal text-ink-300"><TimeAgo at={order.requested_at} /></span>}
       </div>
+      {!leftTheStore(row) && (
+        <div className="mt-1 mb-2">
+          <p className="text-base font-black tracking-tight text-ink-900 dark:text-ink-50">{t(storeProgress(row).headline)}</p>
+          <OrderProgressBar progress={storeProgress(row)} className="mt-2" />
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <StatNumber className="text-sm">{formatCents(order.order_total)}</StatNumber>
         {row.kind === "Delivery" ? <StatusBadge status={row.order.status} /> : <PickupStatusBadge status={row.order.status} />}
       </div>
       <p className="mt-1 text-xs text-ink-400">
         {t("orders.items", { count })}
-        {order.ready_by !== null && !isFinished(row) && <span className="font-semibold text-ink-600 dark:text-ink-300"> · {t("merchantOrders.readyBy", { time: formatClockTime(order.ready_by) })}</span>}
+        {order.ready_by !== null && !leftTheStore(row) && <span className="font-semibold text-ink-600 dark:text-ink-300"> · {t("merchantOrders.readyBy", { time: formatClockTime(order.ready_by) })}</span>}
       </p>
-      {!isFinished(row) && <OrderLines orderRef={row.ref} className="mt-3 rounded-xl bg-ink-50 p-3 dark:bg-ink-800/60" />}
+      {!leftTheStore(row) && <OrderLines orderRef={row.ref} className="mt-3 rounded-xl bg-ink-50 p-3 dark:bg-ink-800/60" />}
       {(order.kitchen_note || order.sealed_customer_name) && <ForTheStore orderHex={row.hex} orderRef={row.ref} />}
-      {!isFinished(row) && <CustomerHistory customer={order.requester} />}
+      {!leftTheStore(row) && <CustomerHistory customer={order.requester} />}
       {children}
     </Card>
   );
