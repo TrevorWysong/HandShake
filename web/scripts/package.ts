@@ -126,6 +126,8 @@ try {
 
   // The production UI: no dev host, so no Admin API code (see
   // src/holochain/host.ts), and none of the dev-only public files.
+  // The app may only talk to the servers this network names (scripts/lib/csp.ts).
+  process.env.HANDSHAKE_NETWORK_PROPERTIES = JSON.stringify(properties);
   step("Building the UI", "npm", ["run", "build"], path.join(REPO, "web"));
   const dist = path.join(REPO, "web/dist");
   // The dev payment agents' token and the dev network's settings are this
