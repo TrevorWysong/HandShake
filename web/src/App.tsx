@@ -10,6 +10,7 @@ import { Screen } from "./components/shell/Screen";
 import { Onboarding } from "./routes/Onboarding";
 import { Browse } from "./routes/customer/Browse";
 import { MerchantDetail } from "./routes/customer/MerchantDetail";
+import { StoreInfo } from "./routes/customer/StoreInfo";
 import { Cart } from "./routes/customer/cart/Cart";
 import { Orders } from "./routes/customer/Orders";
 import { OrderDetail } from "./routes/customer/order/OrderDetail";
@@ -179,6 +180,7 @@ export default function App() {
           <Route path="/" element={<HomeForMode />} />
           <Route path="/customer" element={<Screen width="wide"><Browse /></Screen>} />
           <Route path="/customer/merchant/:hash" element={<Screen width="wide"><MerchantDetail /></Screen>} />
+          <Route path="/customer/merchant/:hash/about" element={<Screen width="reading"><StoreInfo /></Screen>} />
           <Route path="/customer/cart" element={<Screen width="wide"><Cart /></Screen>} />
           <Route path="/customer/orders" element={<Screen width="reading"><Orders /></Screen>} />
           <Route path="/customer/orders/:hash" element={<Screen width="wide"><OrderDetail /></Screen>} />

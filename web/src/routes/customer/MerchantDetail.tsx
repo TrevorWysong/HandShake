@@ -1,18 +1,16 @@
 import { useMemo, useState } from "react";
-import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Clock, Heart, Info, ShoppingBag } from "lucide-react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowLeft, ChevronRight, Clock, Heart, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getCatalog, listGoodieBagsForCatalog, storeSuccessor } from "../../holochain/zomes/catalog";
-import { averageRating, getRatingSummary, getReputationSummary, getReviewsFor, getItemRatingSummary, type ItemRatingSummary } from "../../holochain/zomes/reputation";
+import { averageRating, getItemRatingSummary, type ItemRatingSummary } from "../../holochain/zomes/reputation";
 import { useResource } from "../../lib/hooks/useResource";
-import { decodeEntry, hexToBytes, bytesToHex } from "../../holochain/decode";
+import { useGoBack } from "../../lib/hooks/useGoBack";
+import { hexToBytes, bytesToHex } from "../../holochain/decode";
 import { useCart } from "../../store/cart";
-import { formatCents, nowMicros } from "../../lib/ui/format";
+import { formatCents } from "../../lib/ui/format";
 import { Chip, ChipRow, Skeleton } from "../../components/ui";
 import { useTerms } from "../../store/network";
 import { useT } from "../../i18n";
-import { RatingCounted } from "../../components/store/RatingCounted";
-import { StoreContact } from "../../components/store/StoreContact";
 import { StarRating } from "../../components/StarRating";
 import { StoreRewardsStrip } from "./Rewards";
 import { StoreDeals } from "../../components/store/Deals";
@@ -20,55 +18,30 @@ import { ItemSheet } from "../../components/store/ItemSheet";
 import { MenuItemCard } from "../../components/store/MenuItemCard";
 import { MenuCategoryNav } from "../../components/store/MenuCategoryNav";
 import { StoreBags } from "../../components/store/StoreBags";
-import { bagLine, type BagRow } from "../../lib/storefront/bags";
+import { bagLine } from "../../lib/storefront/bags";
 import { StoreCartPanel } from "../../components/store/StoreCartPanel";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import { fetchMenu, groupByCategory } from "../../lib/storefront/menu";
+import { groupByCategory } from "../../lib/storefront/menu";
+import { fetchStoreMenu, rememberedStoreMenu } from "../../lib/storefront/storePage";
 import { useFavorites } from "../../lib/hooks/useFavorites";
 import type { ItemRow } from "../../lib/storefront/menu";
-import type { GoodieBag, MerchantCatalog } from "../../holochain/types";
+import type { MerchantCatalog } from "../../holochain/types";
 import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
 import { storeStatus } from "../../lib/storefront/storeHours";
-import { ReviewList } from "../../components/store/ReviewList";
-
-/// Polled for the same reason Browse.tsx's list is -- a menu item added
-/// moments ago may not have gossiped to whatever peer answers this read
-/// yet, and a customer already sitting on this page shouldn't need to
-/// navigate away and back for it to show up.
-
-interface StoreMenu {
-  catalog: MerchantCatalog;
-  items: ItemRow[];
-  bags: BagRow[];
-}
-
-async function fetchStoreMenu(catalogHash: Uint8Array): Promise<StoreMenu> {
-  const [record, items, bagViews] = await Promise.all([getCatalog(catalogHash), fetchMenu(catalogHash), listGoodieBagsForCatalog(catalogHash)]);
-  // Same as Browse.tsx's strip: drops a bag that closed since the last poll.
-  const now = nowMicros();
-  return {
-    catalog: decodeEntry<MerchantCatalog>(record),
-    items,
-    bags: bagViews.map((v) => ({ hash: v.original_action, bag: decodeEntry<GoodieBag>(v.record) })).filter((r) => r.bag.pickup_window_end > now),
-  };
-}
+import { StoreRoute } from "./StoreRoute";
+import { useStoreStanding } from "../../lib/hooks/useStoreStanding";
 
 /// Keyed by the store in the URL, so moving from one store page to another
-/// mounts a fresh page -- no state (reviews, claim forms, filters) can carry
-/// over from the previous store.
+/// mounts a fresh page -- no state (claim forms, filters) can carry over from
+/// the previous store.
 export function MerchantDetail() {
-  const { hash } = useParams<{ hash: string }>();
-  // A store its owner moved to a new key (a new phone) sends customers on
-  // to the new one -- a saved favourite, an old link.
-  const { data: movedTo } = useResource(hash ? `store-successor:${hash}` : null, () => storeSuccessor(hexToBytes(hash!)));
-  if (!hash) return null;
-  if (movedTo) return <Navigate to={`/customer/merchant/${bytesToHex(movedTo)}`} replace />;
-  return <StorePage key={hash} hash={hash} />;
+  return <StoreRoute>{(hash) => <StorePage key={hash} hash={hash} />}</StoreRoute>;
 }
 
 function StorePage({ hash }: { hash: string }) {
   const navigate = useNavigate();
+  const goBack = useGoBack("/customer");
   const minAge = useTerms().restricted_min_age;
   const t = useT();
   // A card click passes the catalog it already has, so the header renders
@@ -77,7 +50,11 @@ function StorePage({ hash }: { hash: string }) {
   const routerState = useLocation().state as { catalog?: MerchantCatalog } | null;
   const cart = useCart();
   const catalogHash = useMemo(() => hexToBytes(hash), [hash]);
-  const { data: menu } = useResource(`store-menu:${hash}`, () => fetchStoreMenu(catalogHash), { pollMs: POLL.slow });
+  // Polled for the same reason Browse.tsx's list is -- a menu item added
+  // moments ago may not have gossiped to whatever peer answers this read yet,
+  // and a customer already on this page shouldn't need to leave and come back.
+  const { data: fresh } = useResource(`store-menu:${hash}`, () => fetchStoreMenu(hash, catalogHash), { pollMs: POLL.slow });
+  const menu = fresh ?? rememberedStoreMenu(hash);
   const catalog = menu?.catalog ?? routerState?.catalog ?? null;
   const now = useClock();
   const status = catalog ? storeStatus(catalog, now) : null;
@@ -93,16 +70,13 @@ function StorePage({ hash }: { hash: string }) {
     );
     return Object.fromEntries(entries);
   });
-  // This store's own rating and reviews -- keyed by the store, not its
-  // owner, so a multi-store owner's other locations (or their driving)
-  // never bleed into this page.
-  const { data: rating } = useResource(`store-rating:${hash}`, () => getRatingSummary({ Store: catalogHash }));
-  // How it treats drivers: times it kept one waiting (each refunded its
-  // customer), and drivers' reports it wouldn't check them in.
-  const { data: record = null } = useResource(`store-record:${hash}`, () => getReputationSummary({ Store: catalogHash }));
+  const { rating, record } = useStoreStanding(hash, catalogHash);
   const { favoritesHex, toggleFavorite } = useFavorites();
   const favorited = favoritesHex.has(hash);
-  const [dietaryFilter, setDietaryFilter] = useState<string[]>([]);
+  // In the URL, so it's still set on coming back from the store's info page.
+  const [params, setParams] = useSearchParams();
+  const dietaryFilter = useMemo(() => params.getAll("diet"), [params]);
+  const toggleDiet = (tag: string) => setParams({ diet: dietaryFilter.includes(tag) ? dietaryFilter.filter((t) => t !== tag) : [...dietaryFilter, tag] }, { replace: true });
   /// The item whose choices are open, if any.
   const [choosing, setChoosing] = useState<ItemRow | null>(null);
 
@@ -164,7 +138,7 @@ function StorePage({ hash }: { hash: string }) {
           <div className="flex h-full items-center justify-center bg-gradient-to-br from-handshake-400 to-handshake-600 text-6xl">🍽️</div>
         )}
         <div aria-hidden className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/25 to-transparent" />
-        <motion.button whileTap={{ scale: 0.9 }} onClick={() => navigate(-1)} aria-label={t("common.back")} className="absolute top-3 left-3 grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow backdrop-blur-sm transition hover:bg-white lg:top-4 lg:left-4">
+        <motion.button whileTap={{ scale: 0.9 }} onClick={goBack} aria-label={t("common.back")} className="absolute top-3 left-3 grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow backdrop-blur-sm transition hover:bg-white lg:top-4 lg:left-4">
           <ArrowLeft size={18} className="text-ink-900" />
         </motion.button>
         <motion.button
@@ -179,31 +153,33 @@ function StorePage({ hash }: { hash: string }) {
       </div>
 
       <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pt-4 lg:px-0 lg:pt-6">
-        <motion.h1 variants={fadeSlideUp} className="text-2xl font-black tracking-tight text-ink-900 lg:text-3xl dark:text-ink-50">{catalog.business_name}</motion.h1>
-        {catalog.description && <p className="mt-1 max-w-2xl text-sm text-ink-500 lg:text-base">{catalog.description}</p>}
-
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-400 lg:text-sm">
-          {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} />}
-          <span className={status?.open ? "flex items-center gap-1 font-semibold text-presence-600" : "flex items-center gap-1 font-semibold text-red-500"}>
-            <Clock size={12} />
-            {status?.label}
-          </span>
-          {/* Closed for now, but taking orders: one can be scheduled for when it opens. */}
-          {catalog.is_open && status && !status.open && <span className="font-semibold text-ink-500 dark:text-ink-300">{t("store.orderAhead")}</span>}
-          {catalog.cuisine_type && <span>{catalog.cuisine_type}</span>}
-          {catalog.busy_extra_minutes > 0 && <span className="font-semibold text-amber-600">{t("store.busy", { minutes: catalog.prep_minutes + catalog.busy_extra_minutes })}</span>}
-          {record && record.late_count > 0 && <span className="font-semibold text-amber-600">{t("store.late", { count: record.late_count })}</span>}
-          {record && record.check_in_refused_count > 0 && <span className="font-semibold text-amber-600">{t("store.reports", { count: record.check_in_refused_count })}</span>}
-          {record && record.cancelled_by_them_count > 0 && <span className="font-semibold text-amber-600">{t("store.calledOff", { count: record.cancelled_by_them_count })}</span>}
-          {catalog.min_order_cents !== null && <span>{t("store.minimum", { amount: formatCents(catalog.min_order_cents) })}</span>}
-          <button
-            type="button"
-            onClick={() => document.getElementById("store-contact")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-            className="flex items-center gap-1 font-semibold text-handshake-600 hover:text-handshake-700 dark:text-handshake-400"
-          >
-            <Info size={12} /> {t("storeContact.jump")}
-          </button>
-        </div>
+        {/* The way to everything about the store: its reviews, hours, address and record. */}
+        <motion.div variants={fadeSlideUp}>
+          <Link to={`/customer/merchant/${hash}/about`} state={{ catalog }} aria-label={t("store.infoFor", { store: catalog.business_name })} className="group -m-2 block rounded-2xl p-2 transition-colors hover:bg-ink-100/70 active:bg-ink-100 dark:hover:bg-ink-800/50 dark:active:bg-ink-800">
+            <span className="flex items-center justify-between gap-3">
+              <h1 className="min-w-0 text-2xl font-black tracking-tight text-ink-900 lg:text-3xl dark:text-ink-50">{catalog.business_name}</h1>
+              <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink-100 text-ink-500 transition group-hover:translate-x-0.5 group-hover:bg-ink-200 dark:bg-ink-800 dark:text-ink-300 dark:group-hover:bg-ink-700">
+                <ChevronRight size={18} />
+              </span>
+            </span>
+            <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-400 lg:text-sm">
+              {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} />}
+              <span className={status?.open ? "flex items-center gap-1 font-semibold text-presence-600" : "flex items-center gap-1 font-semibold text-red-500"}>
+                <Clock size={12} />
+                {status?.label}
+              </span>
+              {/* Closed for now, but taking orders: one can be scheduled for when it opens. */}
+              {catalog.is_open && status && !status.open && <span className="font-semibold text-ink-500 dark:text-ink-300">{t("store.orderAhead")}</span>}
+              {catalog.cuisine_type && <span>{catalog.cuisine_type}</span>}
+              {catalog.busy_extra_minutes > 0 && <span className="font-semibold text-amber-600">{t("store.busy", { minutes: catalog.prep_minutes + catalog.busy_extra_minutes })}</span>}
+              {record && record.late_count > 0 && <span className="font-semibold text-amber-600">{t("store.late", { count: record.late_count })}</span>}
+              {record && record.check_in_refused_count > 0 && <span className="font-semibold text-amber-600">{t("store.reports", { count: record.check_in_refused_count })}</span>}
+              {record && record.cancelled_by_them_count > 0 && <span className="font-semibold text-amber-600">{t("store.calledOff", { count: record.cancelled_by_them_count })}</span>}
+              {catalog.min_order_cents !== null && <span>{t("store.minimum", { amount: formatCents(catalog.min_order_cents) })}</span>}
+            </span>
+            <span className="mt-1.5 block text-xs font-semibold text-handshake-600 lg:text-sm dark:text-handshake-400">{t("store.info")}</span>
+          </Link>
+        </motion.div>
 
         {hash && <StoreRewardsStrip catalogHex={hash} />}
         {hash && <StoreDeals catalogHex={hash} menu={items ?? []} />}
@@ -223,7 +199,7 @@ function StorePage({ hash }: { hash: string }) {
                 <span className="shrink-0 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">{t("store.diet")}</span>
                 <ChipRow>
                   {dietaryTags.map((tag) => (
-                    <Chip key={tag} active={dietaryFilter.includes(tag)} onClick={() => setDietaryFilter((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))} tone="brand">
+                    <Chip key={tag} active={dietaryFilter.includes(tag)} onClick={() => toggleDiet(tag)} tone="brand">
                       {tag}
                     </Chip>
                   ))}
@@ -244,15 +220,6 @@ function StorePage({ hash }: { hash: string }) {
             ))}
 
             {items.length === 0 && <p className="mt-6 rounded-2xl border border-ink-100 bg-white p-6 text-center text-sm text-ink-400 dark:border-ink-800 dark:bg-ink-900">{t("store.noMenu")}</p>}
-
-            <motion.div variants={fadeSlideUp}>
-              <StoreContact catalog={catalog} />
-            </motion.div>
-
-            <motion.div variants={fadeSlideUp}>
-              {rating && <RatingCounted rating={rating} />}
-              <ReviewList className="mt-6" feedKey={`store:${hash}`} fetchPage={(before) => getReviewsFor({ Store: catalogHash }, before)} />
-            </motion.div>
           </div>
 
           <div className="hidden 2xl:block">
