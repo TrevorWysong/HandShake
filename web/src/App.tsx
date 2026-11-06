@@ -11,6 +11,9 @@ import { Onboarding } from "./routes/Onboarding";
 import { Browse } from "./routes/customer/Browse";
 import { MerchantDetail } from "./routes/customer/MerchantDetail";
 import { StoreInfo } from "./routes/customer/StoreInfo";
+import { TermsAcceptance, TermsOfUse } from "./routes/Terms";
+import { TERMS_VERSION } from "./lib/policies/termsVersion";
+import { useTermsAcceptance } from "./store/termsAcceptance";
 import { Cart } from "./routes/customer/cart/Cart";
 import { Orders } from "./routes/customer/Orders";
 import { OrderDetail } from "./routes/customer/order/OrderDetail";
@@ -157,8 +160,11 @@ export default function App() {
   const locale = useLocale((s) => s.locale);
   // Sent to a new phone: this device has stopped, and connects to nothing.
   const departing = useDeparture((s) => s.sealed);
+  const termsAccepted = useTermsAcceptance((s) => s.acceptedVersion === TERMS_VERSION);
   if (HOST === "none") return <NoHost />;
   if (departing) return <Departure sealed={departing} />;
+  // Nothing connects, and nothing's shown, until these are agreed.
+  if (!termsAccepted) return <TermsAcceptance key={locale} />;
   return (
     <SessionBootstrap>
       <Routes key={locale}>
@@ -200,6 +206,7 @@ export default function App() {
           <Route path="/transparency" element={<Screen width="reading"><Transparency /></Screen>} />
           <Route path="/payments" element={<Screen width="reading"><Payments /></Screen>} />
           <Route path="/policies" element={<Screen width="reading"><Policies /></Screen>} />
+          <Route path="/terms" element={<Screen width="reading"><TermsOfUse /></Screen>} />
           <Route path="/account" element={<Screen width="reading"><AccountPage /></Screen>} />
           <Route path="/verify" element={<Screen width="reading"><VerifyPage /></Screen>} />
           <Route path="/arbitrate" element={<Screen width="reading"><ArbitratePage /></Screen>} />
