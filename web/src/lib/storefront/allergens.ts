@@ -58,21 +58,23 @@ export const needsALook = (match: AllergyMatch): boolean => hasMatch(match) || m
 
 /// A dietary tag that what the store says about the same item contradicts: a
 /// tag is its own free text, and the statement is what someone relies on.
-const TAG_RULES: [RegExp, Allergen[]][] = [
-  [/gluten[- ]?free|sin gluten/i, ["Gluten", "Wheat"]],
-  [/wheat[- ]?free|sin trigo/i, ["Wheat"]],
-  [/dairy[- ]?free|milk[- ]?free|sin l[aá]cteos|sin lactosa/i, ["Milk"]],
-  [/egg[- ]?free|sin huevo/i, ["Eggs"]],
-  [/(tree[- ]?)?nut[- ]?free|sin frutos secos/i, ["TreeNuts", "Peanuts"]],
-  [/peanut[- ]?free|sin cacahuetes?/i, ["Peanuts"]],
-  [/soy[- ]?free|sin soja/i, ["Soy"]],
-  [/\bvegan[oa]?\b/i, ["Milk", "Eggs", "Fish", "Crustaceans", "Molluscs"]],
-  [/\bvegetarian[oa]?\b/i, ["Fish", "Crustaceans", "Molluscs"]],
+/// A "free" claim is contradicted by what may be in it too; a diet, only by
+/// what's in the recipe.
+const TAG_RULES: [RegExp, Allergen[], "free" | "diet"][] = [
+  [/gluten[- ]?free|sin gluten/i, ["Gluten", "Wheat"], "free"],
+  [/wheat[- ]?free|sin trigo/i, ["Wheat"], "free"],
+  [/dairy[- ]?free|milk[- ]?free|sin l[aá]cteos|sin lactosa/i, ["Milk"], "free"],
+  [/egg[- ]?free|sin huevo/i, ["Eggs"], "free"],
+  [/(tree[- ]?)?nut[- ]?free|sin frutos secos/i, ["TreeNuts", "Peanuts"], "free"],
+  [/peanut[- ]?free|sin cacahuetes?/i, ["Peanuts"], "free"],
+  [/soy[- ]?free|sin soja/i, ["Soy"], "free"],
+  [/\bvegan[oa]?\b/i, ["Milk", "Eggs", "Fish", "Crustaceans", "Molluscs"], "diet"],
+  [/\bvegetarian[oa]?\b/i, ["Fish", "Crustaceans", "Molluscs"], "diet"],
 ];
 
 export function tagConflict(tag: string, facts: AllergenFacts | null | undefined): boolean {
   if (!facts) return false;
-  return TAG_RULES.some(([rule, allergens]) => rule.test(tag) && allergens.some((a) => facts.contains.includes(a)));
+  return TAG_RULES.some(([rule, allergens, kind]) => rule.test(tag) && allergens.some((a) => facts.contains.includes(a) || (kind === "free" && facts.may_contain.includes(a))));
 }
 
 /// An item's tags, less any its own statement contradicts.

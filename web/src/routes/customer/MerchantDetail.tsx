@@ -201,8 +201,9 @@ function StorePage({ hash }: { hash: string }) {
           <div className="min-w-0">
             <MenuCategoryNav categories={categories} placement="bar" label={t("store.categories")} className="lg:hidden" />
 
+            <p className="mt-4 text-xs text-ink-500 lg:mt-0 lg:mb-3 dark:text-ink-400">{t("store.allergyNotice")}</p>
             {hasAllergies(mine) && (
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-handshake-50 px-3 py-2 lg:mt-0 lg:mb-3 dark:bg-handshake-500/15">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-handshake-50 px-3 py-2 lg:mt-0 lg:mb-3 dark:bg-handshake-500/15">
                 <Link to="/profile" className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-handshake-800 dark:text-handshake-200">
                   <HeartPulse size={14} className="shrink-0" />
                   <span className="truncate">{t("store.flagging", { allergens: [allergenNames(mine.allergens), ...mine.other].filter(Boolean).join(", ") })}</span>
@@ -210,6 +211,8 @@ function StorePage({ hash }: { hash: string }) {
                 <Chip active={hideMatches} onClick={() => setFilters(dietaryFilter, !hideMatches)} tone="brand">{t("store.hideMatches")}</Chip>
               </div>
             )}
+
+            {hideMatches && <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-200">{t("store.hiddenNote")}</p>}
 
             {dietaryTags.length > 0 && (
               <div className="mt-4 flex items-center gap-2 lg:mt-0">

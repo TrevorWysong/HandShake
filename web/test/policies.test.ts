@@ -3,7 +3,7 @@
 // settings.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { POLICIES } from "../src/lib/policies";
+import { POLICIES, POLICY_VERSION } from "../src/lib/policies";
 import type { NetworkTerms } from "../src/holochain/types";
 
 const base = {
@@ -25,3 +25,7 @@ for (const terms of [base, { ...base, appeals: true, drivers_verified: true, res
     }
   });
 }
+
+test("the latest change is the current version, in every language", () => {
+  for (const [locale, content] of Object.entries(POLICIES)) assert.equal(content.changes[0].version, POLICY_VERSION, locale);
+});
