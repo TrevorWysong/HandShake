@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { TimeAgo } from "../TimeAgo";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, CheckCircle2, Clock3, PackageX, Repeat2, ShieldCheck, XCircle } from "lucide-react";
+import { AlertCircle, HeartPulse, CheckCircle2, Clock3, PackageX, Repeat2, ShieldCheck, XCircle } from "lucide-react";
 import { getIssueItems, getIssuesForOrder, getOrderDecisions, reportIssue, respondToIssue } from "../../holochain/zomes/dispatch";
 import { bytesToHex } from "../../holochain/decode";
 import { MAX_NOTE_CHARS, type IssueItems, type IssueKind, type IssueLine, type IssueView, type OrderDecisions } from "../../holochain/types";
@@ -23,6 +23,10 @@ import { t as translate, useT, type MessageKey } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
 
 type Role = "customer" | "store";
+
+/// What a customer picks: the public kind of report, or an allergen -- reported
+/// as wrong, with that it was an allergen sealed to the store.
+type ReportedAs = IssueKind | "Allergen";
 
 const KIND_LABEL: Record<IssueKind, MessageKey> = { Missing: "issues.missing", Wrong: "issues.wrong" };
 
@@ -146,6 +150,7 @@ function IssueRow({ issue, items, role, canAnswer, onAnswered }: { issue: IssueV
         <span className="shrink-0 text-sm font-bold tabular-nums text-ink-900 dark:text-ink-50">{formatCents(issue.value)}</span>
       </div>
 
+      {issue.evidence?.allergen && <p className="mt-2 flex items-center gap-1.5 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-bold text-white"><HeartPulse size={13} /> {t("issues.allergenClaim")}</p>}
       {issue.evidence && (issue.evidence.note || issue.evidence.photo_data_uri) && (
         <div className="mt-3 flex gap-3 rounded-xl bg-ink-50 p-3 dark:bg-ink-800/60">
           {issue.evidence.photo_data_uri && <img src={issue.evidence.photo_data_uri} alt={t("issues.customerPhoto")} className="h-16 w-16 shrink-0 rounded-lg object-cover" />}
@@ -206,7 +211,7 @@ function StatusChip({ accepted, role }: { accepted: boolean | null; role: Role }
 // --- reporting ---
 
 /// Per line (by position): how many units, and what's wrong with them.
-type Draft = Record<number, { quantity: number; kind: IssueKind }>;
+type Draft = Record<number, { quantity: number; kind: ReportedAs }>;
 
 function ReportIssueSheet({
   open,
@@ -247,9 +252,10 @@ function ReportIssueSheet({
   const submit = () => action.run(async () => {
     const lines: IssueLine[] = items.lines.flatMap((_, line) => {
       const d = draft[line];
-      return d && d.quantity > 0 ? [{ line, quantity: d.quantity, kind: d.kind }] : [];
+      return d && d.quantity > 0 ? [{ line, quantity: d.quantity, kind: d.kind === "Allergen" ? ("Wrong" as const) : d.kind }] : [];
     });
-    await reportIssue({ order: orderRef, lines, note: note.trim(), photo_data_uri: photo });
+    const allergen = Object.values(draft).some((d) => d.quantity > 0 && d.kind === "Allergen");
+    await reportIssue({ order: orderRef, lines, note: note.trim(), photo_data_uri: photo, allergen });
     setDraft({});
     setNote("");
     setPhoto("");
@@ -292,8 +298,8 @@ function ReportIssueSheet({
               <AnimatePresence initial={false}>
                 {units > 0 && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      {(["Missing", "Wrong"] as const).map((kind) => (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {(["Missing", "Wrong", "Allergen"] as const).map((kind) => (
                         <button
                           key={kind}
                           onClick={() => setDraft((dr) => ({ ...dr, [position]: { quantity: units, kind } }))}
@@ -301,11 +307,12 @@ function ReportIssueSheet({
                             (d?.kind ?? "Missing") === kind ? "bg-ink-900 text-white dark:bg-ink-50 dark:text-ink-900" : "bg-white text-ink-600 ring-1 ring-ink-200 dark:bg-ink-900 dark:text-ink-300 dark:ring-ink-700"
                           }`}
                         >
-                          {kind === "Missing" ? <AlertCircle size={13} /> : <Repeat2 size={13} />}
-                          {t(KIND_LABEL[kind])}
+                          {kind === "Missing" ? <AlertCircle size={13} /> : kind === "Wrong" ? <Repeat2 size={13} /> : <HeartPulse size={13} />}
+                          {t(kind === "Allergen" ? "issues.allergen" : KIND_LABEL[kind])}
                         </button>
                       ))}
                     </div>
+                    {d?.kind === "Allergen" && <p role="alert" className="mt-2 rounded-xl bg-red-50 p-3 text-xs font-semibold leading-relaxed text-red-800 dark:bg-red-950/40 dark:text-red-200">{t("issues.allergenMedical")}</p>}
                   </motion.div>
                 )}
               </AnimatePresence>

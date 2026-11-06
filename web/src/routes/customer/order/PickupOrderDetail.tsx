@@ -8,6 +8,7 @@ import { decodeEntry, bytesEqual, bytesToHex, hexToBytes, timestampOf } from "..
 import { getCatalog } from "../../../holochain/zomes/catalog";
 import { myAgentPubKey } from "../../../holochain/client";
 import { PickupStatusTimeline } from "../../../components/orders/OrderStatus";
+import { AllergyRequest } from "../../../components/store/Allergens";
 import { OrderHero } from "../../../components/orders/OrderHero";
 import { customerProgress, orderEstimate } from "../../../lib/orders/progress";
 import { useClock } from "../../../lib/hooks/useClock";
@@ -121,6 +122,7 @@ export function PickupOrderDetail() {
         </motion.div>
       )}
 
+      {details && <motion.div variants={fadeSlideUp}><AllergyRequest allergies={details.allergies} heading={t("order.youTold")} /></motion.div>}
       {details?.kitchen_note && (
         <motion.div variants={fadeSlideUp}>
           <Card className="mt-3 flex flex-col gap-1 p-4 text-sm">

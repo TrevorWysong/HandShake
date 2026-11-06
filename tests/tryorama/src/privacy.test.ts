@@ -81,7 +81,7 @@ await runScenario(async (scenario) => {
   assert.equal(storeView.kitchen_note, "Allergic to peanuts", "the store reads the kitchen note");
   assert.equal(storeView.customer_name, "Cara", "and who the order's for");
   assert.equal(storeView.dropoff, null, "but not the address");
-  assert.deepEqual(await detailsFor(stranger), { dropoff: null, kitchen_note: null, customer_name: null }, "a stranger reads nothing");
+  assert.deepEqual(await detailsFor(stranger), { dropoff: null, kitchen_note: null, allergies: { allergens: [], other: [] }, customer_name: null }, "a stranger reads nothing");
   console.log("[PASS] the customer reads everything, the store only its note, a stranger nothing");
 
   await acceptOrder(merchant, order, all);

@@ -11,7 +11,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, Minus, Plus } from "lucide-react";
 import { getModifierGroups } from "../../holochain/zomes/catalog";
 import { bytesToHex, decodeEntry } from "../../holochain/decode";
-import type { ActionHash, ModifierGroup, SelectionInput } from "../../holochain/types";
+import type { ActionHash, AllergyPolicy, ModifierGroup, SelectionInput } from "../../holochain/types";
 import { MAX_CHOICE_DEPTH } from "../../holochain/types";
 import { choiceLabels, choose, emptySelections, isSingleChoice, linePrice, missingGroups, rangeLabel, within, withNested, type Groups } from "../../lib/storefront/choices";
 import { covered } from "../../lib/storefront/promotions";
@@ -23,6 +23,11 @@ import type { CartLine } from "../../store/cart";
 import { Button, Skeleton, Stepper } from "../ui";
 import { Sheet } from "../Sheet";
 import { useT } from "../../i18n";
+import { useMyAllergies } from "../../lib/hooks/useMyAllergies";
+import { allergensChosen } from "../../lib/storefront/choices";
+import { matchAllergies } from "../../lib/storefront/allergens";
+import { AllergenStatement, AllergyWarning } from "./Allergens";
+import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
 import { ReviewList } from "./ReviewList";
 import { getItemReviews } from "../../holochain/zomes/reputation";
 
@@ -39,9 +44,10 @@ async function fetchItemGroups(catalogRef: ActionHash, row: ItemRow): Promise<Gr
 
 /// With `gift`, the item a reward gives: its quantity is the reward's, only
 /// the options it allows show, and the button says what's still charged.
-export function ItemSheet({ catalogRef, row, editing, gift, onClose, onDone }: { catalogRef: ActionHash; row: ItemRow; editing?: CartLine; gift?: RewardItem; onClose: () => void; onDone: (line: CartLine) => void }) {
+export function ItemSheet({ catalogRef, row, editing, gift, policy, onClose, onDone }: { policy?: AllergyPolicy | null; catalogRef: ActionHash; row: ItemRow; editing?: CartLine; gift?: RewardItem; onClose: () => void; onDone: (line: CartLine) => void }) {
   const t = useT();
   const { item } = row;
+  const { mine } = useMyAllergies();
   const { data: groups, error } = useResource(`item-groups:${bytesToHex(row.version)}`, () => fetchItemGroups(catalogRef, row));
   const [selections, setSelections] = useState<SelectionInput[]>(editing?.selections ?? emptySelections(item.modifier_groups));
   const [chosenQuantity, setQuantity] = useState(editing?.quantity ?? 1);
@@ -52,6 +58,7 @@ export function ItemSheet({ catalogRef, row, editing, gift, onClose, onDone }: {
   const [attempted, setAttempted] = useState(false);
 
   const priced = groups ? linePrice(item, selections, groups) : null;
+  const chosenAdds = groups ? allergensChosen(selections, groups) : { contains: [], other: [] };
   const unit = priced?.ok ? priced.price : item.price_cents;
   // What a gift leaves charged: whatever its terms don't cover.
   const charged = gift && priced?.ok ? unit - (covered({ basePriceCents: item.price_cents, priceCents: unit, choiceCharges: priced.choices }, gift.choices) ?? 0) : null;
@@ -84,6 +91,11 @@ export function ItemSheet({ catalogRef, row, editing, gift, onClose, onDone }: {
       {item.photo_data_uri && <img src={item.photo_data_uri} alt="" className="-mx-5 -mt-3 mb-4 aspect-[16/9] w-[calc(100%+2.5rem)] max-w-none object-cover" />}
       <p className="text-base font-semibold tabular-nums text-ink-900 dark:text-ink-50">{formatCents(item.price_cents)}</p>
       {item.description && <p className="mt-1 text-sm leading-relaxed text-ink-500 dark:text-ink-400">{item.description}</p>}
+      <AllergyWarning match={matchAllergies(item.allergens, policy, mine, chosenAdds)} className="mt-3" announce />
+      <div className="mt-3 rounded-xl bg-ink-50 p-3 dark:bg-ink-800/50">
+        <p className="mb-1 text-xs font-bold text-ink-700 dark:text-ink-200">{t("allergy.title")}</p>
+        <AllergenStatement facts={item.allergens} policy={policy} added={chosenAdds} />
+      </div>
       <ReviewList className="mt-4" feedKey={`item:${bytesToHex(row.hash)}`} fetchPage={(before) => getItemReviews(row.hash, before)} />
       {error ? <p className="mt-4 text-sm text-red-600 dark:text-red-400">{t("item.loadFailed")}</p> : null}
       {!groups && !error && (
@@ -122,6 +134,7 @@ function GroupPicker({
   onChange: (next: SelectionInput) => void;
   nested?: boolean;
 }) {
+  const names = useAllergenNames();
   const count = selection.options.reduce((n, c) => n + c.quantity, 0);
   const required = group.min_selections > 0;
   const t = useT();
@@ -164,6 +177,9 @@ function GroupPicker({
           const label = (
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[15px] text-ink-900 dark:text-ink-50">{option.name}</span>
+              {(option.contains.length > 0 || option.other_allergens.length > 0) && (
+                <span className="block text-[11px] text-ink-500 dark:text-ink-400">{t("allergy.containsInline", { allergens: [names(option.contains), ...option.other_allergens].filter(Boolean).join(", ") })}</span>
+              )}
               {(option.price_cents > 0 || !option.available) && (
                 <span className="block text-xs tabular-nums text-ink-500 dark:text-ink-400">{option.available ? `+${formatCents(option.price_cents)}` : t("item.soldOut")}</span>
               )}

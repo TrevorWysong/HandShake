@@ -172,6 +172,7 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
         max_tip_floor: DEFAULT_MAX_TIP_FLOOR,
         max_delivery_radius_km: input.max_delivery_radius_km.unwrap_or_else(handshake_governance::default_delivery_radius_km),
         dietary_tags: Vec::new(),
+        allergy_policy: None,
         auto_accept_orders: false,
         leave_at_door_max_cents: None,
         min_order_cents: None,

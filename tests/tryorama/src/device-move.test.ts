@@ -55,6 +55,10 @@ await runScenario(async (scenario) => {
   await assert.rejects(checkIn(), /Only the order's driver/, "other devices reach the store's conductor");
   assert.deepEqual(await grantTags(), ["codes", "live", "recv_remote_signal"], "a device set up at init holds its grants");
 
+  // Someone's allergies, sealed to them, have to come along.
+  const allergies = { allergens: ["Peanuts"], other: ["Kiwi"] };
+  await retryingCaller(merchant.cells[0], "profiles")("save_my_allergies", allergies);
+
   // ===== The old phone: ready only once the network holds all it wrote =====
   const before = await retryingCaller(merchant.cells[0], "account")<MoveReadiness>("ready_to_move", null);
   await sync();
@@ -87,6 +91,7 @@ await runScenario(async (scenario) => {
   assert.ok(same(again.head, prepared.head), "once");
   const stores = await retryingCaller(merchant.cells[0], "catalog")<unknown[]>("list_my_catalogs", null);
   assert.equal(stores.length, 1, "the store is still this account's: nothing to move or relist");
+  assert.deepEqual(await retryingCaller(merchant.cells[0], "profiles")("my_allergies", null), allergies, "and their allergies are still theirs");
   console.log("[PASS] the new phone restores the account and sets itself up");
 
   // ===== The same account carries on =====

@@ -10,6 +10,7 @@
 //! registration, no externs.
 
 use hdi::prelude::*;
+use handshake_integrity_support::allergens::{AllergenFacts, AllergyPolicy};
 use handshake_types::GeoPoint;
 
 mod hours;
@@ -151,6 +152,10 @@ pub struct MerchantCatalog {
     /// `order_total` already has (never independently re-derived either).
     #[serde(default)]
     pub dietary_tags: Vec<String>,
+    /// How the store handles allergens across its kitchen -- `None` until it
+    /// says, which reads as not stated, never as none.
+    #[serde(default)]
+    pub allergy_policy: Option<AllergyPolicy>,
     /// The sales tax or VAT the store charges, by category of item -- its
     /// first rate is the default. Empty: no tax. The store's own, for its
     /// own address: it's the seller, and files what it collects
@@ -219,6 +224,11 @@ pub struct MenuItem {
     pub category: String,
     #[serde(default)]
     pub dietary_tags: Vec<String>,
+    /// What the store says this item has in it -- `None` until it says, which
+    /// reads as not stated, never as none. An order line's version keeps what
+    /// was said when it was ordered.
+    #[serde(default)]
+    pub allergens: Option<AllergenFacts>,
     /// The choice groups a customer picks from when ordering it, in the
     /// order they're shown: each a `ModifierGroup` of the same store, by
     /// its original action -- so a store edits a shared group ("Choose a
@@ -404,6 +414,10 @@ pub struct GoodieBag {
     pub description: String,
     #[serde(default)]
     pub photo_data_uri: String,
+    /// What the store says it may hold, if it can say. `None` reads as contents
+    /// that vary, which may include anything.
+    #[serde(default)]
+    pub allergens: Option<AllergenFacts>,
     pub original_value_cents: u64,
     pub price_cents: u64,
     pub quantity_total: u32,

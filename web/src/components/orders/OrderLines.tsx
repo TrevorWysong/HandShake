@@ -6,9 +6,10 @@ import { bytesToHex } from "../../holochain/decode";
 import { formatCents } from "../../lib/ui/format";
 import { useResource } from "../../lib/hooks/useResource";
 import { Card, Skeleton } from "../ui";
+import { AllergenStatement } from "../store/Allergens";
 import { useT } from "../../i18n";
 
-export function OrderLines({ orderRef, prices = false, className = "" }: { orderRef: Uint8Array; prices?: boolean; className?: string }) {
+export function OrderLines({ orderRef, prices = false, allergens = false, className = "" }: { orderRef: Uint8Array; prices?: boolean; /** What the store said of each, when it was ordered. */ allergens?: boolean; className?: string }) {
   const t = useT();
   const { data: lines } = useResource(`order-lines:${bytesToHex(orderRef)}`, () => getOrderLines(orderRef));
   if (!lines) return <Skeleton className={`h-10 w-full ${className}`} />;
@@ -22,6 +23,11 @@ export function OrderLines({ orderRef, prices = false, className = "" }: { order
               {line.name}
               {line.goodie_bag && <span className="ml-1.5 whitespace-nowrap rounded-full bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-bold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">🎁 {t("lines.goodieBag")}</span>}
             </p>
+            {allergens && (line.goodie_bag || line.allergens) && (
+              <div className="mt-1">
+                <AllergenStatement quiet facts={line.allergens} goodieBag={line.goodie_bag} added={{ contains: line.choices_contain, other: line.choices_contain_other }} />
+              </div>
+            )}
             {line.choices.length > 0 && (
               <ul className="mt-0.5 flex flex-col text-xs text-ink-500 dark:text-ink-400">
                 {line.choices.map((choice, j) => (
@@ -33,6 +39,7 @@ export function OrderLines({ orderRef, prices = false, className = "" }: { order
           {prices && <span className="shrink-0 tabular-nums text-ink-600 dark:text-ink-300">{formatCents(line.unit_price_cents * line.quantity)}</span>}
         </li>
       ))}
+      {allergens && lines.some((line) => line.allergens) && <li className="text-[11px] leading-relaxed text-ink-400">{t("allergy.whenOrdered")}</li>}
     </ul>
   );
 }
@@ -48,7 +55,7 @@ export function OrderSummary({ orderRef, count }: { orderRef: Uint8Array; count:
           <span className="text-xs font-normal text-ink-400 group-open:hidden">{t("common.show")}</span>
           <span className="hidden text-xs font-normal text-ink-400 group-open:inline">{t("common.hide")}</span>
         </summary>
-        <OrderLines orderRef={orderRef} prices className="mt-3" />
+        <OrderLines orderRef={orderRef} prices allergens className="mt-3" />
       </details>
     </Card>
   );

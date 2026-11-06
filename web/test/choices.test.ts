@@ -9,13 +9,13 @@ const hash = (n: number) => new Uint8Array(39).fill(n);
 const STORE = hash(200);
 
 function option(id: number, price_cents: number, nested_group: Uint8Array | null = null): ModifierOption {
-  return { id, name: `option ${id}`, price_cents, available: true, nested_group };
+  return { id, name: `option ${id}`, price_cents, available: true, nested_group, contains: [], other_allergens: [] };
 }
 function group(name: string, min: number, max: number | null, free: number, options: ModifierOption[]): ModifierGroup {
   return { catalog_ref: STORE, name, min_selections: min, max_selections: max, max_per_option: 1, free_selections: free, options };
 }
 function item(price_cents: number, groups: number[]): MenuItem {
-  return { catalog_ref: STORE, name: "Latte", price_cents, available: true, description: "", photo_data_uri: "", category: "", dietary_tags: [], modifier_groups: groups.map(hash), tax_category: "", age_restricted: false };
+  return { catalog_ref: STORE, name: "Latte", price_cents, available: true, description: "", photo_data_uri: "", category: "", allergens: null, dietary_tags: [], modifier_groups: groups.map(hash), tax_category: "", age_restricted: false };
 }
 const menu = (entries: [number, ModifierGroup][]): Groups => new Map(entries.map(([n, g]) => [bytesToHex(hash(n)), g]));
 const pick = (g: number, options: [number, number][]): SelectionInput => ({ group: hash(g), options: options.map(([option, quantity]) => ({ option, quantity, nested: [] })) });

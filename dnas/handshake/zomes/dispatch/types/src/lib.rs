@@ -226,6 +226,9 @@ pub enum Cancellation {
 /// What a store tells the customer when it turns an order down.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum DeclineReason {
+    /// It can't make it the way the customer asked. Public, as a reason is, so
+    /// it never says what they asked: an allergy is theirs to keep.
+    CantMakeAsAsked,
     /// Priced from an outdated menu -- see `dispatch::accept_delivery_order`.
     OutdatedPrices,
     ItemsUnavailable,

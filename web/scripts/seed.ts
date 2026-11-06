@@ -208,6 +208,7 @@ async function seedStore(store: WorldStore, owner: Agent, center: Point): Promis
       photo_data_uri: "",
       category: item.category ?? "",
       dietary_tags: item.dietary_tags ?? [],
+      allergens: item.allergens ?? null,
       modifier_groups: (item.groups ?? []).map((key) => groups.get(key)),
     });
     items.set(item.name, { ref: hash(record), price: item.price });

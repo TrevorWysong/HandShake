@@ -10,6 +10,7 @@ import { averageRating, getRatingSummary, getReviewsFor } from "../holochain/zom
 import { updateProfile, getMyName, getMyPhone, getProviderCredentialForProfile, registerProviderCredential } from "../holochain/zomes/profiles";
 import { bytesToHex, decodeEntry } from "../holochain/decode";
 import { Button, Card, Input, Notice, SectionLabel, Textarea } from "../components/ui";
+import { MyAllergies } from "../components/account/MyAllergies";
 import { PhotoInput } from "../components/PhotoInput";
 import { StarRating } from "../components/StarRating";
 import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
@@ -297,6 +298,7 @@ export function ProfilePage() {
       )}
 
       <motion.div variants={fadeSlideUp}>
+      {profile?.roles.includes("Requester") && <MyAllergies />}
       <LanguagePicker />
       <NotificationSettings runsStore={!!profile?.roles.includes("Merchant")} />
       <Card className="mb-4 p-4">

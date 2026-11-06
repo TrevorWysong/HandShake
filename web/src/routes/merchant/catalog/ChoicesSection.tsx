@@ -15,6 +15,8 @@ import { groupProblem, rangeLabel } from "../../../lib/storefront/choices";
 import { currencySymbol, fromMinorUnits, toMinorUnits } from "../../../lib/ui/format";
 import { fadeSlideUp } from "../../../lib/ui/motion";
 import { Button, Card, Field, GroupHeading, Input, Select, Switch } from "../../../components/ui";
+import { AllergenSetPicker } from "../../../components/store/Allergens";
+import { parseAllergenWords, type Allergen } from "../../../lib/storefront/allergens";
 import { useT, type MessageKey } from "../../../i18n";
 import { useAction } from "../../../lib/hooks/useAction";
 
@@ -98,6 +100,9 @@ interface OptionDraft {
   available: boolean;
   /// The group it opens, by hex, or "".
   opens: string;
+  /// What choosing it adds.
+  contains: Allergen[];
+  otherAllergens: string;
 }
 
 function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Array; row: GroupRow | null; others: GroupRow[]; onSaved: () => Promise<void> }) {
@@ -113,7 +118,7 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
   const [perOption, setPerOption] = useState(initial?.max_per_option ?? 1);
   const [more, setMore] = useState(free > 0 || perOption > 1);
   const [options, setOptions] = useState<OptionDraft[]>(
-    () => initial?.options.map((o) => ({ id: o.id, name: o.name, price: o.price_cents > 0 ? fromMinorUnits(o.price_cents).toFixed(2) : "", available: o.available, opens: o.nested_group ? bytesToHex(o.nested_group) : "" })) ?? [{ id: 1, name: "", price: "", available: true, opens: "" }],
+    () => initial?.options.map((o) => ({ id: o.id, name: o.name, price: o.price_cents > 0 ? fromMinorUnits(o.price_cents).toFixed(2) : "", available: o.available, contains: o.contains, otherAllergens: o.other_allergens.join(", "), opens: o.nested_group ? bytesToHex(o.nested_group) : "" })) ?? [{ id: 1, name: "", price: "", available: true, opens: "", contains: [], otherAllergens: "" }],
   );
   // Ids stay unique for the group's life, so an id an old order names is
   // never another option's.
@@ -129,7 +134,7 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
     max_selections: mode === "one" ? 1 : max.trim() === "" ? null : Number(max),
     max_per_option: perOption,
     free_selections: free,
-    options: options.map((o): ModifierOption => ({ id: o.id, name: o.name.trim(), price_cents: toMinorUnits(Number(o.price) || 0), available: o.available, nested_group: o.opens ? hexToBytes(o.opens) : null })),
+    options: options.map((o): ModifierOption => ({ id: o.id, name: o.name.trim(), price_cents: toMinorUnits(Number(o.price) || 0), available: o.available, nested_group: o.opens ? hexToBytes(o.opens) : null, contains: o.contains, other_allergens: parseAllergenWords(o.otherAllergens) })),
   };
   const problem = groupProblem(group);
   const setOption = (id: number, patch: Partial<OptionDraft>) => setOptions((all) => all.map((o) => (o.id === id ? { ...o, ...patch } : o)));
@@ -252,6 +257,13 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
                 </Select>
               )}
             </div>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs font-semibold text-ink-500">{t("choicesEditor.allergens")}{o.contains.length + parseAllergenWords(o.otherAllergens).length > 0 ? ` (${o.contains.length + parseAllergenWords(o.otherAllergens).length})` : ""}</summary>
+              <div className="mt-2 flex flex-col gap-2">
+                <AllergenSetPicker value={o.contains} onChange={(contains) => setOption(o.id, { contains })} label={t("choicesEditor.allergens")} />
+                <Input value={o.otherAllergens} onChange={(e) => setOption(o.id, { otherAllergens: e.target.value })} placeholder={t("menuEditor.allergensOther")} aria-label={t("menuEditor.allergensOther")} />
+              </div>
+            </details>
           </div>
         ))}
         {options.length < MAX_GROUP_OPTIONS && (
@@ -259,7 +271,7 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
             variant="ghost"
             className="py-2 text-xs"
             onClick={() => {
-              setOptions((all) => [...all, { id: nextId, name: "", price: "", available: true, opens: "" }]);
+              setOptions((all) => [...all, { id: nextId, name: "", price: "", available: true, opens: "", contains: [], otherAllergens: "" }]);
               setNextId((n) => n + 1);
             }}
           >

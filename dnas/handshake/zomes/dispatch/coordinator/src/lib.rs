@@ -126,7 +126,7 @@ mod test_utils {
     /// write -- so a test can prove what validation refuses.
     #[hdk_extern]
     pub fn create_raw_item_issue_for_testing(input: RawIssueInput) -> ExternResult<ActionHash> {
-        let evidence = dispatch_integrity::IssueEvidence { note: String::new(), photo_data_uri: String::new() };
+        let evidence = dispatch_integrity::IssueEvidence { note: String::new(), photo_data_uri: String::new(), allergen: false };
         let me = agent_info()?.agent_initial_pubkey;
         let received = match input.received {
             Some(version) => version,

@@ -3,6 +3,7 @@
 //! line of an ordinary order; its store accepting that order is what sells
 //! it, counted against the bag's quantity (`dispatch`'s `bags`).
 
+use handshake_integrity_support::allergens::AllergenFacts;
 use catalog_integrity::*;
 use hdk::prelude::*;
 use handshake_coordinator_support::{decode_or, resolve_latest, resolve_links_to_records_with_original, resolve_version, update_version, written};
@@ -17,6 +18,8 @@ pub struct CreateGoodieBagInput {
     pub description: String,
     #[serde(default)]
     pub photo_data_uri: String,
+    #[serde(default)]
+    pub allergens: Option<AllergenFacts>,
     pub original_value_cents: u64,
     pub price_cents: u64,
     pub quantity_total: u32,
@@ -34,6 +37,7 @@ pub fn create_goodie_bag(input: CreateGoodieBagInput) -> ExternResult<Record> {
         title: input.title,
         description: input.description,
         photo_data_uri: input.photo_data_uri,
+        allergens: input.allergens,
         original_value_cents: input.original_value_cents,
         price_cents: input.price_cents,
         quantity_total: input.quantity_total,

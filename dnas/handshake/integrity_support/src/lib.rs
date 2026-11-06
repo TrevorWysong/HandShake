@@ -23,6 +23,7 @@
 use hdi::hash_path::path::Path;
 use hdi::prelude::*;
 
+pub mod allergens;
 pub mod beacon;
 pub mod chain;
 pub mod contact;

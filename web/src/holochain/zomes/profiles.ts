@@ -1,6 +1,6 @@
 import { callZome } from "../client";
 import { decodeEntry } from "../decode";
-import type { ActionHash, AddressDetails, AgentPubKey, HcRecord, Profile, ProviderCredential, RoleTag } from "../types";
+import type { ActionHash, AddressDetails, AllergySet, AgentPubKey, HcRecord, Profile, ProviderCredential, RoleTag } from "../types";
 
 export async function createProfile(input: {
   display_name: string;
@@ -99,4 +99,13 @@ export async function deleteSavedAddress(originalAction: ActionHash): Promise<vo
 
 export async function listMyAddresses(): Promise<SavedAddressView[]> {
   return callZome("profiles", "list_my_addresses", null);
+}
+
+/// This account's own allergies, opened on this device.
+export async function myAllergies(): Promise<AllergySet> {
+  return callZome("profiles", "my_allergies", null);
+}
+
+export async function saveMyAllergies(allergies: AllergySet): Promise<void> {
+  return callZome("profiles", "save_my_allergies", allergies);
 }

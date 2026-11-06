@@ -16,6 +16,7 @@ import { InsightsCard } from "./catalog/InsightsCard";
 import { TaxCard, TaxReportCard } from "./catalog/TaxCard";
 import { AutoAcceptCard, BusyCard, DeliverySubsidyCard, LeaveAtDoorCard, ListingCard, MinimumOrderCard, StoreDetailsCard, StoreWaitCard, TipLimitCard } from "./catalog/StoreDetailsCard";
 import { HoursCard } from "./catalog/HoursCard";
+import { AllergyPolicyCard } from "./catalog/AllergyPolicyCard";
 import { StoreReviews } from "./catalog/StoreReviews";
 import { ForActiveStore, StoreSkeleton } from "./ActiveStore";
 import { useStore } from "./useStore";
@@ -101,6 +102,7 @@ function StoreSettings({ storeHex, openDetailsOnArrival }: { storeHex: string; o
         </Group>
 
         <Group icon={Clock} title={t("storePage.orders")} columns>
+          <AllergyPolicyCard key={JSON.stringify(catalog.allergy_policy ?? null)} {...card} />
           <AutoAcceptCard {...card} />
           <BusyCard key={catalog.busy_extra_minutes} {...card} />
           <MinimumOrderCard {...card} />

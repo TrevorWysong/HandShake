@@ -7,8 +7,9 @@
 //! `orders.rs`/`disputes.rs` do for the much larger delivery vertical.
 
 use crate::upkeep;
+use handshake_integrity_support::allergens::AllergySet;
 use crate::stores::{closed_reason, current_catalog_version, ready_by};
-use crate::orders::{ensure_promo_usable, my_name, seal_note, AcceptOrderInput, DeclineOrderInput, record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
+use crate::orders::{ensure_promo_usable, my_name, seal_kitchen_note, seal_note, AcceptOrderInput, DeclineOrderInput, record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
 use crate::pricing::{ensure_current_terms, ensure_priced_from_current_menu, ensure_store_minimum, price_order, OrderItem};
 use crate::signals::RemoteSignal;
 use crate::order_queues::{self, OrderParties};
@@ -27,6 +28,9 @@ pub struct RequestPickupOrderInput {
     /// A note for the kitchen -- sealed to the store.
     #[serde(default)]
     pub kitchen_notes: String,
+    /// Allergies the customer's telling the store -- sealed with the note.
+    #[serde(default)]
+    pub allergies: AllergySet,
     #[serde(default)]
     pub promo_code_ref: Option<ActionHash>,
     /// The customer confirming their age, for age-restricted items.
@@ -75,7 +79,7 @@ pub fn request_pickup_order(input: RequestPickupOrderInput) -> ExternResult<Reco
         }
     }
 
-    let kitchen_note = seal_note(&input.merchant, &input.kitchen_notes)?;
+    let kitchen_note = Some(seal_kitchen_note(&input.merchant, catalog.allergy_policy.as_ref(), &input.kitchen_notes, input.allergies)?);
     let sealed_customer_name = seal_note(&input.merchant, &my_name()?)?;
     let sealed_wake = crate::orders::seal_wake(&input.merchant, input.wake_for_store.as_deref())?;
     let order = PickupOrder {

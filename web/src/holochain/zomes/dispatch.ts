@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
+import type { AllergySet, ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
 
 // --- orders ---
 
@@ -18,6 +18,7 @@ export async function requestDelivery(input: {
   max_delivery_fee: number | null;
   /// A note for the kitchen -- sealed to the store.
   kitchen_notes?: string;
+  allergies?: AllergySet;
   /// Drop-off instructions -- sealed with the address, for the driver.
   dropoff_notes?: string;
   /// The drop-off's second address line (apartment, suite, unit), sealed
@@ -296,6 +297,8 @@ export interface RecurringTemplateView {
 export interface OrderPrivateDetails {
   dropoff: DropoffDetails | null;
   kitchen_note: string | null;
+  /// The customer's allergies, as they told the store -- for the two of them.
+  allergies: AllergySet;
   /// The customer's name -- for the customer, the store, and the driver
   /// once assigned.
   customer_name: string | null;
@@ -320,6 +323,7 @@ export async function requestPickupOrder(input: {
   order_total: number;
   /// A note for the kitchen -- sealed to the store.
   kitchen_notes?: string;
+  allergies?: AllergySet;
   promo_code_ref?: ActionHash | null;
   /// The customer confirming their age, for age-restricted items.
   age_confirmed?: boolean;
@@ -407,7 +411,7 @@ export async function getMyHandoverCode(orderRef: ActionHash): Promise<PinSecret
 // --- missing and wrong items (see the dispatch `issues` module) ---
 
 /// The customer reporting items missing or wrong.
-export async function reportIssue(input: { order: ActionHash; lines: IssueLine[]; note: string; photo_data_uri: string }): Promise<HcRecord> {
+export async function reportIssue(input: { allergen?: boolean; order: ActionHash; lines: IssueLine[]; note: string; photo_data_uri: string }): Promise<HcRecord> {
   return callZome("dispatch", "report_issue", input);
 }
 

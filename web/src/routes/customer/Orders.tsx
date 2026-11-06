@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { TimeAgo } from "../../components/TimeAgo";
 import { Link, useNavigate } from "react-router-dom";
-import { Bike, ClipboardList, Pause, Play, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
+import { Bike, ChevronRight, ClipboardList, Pause, Play, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
@@ -10,6 +10,9 @@ import { decodeEntry, bytesToHex } from "../../holochain/decode";
 import { useCart } from "../../store/cart";
 import { usePolling, useResource } from "../../lib/hooks/useResource";
 import { useActiveOrders } from "../../store/activeOrders";
+import { customerProgress, type OrderNeed } from "../../lib/orders/progress";
+import { OrderProgressBar } from "../../components/orders/OrderProgressBar";
+import { OrderToneIcon } from "../../components/orders/OrderHero";
 import { useSession } from "../../store/session";
 import { cartLinesFromOrder, fetchMenu } from "../../lib/storefront/menu";
 import { customerOrderPath, isFinished, itemCount, mergeNewestFirst, toOrderRow, type OrderRow } from "../../lib/orders/orderEntries";
@@ -74,7 +77,7 @@ function ActiveOrders() {
           <AnimatePresence initial={false}>
             {rows.map((row) => (
               <motion.div key={row.hex} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                <OrderCard row={row} />
+                <ActiveOrderRow row={row} need={orders?.find((o) => o.row.hex === row.hex)?.need ?? null} />
               </motion.div>
             ))}
           </AnimatePresence>
@@ -126,6 +129,28 @@ function PastOrders() {
 async function fetchPast(before: Timestamp | null): Promise<PastState> {
   const page = await getMyOrderHistory(before);
   return { rows: page.orders.map(toOrderRow).filter(isFinished), nextBefore: page.next_before };
+}
+
+/// An order in progress: where it stands, large, as its own page and the
+/// app's card say it.
+function ActiveOrderRow({ row, need }: { row: OrderRow; need: OrderNeed | null }) {
+  const t = useT();
+  const storeHex = bytesToHex(row.order.catalog_ref);
+  const { data: storeName } = useResource(`store-name:${storeHex}`, async () => decodeEntry<MerchantCatalog>(await getCatalog(row.order.catalog_ref)).business_name);
+  const progress = customerProgress(row, need);
+  return (
+    <Link to={customerOrderPath(row)} className={clsx("block rounded-2xl border bg-white p-4 shadow-[var(--shadow-card)] transition-transform active:scale-[0.99] dark:bg-ink-900", progress.tone === "needsYou" ? "border-amber-400 dark:border-amber-600" : "border-ink-100 dark:border-ink-800")}>
+      <span className="flex items-center gap-3">
+        <OrderToneIcon tone={progress.tone} size={18} className="h-10 w-10" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base font-black tracking-tight text-ink-900 dark:text-ink-50">{t(progress.headline)}</span>
+          <span className="block truncate text-xs text-ink-500 dark:text-ink-400">{storeName ?? "\u00a0"} · {t("orders.items", { count: itemCount(row.order) })} · {formatCents(row.order.order_total)}</span>
+        </span>
+        <ChevronRight size={16} className="shrink-0 text-ink-300" />
+      </span>
+      <OrderProgressBar progress={progress} className="mt-3" />
+    </Link>
+  );
 }
 
 /// One order in the list: which store, what it came to, where it stands.

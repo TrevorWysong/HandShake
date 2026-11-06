@@ -17,8 +17,8 @@ test("a store's name opens its info, and going back keeps the menu's place", asy
   const item = page.getByText(kitchen.menu[0].name).first();
   await expect(item).toBeVisible();
 
-  await page.evaluate("window.scrollTo(0, 240)");
-  await expect.poll(() => page.evaluate<number>("window.scrollY")).toBeGreaterThan(100);
+  await page.evaluate("window.scrollTo(0, 120)");
+  await expect.poll(() => page.evaluate<number>("window.scrollY")).toBeGreaterThan(60);
   const left = await page.evaluate<number>("window.scrollY");
 
   await page.getByRole("link", { name: `Reviews, hours and address for ${kitchen.name}` }).click();

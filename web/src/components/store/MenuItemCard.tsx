@@ -4,16 +4,22 @@ import type { ItemRow } from "../../lib/storefront/menu";
 import type { ItemRatingSummary } from "../../holochain/zomes/reputation";
 import { formatCents } from "../../lib/ui/format";
 import { StatNumber } from "../ui";
+import { honestTags, type AllergyMatch } from "../../lib/storefront/allergens";
 import { useT } from "../../i18n";
+import { AllergyWarning } from "./Allergens";
+import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
 
 /// One dish on a store's menu: what it is on the left, its photo on the
 /// right with the add button over its corner. The whole card adds it (or
 /// opens its choices) -- while it's available and the store takes orders,
 /// now or scheduled for when it opens.
-export function MenuItemCard({ row, rating, minAge, canAdd, onAdd }: { row: ItemRow; rating: ItemRatingSummary | undefined; minAge: number | null; canAdd: boolean; onAdd: () => void }) {
+export function MenuItemCard({ row, rating, minAge, canAdd, match, onAdd }: { row: ItemRow; rating: ItemRatingSummary | undefined; minAge: number | null; canAdd: boolean; match?: AllergyMatch; onAdd: () => void }) {
   const t = useT();
   const { item } = row;
-  const tags = item.dietary_tags ?? [];
+  const tags = honestTags(item.dietary_tags ?? [], item.allergens);
+  const names = useAllergenNames();
+  const saysIn = item.allergens ? [names(item.allergens.contains), ...item.allergens.other].filter(Boolean).join(", ") : "";
+  const saysMay = item.allergens ? names(item.allergens.may_contain) : "";
   return (
     <button
       type="button"
@@ -45,6 +51,10 @@ export function MenuItemCard({ row, rating, minAge, canAdd, onAdd }: { row: Item
             ))}
           </span>
         )}
+        {saysIn && <span className="mt-1.5 text-[11px] text-ink-500 dark:text-ink-400"><span className="font-semibold">{t("allergy.contains")}</span> {saysIn}</span>}
+        {item.allergens && item.allergens.can_omit.length > 0 && <span className="mt-0.5 text-[11px] text-ink-500 dark:text-ink-400"><span className="font-semibold">{t("allergy.canOmit")}</span> {names(item.allergens.can_omit)}</span>}
+        {saysMay && <span className="mt-0.5 text-[11px] text-ink-500 dark:text-ink-400"><span className="font-semibold">{t("allergy.mayContain")}</span> {saysMay}</span>}
+        {match && <AllergyWarning match={match} className="mt-2" />}
         {!item.available && <span className="mt-1 text-xs font-medium text-red-600">{t("store.unavailable")}</span>}
       </span>
       <span className="relative shrink-0 self-center">

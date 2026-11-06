@@ -13,9 +13,9 @@ import { InfoSheet } from "../InfoSheet";
 import { OrderProgressBar } from "./OrderProgressBar";
 
 const SURFACES: Record<OrderTone, string> = {
-  moving: "border-handshake-200 bg-gradient-to-br from-handshake-50 to-white dark:border-handshake-900/60 dark:from-handshake-950/50 dark:to-ink-900",
-  needsYou: "border-amber-300 bg-gradient-to-br from-amber-50 to-white dark:border-amber-800/70 dark:from-amber-950/40 dark:to-ink-900",
-  arrived: "border-presence-200 bg-gradient-to-br from-presence-50 to-white dark:border-presence-900/60 dark:from-presence-950/40 dark:to-ink-900",
+  moving: "border-handshake-200 bg-gradient-to-br from-handshake-50 to-white dark:border-handshake-500/30 dark:from-handshake-500/15 dark:to-ink-900",
+  needsYou: "border-amber-300 bg-gradient-to-br from-amber-50 to-white dark:border-amber-500/40 dark:from-amber-500/15 dark:to-ink-900",
+  arrived: "border-presence-500/40 bg-gradient-to-br from-presence-500/10 to-white dark:border-presence-500/30 dark:from-presence-500/15 dark:to-ink-900",
   stopped: "border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900",
   quiet: "border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900",
 };

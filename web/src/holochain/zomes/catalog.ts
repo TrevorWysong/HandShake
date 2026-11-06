@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, GeoPoint, TaxRate, HcRecord, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoRequirement, PromoReward, GoodieBag, Timestamp, PromoLimits } from "../types";
+import type { AllergenFacts, ActionHash, AgentPubKey, GeoPoint, TaxRate, HcRecord, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoRequirement, PromoReward, GoodieBag, Timestamp, PromoLimits, AllergyPolicy } from "../types";
 import { nowMicros } from "../../lib/ui/format";
 
 // An entry's stable identity (its original action) alongside its latest
@@ -149,14 +149,18 @@ export async function setAutoAcceptOrders(originalAction: ActionHash, autoAccept
   return callZome("catalog", "set_auto_accept_orders", { original_action: originalAction, auto_accept_orders: autoAcceptOrders });
 }
 
+export async function setAllergyPolicy(originalAction: ActionHash, allergyPolicy: AllergyPolicy | null): Promise<HcRecord> {
+  return callZome("catalog", "set_allergy_policy", { original_action: originalAction, allergy_policy: allergyPolicy });
+}
+
 export async function setDeliverySubsidyPercent(originalAction: ActionHash, deliverySubsidyPercent: number): Promise<HcRecord> {
   return callZome("catalog", "set_delivery_subsidy_percent", { original_action: originalAction, delivery_subsidy_percent: deliverySubsidyPercent });
 }
 
-const EMPTY_ITEM_DETAILS = { description: "", photo_data_uri: "", category: "", dietary_tags: [] as string[], modifier_groups: [] as ActionHash[] };
+const EMPTY_ITEM_DETAILS = { description: "", photo_data_uri: "", category: "", dietary_tags: [] as string[], allergens: null, modifier_groups: [] as ActionHash[] };
 
 export async function addMenuItem(
-  input: { catalog_ref: ActionHash; name: string; price_cents: number; available: boolean } & Partial<Pick<MenuItem, "description" | "photo_data_uri" | "category" | "dietary_tags" | "modifier_groups">>,
+  input: { catalog_ref: ActionHash; name: string; price_cents: number; available: boolean } & Partial<Pick<MenuItem, "description" | "photo_data_uri" | "category" | "dietary_tags" | "allergens" | "modifier_groups">>,
 ): Promise<HcRecord> {
   return callZome("catalog", "add_menu_item", { ...EMPTY_ITEM_DETAILS, ...input });
 }
@@ -230,6 +234,7 @@ export async function listPromoCodesForCatalog(catalogRef: ActionHash, before: T
 // --- goodie bags (limited-quantity, time-windowed, discounted mystery bags of surplus food) ---
 
 export interface CreateGoodieBagInput {
+  allergens?: AllergenFacts | null;
   catalog_ref: ActionHash;
   title: string;
   description?: string;

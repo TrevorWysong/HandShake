@@ -151,6 +151,8 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.there-s-no-committed-driver-waiting-for": "No hay ningún repartidor comprometido esperando la dirección.",
   "refusal.there-s-no-proof-yet-that-the": "Todavía no hay prueba de que el cliente lo tenga: escanea su código o pídele que lo confirme.",
   "refusal.there-s-too-much-to-carry-over": "Hay demasiado para trasladar de una vez.",
+  "refusal.that-s-too-much-to-seal-in": "Es demasiado para sellar en una nota. Acórtala un poco.",
+  "refusal.this-store-can-t-work-to-allergy": "Esta tienda no puede atender peticiones por alergia. Quítalas para pedir aquí, sabiendo lo que dice de su cocina.",
   "refusal.this-account-hasn-t-arrived-from-a": "Esta cuenta no ha llegado desde una red anterior.",
   "refusal.this-account-s-key-can-t-be": "La clave de esta cuenta no se puede trasladar: recupera la cuenta en el teléfono nuevo con tu frase de recuperación o tus guardianes.",
   "refusal.this-account-was-used-on-two-phones": "Esta cuenta se usó en dos teléfonos a la vez y la red la ha bloqueado. Recupérala con tu frase de recuperación o tus guardianes: {0}",

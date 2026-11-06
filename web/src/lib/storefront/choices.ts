@@ -184,3 +184,32 @@ export function groupProblem(group: ModifierGroup): string | null {
   if (group.free_selections > (group.max_selections ?? most)) return t("choices.problem.free");
   return null;
 }
+
+/// What the options chosen so far say they add, nested ones included.
+export function allergensChosen(selections: SelectionInput[], groups: Groups): { contains: string[]; other: string[] } {
+  const contains = new Set<string>();
+  const other = new Set<string>();
+  const walk = (selection: SelectionInput) => {
+    const group = groups.get(bytesToHex(selection.group));
+    for (const chosen of selection.options) {
+      const option = group?.options.find((o) => o.id === chosen.option);
+      option?.contains.forEach((a) => contains.add(a));
+      option?.other_allergens.forEach((word) => other.add(word));
+      chosen.nested.forEach(walk);
+    }
+  };
+  selections.forEach(walk);
+  return { contains: [...contains], other: [...other] };
+}
+
+/// The groups a cart's lines chose from, nested ones too, not yet read.
+export function missingSelectionGroups(lines: { selections: SelectionInput[] }[], groups: Groups): ActionHash[] {
+  const missing = new Map<string, ActionHash>();
+  const walk = (selection: SelectionInput) => {
+    const hex = bytesToHex(selection.group);
+    if (!groups.has(hex)) missing.set(hex, selection.group);
+    selection.options.forEach((chosen) => chosen.nested.forEach(walk));
+  };
+  lines.forEach((line) => line.selections.forEach(walk));
+  return [...missing.values()];
+}

@@ -10,7 +10,7 @@ import { formatDistance } from "../../../lib/ui/format";
 import { t as translate } from "../../../i18n";
 import { computePromoEffect, isPromoEligible } from "../../../lib/storefront/promotions";
 import { fetchMenu, type ItemRow } from "../../../lib/storefront/menu";
-import type { ActionHash, GeoPoint, MerchantCatalog, PromoCode, TaxRate, PromoStanding } from "../../../holochain/types";
+import type { AllergyPolicy, ActionHash, GeoPoint, MerchantCatalog, PromoCode, TaxRate, PromoStanding } from "../../../holochain/types";
 
 // A pre-check, so the customer hears it while choosing: the network refuses
 // an order outside the radius of the store version it cites. `null` for
@@ -58,6 +58,8 @@ export interface CartStoreInfo {
   /// The store's sales tax or VAT -- its own, on its own terms.
   taxRates: TaxRate[];
   pricesIncludeTax: boolean;
+  /// What the store says about allergens, if it has.
+  allergyPolicy: AllergyPolicy | null;
   promoCodes: PromoRow[];
   menuItems: ItemRow[];
   completedOrderCount: number;
@@ -101,6 +103,7 @@ export async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartSt
     storeWaitMinutes: catalog?.store_wait_minutes ?? null,
     taxRates: catalog?.tax_rates ?? [],
     pricesIncludeTax: catalog?.prices_include_tax ?? false,
+    allergyPolicy: catalog?.allergy_policy ?? null,
     promoCodes,
     menuItems,
     completedOrderCount,

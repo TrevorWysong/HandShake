@@ -47,6 +47,11 @@ pub struct IssueEvidence {
     pub note: String,
     /// An inline image, or empty for none.
     pub photo_data_uri: String,
+    /// That it had an allergen the store didn't say it had. Here, sealed, and
+    /// not in the public report: an allergy is the customer's to keep, and the
+    /// claim's for the store to answer before anyone else reads it.
+    #[serde(default)]
+    pub allergen: bool,
 }
 
 /// A customer reporting items missing or wrong on an order they have.

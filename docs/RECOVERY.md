@@ -41,6 +41,7 @@ Each key takes over at most one account, so an account's history is a single lin
 The phrase or guardians prove *who* the person is, peer to peer. Recovery moves no money, because there's none on the network to move: every payment is a card authorization its payee holds on their own processor account ([DIRECT_PAYMENTS.md](DIRECT_PAYMENTS.md)).
 
 - **A customer loses nothing.** Their cards were held by the stores and drivers they paid, who settle as usual.
+- **Their allergies have to be added again**, as their addresses do: they were sealed to the lost key. The app says so as recovery finishes, because an empty list would otherwise read as nothing to flag.
 - **A store or driver connects their processor account again** on the new key, pasting its keys in again: they never left the lost device. They should revoke the old device's keys from their processor's dashboard, so a found phone can't charge anything. The new key publishes its own payment profile.
 - **Payments the lost key held but hadn't settled lapse uncharged.** Only a hold's author settles it, and the network can't tell a lost key from one still in use, so the new key can't settle in its place: a found old phone could then charge the same hold again. A card authorization lapses after about seven days, and its payer is never charged. A store or driver who loses their device loses what was in flight then. That's the price of nobody being able to charge on a lost key's word.
 

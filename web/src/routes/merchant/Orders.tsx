@@ -24,6 +24,7 @@ import { QrScanner } from "../../components/QrScanner";
 import { decodeHandoverCode, decodePickupCode, pickupDigits } from "../../lib/orders/handoverCode";
 import { storeProgress } from "../../lib/orders/progress";
 import { OrderProgressBar } from "../../components/orders/OrderProgressBar";
+import { AllergyRequest } from "../../components/store/Allergens";
 import { itemCount, leftTheStore, mergeNewestFirst, received } from "../../lib/orders/orderEntries";
 import { useMyStores, type StoreRow } from "../../store/merchantStores";
 import { fetchActiveQueue, storesKey, toRow, type QueueRow } from "../../store/merchantQueue";
@@ -460,12 +461,13 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
       )}
       <div className="flex items-center justify-between">
         <StatNumber className="text-sm">{formatCents(order.order_total)}</StatNumber>
-        {row.kind === "Delivery" ? <StatusBadge status={row.order.status} /> : <PickupStatusBadge status={row.order.status} />}
+        {leftTheStore(row) && (row.kind === "Delivery" ? <StatusBadge status={row.order.status} /> : <PickupStatusBadge status={row.order.status} />)}
       </div>
       <p className="mt-1 text-xs text-ink-400">
         {t("orders.items", { count })}
         {order.ready_by !== null && !leftTheStore(row) && <span className="font-semibold text-ink-600 dark:text-ink-300"> · {t("merchantOrders.readyBy", { time: formatClockTime(order.ready_by) })}</span>}
       </p>
+      {!leftTheStore(row) && <TicketAllergies orderHex={row.hex} orderRef={row.ref} />}
       {!leftTheStore(row) && <OrderLines orderRef={row.ref} className="mt-3 rounded-xl bg-ink-50 p-3 dark:bg-ink-800/60" />}
       {(order.kitchen_note || order.sealed_customer_name) && <ForTheStore orderHex={row.hex} orderRef={row.ref} />}
       {!leftTheStore(row) && <CustomerHistory customer={order.requester} />}
@@ -579,6 +581,14 @@ function NeverArrivedClaim({ orderHex, orderRef, disputed }: { orderHex: string;
       {deciding.error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{deciding.error}</p>}
     </div>
   );
+}
+
+/// What a customer's told the store about their allergies, ahead of everything
+/// else on its ticket: the one thing the kitchen must not miss.
+function TicketAllergies({ orderHex, orderRef }: { orderHex: string; orderRef: Uint8Array }) {
+  const t = useT();
+  const { data } = useResource(`for-the-store:${orderHex}`, () => getOrderPrivateDetails(orderRef));
+  return data ? <AllergyRequest allergies={data.allergies} heading={t("merchantOrders.allergies")} /> : null;
 }
 
 /// Who the order's for and their note for the kitchen -- both sealed to

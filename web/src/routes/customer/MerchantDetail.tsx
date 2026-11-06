@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Clock, Heart } from "lucide-react";
+import { ArrowLeft, ChevronRight, Clock, Heart, HeartPulse } from "lucide-react";
 import { motion } from "framer-motion";
 import { averageRating, getItemRatingSummary, type ItemRatingSummary } from "../../holochain/zomes/reputation";
 import { useResource } from "../../lib/hooks/useResource";
 import { useGoBack } from "../../lib/hooks/useGoBack";
+import { useMyAllergies } from "../../lib/hooks/useMyAllergies";
+import { hasAllergies, honestTags, matchAllergies, needsALook } from "../../lib/storefront/allergens";
+import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
 import { hexToBytes, bytesToHex } from "../../holochain/decode";
 import { useCart } from "../../store/cart";
 import { formatCents } from "../../lib/ui/format";
@@ -70,12 +73,14 @@ function StorePage({ hash }: { hash: string }) {
     return Object.fromEntries(entries);
   });
   const { rating, record } = useStoreStanding(hash, catalogHash);
+  const { mine } = useMyAllergies();
+  const allergenNames = useAllergenNames();
   const { favoritesHex, toggleFavorite } = useFavorites();
   const favorited = favoritesHex.has(hash);
   // In the URL, so it's still set on coming back from the store's info page.
   const [params, setParams] = useSearchParams();
   const dietaryFilter = useMemo(() => params.getAll("diet"), [params]);
-  const toggleDiet = (tag: string) => setParams({ diet: dietaryFilter.includes(tag) ? dietaryFilter.filter((t) => t !== tag) : [...dietaryFilter, tag] }, { replace: true });
+  const toggleDiet = (tag: string) => setFilters(dietaryFilter.includes(tag) ? dietaryFilter.filter((t) => t !== tag) : [...dietaryFilter, tag], hideMatches);
   /// The item whose choices are open, if any.
   const [choosing, setChoosing] = useState<ItemRow | null>(null);
 
@@ -87,15 +92,17 @@ function StorePage({ hash }: { hash: string }) {
   // discovery-level signal, not this screen's filter). Kept above the
   // loading early-return below -- hooks after it would only run once
   // `items` loads, changing the hook count between renders and crashing.
-  const dietaryTags = useMemo(() => {
-    const set = new Set<string>();
-    items?.forEach((row) => (row.item.dietary_tags ?? []).forEach((t) => set.add(t)));
-    return [...set].sort();
-  }, [items]);
-  const filteredItems = useMemo(() => {
-    if (dietaryFilter.length === 0) return items ?? [];
-    return (items ?? []).filter((row) => dietaryFilter.some((tag) => (row.item.dietary_tags ?? []).includes(tag)));
-  }, [items, dietaryFilter]);
+  const dietaryTags = [...new Set((items ?? []).flatMap((row) => honestTags(row.item.dietary_tags ?? [], row.item.allergens)))].sort();
+  // Hiding only ever hides what a store says contains them: what it hasn't
+  // said stays, flagged, so nothing reads as cleared by being left in.
+  const hideMatches = params.get("hide") === "1";
+  const filteredItems = (items ?? []).filter((row) => {
+    if (dietaryFilter.length > 0 && !dietaryFilter.some((tag) => honestTags(row.item.dietary_tags ?? [], row.item.allergens).includes(tag))) return false;
+    if (!hideMatches) return true;
+    const match = matchAllergies(row.item.allergens, null, mine);
+    return match.contains.length === 0 && match.containsOther.length === 0;
+  });
+  const setFilters = (diet: string[], hide: boolean) => setParams({ ...(diet.length ? { diet } : {}), ...(hide ? { hide: "1" } : {}) }, { replace: true });
 
   if (!catalog || !items) {
     return (
@@ -116,7 +123,9 @@ function StorePage({ hash }: { hash: string }) {
   /// An item without choices goes straight in the cart; one with choices
   /// opens its sheet.
   const addItem = (row: ItemRow) => {
-    if (row.item.modifier_groups.length > 0) {
+    // Choices to make, or something to read first: someone's allergies, or a
+    // store's silence, is worth a look before it's in the cart.
+    if (row.item.modifier_groups.length > 0 || needsALook(matchAllergies(row.item.allergens, catalog.allergy_policy, mine))) {
       setChoosing(row);
       return;
     }
@@ -192,6 +201,16 @@ function StorePage({ hash }: { hash: string }) {
           <div className="min-w-0">
             <MenuCategoryNav categories={categories} placement="bar" label={t("store.categories")} className="lg:hidden" />
 
+            {hasAllergies(mine) && (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-handshake-50 px-3 py-2 lg:mt-0 lg:mb-3 dark:bg-handshake-500/15">
+                <Link to="/profile" className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-handshake-800 dark:text-handshake-200">
+                  <HeartPulse size={14} className="shrink-0" />
+                  <span className="truncate">{t("store.flagging", { allergens: [allergenNames(mine.allergens), ...mine.other].filter(Boolean).join(", ") })}</span>
+                </Link>
+                <Chip active={hideMatches} onClick={() => setFilters(dietaryFilter, !hideMatches)} tone="brand">{t("store.hideMatches")}</Chip>
+              </div>
+            )}
+
             {dietaryTags.length > 0 && (
               <div className="mt-4 flex items-center gap-2 lg:mt-0">
                 <span className="shrink-0 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">{t("store.diet")}</span>
@@ -211,7 +230,7 @@ function StorePage({ hash }: { hash: string }) {
                 {/* One column on a phone; two on a tablet, or a wide screen with room beside the categories. */}
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                   {rows.map((row) => (
-                    <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && catalog.is_open} onAdd={() => addItem(row)} />
+                    <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && catalog.is_open} match={matchAllergies(row.item.allergens, catalog.allergy_policy, mine)} onAdd={() => addItem(row)} />
                   ))}
                 </div>
               </section>
@@ -231,6 +250,7 @@ function StorePage({ hash }: { hash: string }) {
           key={bytesToHex(choosing.hash)}
           catalogRef={catalogHash}
           row={choosing}
+          policy={catalog.allergy_policy}
           onClose={() => setChoosing(null)}
           onDone={(line) => {
             cart.addLine(catalogHash, catalog.owner, catalog.business_name, line);

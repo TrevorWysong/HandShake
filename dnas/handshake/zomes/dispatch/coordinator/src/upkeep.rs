@@ -31,13 +31,13 @@
 //! would undo every other order's, every minute, until it resolved.
 
 use crate::order_queues::{get_active_orders_for_store, get_my_active_orders, OrderEntry, OrderKind};
-use crate::orders::{accept_delivery_order, cancel_delivery, open_scheduled_order, AcceptOrderInput};
+use crate::orders::{accept_delivery_order, cancel_delivery, open_scheduled_order, AcceptOrderInput, KitchenNote};
 use crate::pickup::{accept_pickup_order, cancel_pickup};
 use crate::pricing::outdated_item;
 use crate::stores::{closed_reason, current_catalog, my_stores};
 use dispatch_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{decode_or, guest, isolated};
+use handshake_coordinator_support::{decode_or, guest, isolated, open_padded};
 use handshake_governance::store_response_window;
 use std::time::Duration;
 
@@ -306,7 +306,8 @@ fn answer_store_orders() -> ExternResult<Answers> {
             if expired || !catalog.auto_accept_orders {
                 continue;
             }
-            if isolated::<_, ()>("answer_one_order", AnswerInput { seen: SeenOrder::of(&entry), open_now }).is_none() {
+            let auto_accept_requests = catalog.allergy_policy.as_ref().is_some_and(|policy| policy.auto_accept_requests);
+            if isolated::<_, ()>("answer_one_order", AnswerInput { seen: SeenOrder::of(&entry), open_now, auto_accept_requests }).is_none() {
                 answers.failed += 1;
             }
         }
@@ -319,16 +320,23 @@ pub struct AnswerInput {
     pub seen: SeenOrder,
     /// Whether its store is taking orders right now.
     pub open_now: bool,
+    /// Whether the store's let auto-accept take orders with allergies on them.
+    pub auto_accept_requests: bool,
 }
 
 /// Answers one order waiting on one of the caller's stores, in a call of
 /// its own (see the module doc).
 #[hdk_extern]
 pub fn answer_one_order(input: AnswerInput) -> ExternResult<()> {
-    let order = input.seen.order.clone();
-    let waiting = input.seen.entry()?.as_ref().and_then(WaitingOrder::from_entry).ok_or(guest("that order isn't waiting on its store"))?;
-    waiting.answer(&order, input.open_now)
+    let AnswerInput { seen, open_now, auto_accept_requests } = input;
+    let order = seen.order.clone();
+    let entry = seen.entry()?;
+    let written_at = entry.as_ref().map(|entry| entry.record.action().timestamp().as_micros());
+    let waiting = entry.as_ref().and_then(WaitingOrder::from_entry).ok_or(guest("that order isn't waiting on its store"))?;
+    waiting.answer(&order, open_now, auto_accept_requests, written_at.unwrap_or_default())
 }
+
+const ALLERGY_DECLINE_MARGIN_MICROS: i64 = 90_000_000;
 
 /// An order waiting on its store to accept it.
 struct WaitingOrder {
@@ -341,28 +349,39 @@ struct WaitingOrder {
     /// The rewards program version it joined.
     rewards: Option<OrderRewards>,
     requester: AgentPubKey,
+    kitchen_note: Option<XSalsa20Poly1305EncryptedData>,
 }
 
 impl WaitingOrder {
     fn from_entry(entry: &OrderEntry) -> Option<Self> {
-        let (lines, promo_code_ref, catalog_ref, catalog_version, rewards, requester) = match entry.kind {
+        let (lines, promo_code_ref, catalog_ref, catalog_version, rewards, requester, kitchen_note) = match entry.kind {
             OrderKind::Delivery => {
                 let order = decode_or::<DeliveryOrder>(&entry.record).filter(|o| o.status == DeliveryStatus::Placed)?;
-                (order.lines, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester)
+                (order.lines, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester, order.kitchen_note)
             }
             OrderKind::Pickup => {
                 let order = decode_or::<PickupOrder>(&entry.record).filter(|o| o.status == PickupStatus::Placed)?;
-                (order.lines, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester)
+                (order.lines, order.promo_code_ref, order.catalog_ref, order.catalog_version, order.rewards, order.requester, order.kitchen_note)
             }
         };
-        Some(Self { kind: entry.kind, lines, promo_code_ref, catalog_ref, catalog_version, rewards, requester })
+        Some(Self { kind: entry.kind, lines, promo_code_ref, catalog_ref, catalog_version, rewards, requester, kitchen_note })
+    }
+
+    fn has_allergies(&self) -> ExternResult<bool> {
+        let Some(sealed) = &self.kitchen_note else { return Ok(false) };
+        // A box this store can't open is treated as having some: a person sees it.
+        Ok(open_padded::<KitchenNote>(&self.requester, sealed)?.is_none_or(|note| !note.allergies.is_empty()))
     }
 
     /// Accepts it, with the store's usual prep time -- or declines it if
     /// the store is closed (goodie bags alone run on their own windows), a
     /// goodie bag on it is sold out or gone, it was placed under the store's
-    /// earlier terms, or it's priced from an outdated menu.
-    fn answer(&self, order_ref: &ActionHash, open_now: bool) -> ExternResult<()> {
+    /// earlier terms, or it's priced from an outdated menu. An order with
+    /// allergies on it waits for a person, unless the store's chosen otherwise --
+    /// and, nobody having come, is declined before its window closes: left to
+    /// lapse, anyone could mark an unattended store as never answering, by
+    /// ordering with a sealed note its conductor won't accept.
+    fn answer(&self, order_ref: &ActionHash, open_now: bool, auto_accept_requests: bool, written_at: i64) -> ExternResult<()> {
         let bags_only = crate::bags::bags_on(&self.lines)?.len() == self.lines.len();
         let decline = if !open_now && !bags_only {
             Some(DeclineReason::Closed)
@@ -376,6 +395,17 @@ impl WaitingOrder {
             Some(DeclineReason::PromoUsedUp)
         } else {
             crate::acceptance::decline_for(&self.requester, &self.catalog_ref, self.rewards.as_ref())?
+        };
+        let decline = match decline {
+            None if !auto_accept_requests && self.has_allergies()? => {
+                let window = store_response_window().as_micros() as i64;
+                // At least long enough before it closes for this minute's sweep to come round.
+                if sys_time()?.as_micros() < written_at + window - (window / 4).max(ALLERGY_DECLINE_MARGIN_MICROS) {
+                    return Ok(());
+                }
+                Some(DeclineReason::CantMakeAsAsked)
+            }
+            decline => decline,
         };
         let accept = AcceptOrderInput { order_original_action: order_ref.clone(), prep_minutes: None };
         match (&self.kind, decline) {

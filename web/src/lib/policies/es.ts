@@ -88,6 +88,23 @@ function sections(t: NetworkTerms): PolicySection[] {
       ],
     },
     {
+      id: "allergies",
+      title: "Alergias",
+      summary: "Una tienda dice qué lleva su comida y tú puedes contarle tus alergias. Ambas cosas quedan entre tú y ella: HandShake las transporta y no puede comprobar una cocina.",
+      points: [
+        "Lo que una tienda dice de un producto o de su cocina es su propia palabra. Un producto sobre el que no ha dicho nada aparece como sin indicar, nunca como seguro.",
+        "Tu lista está sellada para que solo tu cuenta pueda leerla. Tu app la compara con los menús en tu dispositivo, así que nadie sabe qué buscaste.",
+        "Si le cuentas tus alergias a una tienda, van selladas para ella en tu pedido. Tu repartidor no puede leerlas y nada público muestra que las enviaste.",
+        "Un pedido con alergias espera a una persona en la tienda, salvo que esta haya elegido trabajar con sus tiques. Puede rechazarlo si no puede hacerlo como se pidió, y no se te cobra.",
+        "Una tienda que no puede atender peticiones por alergia lo dice antes de que pidas. Las bolsas sorpresa pueden contener cualquier alérgeno, salvo que la tienda diga otra cosa.",
+        "Si un producto llevaba un alérgeno que la tienda no dijo, repórtalo. Solo la tienda sabe que fue un alérgeno; para los demás aparece como un producto incorrecto. Tu pedido conserva lo que dijo la tienda cuando pediste, y responde al informe como a cualquier otro. Si tienes una reacción, busca primero ayuda médica.",
+      ],
+      effects: [
+        { who: "customers", good: "Ves lo que ha dicho una tienda antes de pedir, y tus alergias quedan entre tú y ella.", bad: "Que no haya señal no significa que sea seguro. Si tu alergia es grave, pregunta siempre a la tienda." },
+        { who: "stores", good: "Eliges cómo aceptas las peticiones, y tu palabra se conserva tal como la diste.", bad: "Lo que dices te corresponde mantenerlo exacto, según las normas de etiquetado de tu zona." },
+      ],
+    },
+    {
       id: "items",
       title: "Artículos que faltan o incorrectos",
       summary: `Tienes ${reportWindow} desde que recibes tu pedido para informar de un problema con tus artículos. La tienda revisa cada informe y tiene la última palabra.`,
