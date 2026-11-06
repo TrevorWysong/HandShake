@@ -45,7 +45,8 @@ export async function signInAs(page: Page, slug: string) {
   await page.goto("/#/onboarding");
   await page.getByRole("button", { name: /Use an existing identity on this node/ }).click();
   await page.getByRole("button", { name: new RegExp(`^${name}`) }).click();
-  await expect(page).not.toHaveURL(/#\/onboarding/);
+  // Home, and settled: it redirects there, and would undo a test's own navigation.
+  await expect(page).toHaveURL(/#\/(customer|driver|merchant)$/);
 }
 
 /// Has this browser already agreed to the terms: only `terms.spec` walks that.
