@@ -398,6 +398,7 @@ function ConfirmDetails({ predecessor, place, recovered, onDone }: { predecessor
       {recovered && (known.profile?.roles.includes("Merchant") || known.profile?.roles.includes("Provider")) && (
         <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{t("restore.reconnectPayments")}</p>
       )}
+      {recovered && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{t("restore.allergiesAgain")}</p>}
       {place === "previous" && (
         <p className="mb-3 rounded-lg bg-handshake-50 px-3 py-2 text-xs text-handshake-800">{t("restore.carried")}</p>
       )}

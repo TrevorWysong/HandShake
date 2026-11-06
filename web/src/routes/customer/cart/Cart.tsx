@@ -37,6 +37,11 @@ import { bagProblems } from "../../../lib/storefront/bags";
 import { CartLines, type LineEdit } from "./CartLines";
 import { CartTotals } from "./CartTotals";
 import { CheckoutBar } from "./CheckoutBar";
+import { AllergySection } from "./AllergySection";
+import { useCartAllergies } from "./useCartAllergies";
+import { useMyAllergies } from "../../../lib/hooks/useMyAllergies";
+import { hasAllergies, NO_ALLERGIES } from "../../../lib/storefront/allergens";
+import type { AllergySet } from "../../../holochain/types";
 import { DeliverToSection, MatchingSection, RepeatSection, SpeedSection, WhenSection } from "./DeliverySections";
 import { PromoSection, RewardsSection } from "./DiscountSections";
 import { fetchCartStoreInfo, NO_ITEMS } from "./checkout";
@@ -77,12 +82,22 @@ export function Cart() {
   // Two notes, each readable only by who it's for: the store (sealed to
   // it) and, for a delivery, the driver (sealed with the address).
   const [kitchenNotes, setKitchenNotes] = useState(draft?.kitchenNotes ?? "");
+  // Their allergies go to the store unless they say otherwise -- and, for an
+  // order for someone else, as changed for this order alone.
+  const { mine } = useMyAllergies();
+  const [tellChoice, setTellChoice] = useState<boolean | null>(null);
+  const [changedAllergies, setChangedAllergies] = useState<AllergySet | null>(null);
+  const tellingStore = tellChoice ?? hasAllergies(mine);
+  const allergies = changedAllergies ?? mine;
   const [dropoffNotes, setDropoffNotes] = useState(draft?.dropoffNotes ?? "");
   const [editing, setEditing] = useState<LineEdit | null>(null);
   /// Choosing the card it's paid with.
   const [paying, setPaying] = useState(false);
 
   const menuItems = storeInfo?.menuItems ?? NO_ITEMS;
+  const allergyPolicy = storeInfo?.allergyPolicy ?? null;
+  const allergiesRefused = tellingStore && hasAllergies(allergies) && allergyPolicy?.requests === "NotAccepted";
+  const allergyMatches = useCartAllergies(catalogRef, cart.lines, menuItems, allergyPolicy, tellingStore ? allergies : mine);
   const itemOf = (itemRef: Uint8Array) => menuItems.find((row) => bytesEqual(row.hash, itemRef))?.item;
   // Age-restricted items (alcohol, tobacco) are collected in person, where
   // the store checks ID -- the network's rule.
@@ -151,6 +166,7 @@ export function Cart() {
   const takesNoCards = !ownStore && storeProfile === null;
   const notes = [
     bagIssues.length > 0 && t("cart.bag.blocked"),
+    allergiesRefused && t("cart.allergy.blocked"),
     storeInfo && storeInfo.busyExtraMinutes > 0 && t("cart.busy", { minutes: storeInfo.busyExtraMinutes }),
     price.shortOfMinimumCents > 0 && storeInfo?.minOrderCents != null && t("cart.minimum", { minimum: formatCents(storeInfo.minOrderCents), more: formatCents(price.shortOfMinimumCents) }),
     delivery && price.discountedSubtotalCents === 0 && t("cart.freeNoDelivery"),
@@ -160,6 +176,7 @@ export function Cart() {
   ].filter((note): note is string => !!note);
   const blocked =
     bagIssues.length > 0 ||
+    allergiesRefused ||
     storeClosed ||
     price.shortOfMinimumCents > 0 ||
     (ageRestricted && !ageConfirmed) ||
@@ -182,6 +199,7 @@ export function Cart() {
           items: cartItems(cart.lines),
           order_total: price.orderTotalCents,
           kitchen_notes: kitchenNotes.trim(),
+          allergies: tellingStore ? allergies : NO_ALLERGIES,
           promo_code_ref,
           reward,
           age_confirmed: ageRestricted && ageConfirmed,
@@ -200,6 +218,7 @@ export function Cart() {
         dropoff: options.dropoff,
         max_delivery_fee: maxFeeCents,
         kitchen_notes: kitchenNotes.trim(),
+        allergies: tellingStore ? allergies : NO_ALLERGIES,
         dropoff_notes: dropoffNotes.trim(),
         dropoff_line2: options.dropoffLine2.trim(),
         tip_cents: tipCents,
@@ -293,6 +312,18 @@ export function Cart() {
             </>
           )}
 
+          <AllergySection
+            key={JSON.stringify(mine)}
+            mine={mine}
+            telling={tellingStore}
+            onTell={setTellChoice}
+            allergies={allergies}
+            onAllergies={setChangedAllergies}
+            policy={allergyPolicy}
+            storeName={cart.merchantName ?? t("cart.theStore")}
+            matches={allergyMatches}
+          />
+
           <NoteSection title={t("cart.storeNote")} value={kitchenNotes} onChange={setKitchenNotes} placeholder={t("cart.storeNotePlaceholder")} />
 
           {delivery && (
@@ -372,6 +403,7 @@ export function Cart() {
           catalogRef={catalogRef}
           row={editing.row}
           editing={editing.line}
+          policy={allergyPolicy}
           onClose={() => setEditing(null)}
           onDone={(line) => {
             cart.replaceLine(editing.key, line);

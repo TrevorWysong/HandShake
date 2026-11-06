@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import { NavigationType, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { motion } from "framer-motion";
 import clsx from "clsx";
@@ -28,6 +28,23 @@ import { useT } from "../../i18n";
 const SCROLLS_KEPT = 32;
 const scrolledTo = new Map<string, number>();
 
+/// Goes to `y`, and keeps at it for a moment as a screen coming back fills in
+/// beneath: until then its page may be too short to get there.
+function scrollBack(y: number) {
+  window.scrollTo(0, y);
+  if (y === 0) return;
+  const until = performance.now() + 1500;
+  let last = window.scrollY;
+  const settle = () => {
+    // They've scrolled themselves: it's theirs now.
+    if (window.scrollY !== last || window.scrollY === y || performance.now() > until) return;
+    window.scrollTo(0, y);
+    last = window.scrollY;
+    requestAnimationFrame(settle);
+  };
+  requestAnimationFrame(settle);
+}
+
 /// Wraps whichever route is active in a short fade+rise, so navigating
 /// between screens (Browse -> cart, an order's detail page, switching
 /// modes) feels like one continuous app rather than a hard page swap. Only
@@ -37,8 +54,12 @@ const scrolledTo = new Map<string, number>();
 /// was left.
 function AnimatedOutlet() {
   const location = useLocation();
-  const backTo = useNavigationType() === NavigationType.Pop ? (scrolledTo.get(location.key) ?? 0) : 0;
-  useEffect(() => {
+  const navigationType = useNavigationType();
+  // Read once as it's arrived at: arriving moves the page, which is recorded too.
+  const backTo = useMemo(() => (navigationType === NavigationType.Pop ? (scrolledTo.get(location.key) ?? 0) : 0), [location.key, navigationType]);
+  // Swapped in with the screen: a shorter screen arriving moves the page, and
+  // that's not where the one leaving was left.
+  useLayoutEffect(() => {
     const remember = () => {
       scrolledTo.delete(location.key);
       scrolledTo.set(location.key, window.scrollY);
@@ -48,7 +69,7 @@ function AnimatedOutlet() {
     return () => window.removeEventListener("scroll", remember);
   }, [location.key]);
   return (
-    <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" onAnimationStart={() => window.scrollTo(0, backTo)}>
+    <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" onAnimationStart={() => scrollBack(backTo)}>
       <Outlet />
     </motion.div>
   );
@@ -164,7 +185,7 @@ export function AppShell() {
         </nav>
       )}
       {docked && <CustomerDock cards={cards} pathname={pathname} wide={wide} />}
-      <Toaster />
+      <Toaster lifted={docked && cards.length > 0} />
     </div>
   );
 }

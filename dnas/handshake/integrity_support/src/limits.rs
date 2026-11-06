@@ -71,6 +71,13 @@ pub const MAX_TEMPLATE_ITEMS: usize = 500;
 pub const MAX_OPENING_PERIODS: usize = 28;
 /// Dietary tags a store's menu sums to.
 pub const MAX_DIETARY_TAGS: usize = 32;
+/// Allergens in a store's or customer's own words, beyond the fixed list.
+pub const MAX_ALLERGEN_LABELS: usize = 8;
+/// Allergens one list may name.
+pub const MAX_ALLERGENS_LISTED: usize = 32;
+/// The most a customer's own allergies may take, in bytes: what's left of one
+/// sealed box (`SEAL_CHUNK_BYTES`) beside an ordinary note.
+pub const MAX_ALLERGY_BYTES: usize = 1_024;
 
 /// The most sealed in one box of a `SealedChunks`, in bytes. The keystore
 /// carries each request and reply in a frame of at most 8 KiB, with bytes

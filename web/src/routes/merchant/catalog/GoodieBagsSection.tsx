@@ -9,7 +9,8 @@ import { formatCents, formatClockTime, toMinorUnits, currencySymbol } from "../.
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { Button, Card, Checkbox, Field, GroupHeading, Input, Notice, StatNumber, Textarea } from "../../../components/ui";
 import { PhotoInput } from "../../../components/PhotoInput";
-import type { GoodieBag } from "../../../holochain/types";
+import { AllergenFactsEditor } from "../../../components/store/AllergenFactsEditor";
+import type { AllergenFacts, GoodieBag } from "../../../holochain/types";
 import { POLL } from "../../../lib/network/poll";
 import { useTerms } from "../../../store/network";
 import { MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS } from "../../../holochain/types";
@@ -112,12 +113,12 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
 /// first saw them.
 function EditBagForm({ original, bag, onDone }: { original: Uint8Array; bag: GoodieBag; onDone: (saved: boolean) => Promise<void> }) {
   const t = useT();
-  const [form, setForm] = useState({ title: bag.title, description: bag.description, photo_data_uri: bag.photo_data_uri });
+  const [form, setForm] = useState({ title: bag.title, description: bag.description, photo_data_uri: bag.photo_data_uri, allergens: bag.allergens ?? null });
   const save = useAction();
 
   // Done moves on from the form: it stays busy until it does.
   const update = () => save.run(async () => {
-    await updateGoodieBag(original, { ...bag, title: form.title.trim(), description: form.description, photo_data_uri: form.photo_data_uri });
+    await updateGoodieBag(original, { ...bag, allergens: form.allergens, title: form.title.trim(), description: form.description, photo_data_uri: form.photo_data_uri });
     await onDone(true);
   }, { stayBusy: true });
 
@@ -132,6 +133,7 @@ function EditBagForm({ original, bag, onDone }: { original: Uint8Array; bag: Goo
       <Field label={t("storeSettings.description")}>
         <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} />
       </Field>
+      <AllergenFactsEditor value={form.allergens} onChange={(allergens) => setForm((f) => ({ ...f, allergens }))} unstatedDetail="bags.allergensVary" />
       <p className="text-[11px] text-ink-400">{t("bags.fixed")}</p>
       {save.error && <p className="text-xs text-red-600 dark:text-red-400">{save.error}</p>}
       <div className="flex gap-2">
@@ -161,6 +163,7 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       title: "",
       description: "",
       photo_data_uri: "",
+      allergens: null as AllergenFacts | null,
       originalValue: 15,
       price: 5,
       quantity_total: 3,
@@ -198,6 +201,7 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       title: form.title.trim(),
       description: form.description,
       photo_data_uri: form.photo_data_uri,
+      allergens: form.allergens,
       original_value_cents: toMinorUnits(form.originalValue),
       price_cents: toMinorUnits(form.price),
       quantity_total: form.quantity_total,
@@ -230,6 +234,7 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       <Field label={t("storeSettings.description")}>
         <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={form.description} onChange={(e) => set({ description: e.target.value })} rows={2} placeholder={t("bags.descriptionPlaceholder")} />
       </Field>
+      <AllergenFactsEditor value={form.allergens} onChange={(allergens) => set({ allergens })} unstatedDetail="bags.allergensVary" />
       <Field label={t("bags.quantity")}>
         <Input type="number" min={1} step={1} value={form.quantity_total} onChange={(e) => set({ quantity_total: Number(e.target.value) })} className="w-32" />
       </Field>
@@ -241,6 +246,7 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
           <Input type="datetime-local" value={form.end} onChange={(e) => set({ end: e.target.value })} />
         </Field>
       </div>
+      <AllergenFactsEditor value={form.allergens} onChange={(allergens) => setForm((f) => ({ ...f, allergens }))} unstatedDetail="bags.allergensVary" />
       <p className="text-[11px] text-ink-400">{t("bags.fixed")}</p>
       <div className="flex gap-4 pt-1">
         <label className="flex items-center gap-2 text-xs text-ink-500">

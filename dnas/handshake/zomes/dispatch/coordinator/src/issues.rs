@@ -69,6 +69,9 @@ pub struct ReportIssueInput {
     /// An inline image, or empty for none.
     #[serde(default)]
     pub photo_data_uri: String,
+    /// It had an allergen the store didn't say it had -- sealed with the note.
+    #[serde(default)]
+    pub allergen: bool,
 }
 
 /// The customer reporting items missing or wrong. Reported before the store
@@ -102,7 +105,7 @@ pub fn report_issue(input: ReportIssueInput) -> ExternResult<Record> {
     if let Some(problem) = handshake_integrity_support::image_problem(&input.photo_data_uri) {
         return Err(guest(problem));
     }
-    let evidence = IssueEvidence { note: input.note, photo_data_uri: input.photo_data_uri };
+    let evidence = IssueEvidence { note: input.note, photo_data_uri: input.photo_data_uri, allergen: input.allergen };
     let issue = ItemIssue {
         order: order.clone(),
         received: latest.action_address().clone(),

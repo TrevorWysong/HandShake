@@ -58,6 +58,84 @@ export interface AddressDetails {
 }
 
 /**
+ * What a store says about one menu item. An item without these has said
+ * nothing -- which never reads as safe -- and one with them all empty says
+ * it has none of the list in it.
+ */
+export interface AllergenFacts {
+  /**
+   * In the recipe.
+   */
+  contains: string[];
+  /**
+   * Not in the recipe, but it may meet it: a shared fryer, a shared board.
+   */
+  may_contain: string[];
+  /**
+   * In the store's own words, for what the list doesn't name: "Kiwi".
+   */
+  other: string[];
+  /**
+   * Anything else a person should know about this item.
+   */
+  note: string;
+  /**
+   * Of what's in it, what the kitchen can leave out if asked.
+   */
+  can_omit: string[];
+}
+
+/**
+ * How a store handles allergens across its kitchen.
+ */
+export interface AllergyPolicy {
+  /**
+   * Handled somewhere in its kitchen, so anything it makes may meet them.
+   */
+  kitchen: string[];
+  /**
+   * The same, in the store's own words.
+   */
+  other: string[];
+  requests: AllergyRequests;
+  /**
+   * Anything else a person with an allergy should know.
+   */
+  note: string;
+  /**
+   * Whether the store's auto-accept may take an order with allergies on it,
+   * for a kitchen that works from the ticket. Off, a person accepts each.
+   */
+  auto_accept_requests: boolean;
+}
+
+/**
+ * How a store takes a customer's allergy request.
+ */
+export type AllergyRequests =
+  /**
+   * It reads each one and works to it.
+   */
+  | "Welcome"
+  /**
+   * It'll try, and promises nothing.
+   */
+  | "BestEffort"
+  /**
+   * It can't work to them: a customer sees so before they order.
+   */
+  | "NotAccepted";
+
+/**
+ * A customer's allergies: kept sealed on their own account, and sealed to
+ * the store on an order when they choose to send them.
+ */
+export interface AllergySet {
+  allergens: string[];
+  other: string[];
+}
+
+/**
  * An appeal, as its customer, store and arbiter see it -- each side's
  * evidence only to whoever can open it.
  */
@@ -517,6 +595,11 @@ export interface DeclineNoted {
  * What a store tells the customer when it turns an order down.
  */
 export type DeclineReason =
+  /**
+   * It can't make it the way the customer asked. Public, as a reason is, so
+   * it never says what they asked: an allergy is theirs to keep.
+   */
+  | "CantMakeAsAsked"
   /**
    * Priced from an outdated menu -- see `dispatch::accept_delivery_order`.
    */
@@ -1061,6 +1144,11 @@ export interface GoodieBag {
   title: string;
   description: string;
   photo_data_uri: string;
+  /**
+   * What the store says it may hold, if it can say. `None` reads as contents
+   * that vary, which may include anything.
+   */
+  allergens: AllergenFacts | null;
   original_value_cents: number;
   price_cents: number;
   quantity_total: number;
@@ -1189,6 +1277,12 @@ export interface IssueEvidence {
    * An inline image, or empty for none.
    */
   photo_data_uri: string;
+  /**
+   * That it had an allergen the store didn't say it had. Here, sealed, and
+   * not in the public report: an allergy is the customer's to keep, and the
+   * claim's for the store to answer before anyone else reads it.
+   */
+  allergen: boolean;
 }
 
 /**
@@ -1372,6 +1466,16 @@ export interface LineView {
    * Whether it's a goodie bag -- what's in it is the store's call.
    */
   goodie_bag: boolean;
+  /**
+   * What its store said was in it, in the version that was ordered: `None`
+   * if it hadn't said. What's said now may differ; this is what it was.
+   */
+  allergens: AllergenFacts | null;
+  /**
+   * What the chosen options add, as the store said of them.
+   */
+  choices_contain: string[];
+  choices_contain_other: string[];
 }
 
 /**
@@ -1393,6 +1497,22 @@ export interface LiveCounterpart {
  * An apartment, suite or unit -- an address's second line.
  */
 export const MAX_ADDRESS_LINE2_CHARS = 50;
+
+/**
+ * Allergens one list may name.
+ */
+export const MAX_ALLERGENS_LISTED = 32;
+
+/**
+ * Allergens in a store's or customer's own words, beyond the fixed list.
+ */
+export const MAX_ALLERGEN_LABELS = 8;
+
+/**
+ * The most a customer's own allergies may take, in bytes: what's left of one
+ * sealed box (`SEAL_CHUNK_BYTES`) beside an ordinary note.
+ */
+export const MAX_ALLERGY_BYTES = 1024;
 
 /**
  * The most any single amount may be -- a price, fee, tip, minimum or grant
@@ -1700,6 +1820,12 @@ export interface MenuItem {
   category: string;
   dietary_tags: string[];
   /**
+   * What the store says this item has in it -- `None` until it says, which
+   * reads as not stated, never as none. An order line's version keeps what
+   * was said when it was ordered.
+   */
+  allergens: AllergenFacts | null;
+  /**
    * The choice groups a customer picks from when ordering it, in the
    * order they're shown: each a `ModifierGroup` of the same store, by
    * its original action -- so a store edits a shared group ("Choose a
@@ -1864,6 +1990,11 @@ export interface MerchantCatalog {
    */
   dietary_tags: string[];
   /**
+   * How the store handles allergens across its kitchen -- `None` until it
+   * says, which reads as not stated, never as none.
+   */
+  allergy_policy: AllergyPolicy | null;
+  /**
    * The sales tax or VAT the store charges, by category of item -- its
    * first rate is the default. Empty: no tax. The store's own, for its
    * own address: it's the seller, and files what it collects
@@ -1949,6 +2080,15 @@ export interface ModifierOption {
    * by its original action -- one of the same store's.
    */
   nested_group: ActionHash | null;
+  /**
+   * What choosing it adds to the item: an item's own statement can't
+   * speak for "add cheese".
+   */
+  contains: string[];
+  /**
+   * The same, in the store's own words.
+   */
+  other_allergens: string[];
 }
 
 /**
@@ -3881,6 +4021,17 @@ export interface SavedCard {
  */
 export interface SavedCardForgotten {
   payee: AgentPubKey;
+}
+
+/**
+ * A customer's allergies (`AllergySet`), sealed to them and padded to one
+ * size: nobody else learns what they are, or how many, or -- since an entry
+ * says nothing about its contents -- anything but that this account wrote
+ * one. Sealed rather than private, so it moves with the account: a device
+ * move that forgot someone's allergies would be the dangerous kind of quiet.
+ */
+export interface SealedAllergies {
+  sealed: XSalsa20Poly1305EncryptedData;
 }
 
 /**

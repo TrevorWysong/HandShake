@@ -4,6 +4,7 @@
 //! fees.
 
 use super::*;
+use handshake_integrity_support::allergens::AllergyPolicy;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SetCatalogOpenInput {
@@ -31,6 +32,22 @@ pub struct SetAutoAcceptOrdersInput {
 pub fn set_auto_accept_orders(input: SetAutoAcceptOrdersInput) -> ExternResult<Record> {
     let (current, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(input.original_action, "MerchantCatalog")?;
     catalog.auto_accept_orders = input.auto_accept_orders;
+    let updated = update_version(&current, &EntryTypes::MerchantCatalog(catalog), LinkTypes::Version)?;
+    written(updated)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SetAllergyPolicyInput {
+    pub original_action: ActionHash,
+    pub allergy_policy: Option<AllergyPolicy>,
+}
+
+/// What the store says about allergens across its kitchen, and how it takes a
+/// customer's requests -- see `MerchantCatalog::allergy_policy`.
+#[hdk_extern]
+pub fn set_allergy_policy(input: SetAllergyPolicyInput) -> ExternResult<Record> {
+    let (current, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(input.original_action, "MerchantCatalog")?;
+    catalog.allergy_policy = input.allergy_policy;
     let updated = update_version(&current, &EntryTypes::MerchantCatalog(catalog), LinkTypes::Version)?;
     written(updated)
 }

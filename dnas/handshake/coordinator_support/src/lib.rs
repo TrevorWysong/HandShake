@@ -159,6 +159,53 @@ pub fn seal<T: Serialize + std::fmt::Debug>(recipient: &AgentPubKey, value: &T) 
     ed_25519_x_salsa20_poly1305_encrypt(me, recipient.clone(), XSalsa20Poly1305Data::from(bytes))
 }
 
+/// What's sealed padded, and the padding.
+#[derive(Serialize, Deserialize, Debug)]
+struct Padded<T> {
+    value: T,
+    pad: String,
+}
+
+/// Padded sizes come in steps of this: a box's length says nothing of what's
+/// in it, beyond how many steps it fills.
+const PAD_STEP: usize = 512;
+
+/// `seal`, for what its size mustn't give away: whether a note has allergies in
+/// it, and how many. The box comes out the same length for anything up to a
+/// step, and the same for any two in the same step.
+pub fn seal_padded<T: Serialize + std::fmt::Debug>(recipient: &AgentPubKey, value: T) -> ExternResult<XSalsa20Poly1305EncryptedData> {
+    let encoded_len = |padded: &Padded<&T>| ExternIO::encode(padded).map(|io| io.0.len()).map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())));
+    let mut padded = Padded { value: &value, pad: String::new() };
+    let bare = encoded_len(&padded)?;
+    // A string's header grows with its length, so a step's exact size can fall
+    // in the gap: then the next step takes it.
+    let mut step = (bare / PAD_STEP + 1) * PAD_STEP;
+    loop {
+        // What one box holds, with room for the keystore's framing.
+        if step > SEAL_CHUNK_BYTES {
+            return Err(guest("That's too much to seal in one note. Shorten it a little."));
+        }
+        let room = step - bare;
+        padded.pad = " ".repeat(room);
+        for _ in 0..4 {
+            let len = encoded_len(&padded)?;
+            if len == step {
+                return seal(recipient, &padded);
+            }
+            if len < step {
+                break;
+            }
+            padded.pad.pop();
+        }
+        step += PAD_STEP;
+    }
+}
+
+/// Opens what `seal_padded` sealed.
+pub fn open_padded<T: for<'de> Deserialize<'de> + std::fmt::Debug>(sender: &AgentPubKey, sealed: &XSalsa20Poly1305EncryptedData) -> ExternResult<Option<T>> {
+    Ok(open::<Padded<T>>(sender, sealed)?.map(|padded| padded.value))
+}
+
 /// Seals `value` to `recipient` a chunk at a time -- for anything that may
 /// be larger than one box holds (a photo); see `SealedChunks`.
 pub fn seal_chunked<T: Serialize + std::fmt::Debug>(recipient: &AgentPubKey, value: &T) -> ExternResult<SealedChunks> {

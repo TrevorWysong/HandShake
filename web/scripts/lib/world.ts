@@ -31,6 +31,8 @@ export interface WorldMenuItem {
   category?: string;
   description?: string;
   dietary_tags?: string[];
+  /// What the store says is in it.
+  allergens?: { contains: string[]; may_contain: string[]; other: string[]; note: string };
   /// Its choice groups, by key.
   groups?: string[];
 }
@@ -112,10 +114,10 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
         { key: "addOns", name: "Add-ons", min: 0, max: 3, free: 1, options: [{ name: "Cheese", price: 100 }, { name: "Avocado", price: 150 }, { name: "Jalapeños", price: 50 }] },
       ],
       menu: [
-        { name: "Smash Burger", price: 1250, category: "Burgers", description: "Two patties, American cheese, house sauce." },
+        { name: "Smash Burger", price: 1250, category: "Burgers", allergens: { contains: ["Milk", "Wheat", "Gluten"], may_contain: ["Sesame"], other: [], note: "" }, description: "Two patties, American cheese, house sauce." },
         { name: "Veggie Burger", price: 1150, category: "Burgers", dietary_tags: ["Vegetarian"], groups: ["addOns", "combo"], description: "One add-on free." },
-        { name: "Harvest Bowl", price: 1350, category: "Bowls", dietary_tags: ["Vegan", "Gluten-free"] },
-        { name: "Hand-cut Fries", price: 450, category: "Sides", dietary_tags: ["Vegan"] },
+        { name: "Harvest Bowl", price: 1350, category: "Bowls", dietary_tags: ["Vegan", "Gluten-free"], allergens: { contains: [], may_contain: ["TreeNuts"], other: [], note: "Dressed in a shared kitchen." } },
+        { name: "Hand-cut Fries", price: 450, category: "Sides", dietary_tags: ["Vegan"], allergens: { contains: [], may_contain: [], other: [], note: "" } },
         { name: "Pancake Stack", price: 950, category: "Breakfast", dietary_tags: ["Vegetarian"] },
       ],
       promos: [{ code: "WELCOME10", requirement: "None", reward: { PercentOffSubtotal: 10 } }],

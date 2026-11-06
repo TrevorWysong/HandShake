@@ -9,6 +9,7 @@ import { formatCents, formatClockTime } from "../../lib/ui/format";
 import { fadeSlideUp } from "../../lib/ui/motion";
 import { useResource } from "../../lib/hooks/useResource";
 import { Button, SectionLabel, StatNumber } from "../ui";
+import { AllergenStatement } from "./Allergens";
 import { useT } from "../../i18n";
 
 /// A store's goodie bags -- end-of-day surplus at a discount -- each added
@@ -56,6 +57,7 @@ export function StoreBags({ bags, onAdd }: { bags: BagRow[]; onAdd: (row: BagRow
                   {standing && standing.left > 0 && ` · ${t("store.bag.left", { count: standing.left })}`}
                   {only && ` · ${only}`}
                 </p>
+                <div className="mt-0.5"><AllergenStatement facts={bag.allergens} goodieBag /></div>
               </div>
               {unavailable ? (
                 <span className="shrink-0 rounded-full bg-ink-100 px-3 py-1.5 text-xs font-semibold text-ink-500 dark:bg-ink-800 dark:text-ink-400">{unavailable}</span>

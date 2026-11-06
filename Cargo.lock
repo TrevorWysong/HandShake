@@ -598,6 +598,7 @@ version = "0.1.0"
 dependencies = [
  "handshake_integrity_support",
  "hdk",
+ "serde",
 ]
 
 [[package]]

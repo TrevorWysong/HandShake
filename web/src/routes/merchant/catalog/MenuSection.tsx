@@ -10,6 +10,8 @@ import { Button, Card, Checkbox, Field, GroupHeading, Input, Notice, SectionLabe
 import { useTerms } from "../../../store/network";
 import { percentLabel } from "../../../lib/storefront/tax";
 import { PhotoInput } from "../../../components/PhotoInput";
+import { AllergenFactsEditor } from "../../../components/store/AllergenFactsEditor";
+import { tagConflict } from "../../../lib/storefront/allergens";
 import { MAX_DESCRIPTION_CHARS, MAX_ITEM_GROUPS, MAX_LABEL_CHARS, MAX_NAME_CHARS, type TaxRate } from "../../../holochain/types";
 import { Check } from "lucide-react";
 import type { GroupRow } from "./ChoicesSection";
@@ -24,7 +26,10 @@ type Editing = { kind: "new" } | { kind: "edit"; row: ItemRow } | null;
 export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: { catalogRef: Uint8Array; items: ItemRow[]; groups: GroupRow[]; taxRates: TaxRate[]; onChanged: () => Promise<void> }) {
   const t = useT();
   const [editing, setEditing] = useState<Editing>(null);
-  const grouped = groupByCategory(items);
+
+  const unstated = items.filter((row) => !row.item.allergens);
+  const [onlyUnstated, setOnlyUnstated] = useState(false);
+  const grouped = groupByCategory(onlyUnstated && unstated.length > 0 ? unstated : items);
 
   async function toggleAvailable(row: ItemRow) {
     await updateMenuItem(row.hash, { ...row.item, available: !row.item.available });
@@ -46,6 +51,15 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
         />
       </motion.div>
 
+      {unstated.length > 0 && items.length > 0 && (
+        <motion.div variants={fadeSlideUp} className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-amber-50 px-3 py-2.5 dark:bg-amber-950/30">
+          <p className="min-w-0 text-xs font-medium text-amber-900 dark:text-amber-200">{t("menuEditor.allergensMissing", { count: unstated.length })}</p>
+          <button type="button" onClick={() => setOnlyUnstated((was) => !was)} className="shrink-0 rounded-full bg-amber-200/70 px-2.5 py-1 text-[11px] font-bold text-amber-950 transition-colors hover:bg-amber-200 dark:bg-amber-900/60 dark:text-amber-100">
+            {t(onlyUnstated ? "menuEditor.allergensShowAll" : "menuEditor.allergensShowMissing")}
+          </button>
+        </motion.div>
+      )}
+
       <AnimatePresence initial={false}>
         {editing && (
           // Keyed by what's being edited, so switching items mounts a fresh
@@ -55,6 +69,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
               taxRates={taxRates}
               catalogRef={catalogRef}
               row={editing.kind === "edit" ? editing.row : null}
+              others={items.filter((other) => editing.kind !== "edit" || !bytesEqual(other.hash, editing.row.hash))}
               groups={groups}
               onSaved={async () => {
                 setEditing(null);
@@ -80,6 +95,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{row.item.name}</p>
                     {row.item.description && <p className="truncate text-xs text-ink-400">{row.item.description}</p>}
+                    {!row.item.allergens && <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{t("menuEditor.allergensNotStated")}</p>}
                     {row.item.modifier_groups.length > 0 && (
                       <p className="truncate text-xs text-ink-400">
                         Choices: {row.item.modifier_groups.map((ref) => groups.find((g) => bytesEqual(g.hash, ref))?.group.name ?? "…").join(", ")}
@@ -108,7 +124,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
 }
 
 /// Add (`row` null) or edit an item. The draft is seeded once, on mount.
-function ItemForm({ catalogRef, row, groups, taxRates, onSaved }: { catalogRef: Uint8Array; row: ItemRow | null; groups: GroupRow[]; taxRates: TaxRate[]; onSaved: () => Promise<void> }) {
+function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { catalogRef: Uint8Array; row: ItemRow | null; others: ItemRow[]; groups: GroupRow[]; taxRates: TaxRate[]; onSaved: () => Promise<void> }) {
   const [form, setForm] = useState(() => ({
     name: row?.item.name ?? "",
     price: row ? fromMinorUnits(row.item.price_cents) : 0,
@@ -116,6 +132,7 @@ function ItemForm({ catalogRef, row, groups, taxRates, onSaved }: { catalogRef: 
     photo_data_uri: row?.item.photo_data_uri ?? "",
     category: row?.item.category ?? "",
     dietary_tags: (row?.item.dietary_tags ?? []).join(", "),
+    allergens: row?.item.allergens ?? null,
     /// The item's choice groups, by hex, in the order customers see them.
     groups: (row?.item.modifier_groups ?? []).map(bytesToHex),
     tax_category: row?.item.tax_category ?? "",
@@ -135,6 +152,7 @@ function ItemForm({ catalogRef, row, groups, taxRates, onSaved }: { catalogRef: 
       photo_data_uri: form.photo_data_uri,
       category: form.category,
       dietary_tags: form.dietary_tags.split(",").map((t) => t.trim()).filter(Boolean),
+      allergens: form.allergens ? { ...form.allergens, note: form.allergens.note.trim() } : null,
       modifier_groups: form.groups.map(hexToBytes),
       tax_category: form.tax_category,
       age_restricted: form.age_restricted,
@@ -156,6 +174,12 @@ function ItemForm({ catalogRef, row, groups, taxRates, onSaved }: { catalogRef: 
       <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={form.description} onChange={(e) => set({ description: e.target.value })} rows={2} placeholder={t("storeSettings.description")} />
       <Input maxLength={MAX_LABEL_CHARS} value={form.category} onChange={(e) => set({ category: e.target.value })} placeholder={t("menuEditor.category")} />
       <Input value={form.dietary_tags} onChange={(e) => set({ dietary_tags: e.target.value })} placeholder={t("menuEditor.tags")} />
+      <AllergenFactsEditor
+        value={form.allergens}
+        onChange={(allergens) => set({ allergens })}
+        copyFrom={others.flatMap((other) => (other.item.allergens ? [{ name: other.item.name, facts: other.item.allergens }] : []))}
+        conflicts={form.dietary_tags.split(",").map((tag) => tag.trim()).filter((tag) => tag && tagConflict(tag, form.allergens))}
+      />
       {taxRates.length > 1 && (
         <Field label={t("cart.tax")}>
           <Select value={form.tax_category} onChange={(e) => set({ tax_category: e.target.value })}>

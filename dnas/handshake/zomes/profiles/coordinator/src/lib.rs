@@ -3,8 +3,9 @@
 //! churns independently of identity -- see the integrity crate).
 
 use hdk::prelude::*;
+use handshake_integrity_support::allergens::AllergySet;
 use profiles_integrity::*;
-use handshake_coordinator_support::{guest, open, resolve_latest, resolve_links_to_records_with_original, resolve_version, seal, update_version, written};
+use handshake_coordinator_support::{guest, open, open_padded, seal_padded, resolve_latest, resolve_links_to_records_with_original, resolve_version, seal, update_version, written};
 
 /// A profile as the person's own client sends it: the phone in the clear,
 /// sealed before it's stored (`Profile::sealed_phone`).
@@ -51,6 +52,11 @@ pub fn create_profile(input: ProfileInput) -> ExternResult<Record> {
     let agent = agent_info()?.agent_initial_pubkey;
     create_link(agent, action_hash.clone(), LinkTypes::AgentToProfile, ())?;
     let record = written(action_hash)?;
+    // Every account holds a sealed list from the start, so holding one says
+    // nothing about having anything on it.
+    if allergies_link()?.is_none() {
+        save_my_allergies(AllergySet::default())?;
+    }
     Ok(record)
 }
 
@@ -239,6 +245,45 @@ pub fn delete_saved_address(original_action: ActionHash) -> ExternResult<()> {
     Ok(())
 }
 
+/// The caller's own allergies, kept sealed to them: what their app warns them
+/// about, and offers to tell a store at checkout. The network only ever holds
+/// a box of one size.
+#[hdk_extern]
+pub fn save_my_allergies(allergies: AllergySet) -> ExternResult<()> {
+    if let Some(problem) = allergies.problem() {
+        return Err(guest(problem));
+    }
+    let me = agent_info()?.agent_initial_pubkey;
+    let entry = SealedAllergies { sealed: seal_padded(&me, &allergies)? };
+    match allergies_link()? {
+        Some(original) => {
+            let current = resolve_version(original)?;
+            update_version(&current, &EntryTypes::SealedAllergies(entry), LinkTypes::Version)?;
+        }
+        None => {
+            let action_hash = create_entry(&EntryTypes::SealedAllergies(entry))?;
+            create_link(me, action_hash, LinkTypes::OwnerToAllergies, ())?;
+        }
+    }
+    Ok(())
+}
+
+/// The caller's sealed list, by its original action.
+fn allergies_link() -> ExternResult<Option<ActionHash>> {
+    let me = agent_info()?.agent_initial_pubkey;
+    Ok(get_links(LinkQuery::try_new(me, LinkTypes::OwnerToAllergies)?, GetStrategy::default())?.into_iter().next().and_then(|link| link.target.into_action_hash()))
+}
+
+/// The caller's own allergies -- none, if they've never said any.
+#[hdk_extern]
+pub fn my_allergies(_: ()) -> ExternResult<AllergySet> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let Some(original) = allergies_link()? else { return Ok(AllergySet::default()) };
+    let record = resolve_latest(original)?;
+    let Some(entry) = record.entry().to_app_option::<SealedAllergies>().ok().flatten() else { return Ok(AllergySet::default()) };
+    Ok(open_padded(&me, &entry.sealed)?.unwrap_or_default())
+}
+
 /// Pairs each saved address's stable identity with its current content --
 /// same shape (and same reason) as catalog's own `CatalogView`: the
 /// `OwnerToSavedAddress` link target is fixed forever at `save_address`
@@ -264,6 +309,16 @@ pub fn list_my_addresses(_: ()) -> ExternResult<Vec<SavedAddressView>> {
         }
     }
     Ok(views)
+}
+
+/// How long the caller's sealed list is, for a test to prove it's held from
+/// the start and stays one size.
+#[cfg(feature = "test-utils")]
+#[hdk_extern]
+pub fn my_sealed_allergies_length_for_testing(_: ()) -> ExternResult<Option<usize>> {
+    let Some(original) = allergies_link()? else { return Ok(None) };
+    let record = resolve_latest(original)?;
+    Ok(record.entry().to_app_option::<SealedAllergies>().ok().flatten().map(|entry| ExternIO::encode(&entry.sealed).map(|io| io.0.len())).transpose().map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?)
 }
 
 #[cfg(feature = "test-utils")]

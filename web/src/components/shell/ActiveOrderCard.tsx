@@ -18,7 +18,7 @@ import { OrderToneIcon } from "../orders/OrderHero";
 const OUTLINES: Record<OrderTone, string> = {
   moving: "border-ink-100 dark:border-ink-700",
   needsYou: "border-amber-400 dark:border-amber-600",
-  arrived: "border-presence-300 dark:border-presence-700",
+  arrived: "border-presence-500/40",
   stopped: "border-ink-200 dark:border-ink-700",
   quiet: "border-ink-100 dark:border-ink-700",
 };

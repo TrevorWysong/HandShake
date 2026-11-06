@@ -11,6 +11,7 @@ import { decodeEntry, actionHash, bytesEqual, bytesToHex, hexToBytes, timestampO
 import { myAgentPubKey } from "../../../holochain/client";
 import { OrderStatusTimeline } from "../../../components/orders/OrderStatus";
 import { useClock } from "../../../lib/hooks/useClock";
+import { AllergyRequest } from "../../../components/store/Allergens";
 import { OrderHero } from "../../../components/orders/OrderHero";
 import { customerProgress, orderEstimate } from "../../../lib/orders/progress";
 import { Button, Card, Notice, SectionLabel, Skeleton, StatNumber } from "../../../components/ui";
@@ -275,6 +276,7 @@ export function OrderDetail() {
                   {details.dropoff.notes}
                 </p>
               )}
+              {details && <AllergyRequest allergies={details.allergies} heading={t("order.youTold")} />}
               {details?.kitchen_note && (
                 <p className="text-ink-500">
                   <span className="font-semibold text-ink-900 dark:text-ink-50">{t("order.storeNoteLabel")} </span>

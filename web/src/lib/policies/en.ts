@@ -90,6 +90,23 @@ function sections(t: NetworkTerms): PolicySection[] {
       ],
     },
     {
+      id: "allergies",
+      title: "Allergies",
+      summary: "A store says what's in its food, and you can tell it about your allergies. Both are between you and it: HandShake carries them, and can't check a kitchen.",
+      points: [
+        "What a store says about an item or its kitchen is its own word. An item it hasn't said anything about reads as not stated, never as safe.",
+        "Your own list is sealed so only your account can read it. Your app compares it with menus on your device, so nobody learns what you looked for.",
+        "If you tell a store your allergies, they're sealed to that store on your order. Your driver can't read them, and nothing public shows you sent any.",
+        "An order with allergies on it waits for a person at the store, unless the store has chosen to work from its tickets. It can decline if it can't make it as asked, and you aren't charged.",
+        "A store that can't work to allergy requests says so before you order. Goodie bags may contain any allergen, unless the store says otherwise.",
+        "If an item had an allergen the store didn't say it had, report it. Only the store learns it was an allergen; to others it shows as a wrong item. Your order keeps what the store said when you ordered, and the store answers the report like any other. If you're having a reaction, get medical help first.",
+      ],
+      effects: [
+        { who: "customers", good: "You see what a store has said before you order, and your allergies stay between you and it.", bad: "No flag doesn't mean safe. For a serious allergy, always ask the store." },
+        { who: "stores", good: "You choose how you take requests, and your word is kept as you gave it.", bad: "What you say is yours to keep accurate, under whatever labelling rules apply where you are." },
+      ],
+    },
+    {
       id: "items",
       title: "Missing or wrong items",
       summary: `You have ${reportWindow} after you get your order to report a problem with your items. The store reviews each report and has the final say.`,

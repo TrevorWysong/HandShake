@@ -2,12 +2,14 @@
 // phone, and read out by screen readers.
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
+import clsx from "clsx";
 import { useToast } from "../../store/toast";
 
-export function Toaster() {
+/// `lifted`: something else is floating above the tab bar, so it goes above that.
+export function Toaster({ lifted = false }: { lifted?: boolean }) {
   const { message, id } = useToast();
   return (
-    <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 flex justify-center px-4 lg:bottom-8 lg:left-sidebar">
+    <div role="status" aria-live="polite" className={clsx("pointer-events-none fixed inset-x-0 z-50 flex justify-center px-4 lg:bottom-8 lg:left-sidebar", lifted ? "bottom-[calc(11rem+env(safe-area-inset-bottom))]" : "bottom-[calc(5rem+env(safe-area-inset-bottom))]")}>
       <AnimatePresence>
         {message && (
           <motion.div

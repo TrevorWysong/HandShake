@@ -124,12 +124,25 @@ pub struct SavedAddress {
     pub created_at: Timestamp,
 }
 
+/// A customer's allergies (`AllergySet`), sealed to them and padded to one
+/// size: nobody else learns what they are, or how many, or -- since an entry
+/// says nothing about its contents -- anything but that this account wrote
+/// one. Sealed rather than private, so it moves with the account: a device
+/// move that forgot someone's allergies would be the dangerous kind of quiet.
+#[hdk_entry_helper]
+#[derive(Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SealedAllergies {
+    pub sealed: XSalsa20Poly1305EncryptedData,
+}
+
 #[hdk_entry_types]
 #[unit_enum(UnitEntryTypes)]
 pub enum EntryTypes {
     Profile(Profile),
     ProviderCredential(ProviderCredential),
     SavedAddress(SavedAddress),
+    SealedAllergies(SealedAllergies),
 }
 
 #[hdk_link_types]
@@ -162,6 +175,10 @@ pub enum LinkTypes {
     /// actually be erased) -- same soft-delete shape `AgentToFavorite`
     /// already uses.
     OwnerToSavedAddress,
+    /// An agent's own allergies, base their own `agent_initial_pubkey`, target
+    /// the `SealedAllergies`' original creation action. Validated like a saved
+    /// address's: only an account's owner links anything here.
+    OwnerToAllergies,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -173,20 +190,23 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Profile(profile) => validate_profile(&profile),
             EntryTypes::ProviderCredential(credential) => validate_provider_credential(&credential, action.author()),
             EntryTypes::SavedAddress(address) => validate_saved_address(&address, action.author()),
+            EntryTypes::SealedAllergies(allergies) => sealed_allergies_valid(&allergies),
         },
         Checked::Update { entry, action } => match entry {
             EntryTypes::Profile(profile) => validate_profile_update(&profile, action.author(), &action.original_action_address),
             EntryTypes::ProviderCredential(credential) => validate_provider_credential_update(&credential, action.author(), &action.original_action_address),
             EntryTypes::SavedAddress(address) => validate_saved_address_update(&address, action.author(), &action.original_action_address),
+            EntryTypes::SealedAllergies(allergies) => validate_sealed_allergies_update(&allergies, action.author(), &action.original_action_address),
         },
         // Profiles and credentials are referenced by orders and bids; an
         // address is retired by unlinking it.
         Checked::Delete { .. } => handshake_integrity_support::invalid("profile entries can't be deleted"),
         Checked::CreateLink { link_type: LinkTypes::Version, action } => handshake_integrity_support::versions::validate_version_link(&action.base_address, &action.target_address, &action.tag, action.author()),
+        Checked::DeleteLink { link_type: LinkTypes::OwnerToAllergies, .. } => Ok(ValidateCallbackResult::Invalid("someone's allergies are changed, not unlinked".into())),
         Checked::DeleteLink { link_type: LinkTypes::Version, .. } => Ok(ValidateCallbackResult::Invalid("an entry's versions stay linked".into())),
         Checked::CreateLink { link_type: LinkTypes::AgentToFavorite, action } => validate_new_favorite(&action),
         Checked::DeleteLink { link_type: LinkTypes::AgentToFavorite, original, action } => validate_favorite_removal(&original, &action),
-        Checked::CreateLink { link_type: LinkTypes::OwnerToSavedAddress, action } => validate_new_saved_address_link(&action),
+        Checked::CreateLink { link_type: LinkTypes::OwnerToSavedAddress | LinkTypes::OwnerToAllergies, action } => validate_new_saved_address_link(&action),
         Checked::DeleteLink { link_type: LinkTypes::OwnerToSavedAddress, original, action } => validate_saved_address_removal(&original, &action),
         Checked::CreateLink { link_type, action } => validate_identity_link(link_type, &action.base_address, &action.target_address, action.author()),
         Checked::DeleteLink { .. } => handshake_integrity_support::invalid("profile and credential links can't be deleted"),
@@ -362,6 +382,18 @@ fn validate_saved_address_update(address: &SavedAddress, author: &AgentPubKey, o
     validate_saved_address(address, author)
 }
 
+fn sealed_allergies_valid(allergies: &SealedAllergies) -> ExternResult<ValidateCallbackResult> {
+    Ok(first_problem([sealed_problem("sealed", &allergies.sealed, MAX_SEALED_BYTES)]).unwrap_or(ValidateCallbackResult::Valid))
+}
+
+/// Only the account that wrote them changes them, as with a saved address.
+fn validate_sealed_allergies_update(allergies: &SealedAllergies, author: &AgentPubKey, original_action_hash: &ActionHash) -> ExternResult<ValidateCallbackResult> {
+    if must_get_action(original_action_hash.clone())?.action().author() != author {
+        return Ok(ValidateCallbackResult::Invalid("someone's allergies can only be updated by them".into()));
+    }
+    sealed_allergies_valid(allergies)
+}
+
 /// Same reasoning as `validate_new_favorite`'s own base-address check --
 /// without this, anyone could author an `OwnerToSavedAddress` link
 /// claiming *you* saved some address, since `create_link` lets the caller
@@ -418,6 +450,6 @@ fn validate_identity_link(link_type: LinkTypes, base: &AnyLinkableHash, target: 
             require(base == &AnyLinkableHash::from(credential.profile_action), "a credential may only be linked under the profile it names")
         }
         // Handled by their own rules above.
-        LinkTypes::Version | LinkTypes::AgentToFavorite | LinkTypes::OwnerToSavedAddress => Ok(ValidateCallbackResult::Valid),
+        LinkTypes::OwnerToAllergies | LinkTypes::Version | LinkTypes::AgentToFavorite | LinkTypes::OwnerToSavedAddress => Ok(ValidateCallbackResult::Valid),
     }
 }

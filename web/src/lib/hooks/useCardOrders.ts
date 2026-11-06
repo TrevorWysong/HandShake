@@ -17,7 +17,8 @@ export interface CardOrder {
 export function useCardOrders(pathname: string, owner: string | null): CardOrder[] {
   const state = useActiveOrders();
   const now = useClock();
-  if (state.owner !== owner) return [];
+  // The Orders tab is the list itself.
+  if (state.owner !== owner || pathname === "/customer/orders") return [];
   const nowAt = now.getTime() * 1000;
   const here = (o: ActiveOrder) => pathname === customerOrderPath(o.row);
   const fresh = (o: FinishedOrder) => nowAt - o.finishedAt < FINISHED_SHOWN_MICROS;

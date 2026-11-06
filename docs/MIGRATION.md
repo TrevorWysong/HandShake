@@ -31,7 +31,7 @@ The old app makes one call, `account::migrate_out`:
 - It refuses while something would be stranded:
   - orders in progress, in any role;
   - payments this account held, as a store or driver, that it hasn't settled yet (`dispatch::my_unsettled_holds`): only this key can charge them, so after the close they'd lapse uncharged.
-- It seals a **parcel** to the new key: the person's name, phone, saved addresses and favourites, which only the old key could read.
+- It seals a **parcel** to the new key: the person's name, phone, saved addresses, favourites and allergies, which only the old key could read.
 - It writes a validated **`Migration`** entry naming the new network and the new key, with a link for the new key.
 - It **closes the chain** (`close_chain`).
 

@@ -3,6 +3,7 @@
 //! (merchant-scoped discount codes).
 
 use hdi::prelude::*;
+use handshake_integrity_support::allergens::{AllergenFacts, AllergyPolicy};
 use handshake_integrity_support::limits::*;
 use handshake_integrity_support::{amount_problem, contact, first_problem, image_problem, text_problem};
 use handshake_integrity_support::chain::wrote_since;
@@ -270,7 +271,7 @@ fn validate_catalog(catalog: &MerchantCatalog, author: &AgentPubKey) -> ExternRe
     if catalog.min_order_cents == Some(0) {
         return Ok(ValidateCallbackResult::Invalid("a minimum order is more than nothing -- leave it unset for none".into()));
     }
-    if let Some(problem) = dietary_tags_problem(&catalog.dietary_tags) {
+    if let Some(problem) = dietary_tags_problem(&catalog.dietary_tags).or_else(|| catalog.allergy_policy.as_ref().and_then(AllergyPolicy::problem)) {
         return Ok(ValidateCallbackResult::Invalid(problem));
     }
     if let Some(problem) = tax_problem(catalog) {
@@ -312,7 +313,7 @@ fn validate_menu_item(item: &MenuItem, author: &AgentPubKey) -> ExternResult<Val
     if item.name.trim().is_empty() {
         return Ok(ValidateCallbackResult::Invalid("name must not be empty".into()));
     }
-    if let Some(problem) = dietary_tags_problem(&item.dietary_tags) {
+    if let Some(problem) = dietary_tags_problem(&item.dietary_tags).or_else(|| item.allergens.as_ref().and_then(AllergenFacts::problem)) {
         return Ok(ValidateCallbackResult::Invalid(problem));
     }
     if let Some(problem) = item_groups_problem(item)? {
@@ -556,6 +557,9 @@ fn validate_new_goodie_bag(bag: &GoodieBag, author: &AgentPubKey, created: Times
 
 /// The rules a bag's content must always satisfy, on creation and update.
 fn validate_bag_fields(bag: &GoodieBag, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    if let Some(problem) = bag.allergens.as_ref().and_then(AllergenFacts::problem) {
+        return Ok(ValidateCallbackResult::Invalid(problem));
+    }
     if let Some(invalid) = first_problem([
         image_problem(&bag.photo_data_uri).map(String::from),
         text_problem("title", &bag.title, MAX_NAME_CHARS),
@@ -620,7 +624,7 @@ fn validate_goodie_bag_update(bag: &GoodieBag, author: &AgentPubKey, original_ac
         && prior.created_at == bag.created_at;
     if !terms_unchanged {
         return Ok(ValidateCallbackResult::Invalid(
-            "a goodie bag update may only change its title, description or photo".into(),
+            "a goodie bag update may only change its title, description, photo or allergens".into(),
         ));
     }
     validate_bag_fields(bag, author)

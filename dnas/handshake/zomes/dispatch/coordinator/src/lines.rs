@@ -7,6 +7,7 @@
 use catalog_types::{GoodieBag, MenuItem, ModifierGroup};
 use dispatch_integrity::*;
 use hdk::prelude::*;
+use handshake_integrity_support::allergens::AllergenFacts;
 use handshake_coordinator_support::{decode_or, guest, original_action_of, resolve_latest};
 
 /// One line of an order, described.
@@ -22,6 +23,12 @@ pub struct LineView {
     pub choices: Vec<String>,
     /// Whether it's a goodie bag -- what's in it is the store's call.
     pub goodie_bag: bool,
+    /// What its store said was in it, in the version that was ordered: `None`
+    /// if it hadn't said. What's said now may differ; this is what it was.
+    pub allergens: Option<AllergenFacts>,
+    /// What the chosen options add, as the store said of them.
+    pub choices_contain: Vec<String>,
+    pub choices_contain_other: Vec<String>,
 }
 
 /// An order's lines, described -- public, as the lines themselves are.
@@ -43,19 +50,21 @@ pub(crate) fn describe(lines: &[OrderLine]) -> ExternResult<Vec<LineView>> {
 
 fn describe_line(line: &OrderLine, pricer: &mut LinePricer) -> ExternResult<LineView> {
     let version = fetch(&line.priced_version)?;
-    let (name, unit_price_cents, goodie_bag) = if let Some(item) = decode_or::<MenuItem>(&version) {
+    let (name, unit_price_cents, goodie_bag, allergens) = if let Some(item) = decode_or::<MenuItem>(&version) {
         let price = pricer.unit_price(&item, &line.selections)?.map_err(guest)?;
-        (item.name, price, false)
+        (item.name, price, false, item.allergens)
     } else if let Some(bag) = decode_or::<GoodieBag>(&version) {
-        (bag.title, bag.price_cents, true)
+        (bag.title, bag.price_cents, true, bag.allergens)
     } else {
         return Err(guest("an order line isn't priced from an item"));
     };
     let mut choices = Vec::new();
+    let (mut choices_contain, mut choices_contain_other) = (Vec::new(), Vec::new());
     for selection in &line.selections {
         choices.extend(labels(selection)?);
+        collect_allergens(selection, &mut choices_contain, &mut choices_contain_other)?;
     }
-    Ok(LineView { item_ref: line.item_ref.clone(), name, quantity: line.quantity, unit_price_cents, choices, goodie_bag })
+    Ok(LineView { item_ref: line.item_ref.clone(), name, quantity: line.quantity, unit_price_cents, choices, goodie_bag, allergens, choices_contain, choices_contain_other })
 }
 
 /// What was chosen from one group, an entry per option: "2 x Extra shot",
@@ -76,6 +85,21 @@ fn labels(selection: &Selection) -> ExternResult<Vec<String>> {
         out.push(label);
     }
     Ok(out)
+}
+
+/// What the options chosen from one group, and any nested in them, say they add.
+fn collect_allergens(selection: &Selection, contain: &mut Vec<String>, other: &mut Vec<String>) -> ExternResult<()> {
+    let group = decode_or::<ModifierGroup>(&fetch(&selection.version)?).ok_or(guest("a choice on this order isn't from a choice group"))?;
+    for chosen in &selection.options {
+        if let Some(option) = group.options.iter().find(|o| o.id == chosen.option) {
+            contain.extend(option.contains.iter().filter(|a| !contain.contains(a)).cloned().collect::<Vec<_>>());
+            other.extend(option.other_allergens.iter().filter(|o| !other.contains(o)).cloned().collect::<Vec<_>>());
+        }
+        for inner in &chosen.nested {
+            collect_allergens(inner, contain, other)?;
+        }
+    }
+    Ok(())
 }
 
 fn fetch(version: &ActionHash) -> ExternResult<Record> {

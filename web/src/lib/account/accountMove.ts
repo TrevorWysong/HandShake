@@ -5,10 +5,10 @@
 // person -- their profile, vehicle, and, on a migration, addresses and
 // favourites. (Moving to a new phone keeps the key: `deviceMove.ts`.)
 import { decodeHashFromBase64, encodeHashToBase64 } from "@holochain/client";
-import type { AddressDetails, AgentPubKey, HcRecord, Profile, ProviderCredential, RoleTag } from "../../holochain/types";
+import type { AddressDetails, AgentPubKey, AllergySet, HcRecord, Profile, ProviderCredential, RoleTag } from "../../holochain/types";
 import { callPrevious, callZome } from "../../holochain/client";
 import { openParcelsOnPrevious } from "../../holochain/zomes/account";
-import { addFavorite, createProfile, getMyName, getMyPhone, listFavorites, listMyAddresses, registerProviderCredential, saveAddress } from "../../holochain/zomes/profiles";
+import { addFavorite, createProfile, getMyName, getMyPhone, listFavorites, listMyAddresses, myAllergies, registerProviderCredential, saveAddress, saveMyAllergies } from "../../holochain/zomes/profiles";
 import { actionHash, decodeEntry } from "../../holochain/decode";
 import { nowMicros } from "../ui/format";
 
@@ -70,12 +70,14 @@ interface ParcelContents {
   phone: string;
   addresses: AddressDetails[];
   favorites: string[];
+  /// Their allergies -- absent from a parcel an older version packed.
+  allergies?: AllergySet;
 }
 
 /// The parcel an account moving to the next network seals to its key there.
 export async function packParcel(): Promise<string> {
-  const [name, phone, addresses, favorites] = await Promise.all([getMyName(), getMyPhone(), listMyAddresses(), listFavorites()]);
-  const contents: ParcelContents = { v: 1, name: name ?? "", phone: phone ?? "", addresses: addresses.map((a) => a.address), favorites: favorites.map((f) => encodeHashToBase64(f)) };
+  const [name, phone, addresses, favorites, allergies] = await Promise.all([getMyName(), getMyPhone(), listMyAddresses(), listFavorites(), myAllergies()]);
+  const contents: ParcelContents = { v: 1, name: name ?? "", phone: phone ?? "", addresses: addresses.map((a) => a.address), favorites: favorites.map((f) => encodeHashToBase64(f)), allergies };
   return JSON.stringify(contents);
 }
 
@@ -116,8 +118,8 @@ export async function readPredecessor(predecessor: AgentPubKey, where: AccountPl
 }
 
 /// Sets the new key up as the person: their profile (as they confirm it),
-/// their vehicle if they drive, and -- migrating -- their addresses and
-/// favourites. Best-effort past the profile: a favourite whose store is
+/// their vehicle if they drive, and -- migrating -- their addresses,
+/// favourites and allergies. Best-effort past the profile: a favourite whose store is
 /// gone doesn't stop the move.
 export async function adoptPredecessor(known: Predecessor, name: string, phone: string): Promise<void> {
   const roles: RoleTag[] = known.profile?.roles.length ? known.profile.roles : ["Requester"];
@@ -132,6 +134,7 @@ export async function adoptPredecessor(known: Predecessor, name: string, phone: 
   const extras: Promise<unknown>[] = [];
   if (roles.includes("Provider") && known.vehicle) extras.push(registerProviderCredential({ ...known.vehicle, profile_action: actionHash(record), verified: false }));
   for (const address of known.parcel?.addresses ?? []) extras.push(saveAddress(address));
+  if (known.parcel?.allergies) extras.push(saveMyAllergies(known.parcel.allergies));
   for (const favorite of known.parcel?.favorites ?? []) extras.push(addFavorite(decodeHashFromBase64(favorite)));
   await Promise.allSettled(extras);
 }

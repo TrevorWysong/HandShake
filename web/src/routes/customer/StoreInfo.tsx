@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { AlertTriangle, ArrowLeft, Clock, Star } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock, HeartPulse, Star } from "lucide-react";
 import { averageRating, getReviewsFor } from "../../holochain/zomes/reputation";
 import { hexToBytes } from "../../holochain/decode";
 import type { MerchantCatalog } from "../../holochain/types";
@@ -12,6 +12,7 @@ import { StoreMap } from "../../components/places/StoreMap";
 import { RatingCounted } from "../../components/store/RatingCounted";
 import { ReviewList } from "../../components/store/ReviewList";
 import { StoreContact } from "../../components/store/StoreContact";
+import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
 import { Card, Skeleton } from "../../components/ui";
 import { useClock } from "../../lib/hooks/useClock";
 import { useGoBack } from "../../lib/hooks/useGoBack";
@@ -38,6 +39,7 @@ function InfoPage({ hash }: { hash: string }) {
   const catalog = fresh?.catalog ?? rememberedStoreMenu(hash)?.catalog ?? routerState?.catalog ?? null;
   const { rating, record } = useStoreStanding(hash, catalogHash);
   const now = useClock();
+  const names = useAllergenNames();
 
   if (!catalog) {
     return (
@@ -58,6 +60,7 @@ function InfoPage({ hash }: { hash: string }) {
     record && record.check_in_refused_count > 0 && t("store.reports", { count: record.check_in_refused_count }),
     record && record.cancelled_by_them_count > 0 && t("store.calledOff", { count: record.cancelled_by_them_count }),
   ].filter((line): line is string => !!line);
+  const kitchenText = [names(catalog.allergy_policy?.kitchen ?? []), ...(catalog.allergy_policy?.other ?? [])].filter(Boolean).join(", ");
   const recordSections = (["what", "who", "money"] as const).map((part) => ({ title: t(`storeInfo.record.${part}`), body: t(`storeInfo.record.${part}Detail`) }));
 
   return (
@@ -84,8 +87,8 @@ function InfoPage({ hash }: { hash: string }) {
         <motion.div variants={fadeSlideUp} className="mt-5 grid grid-cols-2 gap-3">
           <Card className="p-4">
             <p className="flex items-center gap-1 text-2xl font-black text-ink-900 dark:text-ink-50">
-              {avgRating !== null ? avgRating.toFixed(1) : "–"}
-              <Star size={18} className="fill-amber-400 text-amber-400" />
+              {avgRating !== null ? avgRating.toFixed(1) : t("storeInfo.new")}
+              {avgRating !== null && <Star size={18} className="fill-amber-400 text-amber-400" />}
             </p>
             <p className="mt-1 text-xs text-ink-400">{avgRating !== null && rating ? t("storeInfo.ratings", { count: rating.count }) : t("storeInfo.noRatings")}</p>
           </Card>
@@ -109,6 +112,24 @@ function InfoPage({ hash }: { hash: string }) {
             </ul>
           </motion.section>
         )}
+
+        <motion.section variants={fadeSlideUp} className="mt-5">
+          <Card className="p-4">
+            <h2 className="flex items-center gap-2 text-sm font-bold text-ink-900 dark:text-ink-50"><HeartPulse size={15} className="text-handshake-500" /> {t("storeInfo.allergies")}</h2>
+            <div className="mt-2 flex flex-col gap-1">
+              {catalog.allergy_policy ? (
+                <>
+                  <p className="text-xs font-semibold text-ink-700 dark:text-ink-200">{t(`allergyPolicy.requests.${catalog.allergy_policy.requests}`)}</p>
+                  {kitchenText && <p className="text-xs text-ink-600 dark:text-ink-300"><span className="font-semibold">{t("allergy.kitchen")}</span> {kitchenText}</p>}
+                  {catalog.allergy_policy.note && <p className="text-xs italic text-ink-500">{catalog.allergy_policy.note}</p>}
+                </>
+              ) : (
+                <p className="text-xs text-ink-600 dark:text-ink-300">{t("storeInfo.allergiesUnstated")}</p>
+              )}
+              <p className="text-[11px] text-ink-400">{t("allergy.storesWord")}</p>
+            </div>
+          </Card>
+        </motion.section>
 
         <motion.div variants={fadeSlideUp} className="mt-5">
           <StoreMap location={catalog.location} />

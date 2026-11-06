@@ -28,7 +28,7 @@ test("a recurring order reminds its customer, who confirms and pays at checkout"
   await expect(page.getByText(tacos.menu[0].name)).toBeVisible();
   await expect(page.getByRole("button", { name: "Set up" })).toHaveCount(0);
   await page.getByRole("button", { name: /^Place order/ }).click();
-  await expect(page.getByRole("switch")).toHaveCount(0);
+  await expect(page.getByRole("dialog").getByRole("switch")).toHaveCount(0);
   await page.getByRole("button", { name: /^Hold .* on my card$/ }).click();
   await expect(page).toHaveURL(/customer\/orders\/./);
 

@@ -59,7 +59,7 @@ pub fn file_appeal(input: FileAppealInput) -> ExternResult<ActionHash> {
     }
     let arbiter = arbiter_for(&order)?;
     let (_, store_owner) = parties_of(&order)?;
-    let evidence = IssueEvidence { note: input.note, photo_data_uri: input.photo_data_uri };
+    let evidence = IssueEvidence { note: input.note, photo_data_uri: input.photo_data_uri, allergen: false };
     let appeal = Appeal { order: order.clone(), settlement, arbiter: arbiter.clone(), amount: input.amount, sealed_for_arbiter: seal_chunked(&arbiter, &evidence)? };
     let hash = create_entry(&EntryTypes::Appeal(appeal))?;
     create_link(order, hash.clone(), LinkTypes::OrderToAppeal, ())?;
@@ -80,7 +80,7 @@ pub struct AnswerAppealInput {
 #[hdk_extern]
 pub fn answer_appeal(input: AnswerAppealInput) -> ExternResult<ActionHash> {
     let (appeal, _, _) = read_appeal(&input.appeal)?;
-    let evidence = IssueEvidence { note: input.note, photo_data_uri: input.photo_data_uri };
+    let evidence = IssueEvidence { note: input.note, photo_data_uri: input.photo_data_uri, allergen: false };
     let answer = AppealAnswer { appeal: input.appeal.clone(), sealed_for_arbiter: seal_chunked(&appeal.arbiter, &evidence)? };
     let hash = create_entry(&EntryTypes::AppealAnswer(answer))?;
     create_link(input.appeal, hash.clone(), LinkTypes::AppealToAnswer, ())?;

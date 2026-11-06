@@ -11,7 +11,8 @@ use crate::stores::{closed_reason, current_catalog, current_catalog_version};
 use crate::upkeep;
 use dispatch_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{call_local, decode_or, guest, open, original_action_of, resolve_latest, resolve_version_decoded, seal, update_version, written};
+use handshake_coordinator_support::{call_local, decode_or, guest, open, open_padded, original_action_of, resolve_latest, resolve_version_decoded, seal, seal_padded, update_version, written};
+use handshake_integrity_support::allergens::{AllergyPolicy, AllergyRequests, AllergySet};
 use handshake_types::GeoPoint;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -30,6 +31,9 @@ pub struct RequestDeliveryInput {
     /// A note for the kitchen -- sealed to the store.
     #[serde(default)]
     pub kitchen_notes: String,
+    /// Allergies the customer's telling the store -- sealed with the note.
+    #[serde(default)]
+    pub allergies: AllergySet,
     /// Drop-off instructions -- sealed with the address, for the driver.
     #[serde(default)]
     pub dropoff_notes: String,
@@ -127,6 +131,30 @@ pub(crate) fn seal_note(recipient: &AgentPubKey, note: &str) -> ExternResult<Opt
     Ok(Some(seal(recipient, &note.to_string())?))
 }
 
+/// What a customer tells a store's kitchen, sealed to it. Every order has one,
+/// padded, even with nothing in it: neither whether there's a box nor how long
+/// it is can hint at someone's allergies.
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct KitchenNote {
+    pub text: String,
+    pub allergies: AllergySet,
+}
+
+/// Seals what a customer's telling the store -- refused here, before anything
+/// goes anywhere, if the store has said it can't work to allergy requests.
+pub(crate) fn seal_kitchen_note(merchant: &AgentPubKey, policy: Option<&AllergyPolicy>, text: &str, allergies: AllergySet) -> ExternResult<XSalsa20Poly1305EncryptedData> {
+    if let Some(problem) = allergies.problem() {
+        return Err(guest(problem));
+    }
+    if !allergies.is_empty() && policy.is_some_and(|policy| policy.requests == AllergyRequests::NotAccepted) {
+        return Err(guest("This store can't work to allergy requests. Remove them to order here, knowing what it says about its kitchen."));
+    }
+    let text = text.trim();
+    check_note(text)?;
+    seal_padded(merchant, KitchenNote { text: text.to_string(), allergies })
+}
+
 /// A note (for the kitchen, the driver, the store) within the longest a note
 /// may be -- checked before it's sealed, as validation can only bound the
 /// ciphertext.
@@ -153,6 +181,8 @@ pub(crate) fn check_note(note: &str) -> ExternResult<()> {
 pub struct OrderPrivateDetails {
     pub dropoff: Option<DropoffDetails>,
     pub kitchen_note: Option<String>,
+    /// The customer's allergies, as they told the store -- for the two of them.
+    pub allergies: AllergySet,
     /// The customer's name -- for the customer, the store, and the driver
     /// once assigned.
     pub customer_name: Option<String>,
@@ -180,16 +210,18 @@ pub fn get_order_private_details(order_original_action: ActionHash) -> ExternRes
             Some(name) => Some(name),
             None => dropoff.as_ref().map(|d| d.recipient.clone()).filter(|name| !name.is_empty()),
         };
-        let kitchen_note = open_for_parties(&me, &order.requester, &order.merchant, order.kitchen_note.as_ref())?;
+        let (kitchen_note, allergies) = kitchen_note_for_parties(&me, &order.requester, &order.merchant, order.kitchen_note.as_ref())?;
         // The wake token is for the driver's conductor to hand on, not a
         // detail to show.
         let dropoff = dropoff.map(|dropoff| DropoffDetails { wake: None, ..dropoff });
-        return Ok(OrderPrivateDetails { dropoff, kitchen_note, customer_name });
+        return Ok(OrderPrivateDetails { dropoff, kitchen_note, allergies, customer_name });
     }
     if let Some(order) = decode_or::<PickupOrder>(&record) {
+        let (kitchen_note, allergies) = kitchen_note_for_parties(&me, &order.requester, &order.merchant, order.kitchen_note.as_ref())?;
         return Ok(OrderPrivateDetails {
             dropoff: None,
-            kitchen_note: open_for_parties(&me, &order.requester, &order.merchant, order.kitchen_note.as_ref())?,
+            kitchen_note,
+            allergies,
             customer_name: open_for_parties(&me, &order.requester, &order.merchant, order.sealed_customer_name.as_ref())?,
         });
     }
@@ -208,6 +240,15 @@ fn open_for_parties(me: &AgentPubKey, requester: &AgentPubKey, merchant: &AgentP
     let Some(sealed) = sealed else { return Ok(None) };
     let counterpart = if me == requester { merchant } else if me == merchant { requester } else { return Ok(None) };
     open(counterpart, sealed)
+}
+
+/// An order's kitchen note and allergies, for the customer or the store. Anyone
+/// else, or a box that won't open, gets nothing.
+fn kitchen_note_for_parties(me: &AgentPubKey, requester: &AgentPubKey, merchant: &AgentPubKey, sealed: Option<&XSalsa20Poly1305EncryptedData>) -> ExternResult<(Option<String>, AllergySet)> {
+    let Some(sealed) = sealed else { return Ok((None, AllergySet::default())) };
+    let counterpart = if me == requester { merchant } else if me == merchant { requester } else { return Ok((None, AllergySet::default())) };
+    let note: KitchenNote = open_padded(counterpart, sealed)?.unwrap_or_default();
+    Ok(((!note.text.is_empty()).then_some(note.text), note.allergies))
 }
 
 /// Coordinator pre-checks for an order's optional references, shared by
@@ -317,7 +358,7 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         tax_cents: priced.tax_cents,
         dropoff_geohash: dropoff_geohash.clone(),
         sealed_dropoff: seal(&requester, &DropoffDetails { point: input.dropoff, line2: input.dropoff_line2, notes: input.dropoff_notes, recipient: customer_name.clone(), wake: input.wake_for_driver.as_deref().map(checked_wake).transpose()?.map(str::to_string) })?,
-        kitchen_note: seal_note(&merchant, &input.kitchen_notes)?,
+        kitchen_note: Some(seal_kitchen_note(&merchant, catalog.allergy_policy.as_ref(), &input.kitchen_notes, input.allergies)?),
         sealed_customer_name: seal_note(&merchant, &customer_name)?,
         sealed_wake: seal_wake(&merchant, input.wake_for_store.as_deref())?,
         max_delivery_fee: input.max_delivery_fee,

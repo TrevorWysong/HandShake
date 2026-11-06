@@ -14,6 +14,7 @@
 use super::{GroupCharges, MenuItem, UnitCharge};
 use hdi::prelude::*;
 use handshake_integrity_support::limits::{MAX_AMOUNT, MAX_CHOICE_DEPTH, MAX_GROUP_OPTIONS, MAX_LINE_CHOICES, MAX_NAME_CHARS, MAX_OPTION_QUANTITY};
+use handshake_integrity_support::allergens::{labels_problem, list_problem};
 use handshake_integrity_support::text_problem;
 
 /// A store's choice group, shared by every item that lists it.
@@ -54,6 +55,13 @@ pub struct ModifierOption {
     /// A group the customer chooses from next when they pick this option,
     /// by its original action -- one of the same store's.
     pub nested_group: Option<ActionHash>,
+    /// What choosing it adds to the item: an item's own statement can't
+    /// speak for "add cheese".
+    #[serde(default)]
+    pub contains: Vec<String>,
+    /// The same, in the store's own words.
+    #[serde(default)]
+    pub other_allergens: Vec<String>,
 }
 
 /// What an order line chose from one choice group.
@@ -144,6 +152,9 @@ impl ModifierGroup {
             }
             if option.price_cents > MAX_AMOUNT {
                 return Some("an option's price is at most the most any amount may be".into());
+            }
+            if let Some(problem) = list_problem(&option.contains).or_else(|| labels_problem(&option.other_allergens)) {
+                return Some(problem);
             }
         }
         if self.max_per_option == 0 || self.max_per_option > MAX_OPTION_QUANTITY {
@@ -308,7 +319,7 @@ mod tests {
     const STORE: u8 = 200;
 
     fn option(id: u32, price_cents: u64) -> ModifierOption {
-        ModifierOption { id, name: format!("option {id}"), price_cents, available: true, nested_group: None }
+        ModifierOption { contains: Vec::new(), other_allergens: Vec::new(), id, name: format!("option {id}"), price_cents, available: true, nested_group: None }
     }
 
     fn group(name: &str, min: u32, max: Option<u32>, free: u32, options: Vec<ModifierOption>) -> ModifierGroup {
@@ -325,6 +336,7 @@ mod tests {
             photo_data_uri: String::new(),
             category: String::new(),
             dietary_tags: Vec::new(),
+            allergens: None,
             modifier_groups: groups.iter().map(|&g| hash(g)).collect(),
             tax_category: String::new(),
             age_restricted: false,
