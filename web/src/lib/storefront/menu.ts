@@ -13,6 +13,8 @@ export interface ItemRow {
   /// The item's latest version -- what an order line priced today names.
   version: Uint8Array;
   item: MenuItem;
+  /// What it's reduced from, while it's on sale (`sales::soldRow`).
+  fullPriceCents?: number;
 }
 
 /// A menu page as rows keyed by each item's stable identity (its original

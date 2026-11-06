@@ -31,6 +31,8 @@ export interface WorldMenuItem {
   category?: string;
   description?: string;
   dietary_tags?: string[];
+  /// A lower price, always on in this seeded world.
+  sale?: { price_cents: number; label: string; starts_at: null; ends_at: null; weekly: never[] };
   /// What the store says is in it.
   allergens?: { contains: string[]; may_contain: string[]; other: string[]; note: string };
   /// Its choice groups, by key.
@@ -118,7 +120,7 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
         { name: "Veggie Burger", price: 1150, category: "Burgers", dietary_tags: ["Vegetarian"], groups: ["addOns", "combo"], description: "One add-on free." },
         { name: "Harvest Bowl", price: 1350, category: "Bowls", dietary_tags: ["Vegan", "Gluten-free"], allergens: { contains: [], may_contain: ["TreeNuts"], other: [], note: "Dressed in a shared kitchen." } },
         { name: "Hand-cut Fries", price: 450, category: "Sides", dietary_tags: ["Vegan"], allergens: { contains: [], may_contain: [], other: [], note: "" } },
-        { name: "Pancake Stack", price: 950, category: "Breakfast", dietary_tags: ["Vegetarian"] },
+        { name: "Pancake Stack", price: 950, category: "Breakfast", sale: { price_cents: 700, label: "Early bird", starts_at: null, ends_at: null, weekly: [] }, dietary_tags: ["Vegetarian"] },
       ],
       promos: [{ code: "WELCOME10", requirement: "None", reward: { PercentOffSubtotal: 10 } }],
     },

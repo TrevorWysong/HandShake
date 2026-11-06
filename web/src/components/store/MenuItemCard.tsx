@@ -5,6 +5,8 @@ import type { ItemRatingSummary } from "../../holochain/zomes/reputation";
 import { formatCents } from "../../lib/ui/format";
 import { StatNumber } from "../ui";
 import { honestTags, type AllergyMatch } from "../../lib/storefront/allergens";
+import { saleOff, saleSchedule, saleUntil } from "../../lib/storefront/sales";
+import type { MerchantCatalog } from "../../holochain/types";
 import { useT } from "../../i18n";
 import { AllergyWarning } from "./Allergens";
 import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
@@ -13,11 +15,13 @@ import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
 /// right with the add button over its corner. The whole card adds it (or
 /// opens its choices) -- while it's available and the store takes orders,
 /// now or scheduled for when it opens.
-export function MenuItemCard({ row, rating, minAge, canAdd, match, onAdd }: { row: ItemRow; rating: ItemRatingSummary | undefined; minAge: number | null; canAdd: boolean; match?: AllergyMatch; onAdd: () => void }) {
+export function MenuItemCard({ row, rating, minAge, canAdd, match, store, now, onAdd }: { store?: Pick<MerchantCatalog, "time_zone">; now?: Date; row: ItemRow; rating: ItemRatingSummary | undefined; minAge: number | null; canAdd: boolean; match?: AllergyMatch; onAdd: () => void }) {
   const t = useT();
   const { item } = row;
   const tags = honestTags(item.dietary_tags ?? [], item.allergens);
   const names = useAllergenNames();
+  const until = item.sale && store && row.fullPriceCents ? saleUntil(item.sale, store, now ?? new Date(0)) : null;
+  const upcoming = item.sale && !row.fullPriceCents && now ? saleSchedule(item.sale, now) : null;
   const saysIn = item.allergens ? [names(item.allergens.contains), ...item.allergens.other].filter(Boolean).join(", ") : "";
   const saysMay = item.allergens ? names(item.allergens.may_contain) : "";
   return (
@@ -32,13 +36,22 @@ export function MenuItemCard({ row, rating, minAge, canAdd, match, onAdd }: { ro
         <span className="font-semibold text-ink-900 dark:text-ink-50">{item.name}</span>
         {item.description && <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-ink-500">{item.description}</span>}
         <span className="mt-auto flex items-center gap-2 pt-2">
-          <StatNumber className="text-sm">{formatCents(item.price_cents)}</StatNumber>
+          <StatNumber className={clsx("text-sm", row.fullPriceCents && "text-handshake-600 dark:text-handshake-400")}>{formatCents(item.price_cents)}</StatNumber>
+          {row.fullPriceCents && <span className="text-xs text-ink-400 line-through">{formatCents(row.fullPriceCents)}</span>}
           {rating && rating.count > 0 && (
             <span className="flex items-center gap-0.5 text-xs text-ink-400">
               <Star size={11} className="fill-amber-400 text-amber-400" /> {(rating.rating_sum / rating.count).toFixed(1)} ({rating.count})
             </span>
           )}
         </span>
+        {row.fullPriceCents && item.sale && (
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
+            <span className="rounded-full bg-handshake-500 px-2 py-0.5 font-bold text-white">{saleOff(row.fullPriceCents, item.price_cents)}</span>
+            {item.sale.label && <span className="font-semibold text-handshake-700 dark:text-handshake-300">{item.sale.label}</span>}
+            {until && <span className="text-ink-500 dark:text-ink-400">{until}</span>}
+          </span>
+        )}
+        {!row.fullPriceCents && upcoming && <span className="mt-1 text-[11px] text-ink-500 dark:text-ink-400">{upcoming}</span>}
         {(tags.length > 0 || (item.age_restricted && minAge)) && (
           <span className="mt-1.5 flex flex-wrap gap-1">
             {item.age_restricted && minAge && (

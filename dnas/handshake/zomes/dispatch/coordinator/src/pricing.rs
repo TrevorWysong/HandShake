@@ -82,7 +82,7 @@ pub(crate) fn price_order(catalog_ref: &ActionHash, store: &MerchantCatalog, ite
     if menu.is_empty() && (promo_ref.is_some() || reward.is_some()) {
         return Err(guest("Promo codes and rewards apply to menu items, not goodie bags."));
     }
-    let priced_menu = if menu.is_empty() { None } else { Some(price_menu(catalog_ref, items_merged(&menu)?, promo_ref, reward)?) };
+    let priced_menu = if menu.is_empty() { None } else { Some(price_menu(catalog_ref, store, items_merged(&menu)?, promo_ref, reward)?) };
     let bag_lines = bags.iter().map(|(item, bag)| bag_line(catalog_ref, item, bag, delivery)).collect::<ExternResult<Vec<_>>>()?;
     if bag_lines.iter().enumerate().any(|(i, (line, _))| bag_lines[..i].iter().any(|(l, _)| l.item_ref == line.item_ref)) {
         return Err(guest("A goodie bag is one to an order."));
@@ -122,7 +122,7 @@ fn bag_line(catalog_ref: &ActionHash, item: &OrderItem, bag: &GoodieBag, deliver
             return Err(guest(format!("{} is sold out.", bag.title)));
         }
     }
-    let line = OrderLine { item_ref: item.item_ref.clone(), priced_version: latest.action_address().clone(), quantity: 1, selections: Vec::new() };
+    let line = OrderLine { on_sale: false, item_ref: item.item_ref.clone(), priced_version: latest.action_address().clone(), quantity: 1, selections: Vec::new() };
     Ok((line, bag.price_cents))
 }
 
@@ -177,7 +177,8 @@ fn items_merged(items: &[OrderItem]) -> ExternResult<Vec<OrderItem>> {
     Ok(merged)
 }
 
-fn price_menu(catalog_ref: &ActionHash, merged: Vec<OrderItem>, promo_ref: Option<&ActionHash>, reward: Option<&PromoReward>) -> ExternResult<MenuPrice> {
+fn price_menu(catalog_ref: &ActionHash, store: &MerchantCatalog, merged: Vec<OrderItem>, promo_ref: Option<&ActionHash>, reward: Option<&PromoReward>) -> ExternResult<MenuPrice> {
+    let now = sys_time()?.as_micros();
     let mut lines = Vec::with_capacity(merged.len());
     let mut priced = Vec::with_capacity(merged.len());
     let mut categories = Vec::with_capacity(merged.len());
@@ -193,8 +194,9 @@ fn price_menu(catalog_ref: &ActionHash, merged: Vec<OrderItem>, promo_ref: Optio
             return Err(guest(format!("{} is sold out", item.name)));
         }
         let selections = at_latest(&selections)?;
-        let line = pricer.priced_line(item_ref.clone(), &item, &selections, quantity)?.map_err(|reason| guest(format!("{}: {reason}", item.name)))?;
-        lines.push(OrderLine { item_ref, priced_version: record.action_address().clone(), quantity, selections });
+        let on_sale = item.sale.as_ref().is_some_and(|sale| crate::stores::sale_running(sale, &store.time_zone, now));
+        let line = pricer.priced_line(item_ref.clone(), &item.as_sold(on_sale), &selections, quantity)?.map_err(|reason| guest(format!("{}: {reason}", item.name)))?;
+        lines.push(OrderLine { item_ref, priced_version: record.action_address().clone(), quantity, selections, on_sale });
         priced.push(line);
         categories.push(item.tax_category);
         age_restricted |= item.age_restricted;
@@ -297,6 +299,9 @@ pub(crate) fn outdated_item(order_ref: &ActionHash, lines: &[OrderLine], promo_r
     if menu.is_empty() {
         return Ok(None);
     }
+    if let Some(name) = lapsed_sale(order_ref, &menu)? {
+        return Ok(Some(name));
+    }
     let mut cited: Vec<(ActionHash, ActionHash)> = menu.iter().map(|line| (line.item_ref.clone(), line.priced_version.clone())).collect();
     let item_count = cited.len();
     for line in menu {
@@ -319,6 +324,29 @@ pub(crate) fn outdated_item(order_ref: &ActionHash, lines: &[OrderLine], promo_r
         if !honoured(&history.versions, version, placed_at)? {
             let name = if history.name.is_empty() { "An item".to_string() } else { history.name };
             return Ok(Some(name));
+        }
+    }
+    Ok(None)
+}
+
+/// The first item whose line claims a sale that wasn't running when the order
+/// was placed, give or take the grace a price change gets. Validation has no
+/// time zones, so a weekly schedule is the store's to check, here, against its
+/// own: a modified app claiming happy hour at midnight gets declined.
+fn lapsed_sale(order_ref: &ActionHash, lines: &[&OrderLine]) -> ExternResult<Option<String>> {
+    let mut placed = None;
+    for line in lines.iter().filter(|line| line.on_sale) {
+        let at = match placed {
+            Some(at) => at,
+            None => *placed.insert(placement_time(order_ref)?.as_micros()),
+        };
+        let version = get(line.priced_version.clone(), GetOptions::default())?.ok_or(guest("Something on this order couldn't be found. Try again in a moment."))?;
+        let Some(item) = decode_or::<MenuItem>(&version) else { continue };
+        let store = crate::stores::current_catalog(&item.catalog_ref)?;
+        let grace = handshake_governance::price_change_grace().as_micros() as i64;
+        let running = item.sale.as_ref().is_some_and(|sale| [at, at - grace, at + grace].into_iter().any(|moment| crate::stores::sale_running(sale, &store.time_zone, moment)));
+        if !running {
+            return Ok(Some(item.name));
         }
     }
     Ok(None)

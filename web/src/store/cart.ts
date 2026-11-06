@@ -93,6 +93,8 @@ interface CartState {
   addLine: (catalogRef: ActionHash, merchant: Uint8Array, merchantName: string, line: CartLine) => void;
   /// Puts `line` in place of the line keyed `key` -- editing its choices.
   replaceLine: (key: string, line: CartLine) => void;
+  /// Brings each line to today's price, if it's moved.
+  repriceLines: (update: (line: CartLine) => CartLine) => void;
   removeLine: (key: string) => void;
   setQuantity: (key: string, quantity: number) => void;
   /// Replaces the cart wholesale -- used by "reorder" to repopulate from a
@@ -149,6 +151,10 @@ export const useCart = create<CartState>()(
         set({ catalogRef, merchant, merchantName, lines: merged(sameCatalog ? state.lines : [], line), ...(sameCatalog ? {} : { reward: null }) });
       },
 
+      repriceLines: (update) => {
+        const lines = get().lines.map(update);
+        if (lines.some((line, i) => line !== get().lines[i])) set({ lines });
+      },
       replaceLine: (key, line) => set({ lines: merged(get().lines.filter((l) => lineKey(l) !== key), line) }),
 
       removeLine: (key) => {

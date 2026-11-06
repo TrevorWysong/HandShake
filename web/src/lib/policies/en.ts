@@ -8,6 +8,11 @@ import { spoken, type PolicyChange, type PolicyContent, type PolicySection } fro
 
 const changes: PolicyChange[] = [
   {
+    version: "1.6",
+    date: "2026-11-06",
+    summary: "Sale prices: a store can lower an item's price for a while or on a schedule.",
+  },
+  {
     version: "1.5",
     date: "2026-11-06",
     summary: "Allergies: a store says what's in its food, you can keep a sealed list and tell a store at checkout, and what that can and can't promise. Each is its own word, and no flag doesn't mean safe.",
@@ -51,6 +56,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       title: "Payments and holds",
       summary: "Cards are held at each step and charged only on proof or on the store's decision about the order. HandShake takes no fee.",
       points: [
+        "A store can put an item on sale, now, between dates or on days of the week. A sale's price applies when you order while it's running, and it's what any refund and rewards are worked out from. The network checks the dates; the store checks its own weekly times before it accepts.",
         "When you place an order, the store holds your card, on its own card processor, for the food, your share of the delivery fee at most, and your tip. Nothing is charged yet, and the store accepts your order only once the hold is in place.",
         "When a driver commits to an order, before the store starts cooking it, the store holds the driver's card for the value of the food. That's their collateral: it's released once the order is delivered.",
         "When a driver commits, they also hold the store's card for their fee and your tip, so they know they'll be paid before they set off.",

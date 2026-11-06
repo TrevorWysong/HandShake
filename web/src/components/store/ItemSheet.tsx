@@ -89,7 +89,7 @@ export function ItemSheet({ catalogRef, row, editing, gift, policy, onClose, onD
       }
     >
       {item.photo_data_uri && <img src={item.photo_data_uri} alt="" className="-mx-5 -mt-3 mb-4 aspect-[16/9] w-[calc(100%+2.5rem)] max-w-none object-cover" />}
-      <p className="text-base font-semibold tabular-nums text-ink-900 dark:text-ink-50">{formatCents(item.price_cents)}</p>
+      <p className="text-base font-semibold tabular-nums text-ink-900 dark:text-ink-50">{row.fullPriceCents && <span className="mr-1.5 font-normal text-ink-400 line-through">{formatCents(row.fullPriceCents)}</span>}{formatCents(item.price_cents)}</p>
       {item.description && <p className="mt-1 text-sm leading-relaxed text-ink-500 dark:text-ink-400">{item.description}</p>}
       <AllergyWarning match={matchAllergies(item.allergens, policy, mine, chosenAdds)} className="mt-3" announce />
       <div className="mt-3 rounded-xl bg-ink-50 p-3 dark:bg-ink-800/50">
