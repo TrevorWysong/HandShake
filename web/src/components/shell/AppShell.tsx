@@ -17,7 +17,7 @@ import { ActiveOrderCard } from "./ActiveOrderCard";
 import { CustomerDock } from "./CustomerDock";
 import { dockFits, useCardOrders } from "../../lib/hooks/useCardOrders";
 import { useActiveOrders } from "../../store/activeOrders";
-import { usePolling } from "../../lib/hooks/useResource";
+import { useLatest, usePolling } from "../../lib/hooks/useResource";
 import { POLL } from "../../lib/network/poll";
 import { reaffirmRecoveryPlan } from "../../holochain/zomes/account";
 import { useWideScreen } from "../../lib/hooks/useMediaQuery";
@@ -68,8 +68,13 @@ function AnimatedOutlet() {
     window.addEventListener("scroll", remember, { passive: true });
     return () => window.removeEventListener("scroll", remember);
   }, [location.key]);
+  // As the screen arrives, not when its animation starts: that can come late on
+  // a slow device, and undo a person who's already scrolled. By its path, so a
+  // filter in the URL doesn't send it back to the top.
+  const arrivedAt = useLatest(backTo);
+  useLayoutEffect(() => scrollBack(arrivedAt.current), [location.pathname, arrivedAt]);
   return (
-    <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" onAnimationStart={() => scrollBack(backTo)}>
+    <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate">
       <Outlet />
     </motion.div>
   );
