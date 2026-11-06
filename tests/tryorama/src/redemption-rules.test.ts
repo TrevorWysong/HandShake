@@ -83,7 +83,7 @@ await runScenario(async (scenario) => {
   const listing = decodeEntry<Record<string, unknown>>(termsRecord);
   await assert.rejects(
     call(merchant, "catalog")("update_goodie_bag", { original_action: termsBag, bag: { ...listing, price_cents: 100 } }),
-    /may only change its title, description or photo/,
+    /may only change its title, description, photo or allergens/,
     "a bag's price can't change after listing",
   );
   await call(merchant, "catalog")("update_goodie_bag", { original_action: termsBag, bag: { ...listing, title: "Bigger bag tonight" } });
