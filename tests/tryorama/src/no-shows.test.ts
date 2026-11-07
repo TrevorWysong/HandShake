@@ -29,6 +29,9 @@ const COLLECT_WAIT = 15;
 /// Seconds a store has to answer before its silence does: past the wait to
 /// collect, which a report holds off until then.
 const ANSWER_GRACE = 45;
+/// Seconds a store may go silent on a pickup before its customer may close it:
+/// never less than the wait to collect and the store's time to answer.
+const LAPSE = 70;
 /// The time source's rounds are seconds apart: waiting this much past a
 /// deadline proves it.
 const past = (secs: number) => (secs + 8) * 1000;
@@ -43,7 +46,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const DOOR = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 await runScenario(async (scenario) => {
-  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ dropoff_wait_secs: DOOR_WAIT, collection_window_secs: COLLECT_WAIT, answer_grace_secs: ANSWER_GRACE, report_window_secs: 20 }));
+  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ dropoff_wait_secs: DOOR_WAIT, collection_window_secs: COLLECT_WAIT, answer_grace_secs: ANSWER_GRACE, pickup_lapse_secs: LAPSE, report_window_secs: 20 }));
   const all = [customer, merchant, driver];
   for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
@@ -222,4 +225,23 @@ await runScenario(async (scenario) => {
   assert.equal(await netOn(customer, agreed), 0, "a store that agrees cancels it, and nobody's charged");
   assert.equal(await netOn(merchant, agreed), 0);
   console.log("[PASS] a store that agrees cancels it, and nobody's charged");
+
+  // A pickup that's ready has no driver to have kept waiting.
+  const late = await pickup();
+  await assert.rejects(customer.cells[0].callZome({ zome_name: "dispatch", fn_name: "create_raw_pickup_cancellation_for_testing", payload: { order: late, cancellation: "StoreLate" } }), /no driver for its store to keep waiting/, "a pickup's customer can't cancel it as store-late");
+  console.log("[PASS] a pickup can't be cancelled as the store keeping a driver waiting");
+
+  const abandoned = late;
+  const close = async () => customer.cells[0].callZome({ zome_name: "dispatch", fn_name: "lapse_pickup_order", payload: { order_ref: abandoned, beacon: await currentBeacon() } });
+  await assert.rejects(close(), /still has time to answer/, "the store has its time first");
+  await assert.rejects(merchant.cells[0].callZome({ zome_name: "dispatch", fn_name: "lapse_pickup_order", payload: { order_ref: abandoned, beacon: await currentBeacon() } }), /Only the customer closes/, "only its customer closes it");
+  await sleep(past(LAPSE));
+  await retryUntilOk(close);
+  await sync();
+  const closed = await statusOf(abandoned);
+  assert.deepEqual([closed.status, closed.cancellation], ["Cancelled", "Lapsed"]);
+  await settleAll(all, abandoned);
+  assert.equal(await netOn(customer, abandoned), 0, "nobody's charged");
+  assert.equal(await netOn(merchant, abandoned), 0);
+  console.log("[PASS] a pickup its store went silent on, its customer closes past the lapse, with no charge");
 });

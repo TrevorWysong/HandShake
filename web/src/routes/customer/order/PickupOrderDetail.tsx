@@ -3,7 +3,7 @@ import { useResource } from "../../../lib/hooks/useResource";
 import { useParams } from "react-router-dom";
 import { AlertTriangle, ChefHat } from "lucide-react";
 import { motion } from "framer-motion";
-import { cancelPickupOrder, getOrderDecisions, getOrderPrivateDetails, getPickupOrder, reportPickupProblem, completePickup } from "../../../holochain/zomes/dispatch";
+import { cancelPickupOrder, getOrderDecisions, lapsePickupOrder, getOrderPrivateDetails, getPickupOrder, reportPickupProblem, completePickup } from "../../../holochain/zomes/dispatch";
 import { fetchOrderItemNames } from "../../../lib/storefront/menu";
 import { decodeEntry, bytesEqual, bytesToHex, hexToBytes, timestampOf } from "../../../holochain/decode";
 import { getCatalog } from "../../../holochain/zomes/catalog";
@@ -30,6 +30,7 @@ import { useT } from "../../../i18n";
 import { useTerms } from "../../../store/network";
 import { Sheet } from "../../../components/Sheet";
 import { StoreReach } from "../../../components/store/StoreContact";
+import { currentBeacon, PROOF_MARGIN_MICROS } from "../../../lib/network/timeSource";
 import { OrderPayments } from "../../../components/payments/OrderPayments";
 
 
@@ -46,7 +47,7 @@ export function PickupOrderDetail() {
   const t = useT();
   // One step on the order at a time: no cancelling it while confirming it.
   const action = useAction();
-  const { collection_window_secs: collectionWindowSecs, answer_grace_secs: answerGraceSecs } = useTerms();
+  const { collection_window_secs: collectionWindowSecs, answer_grace_secs: answerGraceSecs, pickup_lapse_secs: lapseSecs } = useTerms();
   const [askingCantGet, setAskingCantGet] = useState(false);
 
   // `writtenAt` (when its current version was written) and `now` (when it
@@ -92,6 +93,11 @@ export function PickupOrderDetail() {
     await reloadOrder();
   }, { as: "complete" });
 
+  const closeLapsed = () => action.run(async () => {
+    await lapsePickupOrder(orderRef, await currentBeacon());
+    await reloadOrder();
+  }, { as: "lapse" });
+
   const cancel = () => action.run(async () => {
     await cancelPickupOrder(orderRef);
     await reloadOrder();
@@ -102,6 +108,9 @@ export function PickupOrderDetail() {
   const selfOrder = bytesEqual(order.merchant, myAgentPubKey());
   // Their window to collect it: from when it was ready, or the store said so again.
   const collectBy = (snapshot?.writtenAt ?? 0) + collectionWindowSecs * 1_000_000;
+  // A store gone silent on it since its last word: the customer can close it.
+  const waitingOnStore = order.status === "MerchantConfirmed" || order.status === "ReadyForPickup" || order.status === "Disputed";
+  const lapsed = waitingOnStore && !!snapshot && now.getTime() * 1000 >= snapshot.writtenAt + lapseSecs * 1_000_000 + PROOF_MARGIN_MICROS;
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-10 pt-4">
@@ -230,6 +239,15 @@ export function PickupOrderDetail() {
         </ul>
         {store && <StoreReach catalog={store} className="mb-2" />}
       </Sheet>
+
+      {lapsed && (
+        <motion.div variants={fadeSlideUp} className="mt-3 flex flex-col gap-3 rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-700 dark:bg-ink-900">
+          <p className="text-sm text-ink-700 dark:text-ink-200">{t("pickup.lapsed")}</p>
+          <Button variant="secondary" loading={action.doing === "lapse"} disabled={action.busy} onClick={closeLapsed}>
+            {t("pickup.closeLapsed")}
+          </Button>
+        </motion.div>
+      )}
 
       <OrderPointsBadge orderRef={orderRef} />
 

@@ -189,6 +189,22 @@ mod test_utils {
 
     use dispatch_integrity::{Bid, Cancellation, DeliveryOrder, DeliveryStatus, EntryTypes, PickupOrder, PickupStatus};
 
+    /// Cancels a pickup as given, with no checks -- what a modified client could
+    /// write -- so a test can prove validation refuses a reason on its own.
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct RawPickupCancellation {
+        order: ActionHash,
+        cancellation: Cancellation,
+    }
+
+    #[hdk_extern]
+    pub fn create_raw_pickup_cancellation_for_testing(input: RawPickupCancellation) -> ExternResult<Record> {
+        let (current, mut pickup): (_, PickupOrder) = handshake_coordinator_support::resolve_version_decoded(input.order, "PickupOrder")?;
+        pickup.status = PickupStatus::Cancelled;
+        pickup.cancellation = Some(input.cancellation);
+        written(handshake_coordinator_support::update_version(&current, &EntryTypes::PickupOrder(pickup), LinkTypes::Version)?)
+    }
+
     /// A customer saying they can't get their pickup, without the coordinator
     /// telling them first that they've already said so -- so a test can prove
     /// validation refuses it on its own.

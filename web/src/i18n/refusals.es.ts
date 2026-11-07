@@ -5,6 +5,8 @@ import type { Message } from "./en";
 import type { REFUSALS } from "./refusals";
 
 export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
+  "refusal.only-the-customer-closes-an-order-its": "Solo el cliente cierra un pedido en el que su tienda dejó de responder.",
+  "refusal.the-store-still-has-time-to-answer": "La tienda todavía tiene tiempo para responder por este pedido.",
   "refusal.only-the-store-answers-a-customer-who": "Solo la tienda responde a un cliente que dice que no puede recoger su pedido.",
   "refusal.the-store-has-already-answered-that-this": "La tienda ya respondió que este pedido está listo.",
   "refusal.a-free-order-can-t-be-delivered": "Un pedido gratis no se puede enviar a domicilio: tu repartidor responde de lo que lleva. Elige recoger.",

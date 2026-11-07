@@ -241,6 +241,8 @@ pub fn entitlement(part: &Part, amount: u64, basis: &Basis) -> Entitlement {
             Cancellation::StoreDidNotRespond => No,
             // It never reached the store.
             Cancellation::StoreClosed | Cancellation::ScheduleMissed => No,
+            // The store went silent on it: nobody's charged.
+            Cancellation::Lapsed => No,
         },
     }
 }
@@ -407,7 +409,7 @@ mod tests {
             }
             all.push(Basis::Replaced { bid: bid.clone() });
         }
-        let bys = [Cancellation::ByCustomer, Cancellation::ByStore(DeclineReason::OutdatedPrices), Cancellation::StoreDidNotRespond, Cancellation::NotCollected, Cancellation::StoreLate, Cancellation::NoDriver, Cancellation::StoreClosed];
+        let bys = [Cancellation::ByCustomer, Cancellation::ByStore(DeclineReason::OutdatedPrices), Cancellation::StoreDidNotRespond, Cancellation::NotCollected, Cancellation::StoreLate, Cancellation::NoDriver, Cancellation::StoreClosed, Cancellation::Lapsed];
         for by in bys {
             for from in [Stage::Waiting, Stage::Accepted, Stage::DriverAssigned, Stage::AtStore, Stage::Other] {
                 for cooking in [false, true] {

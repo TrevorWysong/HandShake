@@ -221,6 +221,11 @@ pub enum Cancellation {
     /// of sending it so late; it never reached the store, and nobody owes
     /// anything.
     ScheduleMissed,
+    /// A pickup the store accepted and then went silent on -- never marked
+    /// ready, never answered a report, never recorded it uncollected -- for
+    /// `handshake_governance::pickup_lapse`. Written by the customer, with
+    /// proof of the time: nobody's charged, and it counts against the store.
+    Lapsed,
 }
 
 /// What a store tells the customer when it turns an order down.

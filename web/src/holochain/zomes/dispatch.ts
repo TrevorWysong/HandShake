@@ -424,6 +424,11 @@ export async function getIssuesForOrder(orderRef: ActionHash): Promise<IssueView
   return callZome("dispatch", "get_issues_for_order", orderRef);
 }
 
+/// The customer closing a pickup its store has gone silent on, with proof of the time.
+export async function lapsePickupOrder(orderRef: ActionHash, beacon: Beacon): Promise<HcRecord> {
+  return callZome("dispatch", "lapse_pickup_order", { order_ref: orderRef, beacon });
+}
+
 /// The store answering a customer who says they can't get their pickup: it's ready.
 export async function dismissPickupProblem(orderRef: ActionHash): Promise<unknown> {
   return callZome("dispatch", "dismiss_pickup_problem", orderRef);

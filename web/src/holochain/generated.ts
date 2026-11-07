@@ -402,7 +402,14 @@ export type Cancellation =
    * of sending it so late; it never reached the store, and nobody owes
    * anything.
    */
-  | "ScheduleMissed";
+  | "ScheduleMissed"
+  /**
+   * A pickup the store accepted and then went silent on -- never marked
+   * ready, never answered a report, never recorded it uncollected -- for
+   * `handshake_governance::pickup_lapse`. Written by the customer, with
+   * proof of the time: nobody's charged, and it counts against the store.
+   */
+  | "Lapsed";
 
 /**
  * A member's card at a store: where they stand now, and what's coming.
@@ -2250,6 +2257,7 @@ export interface NetworkTerms {
    * ready, or a delivery they chose to collect -- has to come for it.
    */
   collection_window_secs: number;
+  pickup_lapse_secs: number;
   /**
    * How long a driver waits at the drop-off before they may say nobody
    * came to take the order.

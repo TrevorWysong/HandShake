@@ -220,6 +220,32 @@ pub fn mark_pickup_not_collected(input: crate::deliveries::TimedStepInput) -> Ex
     Ok(record)
 }
 
+/// The customer closing a pickup its store has gone silent on, past
+/// `handshake_governance::pickup_lapse` from the store's last word -- with
+/// proof of the time, which validation checks: nobody's charged, and it
+/// counts against the store.
+#[hdk_extern]
+pub fn lapse_pickup_order(input: crate::deliveries::TimedStepInput) -> ExternResult<Record> {
+    let order_ref = original_action_of(input.order_ref)?;
+    let (current, mut order): (_, PickupOrder) = resolve_version_decoded(order_ref.clone(), "PickupOrder")?;
+    let waiting_on_store = matches!(order.status, PickupStatus::MerchantConfirmed | PickupStatus::ReadyForPickup | PickupStatus::Disputed);
+    if order.requester != agent_info()?.agent_initial_pubkey || !waiting_on_store {
+        return Err(guest("Only the customer closes an order its store has gone silent on."));
+    }
+    let lapses = Timestamp::from_micros(current.record.action().timestamp().as_micros().saturating_add(handshake_governance::pickup_lapse().as_micros() as i64));
+    if handshake_integrity_support::beacon::proves_past(input.beacon.as_ref(), lapses).is_err() {
+        return Err(guest("The store still has time to answer for this order."));
+    }
+    order.status = PickupStatus::Cancelled;
+    order.cancellation = Some(Cancellation::Lapsed);
+    order.beacon = input.beacon;
+    let updated = update_version(&current, &EntryTypes::PickupOrder(order.clone()), LinkTypes::Version)?;
+    order_queues::retire(&OrderParties::pickup(&order_ref, &order))?;
+    let record = written(updated)?;
+    crate::orders::record_cancellation(&record, &order_ref)?;
+    Ok(record)
+}
+
 /// The gated completion path -- `ReadyForPickup -> PickedUp`, called by the
 /// requester confirming they actually received it. Unlike
 /// `complete_delivery`, there's no leg-attestation gate to check first: the

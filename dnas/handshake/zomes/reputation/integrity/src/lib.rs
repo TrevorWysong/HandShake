@@ -599,7 +599,7 @@ fn canceller(cancellation: &Option<Cancellation>, requester: &AgentPubKey, merch
         // Never collecting an order they chose to collect is the customer's
         // cancelling, though the store records it.
         Cancellation::ByCustomer | Cancellation::NotCollected => Some(requester.clone()),
-        Cancellation::ByStore(_) | Cancellation::StoreDidNotRespond | Cancellation::StoreLate => Some(merchant.clone()),
+        Cancellation::ByStore(_) | Cancellation::StoreDidNotRespond | Cancellation::StoreLate | Cancellation::Lapsed => Some(merchant.clone()),
         // A driver's doing, recorded as a drop.
         Cancellation::NoDriver => None,
         // Unprovable either way (see `Cancellation::StoreClosed`), or

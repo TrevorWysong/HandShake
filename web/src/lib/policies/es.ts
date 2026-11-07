@@ -8,7 +8,7 @@ const changes: PolicyChange[] = [
   {
     version: "1.7",
     date: "2026-11-07",
-    summary: "Pedidos para llevar: quien no pueda recoger su pedido puede avisar una vez, y la tienda decide. Si dice que está listo, tiene el mismo tiempo otra vez para recogerlo, y lo paga si no lo hace.",
+    summary: "Pedidos para llevar: quien no pueda recoger su pedido puede avisar una vez, y la tienda decide. Si dice que está listo, tiene el mismo tiempo otra vez para recogerlo, y lo paga si no lo hace. Un pedido en el que la tienda deja de responder se puede cerrar sin cobro.",
   },
   {
     version: "1.6",
@@ -210,7 +210,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         "Si tu repartidor se retrasa, o nadie tiene tu pedido, puedes recogerlo tú en la tienda. La comida cuesta lo mismo, te devuelven la parte del envío que pagaba la tienda, y no se cobra nada por un repartidor.",
         `Si eliges recogerlo y no vienes en ${spoken(t.collection_window_secs)}, la tienda se queda con el precio de la comida que preparó. Si cancelas mientras un repartidor está de camino y nadie se ha retrasado, pagas la comida y la tarifa del repartidor, como en cualquier app.`,
         `Si nadie sale a la puerta, tu repartidor registra que llegó (tu app te avisa) y espera ${spoken(t.dropoff_wait_secs)}. Después puede indicar que no estabas: se cobra como entregado cuando pasa tu plazo para reportar, y cuenta en tu contra. Si estabas, dilo antes: la tienda decide, y si te da la razón, no se te cobra y el repartidor responde por la comida. Mientras no se decida, aún puedes recibirlo de tu repartidor.`,
-        `Si no recoges un pedido para llevar en ${spoken(t.collection_window_secs)} desde que está listo, la tienda se queda con el precio de la comida que preparó, y cuenta en tu contra. Si la tienda no puede darte tu pedido, avísala: ella decide, y lo cancela sin cobrarte o dice que está listo, lo que te da el mismo tiempo otra vez para recogerlo. Puedes avisar una vez por pedido, y la tienda ya preparó tu comida: no poder llegar sigue siendo tuyo de pagar.`,
+        `Si no recoges un pedido para llevar en ${spoken(t.collection_window_secs)} desde que está listo, la tienda se queda con el precio de la comida que preparó, y cuenta en tu contra. Si la tienda no puede darte tu pedido, avísala: ella decide, y lo cancela sin cobrarte o dice que está listo, lo que te da el mismo tiempo otra vez para recogerlo. Puedes avisar una vez por pedido, y la tienda ya preparó tu comida: no poder llegar sigue siendo tuyo de pagar. Si una tienda acepta un pedido para llevar y luego no responde durante ${spoken(t.pickup_lapse_secs)}, puedes cerrarlo sin cobro.`,
         "Un pedido programado se envía a su tienda a su hora, desde tu app. Si la tienda está cerrada entonces, o tu dispositivo estuvo sin conexión más de media hora después, se cancela y nadie paga nada.",
         "Cada plazo que perjudica a otro si se reclama antes de tiempo (un repartidor que se va, una tienda que aparta a un repartidor, declarar que una tienda se retrasa, terminar un pedido al que no vino ningún repartidor, que un repartidor indique que nadie salió a la puerta, quedarse la comida de un cliente que no vino) se demuestra con una fuente pública de tiempo gestionada por organizaciones independientes, así que nadie puede reclamarlo antes.",
         `Un pedido puede cambiar de repartidor como máximo ${t.max_driver_changes} veces. Después puedes recogerlo o cancelarlo.`,

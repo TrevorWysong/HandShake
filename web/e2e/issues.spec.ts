@@ -100,12 +100,13 @@ test("a report of a missing item waits under Issues until the store answers it",
   await customer.getByRole("button", { name: /^Report · / }).click();
   await expect(customer.getByText("Your report is in")).toBeVisible();
 
-  // Away from the orders, the navigation says so.
+  // Away from the orders, the navigation says so -- new orders first, when
+  // there are any: theirs is the shorter clock.
   await seller.goto("/#/merchant/menu");
-  const banner = seller.getByRole("link", { name: /waiting on your answer/ });
-  await expect(banner).toBeVisible({ timeout: 90_000 });
+  await expect(seller.getByRole("link", { name: /waiting on your answer|waiting for you/ })).toBeVisible({ timeout: 90_000 });
   await keep(seller, "issues-banner");
-  await banner.click();
+  await seller.goto("/#/merchant");
+  await seller.getByRole("tab", { name: /Issues/ }).click();
   await expect(seller).toHaveURL(/tab=issues/);
   await expect(seller.getByText("The customer reported a problem").first()).toBeVisible();
   await expect(seller.getByText(/Accept or decline each report by/).first()).toBeVisible();

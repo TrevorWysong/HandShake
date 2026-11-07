@@ -36,6 +36,8 @@ pub(crate) enum CancelledFrom {
     Placed,
     /// A delivery waiting for its scheduled time.
     Scheduled,
+    /// A pickup the store's accepted and is making.
+    Preparing,
     /// A pickup ready for its customer to collect.
     Ready,
     /// A pickup its customer says they can't get -- only the store, giving
@@ -63,6 +65,8 @@ pub(crate) fn check_cancellation(update: &OrderUpdate<'_>, cancelled_from: Optio
     };
     let allowed = match reason {
         Cancellation::ByStore(_) if from == CancelledFrom::Disputed => update.author == update.merchant,
+        // A store gone silent on a customer's report, too.
+        Cancellation::Lapsed if from == CancelledFrom::Disputed => update.author == update.requester,
         _ if from == CancelledFrom::Disputed => false,
         Cancellation::ByCustomer => update.author == update.requester,
         Cancellation::ByStore(_) => update.author == update.merchant,
@@ -73,6 +77,8 @@ pub(crate) fn check_cancellation(update: &OrderUpdate<'_>, cancelled_from: Optio
         Cancellation::StoreLate => update.author == update.requester && from != CancelledFrom::Placed && from != CancelledFrom::Collecting,
         Cancellation::NoDriver => update.author == update.merchant && from == CancelledFrom::Open,
         // Their times are checked with the delivery's other rules.
+        // Its time is proved with the pickup's other rules.
+        Cancellation::Lapsed => update.author == update.requester && matches!(from, CancelledFrom::Preparing | CancelledFrom::Ready),
         Cancellation::StoreClosed | Cancellation::ScheduleMissed => update.author == update.requester && from == CancelledFrom::Scheduled,
     };
     (!allowed).then(|| format!("{reason:?} isn't a cancellation this author can give here"))
