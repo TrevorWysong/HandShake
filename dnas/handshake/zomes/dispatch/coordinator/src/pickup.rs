@@ -198,7 +198,7 @@ pub(crate) fn cancel_pickup(order_original_action: ActionHash, reason: Cancellat
 /// collection window from its being ready has passed -- with proof of the
 /// time, which validation checks: it keeps the food's price, and it counts
 /// against the customer. Never one they've said they can't get
-/// (`Disputed`): that, the store answers.
+/// (`Disputed`): that, the store answers first.
 #[hdk_extern]
 pub fn mark_pickup_not_collected(input: crate::deliveries::TimedStepInput) -> ExternResult<Record> {
     let order_ref = original_action_of(input.order_ref)?;
@@ -249,16 +249,39 @@ pub fn complete_pickup(order_original_action: ActionHash) -> ExternResult<Record
 }
 
 /// The customer telling the store they can't get their order (it isn't
-/// there, or isn't being handed over). The store then hands it over (the
-/// customer collects it as usual) or cancels it, returning their money
-/// (`decline_pickup_order`).
+/// there, or isn't being handed over), once. The store decides: it cancels,
+/// and nobody's charged (`decline_pickup_order`), or it says the order's ready
+/// (`dismiss_pickup_problem`).
 #[hdk_extern]
 pub fn report_pickup_problem(order_original_action: ActionHash) -> ExternResult<Record> {
     let (current, mut order): (_, PickupOrder) = resolve_version_decoded(order_original_action.clone(), "PickupOrder")?;
     if order.status != PickupStatus::ReadyForPickup {
         return Err(guest("You can report a problem once the store says it's ready."));
     }
+    // Validation's rule, told first.
+    if crate::issues::report_dismissed(&current.record)? {
+        return Err(guest("The store has already answered that this order is ready."));
+    }
     order.status = PickupStatus::Disputed;
     let updated = update_version(&current, &EntryTypes::PickupOrder(order), LinkTypes::Version)?;
+    written(updated)
+}
+
+/// The store answering that a pickup its customer says they can't get is
+/// ready. Their window to collect it starts again, and past it the store may
+/// record it uncollected and keep the food's price
+/// (`mark_pickup_not_collected`). Its conductor gives this answer for a store
+/// that hasn't, once its grace has run (`issues::decide_order`): nobody's
+/// charged by that alone.
+#[hdk_extern]
+pub fn dismiss_pickup_problem(order_original_action: ActionHash) -> ExternResult<Record> {
+    let (current, mut order): (_, PickupOrder) = resolve_version_decoded(order_original_action, "PickupOrder")?;
+    if order.merchant != agent_info()?.agent_initial_pubkey || order.status != PickupStatus::Disputed {
+        return Err(guest("Only the store answers a customer who says they can't get their order."));
+    }
+    order.status = PickupStatus::ReadyForPickup;
+    let requester = order.requester.clone();
+    let updated = update_version(&current, &EntryTypes::PickupOrder(order), LinkTypes::Version)?;
+    let _ = send_remote_signal(RemoteSignal::PickupReady { order_hash: updated.clone() }, vec![requester]);
     written(updated)
 }

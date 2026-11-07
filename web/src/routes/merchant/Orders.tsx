@@ -9,6 +9,7 @@ import {
   acceptPickupOrder,
   declineOrder,
   declinePickupOrder,
+  dismissPickupProblem,
   getOrderHistoryForStore,
   getOrderPrivateDetails,
   markReadyForPickup,
@@ -291,24 +292,28 @@ function IssuesQueue({ stores, storeLabel, disputed, reports, queue }: { stores:
   );
 }
 
-/// A customer saying they can't get their pickup: hand it over, or cancel so
-/// they aren't charged -- asked once more, since cancelling can't be undone.
-function CantGetAnswer({ busy, onCancel }: { busy: boolean; onCancel: () => void }) {
+/// A customer saying they can't get their pickup: the store decides. Declining
+/// says it's ready, and they pay if they don't collect it; accepting cancels with
+/// no charge -- asked once more, since it can't be undone and the store goes unpaid.
+function CantGetAnswer({ answerBy, windowSecs, busy, onDecline, onAccept }: { answerBy: number; windowSecs: number; busy: boolean; onDecline: () => void; onAccept: () => void }) {
   const t = useT();
   const [confirming, setConfirming] = useState(false);
   return (
     <div className="mt-3 rounded-xl bg-amber-50 p-3 dark:bg-amber-900/20">
-      <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">{t("merchantOrders.cantGet")}</p>
+      <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">{t("merchantOrders.cantGet", { minutes: Math.round(windowSecs / 60), time: formatDeadline(answerBy) })}</p>
       {confirming ? (
         <>
           <p className="mt-2 text-xs font-semibold leading-relaxed text-amber-900 dark:text-amber-100">{t("merchantOrders.cancelNoChargeConfirm")}</p>
           <div className="mt-2 flex gap-2">
             <Button variant="ghost" className="flex-1 py-2 text-xs" disabled={busy} onClick={() => setConfirming(false)}>{t("common.back")}</Button>
-            <Button variant="danger" className="flex-1 py-2 text-xs" loading={busy} onClick={onCancel}>{t("merchantOrders.cancelNoCharge")}</Button>
+            <Button variant="danger" className="flex-1 py-2 text-xs" loading={busy} onClick={onAccept}>{t("merchantOrders.cancelNoCharge")}</Button>
           </div>
         </>
       ) : (
-        <Button variant="ghost" className="mt-2 w-full py-2 text-xs" onClick={() => setConfirming(true)}>{t("merchantOrders.cancelNoCharge")}</Button>
+        <div className="mt-2 flex gap-2">
+          <Button variant="ghost" className="flex-1 py-2 text-xs" disabled={busy} onClick={() => setConfirming(true)}>{t("merchantOrders.cancelNoCharge")}</Button>
+          <Button className="flex-1 py-2 text-xs" loading={busy} onClick={onDecline}>{t("merchantOrders.cantGetReady")}</Button>
+        </div>
       )}
     </div>
   );
@@ -405,7 +410,8 @@ function ActiveActions(props: { row: QueueRow; busy: boolean; onAdvance: (action
 }
 
 function ActiveSteps({ row, busy, onAdvance }: { row: QueueRow; busy: boolean; onAdvance: (action: OrderAction) => void }) {
-  const minAge = useTerms().restricted_min_age;
+  const terms = useTerms();
+  const minAge = terms.restricted_min_age;
   const t = useT();
   const button = (label: string, action: OrderAction) => (
     <Button className="mt-3 w-full py-2 text-xs" loading={busy} onClick={() => onAdvance(action)}>
@@ -456,7 +462,7 @@ function ActiveSteps({ row, busy, onAdvance }: { row: QueueRow; busy: boolean; o
         </>
       );
     case "Disputed":
-      return <CantGetAnswer busy={busy} onCancel={() => onAdvance((ref) => declinePickupOrder(ref, "Other"))} />;
+      return <CantGetAnswer answerBy={row.writtenAt + terms.answer_grace_secs * 1_000_000} windowSecs={terms.collection_window_secs} busy={busy} onDecline={() => onAdvance(dismissPickupProblem)} onAccept={() => onAdvance((ref) => declinePickupOrder(ref, "Other"))} />;
     default:
       return null;
   }

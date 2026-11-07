@@ -20,13 +20,13 @@ async function keep(page: Page, name: string) {
   await page.setViewportSize(DESKTOP);
 }
 
-/// A customer's pickup at Mo's Tacos, accepted and ready, with both sides looking
-/// at it. Each test has its own customer: a store's agent caps one's card
-/// attempts an hour, against card testing.
-async function readyPickup(browser: Browser, who: string) {
+/// Ana's pickup at Mo's Tacos, accepted and ready, with both sides looking at it.
+/// Ana because the seeded world has her placing nothing of her own: the network
+/// caps a customer's orders every few minutes.
+async function readyPickup(browser: Browser) {
   const tacos = store("tacos");
   const customer = await (await browser.newContext({ viewport: DESKTOP })).newPage();
-  await signInAs(customer, who);
+  await signInAs(customer, "ana");
   await customer.locator("main").getByText(tacos.name, { exact: true }).first().click();
   await customer.getByRole("button", { name: `Add ${tacos.menu[0].name}` }).click();
   await customer.getByRole("link", { name: "Cart" }).click();
@@ -47,8 +47,9 @@ async function readyPickup(browser: Browser, who: string) {
 }
 
 async function saysItCantBeGot(customer: Page) {
-  await customer.getByRole("button", { name: "Can't get your order?" }).click();
-  await expect(customer.getByText("Just running late? Message the store instead.")).toBeVisible();
+  await customer.getByRole("button", { name: "Problem at the store?" }).click();
+  await expect(customer.getByText(/not being able to get here/)).toBeVisible();
+  await expect(customer.getByRole("dialog").getByText(store("tacos").details.phone!)).toBeVisible();
   await keep(customer, "cant-get-sheet");
   await customer.getByRole("button", { name: "Tell the store" }).click();
   await expect(customer.getByRole("status").filter({ hasText: "Waiting on the store's answer" })).toBeVisible();
@@ -56,7 +57,7 @@ async function saysItCantBeGot(customer: Page) {
 }
 
 test("a customer who can't get their order: the store cancels, and they aren't charged", async ({ browser }) => {
-  const { customer, seller } = await readyPickup(browser, "lee");
+  const { customer, seller } = await readyPickup(browser);
   await saysItCantBeGot(customer);
   await keep(customer, "cant-get-customer");
 
@@ -76,8 +77,21 @@ test("a customer who can't get their order: the store cancels, and they aren't c
   await keep(customer, "cant-get-cancelled");
 });
 
+test("a store that says it's ready has the last word", async ({ browser }) => {
+  const { customer, seller } = await readyPickup(browser);
+  await saysItCantBeGot(customer);
+  await seller.getByRole("tab", { name: /Issues/ }).click();
+  await seller.getByRole("button", { name: "It's ready" }).last().click();
+  await expect(customer.getByText(/The store says your order is ready\. Collect it by/)).toBeVisible({ timeout: 45_000 });
+  await expect(customer.getByRole("button", { name: "Problem at the store?" })).toHaveCount(0);
+  await expect(customer.getByText(store("tacos").details.phone!)).toBeVisible();
+  await keep(customer, "cant-get-dismissed");
+  await customer.getByRole("button", { name: "I picked this up" }).click();
+  await expect(customer.getByText("Missing or wrong items?")).toBeVisible();
+});
+
 test("a report of a missing item waits under Issues until the store answers it", async ({ browser }) => {
-  const { customer, seller } = await readyPickup(browser, "ana");
+  const { customer, seller } = await readyPickup(browser);
   await saysItCantBeGot(customer);
   await customer.getByRole("button", { name: "I got my order after all" }).click();
 

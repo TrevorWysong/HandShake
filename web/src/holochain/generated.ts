@@ -2409,6 +2409,11 @@ export interface OrderDecisions {
    * disputed or not, unless the store sides with the customer first.
    */
   no_show_upheld_after: Timestamp | null;
+  /**
+   * A pickup the customer said they couldn't get, and the store answered is
+   * ready: they can't report that again.
+   */
+  report_dismissed: boolean;
 }
 
 /**

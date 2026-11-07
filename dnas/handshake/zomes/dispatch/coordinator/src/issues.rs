@@ -312,6 +312,9 @@ pub struct OrderDecisions {
     /// take the order -- paid as delivered -- if the order rests on it:
     /// disputed or not, unless the store sides with the customer first.
     pub no_show_upheld_after: Option<Timestamp>,
+    /// A pickup the customer said they couldn't get, and the store answered is
+    /// ready: they can't report that again.
+    pub report_dismissed: bool,
 }
 
 /// The store's settlement of `order` (any version), if it's settled --
@@ -343,7 +346,19 @@ pub fn get_order_decisions(order: ActionHash) -> ExternResult<OrderDecisions> {
         reports_until: has_it.then(|| Timestamp::from_micros(at + window)),
         claim_decided_after: (claimed && no_show.is_none() && decisions.not_delivered.is_none()).then(|| Timestamp::from_micros(at + claim_grace_micros())),
         no_show_upheld_after: no_show.map(|word| Timestamp::from_micros(word.action().timestamp().as_micros() + window)),
+        report_dismissed: report_dismissed(&latest)?,
     })
+}
+
+/// Whether a pickup's version is the store's answer to a customer who said they
+/// couldn't get it: the only way a ready order follows a disputed one.
+pub(crate) fn report_dismissed(version: &Record) -> ExternResult<bool> {
+    let ready = decode_or::<PickupOrder>(version).is_some_and(|o| o.status == PickupStatus::ReadyForPickup);
+    let ActionData::Update(update) = &version.action().data else { return Ok(false) };
+    if !ready {
+        return Ok(false);
+    }
+    Ok(get(update.original_action_address.clone(), GetOptions::default())?.and_then(|r| decode_or::<PickupOrder>(&r)).is_some_and(|prior| prior.status == PickupStatus::Disputed))
 }
 
 /// `handshake_governance::claim_grace`, in microseconds. The store can decide
@@ -465,7 +480,16 @@ pub fn decide_order(order: ActionHash) -> ExternResult<bool> {
                 decisions.delivered.clone().map(|(outcome, _)| (outcome, latest.action().timestamp()))
             }
         }
-        (None, Some(pickup)) => (pickup.status == PickupStatus::PickedUp && latest.action().author() == &requester).then(|| (latest.action_address().clone(), latest.action().timestamp())),
+        (None, Some(pickup)) => {
+            // A customer who says they can't get it, unanswered: the store's
+            // answer is that it's ready. Nobody's charged by that alone: only
+            // by the store recording it uncollected, past their new window.
+            if pickup.status == PickupStatus::Disputed && now >= latest.action().timestamp().as_micros() + answer_grace_micros() {
+                crate::pickup::dismiss_pickup_problem(order)?;
+                return Ok(true);
+            }
+            (pickup.status == PickupStatus::PickedUp && latest.action().author() == &requester).then(|| (latest.action_address().clone(), latest.action().timestamp()))
+        }
         _ => None,
     };
 

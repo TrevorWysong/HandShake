@@ -13,6 +13,7 @@ interface Store {
   key: string;
   owner: string;
   name: string;
+  details: { phone?: string };
   menu: { name: string }[];
   promos?: { code: string }[];
 }

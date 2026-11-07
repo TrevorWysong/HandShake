@@ -8,6 +8,11 @@ import { spoken, type PolicyChange, type PolicyContent, type PolicySection } fro
 
 const changes: PolicyChange[] = [
   {
+    version: "1.7",
+    date: "2026-11-07",
+    summary: "Pickups: a customer who can't get their order can report it once, and the store decides. If it says the order is ready, they have the same time again to collect it, and pay for it if they don't.",
+  },
+  {
     version: "1.6",
     date: "2026-11-06",
     summary: "Sale prices: a store can lower an item's price for a while or on a schedule.",
@@ -204,7 +209,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         "If your driver is late, or none has your order, you can collect it from the store yourself. The food costs the same, the store's share of the delivery fee comes back to you, and nothing is charged for a driver.",
         `If you choose to collect it and don't come within ${spoken(t.collection_window_secs)}, the store keeps the price of the food it made. If you cancel while a driver is on the way and nobody's late, you pay for the food and the driver's fee, as on any app.`,
         `If nobody comes to the door, your driver records arriving (your app tells you) and waits ${spoken(t.dropoff_wait_secs)}. Then they can say you weren't there: it's paid as delivered once your report window has passed, and counts against you. If you were there, say so before then: the store decides, and if it sides with you, you're not charged and the driver answers for the food. Until it's decided, you can still take it from your driver.`,
-        `A pickup you don't collect within ${spoken(t.collection_window_secs)} of its being ready lets the store keep the price of the food it made, and counts against you. If you can't get it, say so before then: the store hands it over or refunds you.`,
+        `A pickup you don't collect within ${spoken(t.collection_window_secs)} of its being ready lets the store keep the price of the food it made, and counts against you. If the store can't give you your order, tell it: it decides, and either cancels with no charge or says the order is ready, which gives you the same time again to collect it. You can report this once per order, and the store made your food: not being able to get there is still yours to pay for.`,
         "A scheduled order is sent to its store at its time, by your app. If the store is closed then, or your device was offline for more than half an hour past it, it's cancelled instead and nobody pays anything.",
         "Every deadline that costs someone else if it's claimed early (a driver leaving, a store moving a driver on, calling a store late, ending an order no driver came for, keeping the food of a customer who never came, a driver saying nobody came to the door) is proved against a public time source run by independent organisations, so nobody can claim one early.",
         `An order can change drivers at most ${t.max_driver_changes} times. After that you can collect it or cancel it.`,
