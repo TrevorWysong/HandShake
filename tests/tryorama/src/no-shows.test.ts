@@ -9,8 +9,10 @@
 // - A customer who says they were there: the store decides. Sided with,
 //   they pay nothing and the driver's collateral pays for the food.
 // - A pickup nobody comes for: once the collection window from its being
-//   ready has passed, proved, the store keeps the food's price -- never on
-//   one the customer has said they can't get.
+//   ready has passed, proved, the store keeps the food's price.
+// - A customer who says they can't get theirs: once, and the store decides.
+//   It cancels, and nobody's charged, or it says it's ready, which starts
+//   their window again -- as does its silence. They can't say so twice.
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
@@ -24,6 +26,9 @@ const TIP = 150;
 /// past it; a report window long enough to dispute in first.
 const DOOR_WAIT = 2;
 const COLLECT_WAIT = 15;
+/// Seconds a store has to answer before its silence does: past the wait to
+/// collect, which a report holds off until then.
+const ANSWER_GRACE = 45;
 /// The time source's rounds are seconds apart: waiting this much past a
 /// deadline proves it.
 const past = (secs: number) => (secs + 8) * 1000;
@@ -38,7 +43,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const DOOR = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 await runScenario(async (scenario) => {
-  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ dropoff_wait_secs: DOOR_WAIT, collection_window_secs: COLLECT_WAIT, report_window_secs: 20 }));
+  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ dropoff_wait_secs: DOOR_WAIT, collection_window_secs: COLLECT_WAIT, answer_grace_secs: ANSWER_GRACE, report_window_secs: 20 }));
   const all = [customer, merchant, driver];
   for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
@@ -175,5 +180,46 @@ await runScenario(async (scenario) => {
   await sync();
   await sleep(past(COLLECT_WAIT));
   await assert.rejects(neverCame(cantGet)(), /Only the store records a ready order/, "never one the customer has said they can't get");
-  console.log("[PASS] ...never one the customer has said they can't get: the store hands it over or refunds them");
+  console.log("[PASS] ...not while a customer's saying they can't get it, until the store has answered");
+
+  const stranger = (ref: Uint8Array) => call(customer, "dispatch")("dismiss_pickup_problem", ref);
+  await assert.rejects(stranger(cantGet), /Only the store answers/, "the customer doesn't answer for the store");
+  await retryUntilOk(() => call(merchant, "dispatch")("dismiss_pickup_problem", cantGet));
+  await sync();
+  assert.equal((await statusOf(cantGet)).status, "ReadyForPickup", "the store says it's ready");
+  const dismissed = await retryUntil(() => call(customer, "dispatch")<{ report_dismissed: boolean }>("get_order_decisions", cantGet), (d) => d.report_dismissed);
+  assert.equal(dismissed.report_dismissed, true);
+  await assert.rejects(call(customer, "dispatch")("report_pickup_problem", cantGet), /already answered/, "they can't say it again");
+  await assert.rejects(customer.cells[0].callZome({ zome_name: "dispatch", fn_name: "report_pickup_problem_unchecked_for_testing", payload: cantGet }), /once: the store has answered/, "nor can a modified app");
+  await assert.rejects(neverCame(cantGet)(), /still has time to collect it/, "their window to collect it starts again");
+  await sleep(past(COLLECT_WAIT));
+  await retryUntilOk(neverCame(cantGet));
+  await sync();
+  await settleAll(all, cantGet);
+  assert.equal(await netOn(customer, cantGet), -FOOD, "not collecting it, they pay for the food the store made");
+  assert.equal(await netOn(merchant, cantGet), FOOD);
+  console.log("[PASS] a store that says it's ready has the last word: past their new window, a customer who didn't collect it pays");
+
+  const silent = await pickup();
+  await call(customer, "dispatch")("report_pickup_problem", silent);
+  await sync();
+  await sleep(past(ANSWER_GRACE));
+  const answered = await retryUntil(async () => {
+    await call(merchant, "dispatch")("settle_order", silent);
+    return statusOf(silent);
+  }, (order) => order.status === "ReadyForPickup");
+  assert.equal(answered.status, "ReadyForPickup", "its conductor answers for it");
+  await sync();
+  assert.equal(await netOn(customer, silent), 0, "a store's silence charges nobody by itself");
+  console.log("[PASS] a store's silence is its answer that it's ready, and charges nobody by itself");
+
+  const agreed = await pickup();
+  await call(customer, "dispatch")("report_pickup_problem", agreed);
+  await sync();
+  await retryUntilOk(() => call(merchant, "dispatch")("decline_pickup_order", { order_original_action: agreed, reason: "Other" }));
+  await sync();
+  await settleAll(all, agreed);
+  assert.equal(await netOn(customer, agreed), 0, "a store that agrees cancels it, and nobody's charged");
+  assert.equal(await netOn(merchant, agreed), 0);
+  console.log("[PASS] a store that agrees cancels it, and nobody's charged");
 });

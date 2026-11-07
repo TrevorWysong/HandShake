@@ -424,6 +424,11 @@ export async function getIssuesForOrder(orderRef: ActionHash): Promise<IssueView
   return callZome("dispatch", "get_issues_for_order", orderRef);
 }
 
+/// The store answering a customer who says they can't get their pickup: it's ready.
+export async function dismissPickupProblem(orderRef: ActionHash): Promise<unknown> {
+  return callZome("dispatch", "dismiss_pickup_problem", orderRef);
+}
+
 /// A store's orders with a report it hasn't answered yet.
 export async function getOrdersAwaitingAnswer(catalogRef: ActionHash): Promise<OrderEntry[]> {
   return callZome("dispatch", "get_orders_awaiting_answer", catalogRef);

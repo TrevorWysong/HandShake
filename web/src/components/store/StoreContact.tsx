@@ -39,6 +39,22 @@ export function StoreContact({ catalog }: { catalog: MerchantCatalog }) {
   );
 }
 
+/// How to reach the store right now, for someone with a problem at its counter:
+/// its phone and email, if it's given them. Nothing if it hasn't.
+export function StoreReach({ catalog, className }: { catalog: MerchantCatalog; className?: string }) {
+  const t = useT();
+  const tel = telHref(catalog.phone);
+  const mailto = mailtoHref(catalog.email);
+  const appLinks = opensAppLinks();
+  if (!tel && !mailto) return null;
+  return (
+    <div className={clsx("divide-y divide-ink-100 overflow-hidden rounded-2xl border border-ink-100 bg-white dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-900", className)}>
+      {tel && (appLinks ? <Row icon={<Phone size={16} />} primary={catalog.phone} secondary={t("storeContact.call")} href={tel} /> : <CopyRow icon={<Phone size={16} />} text={catalog.phone} />)}
+      {mailto && (appLinks ? <Row icon={<Mail size={16} />} primary={catalog.email} secondary={t("storeContact.email")} href={mailto} /> : <CopyRow icon={<Mail size={16} />} text={catalog.email} />)}
+    </div>
+  );
+}
+
 function RowIcon({ children }: { children: ReactNode }) {
   return <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-handshake-50 text-handshake-600 dark:bg-handshake-900/30 dark:text-handshake-400">{children}</span>;
 }

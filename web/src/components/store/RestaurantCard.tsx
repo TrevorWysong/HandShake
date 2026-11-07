@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Clock, Heart } from "lucide-react";
+import { Clock, Heart, Tag } from "lucide-react";
 import { motion } from "framer-motion";
 import type { GeoPoint, MerchantCatalog } from "../../holochain/types";
 import { deliveryEstimate } from "../../lib/driving/eta";
@@ -48,9 +48,11 @@ interface Props {
   /// that already holds the full favorited-set fetched once up front.
   favorited?: boolean;
   onToggleFavorite?: () => void;
+  /// It has a deal on, for someone looking for one.
+  deal?: boolean;
 }
 
-export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount, customer, driveMinutes = null, favorited, onToggleFavorite }: Props) {
+export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount, customer, driveMinutes = null, favorited, onToggleFavorite, deal = false }: Props) {
   const t = useT();
   const status = storeStatus(catalog, now);
   const estimate = customer ? deliveryEstimate(catalog, customer, driveMinutes) : null;
@@ -81,6 +83,11 @@ export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount,
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
               <Badge tone="neutral">{t("hours.closed")}</Badge>
             </div>
+          )}
+          {deal && (
+            <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-handshake-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+              <Tag size={10} /> {t("card.deal")}
+            </span>
           )}
           {onToggleFavorite && (
             <motion.button

@@ -189,6 +189,16 @@ mod test_utils {
 
     use dispatch_integrity::{Bid, Cancellation, DeliveryOrder, DeliveryStatus, EntryTypes, PickupOrder, PickupStatus};
 
+    /// A customer saying they can't get their pickup, without the coordinator
+    /// telling them first that they've already said so -- so a test can prove
+    /// validation refuses it on its own.
+    #[hdk_extern]
+    pub fn report_pickup_problem_unchecked_for_testing(order: ActionHash) -> ExternResult<Record> {
+        let (current, mut pickup): (_, PickupOrder) = handshake_coordinator_support::resolve_version_decoded(order, "PickupOrder")?;
+        pickup.status = PickupStatus::Disputed;
+        written(handshake_coordinator_support::update_version(&current, &EntryTypes::PickupOrder(pickup), LinkTypes::Version)?)
+    }
+
     /// Writes a `PickupOrder` exactly as given, skipping the coordinator's
     /// pricing -- what a modified client could do -- so a test can prove
     /// validation refuses a mispriced order on its own. Queued like a real

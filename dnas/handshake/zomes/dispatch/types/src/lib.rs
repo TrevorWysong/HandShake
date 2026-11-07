@@ -751,12 +751,15 @@ impl PickupStatus {
             // of which coordinator function got here, same posture as
             // DeliveryOrder's (PickedUp, Delivered) arm.
             (ReadyForPickup, PickedUp) => Some(Requester),
-            // The customer saying they can't get their order. The store
-            // either hands it over (the customer then collects it) or
-            // cancels it, returning their money.
+            // The customer saying they can't get their order, once
+            // (`pickup::validate_pickup_order_transition`). The store decides:
+            // it cancels, and nobody's charged, or it says it's ready, which
+            // starts their window to collect it again. Either way they can
+            // still confirm they got it.
             (ReadyForPickup, Disputed) => Some(Requester),
             (Disputed, PickedUp) => Some(Requester),
             (Disputed, Cancelled) => Some(Merchant),
+            (Disputed, ReadyForPickup) => Some(Merchant),
             _ => None,
         }
     }

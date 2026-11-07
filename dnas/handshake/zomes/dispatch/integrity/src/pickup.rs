@@ -122,6 +122,17 @@ pub(crate) fn validate_pickup_order_transition(
         prior_written_at: prior_record.action().timestamp(),
         written_at: action_timestamp,
     };
+    // A customer says they can't get an order once: the store's answer stands.
+    // The only way back to ready from there is that answer, so the version
+    // before this one tells.
+    if prior.status == PickupStatus::ReadyForPickup && order.status == PickupStatus::Disputed {
+        if let ActionData::Update(update) = &prior_record.action().data {
+            let before = must_get_valid_record(update.original_action_address.clone())?;
+            if before.entry().to_app_option::<PickupOrder>().map_err(|e| wasm_error!(e))?.is_some_and(|o| o.status == PickupStatus::Disputed) {
+                return Ok(ValidateCallbackResult::Invalid("a customer reports a problem collecting an order once: the store has answered".into()));
+            }
+        }
+    }
     let accepting = prior.status == PickupStatus::Placed && order.status == PickupStatus::MerchantConfirmed;
     if accepting && !update.within_response_window() {
         return Ok(ValidateCallbackResult::Invalid("the store's window to accept this order has passed".into()));

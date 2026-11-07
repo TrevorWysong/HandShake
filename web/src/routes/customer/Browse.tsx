@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Heart, PackageOpen, Search } from "lucide-react";
+import { useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { PackageOpen, Search } from "lucide-react";
 import { motion } from "framer-motion";
-import clsx from "clsx";
 import { getNearbyMerchants, getNearbyGoodieBags } from "../../holochain/zomes/catalog";
 import { RecurringDue } from "../../components/orders/RecurringDue";
 import { averageRating, getRatingSummary } from "../../holochain/zomes/reputation";
@@ -16,7 +15,11 @@ import { formatCents, nowMicros } from "../../lib/ui/format";
 import type { MerchantCatalog, GoodieBag } from "../../holochain/types";
 import { RestaurantCard } from "../../components/store/RestaurantCard";
 import { AddressSwitcher } from "../../components/places/AddressSwitcher";
-import { Chip, ChipRow, EmptyState, SectionLabel, Skeleton } from "../../components/ui";
+import { BrowseFilterBar } from "../../components/store/BrowseFilterBar";
+import { Button, EmptyState, SectionLabel, Skeleton } from "../../components/ui";
+import { applyFilters, isNarrowed, matches, NO_FILTERS, readFilters, writeFilters, type BrowseFilters, type StoreFacts } from "../../lib/storefront/browseFilters";
+import { hasDeal } from "../../lib/storefront/storeDeals";
+import { deliveryEstimate } from "../../lib/driving/eta";
 import { staggerContainer } from "../../lib/ui/motion";
 import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
@@ -34,8 +37,6 @@ interface BagRow {
   hash: Uint8Array;
   bag: GoodieBag;
 }
-
-type Sort = "relevance" | "rating" | "name";
 
 // A restaurant that just published can take a while to become discoverable
 // -- its GeohashToCatalog link has to reach whatever peer answers this
@@ -63,11 +64,11 @@ export function Browse() {
   const t = useT();
   const navigate = useNavigate();
   const location = useSession((s) => s.location);
-  const [query, setQuery] = useState("");
-  const [cuisine, setCuisine] = useState<string | null>(null);
-  const [sort, setSort] = useState<Sort>("relevance");
+  // In the address, so they're still there coming back from a store.
+  const [params, setParams] = useSearchParams();
+  const filters = useMemo(() => readFilters(params), [params]);
+  const setFilters = (next: BrowseFilters) => setParams(writeFilters(next), { replace: true });
   const { favoritesHex, toggleFavorite } = useFavorites();
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   // Keyed by the browsing cell -- changing address drops any in-flight
   // reply for the old one instead of letting it overwrite the new list.
@@ -122,32 +123,47 @@ export function Browse() {
     return map;
   }, [rows]);
 
-  const cuisines = useMemo(() => {
-    const set = new Set<string>();
-    rows?.forEach((r) => r.catalog.cuisine_type && set.add(r.catalog.cuisine_type));
-    return [...set].sort();
-  }, [rows]);
+  // Asked only once someone's looking for deals: a read of each store's promos
+  // and menu. A store with a goodie bag out has one already.
+  const storesKeyHex = rows?.map((r) => bytesToHex(r.hash)).join(",");
+  const { data: dealStores } = useResource(
+    filters.deals && rows ? `browse-deals:${storesKeyHex}` : null,
+    async () => {
+      const at = new Date();
+      const found = await Promise.all(rows!.map(async (r) => [bytesToHex(r.hash), await hasDeal(r.hash, r.catalog, at)] as const));
+      return new Set(found.filter(([, deal]) => deal).map(([hex]) => hex));
+    },
+    { pollMs: POLL.slow },
+  );
+  const bagStores = useMemo(() => new Set(bags.map((row) => bytesToHex(row.bag.catalog_ref))), [bags]);
 
-  const filtered = useMemo(() => {
-    // Name, cuisine, description and dietary tags, as people search: "tacos",
-    // "vegan", "pizza".
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const haystack = (c: MerchantCatalog) => [c.business_name, c.cuisine_type, c.description, ...(c.dietary_tags ?? [])].join(" ").toLowerCase();
-    let list = rows?.filter((r) => words.every((word) => haystack(r.catalog).includes(word))) ?? null;
-    if (list && cuisine) list = list.filter((r) => r.catalog.cuisine_type === cuisine);
-    if (list && favoritesOnly) list = list.filter((r) => favoritesHex.has(bytesToHex(r.hash)));
-    if (list) {
-      // Open stores first, the way the list reads; then the chosen order.
-      const open = (r: Row) => (storeStatus(r.catalog, now).open ? 0 : 1);
-      list = [...list].sort((a, b) => {
-        if (open(a) !== open(b)) return open(a) - open(b);
-        if (sort === "rating") return b.rating - a.rating;
-        if (sort === "name") return a.catalog.business_name.localeCompare(b.catalog.business_name);
-        return 0;
-      });
-    }
-    return list;
-  }, [rows, query, cuisine, sort, favoritesOnly, favoritesHex, now]);
+  const stores = useMemo(
+    () =>
+      rows?.map((row) => {
+        const hex = bytesToHex(row.hash);
+        const { catalog } = row;
+        const estimate = deliveryEstimate(catalog, location, driveMinutes?.get(hex) ?? null);
+        const facts: StoreFacts = {
+          name: catalog.business_name,
+          searchable: [catalog.business_name, catalog.cuisine_type, catalog.description, ...(catalog.dietary_tags ?? [])].join(" "),
+          cuisine: catalog.cuisine_type,
+          diets: catalog.dietary_tags ?? [],
+          rating: row.rating,
+          reviewCount: row.reviewCount,
+          open: storeStatus(catalog, now).open,
+          favorite: favoritesHex.has(hex),
+          deal: bagStores.has(hex) || !!dealStores?.has(hex),
+          minutes: estimate.toMinutes,
+          km: estimate.km,
+        };
+        return { row, facts };
+      }),
+    [rows, location, driveMinutes, now, favoritesHex, bagStores, dealStores],
+  );
+  const filtered = useMemo(() => stores && applyFilters(stores, (store) => store.facts, filters), [stores, filters]);
+  const options = (pick: (store: StoreFacts) => string[]) => [...new Set(stores?.flatMap((store) => pick(store.facts).filter(Boolean)))].sort();
+  const lookingForDeals = filters.deals && dealStores === undefined;
+  const narrowed = isNarrowed(filters);
 
   const openCount = (count: number) => (count === 0 ? t("browse.noneOpen") : t("browse.openCount", { count }));
 
@@ -160,8 +176,8 @@ export function Browse() {
       <div className="mb-4 flex items-center gap-2 rounded-full border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-900 px-4 py-2.5 transition focus-within:border-handshake-400 focus-within:ring-2 focus-within:ring-handshake-100">
         <Search size={16} className="text-ink-400" />
         <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={filters.query}
+          onChange={(e) => setFilters({ ...filters, query: e.target.value })}
           placeholder={t("browse.search")}
           className="w-full bg-transparent text-sm outline-none"
         />
@@ -197,46 +213,22 @@ export function Browse() {
       )}
 
       <h1 className="mb-1 text-xl font-black tracking-tight">{t("browse.title")}</h1>
-      <p className="mb-4 text-xs text-ink-400">
-        {rows === undefined ? "…" : openCount(rows.filter((r) => storeStatus(r.catalog, now).open).length)}
+      <p className="mb-3 text-xs text-ink-400">
+        {rows === undefined || filtered === null || filtered === undefined ? "…" : narrowed ? t("browse.matching", { count: filtered.length, total: rows.length }) : openCount(rows.filter((r) => storeStatus(r.catalog, now).open).length)}
       </p>
 
-      {cuisines.length > 0 && (
-        <ChipRow>
-          <Chip active={cuisine === null} onClick={() => setCuisine(null)}>
-            {t("browse.all")}
-          </Chip>
-          {cuisines.map((c) => (
-            <Chip key={c} active={cuisine === c} onClick={() => setCuisine(c)}>
-              {c}
-            </Chip>
-          ))}
-        </ChipRow>
+      {rows !== undefined && rows.length > 0 && (
+        <BrowseFilterBar
+          filters={filters}
+          onChange={setFilters}
+          cuisines={options((store) => [store.cuisine])}
+          diets={options((store) => store.diets)}
+          hasTimes={!!stores?.some((store) => store.facts.minutes !== null)}
+          countWith={(patch) => stores?.filter((store) => matches(store.facts, { ...filters, ...patch })).length ?? 0}
+        />
       )}
 
-      <div className="mb-3 flex items-center gap-2">
-        <Chip active={favoritesOnly} onClick={() => setFavoritesOnly((v) => !v)} tone="danger">
-          <span className="flex items-center gap-1">
-            <Heart size={12} fill={favoritesOnly ? "currentColor" : "none"} /> {t("browse.favorites")}
-          </span>
-        </Chip>
-        <div className="ml-auto flex items-center gap-1 rounded-full bg-ink-100 dark:bg-ink-800 p-1 text-xs font-semibold">
-          {(["relevance", "rating", "name"] as Sort[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setSort(s)}
-              className={clsx(
-                "rounded-full px-2.5 py-1 transition",
-                sort === s ? "bg-white dark:bg-ink-950 shadow-sm text-ink-900 dark:text-white" : "text-ink-400"
-              )}
-            >
-              {t(`browse.sort.${s}`)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {rows === undefined && (
+      {(rows === undefined || lookingForDeals) && (
         <div className="grid grid-cols-2 gap-3 pb-6 md:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <CardSkeleton key={i} />
@@ -244,13 +236,18 @@ export function Browse() {
         </div>
       )}
 
-      {rows !== undefined && filtered?.length === 0 && (
-        <EmptyState title={t("browse.emptyTitle")} subtitle={t("browse.emptySubtitle")} />
+      {rows !== undefined && rows.length === 0 && <EmptyState title={t("browse.emptyTitle")} subtitle={t("browse.emptySubtitle")} />}
+
+      {rows !== undefined && rows.length > 0 && !lookingForDeals && filtered?.length === 0 && (
+        <div className="pb-6">
+          <EmptyState title={t("browse.noMatchTitle")} subtitle={t("browse.noMatchSubtitle")} />
+          <Button variant="ghost" className="mx-auto -mt-8 block" onClick={() => setFilters(NO_FILTERS)}>{t("browse.filter.clear")}</Button>
+        </div>
       )}
 
-      {filtered && filtered.length > 0 && (
+      {!lookingForDeals && filtered && filtered.length > 0 && (
         <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-3 pb-6 md:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((r) => (
+          {filtered.map(({ row: r, facts }) => (
             <RestaurantCard
               key={bytesToHex(r.hash)}
               catalogHash={r.hash}
@@ -260,7 +257,8 @@ export function Browse() {
               reviewCount={r.reviewCount}
               customer={location}
               driveMinutes={driveMinutes?.get(bytesToHex(r.hash)) ?? null}
-              favorited={favoritesHex.has(bytesToHex(r.hash))}
+              favorited={facts.favorite}
+              deal={filters.deals && facts.deal}
               onToggleFavorite={() => toggleFavorite(r.hash)}
             />
           ))}

@@ -131,7 +131,7 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
       at: [-0.7, 0.5],
       // No set hours -- open whenever it's taking orders, so the browser
       // smoke tests can order from it at any time of day.
-      details: { cuisine_type: "Mexican", description: "Street tacos from the same family kitchen.", address_street: "455 1st Ave N", prep_minutes: 10 },
+      details: { cuisine_type: "Mexican", description: "Street tacos from the same family kitchen.", address_street: "455 1st Ave N", phone: "(727) 555-0134", email: "hola@mostacos.example", prep_minutes: 10 },
       menu: [
         { name: "Al Pastor Taco", price: 450, category: "Tacos" },
         { name: "Mushroom Taco", price: 425, category: "Tacos", dietary_tags: ["Vegetarian"] },

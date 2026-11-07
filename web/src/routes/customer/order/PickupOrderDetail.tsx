@@ -3,7 +3,7 @@ import { useResource } from "../../../lib/hooks/useResource";
 import { useParams } from "react-router-dom";
 import { AlertTriangle, ChefHat } from "lucide-react";
 import { motion } from "framer-motion";
-import { cancelPickupOrder, getOrderPrivateDetails, getPickupOrder, reportPickupProblem, completePickup } from "../../../holochain/zomes/dispatch";
+import { cancelPickupOrder, getOrderDecisions, getOrderPrivateDetails, getPickupOrder, reportPickupProblem, completePickup } from "../../../holochain/zomes/dispatch";
 import { fetchOrderItemNames } from "../../../lib/storefront/menu";
 import { decodeEntry, bytesEqual, bytesToHex, hexToBytes, timestampOf } from "../../../holochain/decode";
 import { getCatalog } from "../../../holochain/zomes/catalog";
@@ -29,6 +29,7 @@ import { RateOrder } from "../../../components/orders/RateOrder";
 import { useT } from "../../../i18n";
 import { useTerms } from "../../../store/network";
 import { Sheet } from "../../../components/Sheet";
+import { StoreReach } from "../../../components/store/StoreContact";
 import { OrderPayments } from "../../../components/payments/OrderPayments";
 
 
@@ -45,7 +46,7 @@ export function PickupOrderDetail() {
   const t = useT();
   // One step on the order at a time: no cancelling it while confirming it.
   const action = useAction();
-  const collectionWindowSecs = useTerms().collection_window_secs;
+  const { collection_window_secs: collectionWindowSecs, answer_grace_secs: answerGraceSecs } = useTerms();
   const [askingCantGet, setAskingCantGet] = useState(false);
 
   // `writtenAt` (when its current version was written) and `now` (when it
@@ -63,7 +64,9 @@ export function PickupOrderDetail() {
   const { data: details } = useResource(`pickup-order-details:${hash}`, () => getOrderPrivateDetails(orderRef));
   const { data: itemNames = {} } = useResource(order ? `pickup-order-items:${hash}` : null, () => fetchOrderItemNames(order!));
   const storeHex = order ? bytesToHex(order.catalog_ref) : null;
-  const { data: storeName } = useResource(storeHex && `store-name:${storeHex}`, async () => decodeEntry<MerchantCatalog>(await getCatalog(order!.catalog_ref)).business_name);
+  const { data: store } = useResource(storeHex && `store-catalog:${storeHex}`, async () => decodeEntry<MerchantCatalog>(await getCatalog(order!.catalog_ref)));
+  // Ready again on the store's answer to a report: there's no reporting it twice.
+  const { data: decisions } = useResource(order?.status === "ReadyForPickup" ? `pickup-decisions:${hash}:${snapshot?.writtenAt}` : null, () => getOrderDecisions(orderRef));
 
   if (!order) {
     return (
@@ -97,11 +100,13 @@ export function PickupOrderDetail() {
   // A merchant collecting from their own store has nothing to rate --
   // validate_review/validate_item_review reject self-ratings anyway.
   const selfOrder = bytesEqual(order.merchant, myAgentPubKey());
+  // Their window to collect it: from when it was ready, or the store said so again.
+  const collectBy = (snapshot?.writtenAt ?? 0) + collectionWindowSecs * 1_000_000;
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-10 pt-4">
       <motion.div variants={fadeSlideUp}>
-        <OrderHero progress={customerProgress({ kind: "Pickup", order })} eyebrow={storeName} estimate={orderEstimate({ kind: "Pickup", order }, null, now.getTime() * 1000)}>
+        <OrderHero progress={customerProgress({ kind: "Pickup", order })} eyebrow={store?.business_name} estimate={orderEstimate({ kind: "Pickup", order }, null, now.getTime() * 1000)}>
           <PickupStatusTimeline status={order.status} cancellation={order.cancellation} />
         </OrderHero>
       </motion.div>
@@ -156,28 +161,46 @@ export function PickupOrderDetail() {
       )}
 
       {order.status === "ReadyForPickup" && snapshot && (
-        <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
-          <div className="flex items-center gap-3">
-            <ChefHat size={20} className="shrink-0 text-handshake-600" />
-            <p className="text-sm text-handshake-700 dark:text-handshake-300">
-              {now.getTime() * 1000 < snapshot.writtenAt + collectionWindowSecs * 1_000_000 ? t("pickup.ready", { time: formatDeadline(snapshot.writtenAt + collectionWindowSecs * 1_000_000) }) : t("pickup.readyLate")}
-            </p>
-          </div>
-          <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmPickup}>
-            {t("pickup.pickedUp")}
-          </Button>
-          <button onClick={() => setAskingCantGet(true)} disabled={action.busy} className="text-xs font-semibold text-handshake-700 underline-offset-4 hover:underline disabled:opacity-50 dark:text-handshake-300">
-            {t("pickup.cantGet")}
-          </button>
-        </motion.div>
+        decisions?.report_dismissed ? (
+          <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-amber-50 p-4 dark:bg-amber-900/20">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300" />
+              <p className="text-sm text-amber-900 dark:text-amber-100">
+                {collectBy > now.getTime() * 1000 ? t("pickup.dismissed", { time: formatDeadline(collectBy) }) : t("pickup.dismissedLate")}
+              </p>
+            </div>
+            {store && <StoreReach catalog={store} />}
+            <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmPickup}>
+              {t("pickup.pickedUp")}
+            </Button>
+          </motion.div>
+        ) : (
+          <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
+            <div className="flex items-center gap-3">
+              <ChefHat size={20} className="shrink-0 text-handshake-600" />
+              <p className="text-sm text-handshake-700 dark:text-handshake-300">
+                {collectBy > now.getTime() * 1000 ? t("pickup.ready", { time: formatDeadline(collectBy) }) : t("pickup.readyLate")}
+              </p>
+            </div>
+            <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmPickup}>
+              {t("pickup.pickedUp")}
+            </Button>
+            {decisions && (
+              <button onClick={() => setAskingCantGet(true)} disabled={action.busy} className="text-xs font-semibold text-handshake-700 underline-offset-4 hover:underline disabled:opacity-50 dark:text-handshake-300">
+                {t("pickup.cantGet")}
+              </button>
+            )}
+          </motion.div>
+        )
       )}
 
-      {order.status === "Disputed" && (
+      {order.status === "Disputed" && snapshot && (
         <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-amber-50 p-4 dark:bg-amber-900/20">
           <div className="flex items-start gap-3">
             <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300" />
-            <p className="text-sm text-amber-900 dark:text-amber-100">{t("pickup.disputed")}</p>
+            <p className="text-sm text-amber-900 dark:text-amber-100">{t("pickup.disputed", { time: formatDeadline(snapshot.writtenAt + answerGraceSecs * 1_000_000) })}</p>
           </div>
+          {store && <StoreReach catalog={store} />}
           <Button variant="secondary" loading={action.doing === "complete"} disabled={action.busy} onClick={confirmPickup}>
             {t("pickup.gotItAfterAll")}
           </Button>
@@ -200,11 +223,12 @@ export function PickupOrderDetail() {
           </div>
         }
       >
-        <ul className="flex list-disc flex-col gap-2 pb-2 pl-4 text-sm text-ink-600 dark:text-ink-300">
+        <ul className="flex list-disc flex-col gap-2 pb-3 pl-4 text-sm text-ink-600 dark:text-ink-300">
           <li>{t("pickup.cantGetTold")}</li>
           <li>{t("pickup.cantGetOutcome")}</li>
           <li>{t("pickup.cantGetLate")}</li>
         </ul>
+        {store && <StoreReach catalog={store} className="mb-2" />}
       </Sheet>
 
       <OrderPointsBadge orderRef={orderRef} />
