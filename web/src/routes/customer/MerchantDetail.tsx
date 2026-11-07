@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ChevronRight, Clock, Heart, HeartPulse, Tag } from "lucide-react";
 import { motion } from "framer-motion";
+import clsx from "clsx";
 import { averageRating, getItemRatingSummary, type ItemRatingSummary } from "../../holochain/zomes/reputation";
 import { useResource } from "../../lib/hooks/useResource";
 import { useGoBack } from "../../lib/hooks/useGoBack";
@@ -140,6 +141,9 @@ function StorePage({ hash }: { hash: string }) {
   const grouped = groupByCategory(filteredItems);
   const groupedCategories = [...grouped.keys()].map((name, i) => ({ id: `menu-${i}`, name }));
   const categories = onSale.length > 0 ? [{ id: "menu-sale", name: t("store.onSale") }, ...groupedCategories] : groupedCategories;
+  // One category leaves nothing to jump between, and the menu takes its room.
+  const browsable = categories.length > 1;
+  const itemGrid = clsx("grid grid-cols-1 gap-3 md:grid-cols-2", browsable && "lg:grid-cols-1 xl:grid-cols-2");
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="pb-24 lg:pb-8">
@@ -198,13 +202,15 @@ function StorePage({ hash }: { hash: string }) {
         <StoreBags bags={bags} onAdd={(row) => cart.addLine(catalogHash, catalog.owner, catalog.business_name, bagLine(row))} />
 
         {/* The menu: categories beside it and the cart beside that, as the window allows. */}
-        <div className="mt-6 lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-8 2xl:grid-cols-[11rem_minmax(0,1fr)_18rem]">
-          <div className="hidden lg:block">
-            <MenuCategoryNav categories={categories} placement="side" label={t("store.categories")} />
-          </div>
+        <div className={clsx("mt-6 lg:grid lg:gap-8", browsable ? "lg:grid-cols-[11rem_minmax(0,1fr)] 2xl:grid-cols-[11rem_minmax(0,1fr)_18rem]" : "lg:grid-cols-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_18rem]")}>
+          {browsable && (
+            <div className="hidden lg:block">
+              <MenuCategoryNav categories={categories} placement="side" label={t("store.categories")} />
+            </div>
+          )}
 
           <div className="min-w-0">
-            <MenuCategoryNav categories={categories} placement="bar" label={t("store.categories")} className="lg:hidden" />
+            {browsable && <MenuCategoryNav categories={categories} placement="bar" label={t("store.categories")} className="lg:hidden" />}
 
             <p className="mt-4 text-xs text-ink-500 lg:mt-0 lg:mb-3 dark:text-ink-400">{t("store.allergyNotice")}</p>
             {hasAllergies(mine) && (
@@ -235,7 +241,7 @@ function StorePage({ hash }: { hash: string }) {
             {onSale.length > 0 && (
               <section id="menu-sale" className="mt-4 scroll-mt-32 rounded-2xl bg-handshake-50 p-3 lg:scroll-mt-6 dark:bg-handshake-500/10">
                 <h2 className="mb-3 flex items-center gap-1.5 text-lg font-bold tracking-tight text-ink-900 dark:text-ink-50"><Tag size={17} className="text-handshake-500" /> {t("store.onSale")}</h2>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <div className={itemGrid}>
                   {onSale.map((row) => (
                     <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && catalog.is_open} match={matchAllergies(row.item.allergens, catalog.allergy_policy, mine)} store={catalog} now={now} onAdd={() => addItem(row)} />
                   ))}
@@ -246,8 +252,8 @@ function StorePage({ hash }: { hash: string }) {
             {[...grouped.entries()].map(([category, rows], i) => (
               <section key={category} id={groupedCategories[i].id} className="mt-6 scroll-mt-32 first:mt-4 lg:scroll-mt-6">
                 <h2 className="mb-3 text-lg font-bold tracking-tight text-ink-900 dark:text-ink-50">{category}</h2>
-                {/* One column on a phone; two on a tablet, or a wide screen with room beside the categories. */}
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                {/* One column on a phone; two on a tablet, or a wide screen with room beside any categories. */}
+                <div className={itemGrid}>
                   {rows.map((row) => (
                     <MenuItemCard key={bytesToHex(row.hash)} row={row} rating={itemRatings[bytesToHex(row.hash)]} minAge={minAge} canAdd={row.item.available && catalog.is_open} match={matchAllergies(row.item.allergens, catalog.allergy_policy, mine)} store={catalog} now={now} onAdd={() => addItem(row)} />
                   ))}

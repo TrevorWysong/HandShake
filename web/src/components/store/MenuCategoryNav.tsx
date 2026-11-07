@@ -16,7 +16,6 @@ function goTo(id: string) {
 /// the menu on a wide screen.
 export function MenuCategoryNav({ categories, placement, label, className }: { categories: MenuCategory[]; placement: "bar" | "side"; label: string; className?: string }) {
   const active = useScrollSpy(categories.map((c) => c.id));
-  if (categories.length < 2) return null;
   if (placement === "side") {
     return (
       <nav aria-label={label} className={clsx("sticky top-6 flex flex-col gap-0.5", className)}>
