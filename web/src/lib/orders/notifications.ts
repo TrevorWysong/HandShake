@@ -20,6 +20,9 @@ export interface AppNotification {
   urgent: boolean;
 }
 
+/// Where a store answers a customer.
+const STORE_ISSUES = "/merchant?tab=issues";
+
 const deliveryText: Record<OrderRole, Partial<Record<DeliveryStatus, MessageKey>>> = {
   Customer: {
     Open: "notify.delivery.Customer.Open",
@@ -83,8 +86,10 @@ export function notificationFor(signal: LocalSignal | LiveSignal): AppNotificati
     const key = delivery ? deliveryText[role][change.Delivery.status] : pickupText[role][change.Pickup.status];
     const body = status === "Cancelled" ? cancelledText(role, change) : key && t(key);
     if (!body) return null;
-    const route = role === "Customer" ? (delivery ? `/customer/orders/${hex}` : `/customer/pickup-orders/${hex}`) : role === "Store" ? "/merchant" : "/driver";
-    return { title: t(status === "Cancelled" ? "notify.cancelled" : "notify.update"), body, tag: `order-${hex}`, route, urgent: false };
+    // A customer waiting on the store's answer doesn't wait for it to look.
+    const storeAnswers = role === "Store" && status === "Disputed";
+    const route = role === "Customer" ? (delivery ? `/customer/orders/${hex}` : `/customer/pickup-orders/${hex}`) : storeAnswers ? STORE_ISSUES : role === "Store" ? "/merchant" : "/driver";
+    return { title: t(status === "Cancelled" ? "notify.cancelled" : "notify.update"), body, tag: `order-${hex}`, route, urgent: storeAnswers };
   }
   if ("BidPlaced" in signal) {
     return { title: t("notify.bid.title"), body: t("notify.bid.body"), tag: `bid-${bytesToHex(signal.BidPlaced)}`, route: "/customer/orders", urgent: false };
@@ -107,7 +112,7 @@ export function notificationFor(signal: LocalSignal | LiveSignal): AppNotificati
   }
   if ("IssueReported" in signal) {
     const hex = bytesToHex(signal.IssueReported);
-    return { title: t("notify.issue.title"), body: t("notify.issue.body"), tag: `issue-${hex}`, route: "/merchant", urgent: true };
+    return { title: t("notify.issue.title"), body: t("notify.issue.body"), tag: `issue-${hex}`, route: STORE_ISSUES, urgent: true };
   }
   return null;
 }

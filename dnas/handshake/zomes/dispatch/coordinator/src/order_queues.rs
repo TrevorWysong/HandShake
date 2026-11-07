@@ -136,7 +136,7 @@ pub(crate) fn unqueue_driver(order_ref: &ActionHash, driver: &AgentPubKey) -> Ex
 
 /// The order's current state as a queue entry, with when it was placed and
 /// whether it's still in progress. `None` if the target isn't an order.
-fn classify(original_action: ActionHash) -> Option<(OrderEntry, Timestamp, bool)> {
+pub(crate) fn classify(original_action: ActionHash) -> Option<(OrderEntry, Timestamp, bool)> {
     let record = resolve_latest(original_action.clone()).ok()?;
     let (kind, requested_at, active) = if let Ok(Some(order)) = record.entry().to_app_option::<DeliveryOrder>() {
         (OrderKind::Delivery, order.requested_at, !order.status.is_terminal())
@@ -367,7 +367,7 @@ pub(crate) fn my_completions_at(catalog_ref: &ActionHash) -> ExternResult<Vec<Ac
 }
 
 /// The store an order record of `kind` is placed with.
-fn order_store(kind: OrderKind, record: &Record) -> Option<ActionHash> {
+pub(crate) fn order_store(kind: OrderKind, record: &Record) -> Option<ActionHash> {
     match kind {
         OrderKind::Delivery => decode_or::<DeliveryOrder>(record).map(|o| o.catalog_ref),
         OrderKind::Pickup => decode_or::<PickupOrder>(record).map(|o| o.catalog_ref),

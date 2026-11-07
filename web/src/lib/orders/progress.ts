@@ -76,7 +76,7 @@ function pickupProgress(status: PickupStatus): OrderProgress {
     case "PickedUp":
       return on(3, "progress.pickedUp", "arrived");
     case "Disputed":
-      return on(2, "progress.disputed", "needsYou");
+      return on(2, "progress.cantGet", "needsYou");
     case "Cancelled":
       return on(0, "progress.cancelled", "stopped");
   }
@@ -134,7 +134,7 @@ export function storeProgress(row: Pick<OrderRow, "kind" | "order">): OrderProgr
       case "PickedUp":
         return on(3, "progress.pickedUp", "arrived");
       case "Disputed":
-        return on(2, "progress.store.disputed", "needsYou");
+        return on(2, "progress.store.cantGet", "needsYou");
       case "Cancelled":
         return on(0, "progress.cancelled", "stopped");
     }

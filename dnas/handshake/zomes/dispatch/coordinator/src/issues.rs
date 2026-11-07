@@ -10,6 +10,7 @@
 //! for a while with no delivery; the settlement once the customer's report
 //! window has run, refunding what the store accepted or never answered.
 
+use crate::order_queues::{classify, order_store, OrderEntry, QueueOwnerExt};
 use crate::orders::{record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
 use dispatch_integrity::*;
 use hdk::prelude::*;
@@ -205,6 +206,47 @@ fn store_answer(issue: &ActionHash, merchant: &AgentPubKey) -> ExternResult<Opti
         }
     }
     Ok(None)
+}
+
+/// How far back a store's unanswered reports are looked for: a report can only
+/// come once a customer has their order, and one can be scheduled five days
+/// ahead of that.
+const REPORTS_SCAN_DAYS: i64 = 6;
+/// The most orders one read checks, newest first, so a busy store's costs the
+/// same however long its week.
+const REPORTS_SCAN_ORDERS: usize = 250;
+
+/// The store's orders with a report it hasn't answered and hasn't settled:
+/// what its Issues tab lists. Reads only what's already public on each order.
+#[hdk_extern]
+pub fn get_orders_awaiting_answer(catalog_ref: ActionHash) -> ExternResult<Vec<OrderEntry>> {
+    let store = QueueOwner::Store(&catalog_ref);
+    let today = history_day(sys_time()?);
+    let mut orders = Vec::new();
+    for day in ((today - REPORTS_SCAN_DAYS)..=today).rev() {
+        orders.extend(store.orders_on_day(day)?);
+        if orders.len() >= REPORTS_SCAN_ORDERS {
+            break;
+        }
+    }
+    orders.truncate(REPORTS_SCAN_ORDERS);
+    orders.sort();
+    orders.dedup();
+    // One order failing (still gossiping, say) mustn't hide the rest; the next
+    // read tries it again.
+    Ok(orders.into_iter().filter_map(|order| awaiting_answer(&catalog_ref, order).ok().flatten()).collect())
+}
+
+fn awaiting_answer(catalog_ref: &ActionHash, order: ActionHash) -> ExternResult<Option<OrderEntry>> {
+    // Most orders have no reports: this one read rules them out.
+    if get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToIssue)?, GetStrategy::default())?.is_empty() {
+        return Ok(None);
+    }
+    let Some((entry, _, _)) = classify(order.clone()) else { return Ok(None) };
+    if order_store(entry.kind, &entry.record).as_ref() != Some(catalog_ref) || decisions_of(&order)?.settlement.is_some() {
+        return Ok(None);
+    }
+    Ok(get_issues_for_order(order)?.iter().any(|issue| issue.accepted.is_none()).then_some(entry))
 }
 
 // --- the store's decisions ---

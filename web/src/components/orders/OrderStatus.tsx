@@ -66,7 +66,7 @@ function TerminalBanner({ icon, tone, children }: { icon: React.ReactNode; tone:
 }
 
 /// A DoorDash/UberEats-style vertical progress tracker. Cancelled/Disputed
-/// render as a terminal banner instead of a step position, since they don't
+/// deliveries render as a terminal banner instead of a step position, since they don't
 /// sit on the linear happy-path sequence. Each step's connecting line
 /// "fills" with a quick top-down scale animation as it completes, instead
 /// of just snapping to its done state -- the one place in this app where
@@ -117,7 +117,7 @@ function StepList({ labels, icons, current }: { labels: MessageKey[]; icons: (ty
   );
 }
 
-export function OrderStatusTimeline({ status, cancellation = null }: { status: DeliveryStatus; cancellation?: Cancellation | null }) {
+export function OrderStatusTimeline({ status, cancellation = null, viewer = "customer" }: { status: DeliveryStatus; cancellation?: Cancellation | null; viewer?: "customer" | "driver" }) {
   const t = useT();
   if (status === "Scheduled") {
     return (
@@ -136,7 +136,7 @@ export function OrderStatusTimeline({ status, cancellation = null }: { status: D
   if (status === "Disputed") {
     return (
       <TerminalBanner icon={<AlertTriangle size={20} />} tone="danger">
-        {t("status.disputed")}
+        {t(viewer === "customer" ? "status.disputed.customer" : "status.disputed.driver")}
       </TerminalBanner>
     );
   }
@@ -190,7 +190,6 @@ export function PickupStatusBadge({ status }: { status: PickupStatus }) {
 /// doc comment in `dispatch_integrity` for why this is a wholly separate
 /// vertical).
 export function PickupStatusTimeline({ status, cancellation = null }: { status: PickupStatus; cancellation?: Cancellation | null }) {
-  const t = useT();
   if (status === "Cancelled") {
     return (
       <TerminalBanner icon={<XCircle size={20} />} tone="neutral">
@@ -198,15 +197,10 @@ export function PickupStatusTimeline({ status, cancellation = null }: { status: 
       </TerminalBanner>
     );
   }
-  if (status === "Disputed") {
-    return (
-      <TerminalBanner icon={<AlertTriangle size={20} />} tone="danger">
-        {t("status.disputed")}
-      </TerminalBanner>
-    );
-  }
 
-  const currentIndex = PICKUP_STEPS.findIndex((s) => s.status === status);
+  // A customer who can't get it is still at this step: it's ready, or the
+  // store says so. Its page says what happens next.
+  const currentIndex = PICKUP_STEPS.findIndex((s) => s.status === (status === "Disputed" ? "ReadyForPickup" : status));
   const icons = [CircleDot, ChefHat, ShoppingBag, Check];
 
   return <StepList labels={PICKUP_STEPS.map((s) => s.label)} icons={icons} current={currentIndex} />;
