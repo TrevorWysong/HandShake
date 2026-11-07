@@ -56,9 +56,10 @@ export function OrderEstimateLine({ estimate }: { estimate: OrderEstimate }) {
 export function OrderHero({ progress, eyebrow, estimate = null, chips, children }: { progress: OrderProgress; eyebrow?: ReactNode; estimate?: OrderEstimate | null; chips?: ReactNode; children?: ReactNode }) {
   const t = useT();
   const { tone, headline } = progress;
-  // Open from the start when the steps are where it says why; a person who's
-  // opened or closed it keeps that, whatever happens next.
-  const [open, setOpen] = useState(tone === "stopped" || tone === "needsYou");
+  // Open whenever the steps are where it says why, as an order comes to that;
+  // a person who's opened or closed it keeps that, whatever happens next.
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const open = chosen ?? (tone === "stopped" || tone === "needsYou");
   return (
     <section className={clsx("rounded-3xl border p-4 shadow-[var(--shadow-card)] md:p-5", SURFACES[tone])}>
       <div className="flex items-start gap-3">
@@ -73,7 +74,7 @@ export function OrderHero({ progress, eyebrow, estimate = null, chips, children 
       <OrderProgressBar progress={progress} className="mt-4" />
       {children && (
         <>
-          <button type="button" onClick={() => setOpen((was) => !was)} aria-expanded={open} className="mt-3 flex w-full items-center justify-between rounded-lg py-1 text-xs font-semibold text-ink-500 transition-colors hover:text-ink-800 dark:text-ink-400 dark:hover:text-ink-100">
+          <button type="button" onClick={() => setChosen(!open)} aria-expanded={open} className="mt-3 flex w-full items-center justify-between rounded-lg py-1 text-xs font-semibold text-ink-500 transition-colors hover:text-ink-800 dark:text-ink-400 dark:hover:text-ink-100">
             {t("progress.allSteps")}
             <ChevronDown size={15} className={clsx("transition-transform", open && "rotate-180")} />
           </button>

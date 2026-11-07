@@ -81,7 +81,7 @@ export function Chip({ active, onClick, children, tone = "default" }: { active: 
 /// see index.css's doc comment on why presence-green is reserved rather
 /// than used as a generic accent.
 /// A pill-shaped tab switcher -- "Active / Past" style.
-export function SegmentedTabs<T extends string>({ tabs, value, onChange }: { tabs: readonly { value: T; label: string }[]; value: T; onChange: (value: T) => void }) {
+export function SegmentedTabs<T extends string>({ tabs, value, onChange }: { tabs: readonly { value: T; label: string; badge?: number }[]; value: T; onChange: (value: T) => void }) {
   return (
     <div role="tablist" className="flex rounded-full bg-ink-100 dark:bg-ink-800 p-1 text-xs font-semibold">
       {tabs.map((tab) => (
@@ -90,9 +90,10 @@ export function SegmentedTabs<T extends string>({ tabs, value, onChange }: { tab
           role="tab"
           aria-selected={value === tab.value}
           onClick={() => onChange(tab.value)}
-          className={clsx("rounded-full px-3 py-1 transition", value === tab.value ? "bg-white dark:bg-ink-950 shadow-sm text-ink-900 dark:text-white" : "text-ink-400")}
+          className={clsx("flex items-center gap-1.5 rounded-full px-3 py-1 transition", value === tab.value ? "bg-white dark:bg-ink-950 shadow-sm text-ink-900 dark:text-white" : "text-ink-400")}
         >
           {tab.label}
+          {!!tab.badge && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-handshake-500 px-1 text-[10px] font-bold text-white">{tab.badge}</span>}
         </button>
       ))}
     </div>

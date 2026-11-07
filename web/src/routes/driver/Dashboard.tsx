@@ -397,7 +397,7 @@ function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; loca
   return (
     <div className="flex flex-col gap-3">
     <OrderHero progress={driverProgress(row.order.status)}>
-      <OrderStatusTimeline status={row.order.status} />
+      <OrderStatusTimeline status={row.order.status} viewer="driver" />
     </OrderHero>
     <Card className="p-4">
       {row.order.ready_by !== null && BEFORE_PICKUP.includes(row.order.status) && <p className="mt-2 text-xs text-ink-500">{t("drive.readyBy", { time: formatClockTime(row.order.ready_by) })}</p>}

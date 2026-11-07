@@ -37,3 +37,14 @@ test("a recorded drop-off asks the customer to confirm it", () => {
   assert.equal(n?.route, "/customer/orders/070707");
   assert.equal(n?.urgent, true);
 });
+
+test("a customer waiting on a store's answer rings it, and opens where it answers", () => {
+  const change = { Pickup: { status: "Disputed" as const, cancellation: null } };
+  const cantGet = notificationFor({ OrderUpdated: { order_hash: order, change, role: "Store" } });
+  assert.equal(cantGet?.urgent, true);
+  assert.equal(cantGet?.route, "/merchant?tab=issues");
+  assert.equal(notificationFor({ OrderUpdated: { order_hash: order, change, role: "Customer" } })?.urgent, false);
+  const report = notificationFor({ IssueReported: order });
+  assert.equal(report?.urgent, true);
+  assert.equal(report?.route, "/merchant?tab=issues");
+});

@@ -108,10 +108,17 @@ await runScenario(async (scenario) => {
   assert.equal((await call(stranger, "dispatch")<IssueView[]>("get_issues_for_order", order))[0].evidence, null, "nobody else does");
   console.log("[PASS] reports reach the store with their notes, sealed from everyone else");
 
+  const awaitingAnswer = () => call(merchant, "dispatch")<{ original_action: Uint8Array }[]>("get_orders_awaiting_answer", store);
+  const waiting = await retryUntil(awaitingAnswer, (orders) => orders.length === 1);
+  assert.deepEqual(Buffer.from(waiting[0].original_action), Buffer.from(order), "the order's on the store's list while a report waits on it");
+
   // Who can answer.
   await assert.rejects(raw(stranger, "issue_response", { issue: missingBread, accept: false }), /only the order's store/, "a stranger can't answer");
   await call(merchant, "dispatch")("respond_to_issue", { issue: missingBread, accept: true });
+  assert.equal((await awaitingAnswer()).length, 1, "and stays while one's still unanswered");
   await call(merchant, "dispatch")("respond_to_issue", { issue: wrongStew, accept: false });
+  await retryUntil(awaitingAnswer, (orders) => orders.length === 0);
+  console.log("[PASS] a store's list of orders waiting on its answer holds exactly those");
   await assert.rejects(raw(merchant, "issue_response", { issue: missingBread, accept: false }), /once/, "nor change its answer");
   await sync();
   console.log("[PASS] only the store answers, once each");

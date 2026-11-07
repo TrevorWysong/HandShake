@@ -21,6 +21,7 @@ import { Sheet } from "../Sheet";
 import { OrderAppeal } from "./OrderAppeal";
 import { t as translate, useT, type MessageKey } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
+import { useTerms } from "../../store/network";
 
 type Role = "customer" | "store";
 
@@ -30,7 +31,14 @@ type ReportedAs = IssueKind | "Allergen";
 
 const KIND_LABEL: Record<IssueKind, MessageKey> = { Missing: "issues.missing", Wrong: "issues.wrong" };
 
-export function OrderIssues({ orderRef, role }: { orderRef: Uint8Array; role: Role }) {
+/// When the store's answers can last come: its app settles once the report
+/// window has run and every report has had its grace -- `decide_order`'s rule.
+function answerBy(decisions: OrderDecisions, issues: IssueView[], graceSecs: number): number | null {
+  if (decisions.reports_until === null) return null;
+  return Math.max(decisions.reports_until, ...issues.filter((issue) => issue.accepted === null).map((issue) => issue.reported_at + graceSecs * 1_000_000));
+}
+
+export function OrderIssues({ orderRef, role, onAnswered }: { orderRef: Uint8Array; role: Role; onAnswered?: () => void }) {
   const hex = bytesToHex(orderRef);
   const refresh = { pollMs: POLL.unsignalled, refreshOn: (s: object) => "IssueReported" in s || "OrderUpdated" in s || "OrderChanged" in s };
   const { data: decisions } = useResource(`order-decisions:${hex}`, () => getOrderDecisions(orderRef), refresh);
@@ -38,11 +46,13 @@ export function OrderIssues({ orderRef, role }: { orderRef: Uint8Array; role: Ro
   const { data: items } = useResource(`issue-items:${hex}`, () => getIssueItems(orderRef));
   const [reporting, setReporting] = useState(false);
   const now = useClock(30_000).getTime() * 1000;
+  const graceSecs = useTerms().answer_grace_secs;
 
   if (!decisions || !issues || !items || decisions.not_delivered) return null;
   const open = decisions.refund === null;
   // The report window's run its course; the store's app is settling it.
-  const settling = open && decisions.reports_until !== null && now >= decisions.reports_until;
+  const answersUntil = answerBy(decisions, issues, graceSecs);
+  const settling = open && answersUntil !== null && now >= (role === "store" ? answersUntil : decisions.reports_until!);
   if (!open && issues.length === 0) return null;
   if (role === "store" && issues.length === 0) return <StorePayoutNote decisions={decisions} orderTotal={items.order_total} />;
 
@@ -54,14 +64,14 @@ export function OrderIssues({ orderRef, role }: { orderRef: Uint8Array; role: Ro
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-bold text-ink-900 dark:text-ink-50">{headline(role, decisions, issues.length, settling)}</p>
-          <p className="mt-0.5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{subline(role, decisions, settling)}</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{subline(role, decisions, settling, answersUntil)}</p>
         </div>
       </div>
 
       {issues.length > 0 && (
         <ul className="divide-y divide-ink-100 border-t border-ink-100 dark:divide-ink-800 dark:border-ink-800">
           {issues.map((issue) => (
-            <IssueRow key={bytesToHex(issue.issue)} issue={issue} items={items} role={role} canAnswer={role === "store" && open} onAnswered={reload} />
+            <IssueRow key={bytesToHex(issue.issue)} issue={issue} items={items} role={role} canAnswer={role === "store" && open} onAnswered={async () => { await reload(); onAnswered?.(); }} />
           ))}
         </ul>
       )}
@@ -101,11 +111,15 @@ function headline(role: Role, decisions: OrderDecisions, count: number, settling
   return count ? translate("issues.reportIn") : translate("issues.ask");
 }
 
-function subline(role: Role, decisions: OrderDecisions, settling: boolean): string {
-  if (decisions.refund !== null) return role === "customer" ? translate("issues.returned") : translate("issues.restYours");
+function subline(role: Role, decisions: OrderDecisions, settling: boolean, answersUntil: number | null): string {
+  if (decisions.refund !== null) {
+    const refunded = decisions.refund > 0;
+    if (role === "customer") return translate(refunded ? "issues.returned" : "issues.chargedInFull");
+    return translate(refunded ? "issues.restYours" : "issues.allYours");
+  }
   if (settling) return translate("issues.windowClosed");
+  if (role === "store") return answersUntil !== null ? translate("issues.storeAnswerBy", { time: formatDeadline(answersUntil) }) : translate("issues.storeAnswer");
   const until = decisions.reports_until !== null ? formatDeadline(decisions.reports_until) : null;
-  if (role === "store") return until ? translate("issues.storeAnswerBy", { time: until }) : translate("issues.storeAnswer");
   return until ? translate("issues.reportUntil", { time: until }) : translate("issues.reportForAWhile");
 }
 

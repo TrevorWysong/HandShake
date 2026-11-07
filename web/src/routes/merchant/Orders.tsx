@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { TimeAgo } from "../../components/TimeAgo";
-import { Bike, ClipboardList, ShoppingBag, Store } from "lucide-react";
+import { Bike, ClipboardList, ShieldCheck, ShoppingBag, Store } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import {
@@ -27,8 +28,10 @@ import { OrderProgressBar } from "../../components/orders/OrderProgressBar";
 import { AllergyRequest } from "../../components/store/Allergens";
 import { itemCount, leftTheStore, mergeNewestFirst, received } from "../../lib/orders/orderEntries";
 import { useMyStores, type StoreRow } from "../../store/merchantStores";
+import { isDisputed, useMerchantIssues } from "../../store/merchantIssues";
+import { InfoSheet } from "../../components/InfoSheet";
 import { fetchActiveQueue, storesKey, toRow, type QueueRow } from "../../store/merchantQueue";
-import { useResource } from "../../lib/hooks/useResource";
+import { useResource, type Resource } from "../../lib/hooks/useResource";
 import { describeError } from "../../lib/ui/errors";
 import { useAction } from "../../lib/hooks/useAction";
 import { useClock } from "../../lib/hooks/useClock";
@@ -61,8 +64,11 @@ import { useT, type MessageKey } from "../../i18n";
 
 const TABS = [
   { value: "active", label: "merchantOrders.tab.active" },
+  { value: "issues", label: "merchantOrders.tab.issues" },
   { value: "history", label: "merchantOrders.tab.history" },
 ] as const satisfies readonly { value: string; label: MessageKey }[];
+
+type Tab = (typeof TABS)[number]["value"];
 
 /// "All stores" isn't a store hex, so it can't collide with one.
 const ALL_STORES = "all";
@@ -73,7 +79,8 @@ const PREP_CHOICES = [5, 10, 15, 20, 30, 45, 60];
 
 /// A merchant's orders across every store they run, the way a DoorDash/
 /// Uber Eats store tablet splits them: the **active** queue (what the
-/// kitchen is working on, oldest first, polled) and **history** (every
+/// kitchen is working on, oldest first, polled), **issues** (customers
+/// waiting on the store's answer, each on a clock) and **history** (every
 /// order, newest first, paginated, read on demand). Each store's queues are
 /// its own on the DHT (see `dispatch_integrity::order_queues`); with several
 /// stores, every order is labelled with its store, since "which kitchen
@@ -83,7 +90,10 @@ export function MerchantOrders() {
   const stores = useMyStores();
   useStoreSteps((stores?.length ?? 0) > 0);
   const [filter, setFilter] = useState(ALL_STORES);
-  const [tab, setTab] = useState<"active" | "history">("active");
+  // In the address, so a notification can open the tab it's about.
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = TABS.find((x) => x.value === params.get("tab"))?.value ?? "active";
+  const setTab = (next: Tab) => setParams(next === "active" ? {} : { tab: next }, { replace: true });
 
   // A store filter that no longer matches anything (e.g. stale state)
   // quietly falls back to everything rather than showing an empty queue.
@@ -91,6 +101,16 @@ export function MerchantOrders() {
   const visibleStores = useMemo(() => (stores ?? []).filter((s) => effectiveFilter === ALL_STORES || s.hex === effectiveFilter), [stores, effectiveFilter]);
   const storeName = useMemo(() => new Map((stores ?? []).map((s) => [s.hex, s.catalog.business_name])), [stores]);
   const multiStore = (stores?.length ?? 0) > 1;
+  // Read here, not in a tab: the Issues tab's count shows from any of them.
+  const queue = useResource(visibleStores.length > 0 ? `merchant-active:${storesKey(visibleStores)}` : null, async () => ({ rows: await fetchActiveQueue(visibleStores), now: Date.now() }), {
+    pollMs: POLL.signalled,
+    refreshOn: isOrderSignal,
+  });
+  const issues = useMerchantIssues();
+  const shown = new Set(visibleStores.map((s) => s.hex));
+  const disputed = queue.data?.rows.filter(isDisputed) ?? [];
+  const reports = issues.reports?.filter((row) => shown.has(row.storeHex));
+  const issueCount = disputed.length + (reports?.length ?? 0) + issues.appeals.length;
 
   if (stores === null) return <QueueSkeleton />;
   if (stores.length === 0) {
@@ -104,9 +124,8 @@ export function MerchantOrders() {
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pt-4 pb-8">
       <motion.div variants={fadeSlideUp} className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-black tracking-tight text-ink-900 dark:text-ink-50">{t("nav.orders")}</h1>
-        <SegmentedTabs tabs={TABS.map((x) => ({ ...x, label: t(x.label) }))} value={tab} onChange={setTab} />
+        <SegmentedTabs tabs={TABS.map((x) => ({ ...x, label: t(x.label), badge: x.value === "issues" ? issueCount : 0 }))} value={tab} onChange={setTab} />
       </motion.div>
-      <StoreAppeals />
       {multiStore && (
         <ChipRow>
           <Chip active={effectiveFilter === ALL_STORES} onClick={() => setFilter(ALL_STORES)} tone="brand">
@@ -121,9 +140,9 @@ export function MerchantOrders() {
       )}
       {/* Keyed by the stores shown: changing the filter mounts a fresh list
           (and, for history, fresh pagination) instead of resetting state. */}
-      {tab === "active" ? (
-        <ActiveQueue key={storesKey(visibleStores)} stores={visibleStores} storeLabel={label} scope={scope} />
-      ) : (
+      {tab === "active" && <ActiveQueue key={storesKey(visibleStores)} stores={visibleStores} storeLabel={label} scope={scope} queue={queue} />}
+      {tab === "issues" && <IssuesQueue stores={visibleStores} storeLabel={label} disputed={disputed} reports={reports} queue={queue} />}
+      {tab === "history" && (
         <OrderHistory key={storesKey(visibleStores)} stores={visibleStores} storeLabel={label} scope={scope} />
       )}
     </motion.div>
@@ -149,37 +168,16 @@ interface ListProps {
 /// Polled, and re-read on every dispatch signal (a new order, a status
 /// change) -- cheap because the active queue only ever holds in-progress
 /// orders. Oldest first: the order a kitchen works through them.
-function ActiveQueue({ stores, storeLabel, scope }: ListProps) {
-  const [busyHex, setBusyHex] = useState<string | null>(null);
+function ActiveQueue({ stores, storeLabel, scope, queue }: ListProps & { queue: Queue }) {
   const t = useT();
-  // Why an action on an order failed, by order -- e.g. an order the store
-  // can't accept because it's priced from an outdated menu.
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const { busyHex, errors, advance } = useOrderSteps(queue.reload);
   const terms = useTerms();
   const windowSecs = terms.store_response_secs;
   // `now` is when this snapshot was read -- what each order's window is
   // judged against, refreshed with every poll.
-  const { data, reload } = useResource(`merchant-active:${storesKey(stores)}`, async () => ({ rows: await fetchActiveQueue(stores), now: Date.now() }), {
-    pollMs: POLL.signalled,
-    refreshOn: isOrderSignal,
-  });
-  const rows = data?.rows;
-  async function advance(row: QueueRow, action: OrderAction) {
-    setBusyHex(row.hex);
-    setErrors((prev) => {
-      const next = { ...prev };
-      delete next[row.hex];
-      return next;
-    });
-    try {
-      await action(row.ref);
-      await reload();
-    } catch (err) {
-      setErrors((prev) => ({ ...prev, [row.hex]: describeError(err) }));
-    } finally {
-      setBusyHex(null);
-    }
-  }
+  const data = queue.data;
+  // A customer waiting on the store's answer is under Issues, not the kitchen's.
+  const rows = data?.rows.filter((row) => !isDisputed(row));
 
   if (rows === undefined) return <QueueSkeleton />;
   if (rows.length === 0) {
@@ -219,6 +217,102 @@ function ActiveQueue({ stores, storeLabel, scope }: ListProps) {
 }
 
 type OrderAction = (ref: Uint8Array) => Promise<unknown>;
+
+type Queue = Resource<{ rows: QueueRow[]; now: number }>;
+
+/// Taking a step on an order, one at a time, and why it failed if it did --
+/// e.g. an order the store can't accept because it's priced from an outdated
+/// menu.
+function useOrderSteps(reload: () => Promise<void>) {
+  const [busyHex, setBusyHex] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  async function advance(row: QueueRow, action: OrderAction) {
+    setBusyHex(row.hex);
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[row.hex];
+      return next;
+    });
+    try {
+      await action(row.ref);
+      await reload();
+    } catch (err) {
+      setErrors((prev) => ({ ...prev, [row.hex]: describeError(err) }));
+    } finally {
+      setBusyHex(null);
+    }
+  }
+  return { busyHex, errors, advance };
+}
+
+/// Everything a customer is waiting on the store to answer, soonest to matter
+/// first: someone who can't get their order right now, reports of missing or
+/// wrong items (unanswered, they're refunded), and appeals of its decisions.
+/// Answered, each leaves this list; its order stays in History.
+function IssuesQueue({ stores, storeLabel, disputed, reports, queue }: { stores: StoreRow[]; storeLabel: (storeHex: string) => string | null; disputed: QueueRow[]; reports: QueueRow[] | undefined; queue: Queue }) {
+  const t = useT();
+  const { busyHex, errors, advance } = useOrderSteps(queue.reload);
+  const terms = useTerms();
+  const { appeals, refresh } = useMerchantIssues();
+  const refreshIssues = () => refresh(stores, terms.appeals);
+  const sections = (["reports", "cantGet", "neverArrived", ...(terms.appeals ? (["appeals"] as const) : [])] as const).map((part) => ({ title: t(`merchantIssues.how.${part}`), body: t(`merchantIssues.how.${part}Detail`) }));
+
+  if (queue.data === undefined || reports === undefined) return <QueueSkeleton />;
+  const empty = disputed.length + reports.length + appeals.length === 0;
+  return (
+    <>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-xs text-ink-500 dark:text-ink-400">{!empty && t("merchantIssues.intro")}</p>
+        <InfoSheet title={t("merchantIssues.howTitle")} sections={sections} />
+      </div>
+      {empty && <EmptyState icon={<ShieldCheck size={32} />} title={t("merchantIssues.none")} subtitle={t("merchantIssues.noneDetail")} />}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start">
+        <AnimatePresence initial={false}>
+          {disputed.map((row) => (
+            <motion.div key={row.hex} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <OrderCard row={row} storeLabel={storeLabel(row.storeHex)}>
+                {errors[row.hex] && <Notice tone="warn" className="mt-2">{errors[row.hex]}</Notice>}
+                <ActiveActions row={row} busy={busyHex === row.hex} onAdvance={(action) => advance(row, action)} />
+                {row.kind === "Pickup" && <ChatPanel orderRef={row.ref} title={t("merchantOrders.chat")} counterpart={t("chat.customer")} collapsible />}
+              </OrderCard>
+            </motion.div>
+          ))}
+          {reports.map((row) => (
+            <motion.div key={row.hex} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <OrderCard row={row} storeLabel={storeLabel(row.storeHex)} showTime>
+                <OrderIssues orderRef={row.ref} role="store" onAnswered={() => void refreshIssues().catch(() => undefined)} />
+              </OrderCard>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        {appeals.length > 0 && <div className="lg:col-span-2"><StoreAppeals waiting={appeals} onAnswered={refreshIssues} /></div>}
+      </div>
+    </>
+  );
+}
+
+/// A customer saying they can't get their pickup: hand it over, or cancel so
+/// they aren't charged -- asked once more, since cancelling can't be undone.
+function CantGetAnswer({ busy, onCancel }: { busy: boolean; onCancel: () => void }) {
+  const t = useT();
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="mt-3 rounded-xl bg-amber-50 p-3 dark:bg-amber-900/20">
+      <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">{t("merchantOrders.cantGet")}</p>
+      {confirming ? (
+        <>
+          <p className="mt-2 text-xs font-semibold leading-relaxed text-amber-900 dark:text-amber-100">{t("merchantOrders.cancelNoChargeConfirm")}</p>
+          <div className="mt-2 flex gap-2">
+            <Button variant="ghost" className="flex-1 py-2 text-xs" disabled={busy} onClick={() => setConfirming(false)}>{t("common.back")}</Button>
+            <Button variant="danger" className="flex-1 py-2 text-xs" loading={busy} onClick={onCancel}>{t("merchantOrders.cancelNoCharge")}</Button>
+          </div>
+        </>
+      ) : (
+        <Button variant="ghost" className="mt-2 w-full py-2 text-xs" onClick={() => setConfirming(true)}>{t("merchantOrders.cancelNoCharge")}</Button>
+      )}
+    </div>
+  );
+}
 
 /// A new order, waiting on the store: Accept -- the store's check that it's
 /// priced from the current menu (the zome refuses it otherwise) and, for a
@@ -362,12 +456,7 @@ function ActiveSteps({ row, busy, onAdvance }: { row: QueueRow; busy: boolean; o
         </>
       );
     case "Disputed":
-      return (
-        <>
-          {note(t("merchantOrders.cantGet"))}
-          {button(t("merchantOrders.refund"), (ref) => declinePickupOrder(ref, "Other"))}
-        </>
-      );
+      return <CantGetAnswer busy={busy} onCancel={() => onAdvance((ref) => declinePickupOrder(ref, "Other"))} />;
     default:
       return null;
   }

@@ -424,6 +424,11 @@ export async function getIssuesForOrder(orderRef: ActionHash): Promise<IssueView
   return callZome("dispatch", "get_issues_for_order", orderRef);
 }
 
+/// A store's orders with a report it hasn't answered yet.
+export async function getOrdersAwaitingAnswer(catalogRef: ActionHash): Promise<OrderEntry[]> {
+  return callZome("dispatch", "get_orders_awaiting_answer", catalogRef);
+}
+
 /// An order's items as reports are made against them, and what the food
 /// cost -- readable by its store as well as its customer.
 /// An order's lines as people read them: item, quantity, price with its

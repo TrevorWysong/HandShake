@@ -1,28 +1,21 @@
 // Appeals of the store's decisions waiting for its side -- on any order,
-// however old -- at the top of its orders.
+// however old -- under its Issues tab.
 import { useState } from "react";
 import { Gavel } from "lucide-react";
-import { answerAppeal, getAppealsAgainstMe } from "../../holochain/zomes/dispatch";
+import { answerAppeal } from "../../holochain/zomes/dispatch";
 import { bytesToHex } from "../../holochain/decode";
 import type { AppealView } from "../../holochain/types";
 import { formatCents } from "../../lib/ui/format";
-import { POLL } from "../../lib/network/poll";
-import { useResource } from "../../lib/hooks/useResource";
-import { useTerms } from "../../store/network";
 import { EvidenceSheet } from "./OrderAppeal";
 import { Button, Card } from "../ui";
 import { useT } from "../../i18n";
 
-export function StoreAppeals() {
-  const appeals = useTerms().appeals;
+export function StoreAppeals({ waiting, onAnswered }: { waiting: AppealView[]; onAnswered: () => Promise<void> }) {
   const t = useT();
-  const { data, reload } = useResource(appeals ? "appeals-against-me" : null, getAppealsAgainstMe, { pollMs: POLL.slow });
   const [answering, setAnswering] = useState<AppealView | null>(null);
-  // The newest page: an appeal waits on its store only for a while.
-  const waiting = (data?.appeals ?? []).filter((a) => !a.answered && !a.ruling);
   if (waiting.length === 0) return null;
   return (
-    <Card className="mb-4 p-4">
+    <Card className="p-4">
       <p className="flex items-center gap-2 font-bold text-ink-900 dark:text-ink-50">
         <Gavel size={16} /> {t("appeal.storeWaiting", { count: waiting.length })}
       </p>
@@ -48,7 +41,7 @@ export function StoreAppeals() {
           onSend={async ({ note, photo }) => {
             await answerAppeal({ appeal: answering.appeal, note, photo_data_uri: photo });
             setAnswering(null);
-            await reload();
+            await onAnswered();
           }}
         />
       )}
