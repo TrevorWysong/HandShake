@@ -1784,6 +1784,8 @@ export const en = {
   "menuEditor.ageRestricted": "Age-restricted (alcohol, tobacco): {age}+, collected in person with ID",
   "menuEditor.choices": "Choices, in the order customers see them",
   "menuEditor.save": "Save changes",
+  "menuEditor.price": "Price",
+  "menuEditor.priceProblem": "A price can't be below zero.",
   "menuEditor.choicesList": "Choices: {choices}",
   "menuEditor.remove": "Remove from menu",
   "menuEditor.removeConfirm": "{name} comes off your menu and can't be ordered. Orders that had it keep it. A promo or reward that gives it can't be used for it any more. To sell it again, add it as a new item.",

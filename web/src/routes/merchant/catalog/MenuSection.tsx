@@ -154,9 +154,10 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
   const salePrice = form.sale ? saleProblem(form.sale, toMinorUnits(form.price)) : null;
+  const priceProblem = !Number.isFinite(form.price) || form.price < 0;
 
   const save = () => saving.run(async () => {
-    if (!form.name.trim() || salePrice) return;
+    if (!form.name.trim() || salePrice || priceProblem) return;
     const fields = {
       name: form.name.trim(),
       price_cents: toMinorUnits(form.price),
@@ -185,8 +186,9 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
       <div className="flex gap-3">
         <PhotoInput value={form.photo_data_uri} onChange={(v) => set({ photo_data_uri: v })} shape="circle" className="shrink-0" />
         <div className="flex flex-1 flex-col gap-2">
-          <Input maxLength={MAX_NAME_CHARS} value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("menuEditor.name")} />
-          <Input type="number" min={0} step={0.5} value={form.price} onChange={(e) => set({ price: Number(e.target.value) })} placeholder="0.00" prefix={currencySymbol()} />
+          <Input maxLength={MAX_NAME_CHARS} value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("menuEditor.name")} aria-label={t("menuEditor.name")} />
+          <Input type="number" min={0} step={0.5} value={form.price} onChange={(e) => set({ price: Number(e.target.value) })} placeholder="0.00" prefix={currencySymbol()} aria-label={t("menuEditor.price")} aria-invalid={priceProblem} />
+          {priceProblem && <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{t("menuEditor.priceProblem")}</p>}
         </div>
       </div>
       <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={form.description} onChange={(e) => set({ description: e.target.value })} rows={2} placeholder={t("storeSettings.description")} />
@@ -244,7 +246,7 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
         </div>
       )}
       {saving.error && <Notice>{saving.error}</Notice>}
-      <Button loading={saving.doing === "save"} disabled={!form.name.trim() || saving.busy} onClick={save} className="py-2 text-xs">
+      <Button loading={saving.doing === "save"} disabled={!form.name.trim() || priceProblem || saving.busy} onClick={save} className="py-2 text-xs">
         {row ? t("menuEditor.save") : t("menuEditor.addToMenu")}
       </Button>
       {row && <RemoveItem name={row.item.name} busy={saving.busy} removing={saving.doing === "remove"} onRemove={remove} />}

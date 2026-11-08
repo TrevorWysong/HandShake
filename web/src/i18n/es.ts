@@ -1779,6 +1779,8 @@ export const es: Catalog = {
   "menuEditor.ageRestricted": "Con restricción de edad (alcohol, tabaco): {age}+, se recoge en persona con identificación",
   "menuEditor.choices": "Opciones, en el orden en que las ven los clientes",
   "menuEditor.save": "Guardar cambios",
+  "menuEditor.price": "Precio",
+  "menuEditor.priceProblem": "Un precio no puede ser menor que cero.",
   "menuEditor.choicesList": "Opciones: {choices}",
   "menuEditor.remove": "Quitar del menú",
   "menuEditor.removeConfirm": "{name} sale de tu menú y no se puede pedir. Los pedidos que lo tenían lo conservan. Una promoción o recompensa que lo da ya no podrá usarse para él. Para venderlo de nuevo, agrégalo como artículo nuevo.",
