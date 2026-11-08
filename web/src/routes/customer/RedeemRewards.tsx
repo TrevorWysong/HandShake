@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { formatNumber } from "../../lib/ui/format";
 import { useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Check, Crown, Lock, ShoppingBag, Sparkles } from "lucide-react";
@@ -88,7 +89,7 @@ export function RedeemRewards() {
         <div className="relative mt-1 flex items-end gap-2">
           <AnimatePresence mode="popLayout">
             <motion.span key={available} initial={{ y: 14, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -14, opacity: 0 }} className="text-5xl font-black tabular-nums tracking-tight">
-              {available.toLocaleString()}
+              {formatNumber(available)}
             </motion.span>
           </AnimatePresence>
           <span className="mb-1.5 text-sm font-bold text-white/80">{program.points_name}</span>
@@ -101,12 +102,12 @@ export function RedeemRewards() {
           )}
           {inBag && (
             <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm">
-              <ShoppingBag size={11} /> {t("redeem.held", { points: held.toLocaleString(), name: program.points_name })}
+              <ShoppingBag size={11} /> {t("redeem.held", { points: formatNumber(held), name: program.points_name })}
             </span>
           )}
           {card.pending_points > 0 && (
             <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm">
-              <Sparkles size={11} /> {t("rewards.pendingChip", { points: card.pending_points.toLocaleString(), name: program.points_name })}
+              <Sparkles size={11} /> {t("rewards.pendingChip", { points: formatNumber(card.pending_points), name: program.points_name })}
             </span>
           )}
         </div>
@@ -122,7 +123,7 @@ export function RedeemRewards() {
               className={clsx("shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold tabular-nums transition", bucket === cost ? "text-white shadow-sm" : "bg-white text-ink-600 dark:bg-ink-900 dark:text-ink-300")}
               style={bucket === cost ? { background: colors.to } : undefined}
             >
-              {cost === null ? t("redeem.all") : t("redeem.bucket", { points: cost.toLocaleString() })}
+              {cost === null ? t("redeem.all") : t("redeem.bucket", { points: formatNumber(cost) })}
             </button>
           ))}
         </div>
@@ -188,7 +189,7 @@ export function RedeemRewards() {
                       <Check size={16} strokeWidth={3} /> {t("redeem.added")}
                     </>
                   ) : (
-                    t("redeem.cta", { points: opening.cost.toLocaleString(), name: program.points_name })
+                    t("redeem.cta", { points: formatNumber(opening.cost), name: program.points_name })
                   )}
                 </Button>
               )}
@@ -221,7 +222,7 @@ export function RedeemRewards() {
             <div className="mt-4 flex items-center justify-between rounded-2xl bg-ink-50 px-4 py-3 text-sm dark:bg-ink-800/60">
               <span className="text-ink-500">{t("redeem.after")}</span>
               <span className="font-black tabular-nums text-ink-900 dark:text-ink-50">
-                {(spendable(opening) - opening.cost).toLocaleString()} {program.points_name}
+                {formatNumber(spendable(opening) - opening.cost)} {program.points_name}
               </span>
             </div>
             <p className="mt-3 text-xs leading-relaxed text-ink-400">{t("redeem.how")}</p>
@@ -264,14 +265,14 @@ function RedeemTile({ program, reward, balance, tier, menu, inBag, onOpen }: { p
       <div className="p-3">
         <p className="line-clamp-2 min-h-[2.5rem] text-sm font-bold leading-tight text-ink-900 dark:text-ink-50">{reward.name}</p>
         <p className="mt-1 text-xs font-black tabular-nums" style={{ color: colors.to }}>
-          {reward.cost.toLocaleString()} {program.points_name}
+          {formatNumber(reward.cost)} {program.points_name}
         </p>
         {state === "points" && !inBag && (
           <div className="mt-2">
             <div className="h-1.5 overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
               <motion.div className="h-full rounded-full" style={{ background: colors.to }} initial={{ width: 0 }} animate={{ width: `${Math.min(1, balance / reward.cost) * 100}%` }} transition={{ duration: 0.8 }} />
             </div>
-            <p className="mt-1 text-[11px] text-ink-400">{t("rewards.toGo", { points: (reward.cost - balance).toLocaleString() })}</p>
+            <p className="mt-1 text-[11px] text-ink-400">{t("rewards.toGo", { points: formatNumber(reward.cost - balance) })}</p>
           </div>
         )}
         {state === "tier" && (

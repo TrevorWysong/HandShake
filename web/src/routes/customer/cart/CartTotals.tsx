@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { Card, StatNumber } from "../../../components/ui";
 import { ACCENTS } from "../../../lib/rewards/rewards";
-import { formatCents } from "../../../lib/ui/format";
+import { formatCents, formatNumber } from "../../../lib/ui/format";
 import { fadeSlideUp } from "../../../lib/ui/motion";
 import type { RewardsProgram, TaxRate } from "../../../holochain/types";
 import { useT } from "../../../i18n";
@@ -65,7 +65,7 @@ export function CartTotals({ fulfillment, subtotalCents, price, promo, reward, t
         {program && pointsPreview > 0 && (
           <>
             <p className="mt-1 flex items-center justify-end gap-1 text-xs font-bold" style={{ color: accent }}>
-              <Sparkles size={12} /> {t("rewards.willEarn", { points: pointsPreview.toLocaleString(), name: program.points_name })}
+              <Sparkles size={12} /> {t("rewards.willEarn", { points: formatNumber(pointsPreview), name: program.points_name })}
             </p>
             <p className="text-right text-[11px] text-ink-400">{t("rewards.arriveAfterRefunds")}</p>
           </>

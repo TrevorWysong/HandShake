@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { formatNumber } from "../../lib/ui/format";
 import { Check, Clock, Hourglass, Scale } from "lucide-react";
 import { Link } from "react-router-dom";
 import clsx from "clsx";
@@ -22,7 +23,7 @@ export function PendingChip({ points, name }: { points: number; name: string }) 
   if (points <= 0) return null;
   return (
     <motion.span initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm">
-      <Clock size={11} /> {t("rewards.pendingChip", { points: points.toLocaleString(), name })}
+      <Clock size={11} /> {t("rewards.pendingChip", { points: formatNumber(points), name })}
     </motion.span>
   );
 }
@@ -46,7 +47,7 @@ export function PendingList({ program, pending }: { program: RewardsProgram; pen
               <p className="truncate text-xs text-ink-400">{pendingLine(p.status, t)}</p>
             </div>
             <span className="text-sm font-black tabular-nums opacity-70" style={{ color: colors.to }}>
-              +{p.points.toLocaleString()}
+              +{formatNumber(p.points)}
             </span>
           </li>
         ))}
@@ -80,7 +81,7 @@ export function OrderPointsBadge({ orderRef }: { orderRef: Uint8Array }) {
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-base font-black tabular-nums">
-            +{points.points.toLocaleString()} {program.points_name}
+            +{formatNumber(points.points)} {program.points_name}
           </p>
           <p className="truncate text-xs text-white/85">{earned ? t("rewards.pending.earnedAt", { program: program.name }) : pendingLine(points.status, t)}</p>
         </div>

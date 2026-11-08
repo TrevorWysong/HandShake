@@ -6,7 +6,7 @@ import { itemNamer, type ItemRow } from "../../lib/storefront/menu";
 import { ACCENTS, describeHappyHour, nextTier, redeemable, tierOf } from "../../lib/rewards/rewards";
 import { describeReward } from "../../lib/storefront/promotions";
 import { bytesEqual, bytesToHex } from "../../holochain/decode";
-import { formatCents } from "../../lib/ui/format";
+import { formatCents, formatNumber } from "../../lib/ui/format";
 import { useT } from "../../i18n";
 
 /// The item a reward gives, if it gives one.
@@ -54,7 +54,7 @@ export function RewardTile({ program, reward, balance, tier, menu, selected, onS
       <div className={clsx("relative h-24 w-full", state === "tier" && "grayscale")}>
         <RewardArt benefit={reward.benefit} menu={menu} accent={program.accent} />
         <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-bold text-white backdrop-blur-sm">
-          {reward.cost.toLocaleString()} {program.points_name}
+          {formatNumber(reward.cost)} {program.points_name}
         </span>
         {selected && (
           <span className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full text-white" style={{ background: colors.to }}>
@@ -71,7 +71,7 @@ export function RewardTile({ program, reward, balance, tier, menu, selected, onS
             <div className="h-1.5 overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
               <motion.div className="h-full rounded-full" style={{ background: colors.to }} initial={{ width: 0 }} animate={{ width: `${progress * 100}%` }} transition={{ duration: 0.8 }} />
             </div>
-            <p className="mt-1 text-[11px] text-ink-400">{t("rewards.toGo", { points: (reward.cost - balance).toLocaleString() })}</p>
+            <p className="mt-1 text-[11px] text-ink-400">{t("rewards.toGo", { points: formatNumber(reward.cost - balance) })}</p>
           </div>
         )}
         {state === "tier" && (
@@ -103,7 +103,7 @@ export function TierLadder({ program, state }: { program: RewardsProgram; state:
       {next && (
         <div className="mb-4">
           <div className="mb-1.5 flex items-baseline justify-between text-xs">
-            <span className="font-bold text-ink-900 dark:text-ink-50">{t("rewards.toTier", { points: next.needed.toLocaleString(), tier: next.name })}</span>
+            <span className="font-bold text-ink-900 dark:text-ink-50">{t("rewards.toTier", { points: formatNumber(next.needed), tier: next.name })}</span>
             <span className="text-ink-400">{t("rewards.thisYear")}</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-ink-100 dark:bg-ink-800">
@@ -129,7 +129,7 @@ export function TierLadder({ program, state }: { program: RewardsProgram; state:
                   {current && <span className="rounded-full bg-ink-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white dark:bg-white dark:text-ink-900">{t("rewards.you")}</span>}
                 </p>
                 <p className="truncate text-xs text-ink-400">
-                  {i === 0 ? t("rewards.everyone") : t("rewards.tierLine", { points: level.threshold.toLocaleString(), rate: (level.percent / 100).toString() })}
+                  {i === 0 ? t("rewards.everyone") : t("rewards.tierLine", { points: formatNumber(level.threshold), rate: (level.percent / 100).toString() })}
                   {level.perk ? ` · ${level.perk}` : ""}
                 </p>
               </div>
@@ -148,10 +148,10 @@ export function HowYouEarn({ program, menu }: { program: RewardsProgram; menu: I
   const nameOf = itemNamer(menu);
   const itemName = (ref: Uint8Array) => nameOf(bytesToHex(ref)) ?? t("promo.item");
   const rows: { icon: typeof Star; text: string }[] = [{ icon: Sparkles, text: t("rewards.earnRate", { points: program.earn.points_per_dollar, name: program.points_name }) }];
-  if (program.earn.welcome_bonus > 0) rows.push({ icon: Gift, text: t("rewards.welcomeLine", { points: program.earn.welcome_bonus.toLocaleString(), name: program.points_name }) });
+  if (program.earn.welcome_bonus > 0) rows.push({ icon: Gift, text: t("rewards.welcomeLine", { points: formatNumber(program.earn.welcome_bonus), name: program.points_name }) });
   for (const bonus of program.earn.item_bonuses) rows.push({ icon: Flame, text: t("rewards.itemBonusLine", { item: itemName(bonus.item_ref), rate: (bonus.percent / 100).toString() }) });
   for (const hour of program.earn.happy_hours) rows.push({ icon: Clock, text: t("rewards.happyLine", { rate: (hour.percent / 100).toString(), when: describeHappyHour(hour.days, hour.start_minute, hour.end_minute, t) }) });
-  if (program.birthday_points > 0) rows.push({ icon: Cake, text: t("rewards.birthdayLine", { points: program.birthday_points.toLocaleString(), name: program.points_name }) });
+  if (program.birthday_points > 0) rows.push({ icon: Cake, text: t("rewards.birthdayLine", { points: formatNumber(program.birthday_points), name: program.points_name }) });
   if (program.earn.min_order_cents > 0) rows.push({ icon: Ticket, text: t("rewards.minLine", { amount: formatCents(program.earn.min_order_cents) }) });
   if (program.expiry_days !== null) rows.push({ icon: Hourglass, text: t("rewards.expiryLine", { days: program.expiry_days }) });
   return (

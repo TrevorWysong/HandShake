@@ -9,7 +9,7 @@ import { useMerchantStores, useMyStores } from "../../store/merchantStores";
 import { useResource } from "../../lib/hooks/useResource";
 import { fetchMenu, type ItemRow } from "../../lib/storefront/menu";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import { fromMinorUnits, toMinorUnits, currencySymbol } from "../../lib/ui/format";
+import { fromMinorUnits, toMinorUnits, currencySymbol, formatNumber } from "../../lib/ui/format";
 import { ACCENT_NAMES, ACCENTS, describeHappyHour, starterProgram } from "../../lib/rewards/rewards";
 import { RewardsCard } from "../../components/rewards/RewardsCard";
 import { HowYouEarn, RewardRail, RewardTile } from "../../components/rewards/RewardPieces";
@@ -386,7 +386,7 @@ function Stat({ icon: Icon, label, value, sub }: { icon: typeof Sparkles; label:
       <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-400">
         <Icon size={12} /> {label}
       </p>
-      <p className="mt-1 text-2xl font-black tabular-nums text-ink-900 dark:text-ink-50">{value.toLocaleString()}</p>
+      <p className="mt-1 text-2xl font-black tabular-nums text-ink-900 dark:text-ink-50">{formatNumber(value)}</p>
       <p className="text-xs text-ink-400">{sub}</p>
     </Card>
   );

@@ -7,7 +7,7 @@ import { Card, StatNumber } from "../../../components/ui";
 import { lineKey, useCart, type CartLine } from "../../../store/cart";
 import { bytesEqual } from "../../../holochain/decode";
 import { ACCENTS } from "../../../lib/rewards/rewards";
-import { formatCents, formatClockTime } from "../../../lib/ui/format";
+import { formatCents, formatClockTime, formatNumber } from "../../../lib/ui/format";
 import { fadeSlideUp } from "../../../lib/ui/motion";
 import type { ItemRow } from "../../../lib/storefront/menu";
 import type { RewardsProgram } from "../../../holochain/types";
@@ -107,7 +107,7 @@ function RewardLine({ line, program, cost, onRemove }: { line: CartLine; program
             {t("cart.reward.badge")}
           </span>
           <span className="font-semibold tabular-nums" style={{ color: colors.to }}>
-            {t("cart.reward.points", { points: cost.toLocaleString(), name: program.points_name })}
+            {t("cart.reward.points", { points: formatNumber(cost), name: program.points_name })}
           </span>
         </p>
       </div>

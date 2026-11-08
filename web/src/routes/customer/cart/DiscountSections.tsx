@@ -1,5 +1,6 @@
 // The order's one discount, as the customer chooses it: a reward from the
 // store's program, or else a promo code (`useDiscounts`).
+import { formatNumber } from "../../../lib/ui/format";
 import { AnimatePresence, motion } from "framer-motion";
 import { RewardRail, RewardTile } from "../../../components/rewards/RewardPieces";
 import { Button, Input } from "../../../components/ui";
@@ -24,8 +25,8 @@ export function RewardsSection({ discounts, menuItems, onBrowse }: { discounts: 
       title={program.name}
       right={
         <span className="text-xs font-black tabular-nums" style={{ color: accent }}>
-          {Math.max(0, card.balance - held).toLocaleString()} {program.points_name}
-          {held > 0 && <span className="ml-1 font-semibold text-ink-400">· {t("cart.reward.held", { points: held.toLocaleString() })}</span>}
+          {formatNumber(Math.max(0, card.balance - held))} {program.points_name}
+          {held > 0 && <span className="ml-1 font-semibold text-ink-400">· {t("cart.reward.held", { points: formatNumber(held) })}</span>}
         </span>
       }
     >

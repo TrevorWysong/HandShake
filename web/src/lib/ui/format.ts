@@ -25,6 +25,11 @@ function minorUnitsPerUnit(): number {
 
 /// An amount given in minor units -- as every amount in HandShake is -- written
 /// in the network's currency: "$12.50".
+/// A count -- points, say -- grouped as the app's language writes it.
+export function formatNumber(value: number): string {
+  return value.toLocaleString(appLocale());
+}
+
 export function formatCents(minorUnits: number): string {
   const formatter = currencyFormat();
   return formatter ? formatter.format(minorUnits / minorUnitsPerUnit()) : (minorUnits / minorUnitsPerUnit()).toFixed(2);

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatNumber } from "../../lib/ui/format";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Cake, ChevronRight, Gift, Minus, Plus, ShoppingBag, Sparkles } from "lucide-react";
@@ -252,7 +253,7 @@ function Activity({ card }: { card: CardView }) {
           </div>
           <span className={clsx("text-sm font-black tabular-nums", line.points < 0 ? "text-ink-500" : "")} style={line.points >= 0 ? { color: colors.to } : undefined}>
             {line.points > 0 ? "+" : ""}
-            {line.points.toLocaleString()}
+            {formatNumber(line.points)}
           </span>
         </li>
       ))}
@@ -286,13 +287,13 @@ export function StoreRewardsStrip({ catalogHex }: { catalogHex: string }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-black">
-          {joined ? t("rewards.stripBalance", { points: card.balance.toLocaleString(), name: program.points_name }) : program.name}
-          {card.pending_points > 0 && <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">{t("rewards.pendingChip", { points: card.pending_points.toLocaleString(), name: program.points_name })}</span>}
+          {joined ? t("rewards.stripBalance", { points: formatNumber(card.balance), name: program.points_name }) : program.name}
+          {card.pending_points > 0 && <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">{t("rewards.pendingChip", { points: formatNumber(card.pending_points), name: program.points_name })}</span>}
         </p>
         <p className="truncate text-xs text-white/85">
           {joined
             ? next
-              ? t("rewards.toNext", { points: (next.cost - card.balance).toLocaleString(), name: next.name })
+              ? t("rewards.toNext", { points: formatNumber(next.cost - card.balance), name: next.name })
               : t("rewards.allUnlocked")
             : program.earn.welcome_bonus > 0
               ? t("rewards.stripJoinWelcome", { points: program.earn.points_per_dollar, name: program.points_name, welcome: program.earn.welcome_bonus })

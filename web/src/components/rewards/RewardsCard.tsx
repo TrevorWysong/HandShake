@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { formatNumber } from "../../lib/ui/format";
 import { animate, motion, useMotionValue, useTransform } from "framer-motion";
 import { Crown, Sparkles } from "lucide-react";
 import clsx from "clsx";
@@ -12,7 +13,7 @@ import { appLocale, useT } from "../../i18n";
 /// shows), started as the span mounts and again for each new value.
 export function CountUp({ value, className }: { value: number; className?: string }) {
   const count = useMotionValue(0);
-  const text = useTransform(count, (v) => Math.round(v).toLocaleString());
+  const text = useTransform(count, (v) => formatNumber(Math.round(v)));
   const countTo = useCallback(
     (span: HTMLSpanElement | null) => {
       if (!span) return;
@@ -128,7 +129,7 @@ export function RewardsCard({
                 ))}
           </div>
           <p className="mt-2 text-xs font-medium text-white/85">
-            {next ? t("rewards.toNext", { points: (next.cost - balance).toLocaleString(), name: next.name }) : t("rewards.allUnlocked")}
+            {next ? t("rewards.toNext", { points: formatNumber(next.cost - balance), name: next.name }) : t("rewards.allUnlocked")}
           </p>
         </div>
       )}
