@@ -12,6 +12,7 @@ import { NavItem, type NavPlacement } from "./NavItem";
 import { MerchantNav } from "./MerchantNav";
 import { Notifier } from "./Notifier";
 import { DriverFeed } from "./DriverFeed";
+import { DriverDeliveries } from "./DriverDeliveries";
 import { useDriverFeed } from "../../store/driverFeed";
 import { Toaster } from "./Toaster";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -198,6 +199,7 @@ export function AppShell() {
 
         <Notifier />
         <DriverFeed />
+        <DriverDeliveries />
         <ConnectionBanner />
         <main className={clsx("flex-1 lg:px-6 lg:pt-4 lg:pb-12", docked && cards.length > 0 ? "pb-40" : "pb-20")}>
           <AnimatedOutlet />

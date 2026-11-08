@@ -76,4 +76,16 @@ test("a driver goes online and sees the nearby order feed", async ({ page }) => 
   await expect(page.getByText("You're online")).toBeVisible();
   // Nearby orders -- or, with deliveries already on, add-ons on the way.
   await expect(page.getByText(/^(Nearby open orders|Add-ons on your way)$/)).toBeVisible();
+
+  // Online across the app: to Earnings and back, still online.
+  await page.getByRole("link", { name: "Earnings" }).first().click();
+  await page.getByRole("link", { name: "Dash" }).first().click();
+  await expect(page.getByText("You're online")).toBeVisible();
+
+  // Going offline says what becomes of what they've taken on, when there's any.
+  await page.getByRole("button", { name: "Go offline" }).click();
+  const asked = page.getByRole("dialog", { name: "Go offline?" });
+  await expect(asked.or(page.getByText("You're offline"))).toBeVisible();
+  if (await asked.isVisible()) await asked.getByRole("button", { name: "Go offline" }).click();
+  await expect(page.getByText("You're offline")).toBeVisible();
 });

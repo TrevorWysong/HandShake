@@ -1,6 +1,7 @@
-// Sharing a driver's position from a screen: the sharing itself lives
-// outside React (lib/driving/locationShare.ts); this only says, for as long
-// as the screen shows a delivery, that it's one to share with. Keyed by the
+// Sharing a driver's position: the sharing itself lives outside React
+// (lib/driving/locationShare.ts); this only says, for as long as it's
+// mounted -- by the app shell, for each delivery on its way
+// (`DriverDeliveries`) -- that it's one to share with. Keyed by the
 // order's hex -- a string, so a poll that rebuilds the order's bytes never
 // restarts it.
 import { useEffect } from "react";

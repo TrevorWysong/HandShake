@@ -4,7 +4,6 @@
 import { useState } from "react";
 import { Link2, Route, ShieldCheck, Zap } from "lucide-react";
 import { dropOrder, commitToOrder, weighMyBid } from "../../holochain/zomes/dispatch";
-import { useLocationSharing } from "../../lib/hooks/useLocationSharing";
 import { Sheet } from "../../components/Sheet";
 import { decodeEntry, bytesToHex, hexToBytes } from "../../holochain/decode";
 import { getCatalog } from "../../holochain/zomes/catalog";
@@ -36,7 +35,7 @@ import { useTerms } from "../../store/network";
 import type { SentBid } from "../../store/sentBids";
 import { useAction } from "../../lib/hooks/useAction";
 import { DROPOFF_PREFERENCE_LABEL } from "../../lib/orders/handoffs";
-import { BEFORE_PICKUP, ON_THE_WAY, TRACKED_STATUSES, dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
+import { BEFORE_PICKUP, ON_THE_WAY, dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
 
 /// The order to make this driver's stops in -- see `planRoute`. Stores'
 /// locations are read once per set of stores being served.
@@ -89,7 +88,6 @@ export function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRo
   const t = useT();
   const action = useAction();
   const [dropping, setDropping] = useState(false);
-  useLocationSharing(TRACKED_STATUSES.includes(row.order.status) ? bytesToHex(row.hash) : null);
   // A driver leaving an order the store has started cooking answers for the
   // food until another driver takes it on.
   const cooking = row.order.ready_by !== null;

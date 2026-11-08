@@ -13,6 +13,7 @@ import { POLL } from "../../lib/network/poll";
 import { feedRead, useDriverFeed } from "../../store/driverFeed";
 import { useTerms } from "../../store/network";
 import { useSession } from "../../store/session";
+import { useCarrying } from "../../store/carrying";
 
 export function DriverFeed() {
   const me = useSession((s) => s.agentPubKey);
@@ -34,7 +35,8 @@ function OnlineFeed({ driverHex }: { driverHex: string }) {
     async () => {
       const offered = await fetchOffered(geohash, myAgentPubKey());
       ringForOffers(feedRead(driverHex, geohash, offered, looking && document.visibilityState === "visible"), () => navigate("/driver"));
-      await bidAutomatically(driverHex, offered, location, terms);
+      const carrying = useCarrying.getState();
+      await bidAutomatically(driverHex, offered, carrying.driver === driverHex ? carrying.rows : undefined, location, terms);
     },
     { pollMs: POLL.driverFeed, background: true },
     true,

@@ -54,14 +54,15 @@ const autoBidOn = new Set<string>();
 
 /// Bids on each offered order the driver's rule takes, at their rate --
 /// skipping stores other drivers keep reporting, and any order the routing
-/// service can't time (its ETA is the driver's to type). Reads what they're
-/// carrying only when the rule's on and there's an order it hasn't tried.
-export async function bidAutomatically(driverHex: string, offered: OrderRow[], location: GeoPoint, terms: NetworkTerms): Promise<void> {
+/// service can't time (its ETA is the driver's to type). What they're
+/// carrying is `carried` if it's been read, and read only when the rule's on
+/// and there's an order it hasn't tried.
+export async function bidAutomatically(driverHex: string, offered: OrderRow[], carried: OrderRow[] | undefined, location: GeoPoint, terms: NetworkTerms): Promise<void> {
   const { autoBid, limits, travelMode } = useDriverSettings.getState();
   const keyOf = (orderRef: Uint8Array) => `${driverHex}:${bytesToHex(orderRef)}`;
   const untried = offered.filter(({ hash }) => !autoBidOn.has(keyOf(hash)));
   if (!autoBid.on || untried.length === 0) return;
-  const carrying: Commitment[] = (await fetchActiveDeliveries()).map((row) => ({ order: row.order, dropoff: dropoffPoint(row) }));
+  const carrying: Commitment[] = (carried ?? (await fetchActiveDeliveries())).map((row) => ({ order: row.order, dropoff: dropoffPoint(row) }));
   for (const { hash: orderRef, order } of offerable(untried, carrying, offerRules(terms, limits))) {
     autoBidOn.add(keyOf(orderRef));
     try {

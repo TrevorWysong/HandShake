@@ -1,4 +1,5 @@
-import { Bike, MapPin, Power, Route } from "lucide-react";
+import { useState } from "react";
+import { Bike, MapPin, Power, Route, Undo2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { withdrawBid } from "../../holochain/zomes/dispatch";
@@ -6,14 +7,14 @@ import { bytesToHex, hexToBytes } from "../../holochain/decode";
 import { myAgentPubKey } from "../../holochain/client";
 import { encodeGeohash, distanceKm, geohashCenter } from "../../lib/places/geohash";
 import { useSession } from "../../store/session";
-import { Card, EmptyState, Notice, PresenceDot, Skeleton } from "../../components/ui";
+import { Button, Card, EmptyState, Notice, PresenceDot, Skeleton } from "../../components/ui";
+import { Sheet } from "../../components/Sheet";
 import { StarRating } from "../../components/StarRating";
 import { averageRating, getRatingSummary } from "../../holochain/zomes/reputation";
 import { useT } from "../../i18n";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { useLocalSignal, useResource } from "../../lib/hooks/useResource";
 import type { DeliveryOrder } from "../../holochain/types";
-import { POLL, isOrderSignal } from "../../lib/network/poll";
 import { offerable, offerRefusal, offerRules, type Commitment } from "../../lib/driving/addOns";
 import { useDriverSettings } from "../../store/roleSettings";
 import { DriverSettingsCard } from "./DriverSettingsCard";
@@ -21,11 +22,14 @@ import { VerificationCard } from "./VerificationCard";
 import { useTerms } from "../../store/network";
 import { useSentBids } from "../../store/sentBids";
 import { resetFeed, useDriverFeed } from "../../store/driverFeed";
-import { fetchActiveDeliveries, sendBid } from "../../lib/driving/feed";
+import { sendBid } from "../../lib/driving/feed";
+import { refreshCarrying, useCarrying } from "../../store/carrying";
 import { unlockChime } from "../../lib/ui/chime";
 import { useAction } from "../../lib/hooks/useAction";
 import { ActiveDeliveryCard, BidCard, SuggestedRoute } from "./DriverCards";
-import { dropoffPoint } from "../../lib/driving/deliveryRows";
+import { dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
+
+const NO_ROWS: OrderRow[] = [];
 
 export function DriverDashboard() {
   const location = useSession((s) => s.location);
@@ -48,22 +52,41 @@ export function DriverDashboard() {
   const terms = useTerms();
   const geohash = encodeGeohash(location.lat, location.lon);
 
-  // This driver's in-progress deliveries, from their own active-delivery
-  // queue -- bounded by what they're carrying right now.
-  const { data: activeOrders = [], reload: reloadActive } = useResource(`driver-active:${driverHex}`, fetchActiveDeliveries, {
-    pollMs: POLL.signalled,
-    refreshOn: (s) => "BidAccepted" in s || "BidReleased" in s || isOrderSignal(s),
-  });
+  // What they're carrying, read for the whole app (`DriverDeliveries`).
+  const activeOrders = useCarrying((s) => (s.driver === driverHex ? s.rows : undefined)) ?? NO_ROWS;
+  const reloadActive = () => refreshCarrying(driverHex);
 
   // Open orders near them, read by the app's feed while they're online
   // (`DriverFeed`) -- here only once it's read where they are now.
   const nearby = useDriverFeed((s) => (s.driver === driverHex && s.geohash === geohash ? s.offered : undefined));
 
+  // The offers out on orders still open to them -- each one a customer
+  // could still accept, handing them a delivery.
+  const carryingHex = new Set(activeOrders.map((row) => bytesToHex(row.hash)));
+  const offersOut = (nearby ?? []).map(({ hash }) => bytesToHex(hash)).filter((hex) => !carryingHex.has(hex) && sentBids[`${driverHex}:${hex}`]);
+  const [confirmingOffline, setConfirmingOffline] = useState(false);
+
   function toggleOnline() {
     // Going online is the tap that lets the page ring for new orders.
-    if (!online) unlockChime();
-    resetFeed(online ? null : driverHex);
+    if (!online) {
+      unlockChime();
+      resetFeed(driverHex);
+    } else if (offersOut.length > 0 || activeOrders.length > 0) setConfirmingOffline(true);
+    else resetFeed(null);
   }
+
+  /// Offline: their offers taken back first, so none is accepted while
+  /// they're off. One that can't be is said so -- it can still be accepted.
+  const goOffline = () => bidding.run(async () => {
+    const results = await Promise.allSettled(offersOut.map(async (orderHex) => {
+      await withdrawBid(hexToBytes(sentBids[`${driverHex}:${orderHex}`].bid));
+      useSentBids.getState().forget(driverHex, orderHex);
+    }));
+    setConfirmingOffline(false);
+    resetFeed(null);
+    const kept = results.filter((result) => result.status === "rejected").length;
+    if (kept > 0) throw new Error(t("drive.offline.kept", { count: kept }));
+  }, { as: "offline" });
 
   const placeBid = (orderRef: Uint8Array, trip: { etaMinutes: number; toStoreMinutes: number }, feeCents: number) =>
     bidding.run(() => sendBid(driverHex, orderRef, trip, feeCents), { as: bytesToHex(orderRef) });
@@ -221,6 +244,37 @@ export function DriverDashboard() {
       </div>
 
       {bidding.error && <Notice className="mt-4">{bidding.error}</Notice>}
+
+      <Sheet
+        open={confirmingOffline}
+        onClose={() => setConfirmingOffline(false)}
+        title={t("drive.offline.title")}
+        footer={
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" disabled={bidding.busy} onClick={() => setConfirmingOffline(false)}>
+              {t("drive.offline.stay")}
+            </Button>
+            <Button className="flex-1" loading={bidding.doing === "offline"} onClick={goOffline}>
+              {t("drive.goOffline")}
+            </Button>
+          </div>
+        }
+      >
+        <ul className="flex flex-col gap-3 pb-2 text-sm leading-relaxed text-ink-600 dark:text-ink-300">
+          {offersOut.length > 0 && (
+            <li className="flex items-start gap-2.5">
+              <Undo2 size={16} className="mt-0.5 shrink-0 text-handshake-500" />
+              {t("drive.offline.offers", { count: offersOut.length })}
+            </li>
+          )}
+          {activeOrders.length > 0 && (
+            <li className="flex items-start gap-2.5">
+              <Bike size={16} className="mt-0.5 shrink-0 text-handshake-500" />
+              {t("drive.offline.carrying", { count: activeOrders.length })}
+            </li>
+          )}
+        </ul>
+      </Sheet>
     </div>
   );
 }
