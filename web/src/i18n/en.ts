@@ -252,6 +252,8 @@ export const en = {
   "order.collectHint": "Show your code at the counter. The store scans it to hand your order over, or tap below once you have it.",
   "order.gotIt": "I've got my order",
   "order.cancel": "Cancel order",
+  "order.cancelAsk": "Cancel this order?",
+  "order.keep": "Keep it",
   "order.refunded": "Refunded.",
   "order.refundedDetail": "The store confirmed it never arrived. Your card isn't charged for it.",
   "order.claimedBy": "You've told the store it never arrived. If your driver still turns up, let them hand it over as usual. Otherwise the store refunds you by {time}.",

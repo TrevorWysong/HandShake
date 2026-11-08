@@ -247,6 +247,8 @@ export const es: Catalog = {
   "order.collectHint": "Muestra tu código en el mostrador. La tienda lo escanea para entregarte el pedido, o pulsa abajo cuando lo tengas.",
   "order.gotIt": "Ya tengo mi pedido",
   "order.cancel": "Cancelar pedido",
+  "order.cancelAsk": "¿Cancelar este pedido?",
+  "order.keep": "Conservarlo",
   "order.refunded": "Reembolsado.",
   "order.refundedDetail": "La tienda confirmó que no llegó. No se cobra en tu tarjeta.",
   "order.claimedBy": "Has avisado a la tienda de que no llegó. Si tu repartidor aparece, deja que te lo entregue como siempre. Si no, la tienda te lo reembolsa antes de las {time}.",

@@ -1,5 +1,6 @@
 import { Store } from "lucide-react";
-import { Button, Card } from "../ui";
+import { Card } from "../ui";
+import { CancelOrder } from "./CancelOrder";
 import { ResponseCountdown } from "./ResponseCountdown";
 import { responseDeadlineMs } from "../../lib/orders/storeAnswers";
 import { useTerms } from "../../store/network";
@@ -18,9 +19,7 @@ export function WaitingForStore({ writtenAt, now, cancelling, onCancel }: { writ
         <p className="text-sm text-ink-700 dark:text-ink-200">{t("waiting.store")}</p>
       </div>
       <ResponseCountdown deadlineMs={responseDeadlineMs(writtenAt, windowSecs)} windowSecs={windowSecs} now={now} label="waiting.until" />
-      <Button variant="ghost" className="mt-3 w-full py-2 text-xs" loading={cancelling} onClick={onCancel}>
-        {t("order.cancel")}
-      </Button>
+      <CancelOrder cancelling={cancelling} onCancel={onCancel} className="mt-3" />
       <p className="mt-2 text-center text-[11px] text-ink-400">{t("waiting.cancelNote")}</p>
     </Card>
   );

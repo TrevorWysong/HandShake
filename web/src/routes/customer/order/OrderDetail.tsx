@@ -42,6 +42,7 @@ import { useTerms } from "../../../store/network";
 import { useT, type MessageKey } from "../../../i18n";
 import { HandoverCode } from "../../../components/orders/HandoverCode";
 import { StoreWay } from "../../../components/store/StoreContact";
+import { CancelOrder } from "../../../components/orders/CancelOrder";
 import { OrderPayments } from "../../../components/payments/OrderPayments";
 
 // Chat is only valid once a driver is assigned (live_counterpart needs
@@ -415,9 +416,7 @@ export function OrderDetail() {
 
           {order.status === "Open" && (
             <motion.div variants={fadeSlideUp} className="mt-6">
-              <Button variant="ghost" loading={action.doing === "cancel"} disabled={action.busy} onClick={cancel} className="w-full">
-                {t("order.cancel")}
-              </Button>
+              <CancelOrder cancelling={action.doing === "cancel"} disabled={action.busy && action.doing !== "cancel"} onCancel={cancel} />
             </motion.div>
           )}
 
