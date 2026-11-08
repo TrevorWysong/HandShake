@@ -27,7 +27,7 @@ type Translate = ReturnType<typeof useT>;
 
 /// What's wrong with a draft, in words -- the network's limits
 /// (`RewardsProgram::problem`), told before saving.
-function draftProblem(p: RewardsProgram, t: Translate): string | null {
+function draftProblem(p: RewardsProgram, menu: ItemRow[], t: Translate): string | null {
   if (!p.name.trim() || !p.points_name.trim()) return t("rewardsAdmin.problem.names");
   if (p.earn.points_per_dollar < 1 || p.earn.points_per_dollar > 100) return t("rewardsAdmin.problem.rate");
   for (const [i, tier] of p.tiers.entries()) {
@@ -40,6 +40,11 @@ function draftProblem(p: RewardsProgram, t: Translate): string | null {
     if (reward.cost < 1) return t("rewardsAdmin.problem.rewardCost");
     if (reward.min_tier > p.tiers.length) return t("rewardsAdmin.problem.rewardTier");
   }
+  // An item since taken off the menu (`remove_menu_item`) can't be earned
+  // on or given.
+  const onMenu = (item: Uint8Array) => menu.some((row) => bytesEqual(row.hash, item));
+  const gifts = p.rewards.flatMap(({ benefit }) => ("FreeItem" in benefit ? [benefit.FreeItem.item_ref] : "PercentOffItem" in benefit ? [benefit.PercentOffItem.item_ref] : []));
+  if ([...p.earn.item_bonuses.map((bonus) => bonus.item_ref), ...gifts].some((item) => !onMenu(item))) return t("rewardsAdmin.problem.itemGone");
   for (const hour of p.earn.happy_hours) {
     if (hour.days === 0 || hour.start_minute >= hour.end_minute) return t("rewardsAdmin.problem.hours");
   }
@@ -100,7 +105,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
   const update = (change: (p: RewardsProgram) => RewardsProgram) => {
     setDraft(change(structuredClone(draft)));
   };
-  const problem = draftProblem(draft, t);
+  const problem = draftProblem(draft, menu, t);
   const dirty = JSON.stringify(draft) !== JSON.stringify(data.view?.program ?? null);
   const previewTier = draft.tiers.filter((tier) => previewPoints >= tier.threshold).length;
 
@@ -155,7 +160,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
                 <Input maxLength={40} value={draft.name} onChange={(e) => update((p) => ({ ...p, name: e.target.value }))} />
               </Field>
               <Field label={t("rewardsAdmin.pointsName")}>
-                <Input maxLength={20} value={draft.points_name} onChange={(e) => update((p) => ({ ...p, points_name: e.target.value }))} placeholder="points" />
+                <Input maxLength={20} value={draft.points_name} onChange={(e) => update((p) => ({ ...p, points_name: e.target.value }))} placeholder={t("rewardsAdmin.pointsPlaceholder")} />
               </Field>
               <Field label={t("rewardsAdmin.tagline")}>
                 <Input maxLength={120} value={draft.tagline} onChange={(e) => update((p) => ({ ...p, tagline: e.target.value }))} placeholder={t("rewardsAdmin.taglineHint")} />
@@ -198,7 +203,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
                   <Input type="number" min={0} step="0.01" value={fromMinorUnits(draft.earn.min_order_cents)} onChange={(e) => update((p) => ({ ...p, earn: { ...p.earn, min_order_cents: toMinorUnits(Math.max(0, Number(e.target.value) || 0)) } }))} prefix={currencySymbol()} />
                 </Field>
               </div>
-              <OptionalNumber label={t("rewardsAdmin.capPerOrder")} hint={t("rewardsAdmin.capPerOrderHint")} value={draft.earn.max_per_order} fallback={500} max={1_000_000} onChange={(max_per_order) => update((p) => ({ ...p, earn: { ...p.earn, max_per_order } }))} />
+              <OptionalNumber label={t("rewardsAdmin.capPerOrder")} hint={t("rewardsAdmin.capPerOrderHint")} value={draft.earn.max_per_order} fallback={500} max={1_000_000} suffix={draft.points_name} onChange={(max_per_order) => update((p) => ({ ...p, earn: { ...p.earn, max_per_order } }))} />
             </div>
           </Section>
 
@@ -325,7 +330,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
               </Field>
               <p className="-mt-2 text-xs text-ink-400">{t("rewardsAdmin.birthdayHint")}</p>
               <OptionalNumber icon={Hourglass} label={t("rewardsAdmin.expiry")} hint={t("rewardsAdmin.expiryHint")} value={draft.expiry_days} fallback={180} min={30} max={1095} suffix={t("rewardsAdmin.days")} onChange={(expiry_days) => update((p) => ({ ...p, expiry_days }))} />
-              <OptionalNumber label={t("rewardsAdmin.maxBalance")} hint={t("rewardsAdmin.maxBalanceHint")} value={draft.max_balance} fallback={Math.max(5000, ...draft.rewards.map((r) => r.cost))} max={1_000_000_000} onChange={(max_balance) => update((p) => ({ ...p, max_balance }))} />
+              <OptionalNumber label={t("rewardsAdmin.maxBalance")} hint={t("rewardsAdmin.maxBalanceHint")} value={draft.max_balance} fallback={Math.max(5000, ...draft.rewards.map((r) => r.cost))} max={1_000_000_000} suffix={draft.points_name} onChange={(max_balance) => update((p) => ({ ...p, max_balance }))} />
             </div>
           </Section>
 
@@ -412,9 +417,19 @@ function AddButton({ onClick, children }: { onClick: () => void; children: React
   );
 }
 
+/// An item off the menu (since removed) shows as such, not as whichever
+/// item happens to be first.
 function ItemSelect({ menu, value, onChange }: { menu: ItemRow[]; value: Uint8Array; onChange: (item: Uint8Array) => void }) {
+  const t = useT();
+  const hex = bytesToHex(value);
+  const gone = !menu.some((row) => bytesToHex(row.hash) === hex);
   return (
-    <Select value={bytesToHex(value)} onChange={(e) => onChange(hexToBytes(e.target.value))}>
+    <Select value={hex} onChange={(e) => onChange(hexToBytes(e.target.value))} aria-invalid={gone}>
+      {gone && (
+        <option value={hex} disabled>
+          {t("rewardsAdmin.itemGone")}
+        </option>
+      )}
       {menu.map((row) => (
         <option key={bytesToHex(row.hash)} value={bytesToHex(row.hash)}>
           {row.item.name}
@@ -446,7 +461,7 @@ function DayPicker({ days, onChange }: { days: number; onChange: (days: number) 
       {DAYS.map((day, i) => {
         const on = (days & (1 << i)) !== 0;
         return (
-          <button key={day} type="button" onClick={() => onChange(days ^ (1 << i))} className={clsx("h-8 flex-1 rounded-lg text-[11px] font-bold transition", on ? "bg-ink-900 text-white dark:bg-white dark:text-ink-900" : "bg-white text-ink-400 dark:bg-ink-900")}>
+          <button key={day} type="button" aria-pressed={on} onClick={() => onChange(days ^ (1 << i))} className={clsx("h-8 flex-1 rounded-lg text-[11px] font-bold transition", on ? "bg-ink-900 text-white dark:bg-white dark:text-ink-900" : "bg-white text-ink-400 dark:bg-ink-900")}>
             {t(`rewards.day.${day}`)}
           </button>
         );
@@ -456,7 +471,7 @@ function DayPicker({ days, onChange }: { days: number; onChange: (days: number) 
 }
 
 /// A limit that's off until it's switched on.
-function OptionalNumber({ icon: Icon, label, hint, value, fallback, min = 1, max, suffix = "pts", onChange }: { icon?: typeof Sparkles; label: string; hint: string; value: number | null; fallback: number; min?: number; max: number; suffix?: string; onChange: (value: number | null) => void }) {
+function OptionalNumber({ icon: Icon, label, hint, value, fallback, min = 1, max, suffix, onChange }: { icon?: typeof Sparkles; label: string; hint: string; value: number | null; fallback: number; min?: number; max: number; suffix: string; onChange: (value: number | null) => void }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
