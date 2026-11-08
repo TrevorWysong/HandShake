@@ -5,7 +5,7 @@ import { createGoodieBag, listGoodieBagsForCatalog, updateGoodieBag } from "../.
 import { bagStandings } from "../../../holochain/zomes/dispatch";
 import { bytesToHex, decodeEntry, hexToBytes } from "../../../holochain/decode";
 import { useResource } from "../../../lib/hooks/useResource";
-import { formatCents, formatClockTime, toMinorUnits, currencySymbol } from "../../../lib/ui/format";
+import { formatCents, formatClockTime, toMinorUnits, currencySymbol, toLocalDateTime } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { Button, Card, Checkbox, Field, GroupHeading, Input, Notice, StatNumber, Textarea } from "../../../components/ui";
 import { PhotoInput } from "../../../components/PhotoInput";
@@ -148,10 +148,6 @@ function EditBagForm({ original, bag, onDone }: { original: Uint8Array; bag: Goo
   );
 }
 
-function toLocalInput(d: Date) {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-}
-
 /// Seeded once on mount with a window starting in an hour and lasting two.
 function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreated: () => Promise<void> }) {
   const t = useT();
@@ -167,8 +163,8 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       originalValue: 15,
       price: 5,
       quantity_total: 3,
-      start: toLocalInput(start),
-      end: toLocalInput(new Date(start.getTime() + 2 * 60 * 60 * 1000)),
+      start: toLocalDateTime(start.getTime() * 1000),
+      end: toLocalDateTime((start.getTime() + 2 * 60 * 60 * 1000) * 1000),
       supports_pickup: true,
       supports_delivery: false,
     };
@@ -187,13 +183,15 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
       ? t("bags.problem.name")
       : form.price <= 0 || form.price > form.originalValue
         ? t("bags.problem.price")
-        : !form.supports_pickup && !form.supports_delivery
-          ? t("bags.problem.fulfillment")
-          : !(endMs > startMs)
-            ? t("bags.problem.window")
-            : endMs - openedAt > maxDays * DAY_MS
-              ? t("bags.problem.tooLong", { count: maxDays })
-              : null;
+        : !Number.isInteger(form.quantity_total) || form.quantity_total < 1
+          ? t("bags.problem.quantity")
+          : !form.supports_pickup && !form.supports_delivery
+            ? t("bags.problem.fulfillment")
+            : !(endMs > startMs) || endMs <= openedAt
+              ? t("bags.problem.window")
+              : endMs - openedAt > maxDays * DAY_MS
+                ? t("bags.problem.tooLong", { count: maxDays })
+                : null;
 
   const list = () => save.run(async () => {
     await createGoodieBag({
