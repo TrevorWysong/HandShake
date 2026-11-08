@@ -128,6 +128,10 @@ await runScenario(async (scenario) => {
   assert.equal(summary.count, 2, "both reviews should be counted");
   assert.equal(summary.rating_sum, 8, "the sum should be 5 + 3");
   console.log("[PASS] get_item_rating_summary correctly folds multiple reviews (avg = 8/2 = 4.0)");
+  const together = await reputationOf(merchant)<{ count: number; rating_sum: number }[]>("get_item_rating_summaries", [burgerRef, order2Ref]);
+  assert.deepEqual(together, [summary, { count: 0, rating_sum: 0 }], "a menu's ratings read together are each item's own, in order");
+  await assert.rejects(reputationOf(merchant)("get_item_rating_summaries", Array(101).fill(burgerRef)), /fewer items/, "and a batch is bounded");
+  console.log("[PASS] get_item_rating_summaries reads a menu's ratings together, bounded");
 
   const { reviews } = await reputationOf(customer)<{ reviews: HcRecord[] }>("get_item_reviews", { item_ref: burgerRef, before: null });
   assert.equal(reviews.length, 2, "get_item_reviews should return both individual reviews");

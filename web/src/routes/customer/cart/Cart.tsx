@@ -45,7 +45,7 @@ import { hasAllergies, NO_ALLERGIES } from "../../../lib/storefront/allergens";
 import type { AllergySet } from "../../../holochain/types";
 import { DeliverToSection, MatchingSection, RepeatSection, SpeedSection, WhenSection } from "./DeliverySections";
 import { PromoSection, RewardsSection } from "./DiscountSections";
-import { fetchCartStoreInfo, NO_ITEMS } from "./checkout";
+import { fetchCartStoreInfo, NO_ITEMS, validateDropoffRadius } from "./checkout";
 import { TIP_PRESETS_PERCENT } from "./options";
 import { feeCapCents, priceCheckout, scheduledTime, tipCents as tipFor } from "./pricing";
 import { useDeliveryOptions } from "./useDeliveryOptions";
@@ -69,8 +69,6 @@ export function Cart() {
   const merchant = cart.merchant;
   const { data: storeProfile } = useResource(merchant && `payment-profile:${bytesToHex(merchant)}`, () => paymentProfileOf(merchant!));
   const ownStore = !!agentPubKey && !!merchant && bytesEqual(agentPubKey, merchant);
-  // A card this account saved with the store, offered in one tap -- keyed by
-  // the account, so nobody else signed in here is ever offered it.
 
   // A recurring order brought here to confirm starts as it was set up.
   const draft = (useLocation().state as { recurring?: CheckoutDraft } | null)?.recurring;
@@ -78,7 +76,7 @@ export function Cart() {
   const discounts = useDiscounts(storeInfo, now);
   // Pickup orders skip the whole driver half of this screen: there's no
   // driver in that vertical at all.
-  const [chosenFulfillment, setFulfillment] = useState<"Delivery" | "Pickup">("Delivery");
+  const [chosenFulfillment, setFulfillment] = useState<"Delivery" | "Pickup" | null>(null);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   // Two notes, each readable only by who it's for: the store (sealed to
   // it) and, for a delivery, the driver (sealed with the address).
@@ -114,7 +112,11 @@ export function Cart() {
   // Age-restricted items (alcohol, tobacco) are collected in person, where
   // the store checks ID -- the network's rule.
   const ageRestricted = cart.lines.some((line) => itemOf(line.itemRef)?.age_restricted);
-  const fulfillment = ageRestricted ? "Pickup" : chosenFulfillment;
+  // Where it's going, checked against the store's range as it loads: the
+  // address sheet checks what's picked there, not the saved place it starts
+  // at. Out of range, it starts as a pickup.
+  const outOfRange = validateDropoffRadius(options.dropoff, storeInfo?.merchantLocation ?? null, storeInfo?.merchantRadiusKm ?? null);
+  const fulfillment = ageRestricted ? "Pickup" : (chosenFulfillment ?? (outOfRange ? "Pickup" : "Delivery"));
   const delivery = fulfillment === "Delivery";
   // Goodie bags run on their own windows: no store hours, no minimum, no
   // promo, and nothing scheduled for later.
@@ -183,6 +185,7 @@ export function Cart() {
     price.shortOfMinimumCents > 0 && storeInfo?.minOrderCents != null && t("cart.minimum", { minimum: formatCents(storeInfo.minOrderCents), more: formatCents(price.shortOfMinimumCents) }),
     delivery && price.discountedSubtotalCents === 0 && t("cart.freeNoDelivery"),
     takesNoCards && t("cart.noCards"),
+    delivery && outOfRange && `${outOfRange} ${t("cart.outOfRangeSwitch")}`,
     // Closed now, a delivery can be scheduled for when it opens (bags aside).
     storeClosed && (orderFor !== now ? t("cart.closedThen") : delivery && !hasBags ? t("cart.closedSchedule", { status: storeHours.label }) : storeHours.label),
   ].filter((note): note is string => !!note);
@@ -194,7 +197,7 @@ export function Cart() {
     (ageRestricted && !ageConfirmed) ||
     takesNoCards ||
     (!ownStore && storeProfile === undefined) ||
-    (delivery && (price.discountedSubtotalCents === 0 || maxFeeCents <= 0 || overFeeLimit || overTipLimit || scheduleInvalid || (dropoffPreference === "LeaveAtDoor" && !options.doorRiskAccepted)));
+    (delivery && (!!outOfRange || price.discountedSubtotalCents === 0 || maxFeeCents <= 0 || overFeeLimit || overTipLimit || scheduleInvalid || (dropoffPreference === "LeaveAtDoor" && !options.doorRiskAccepted)));
 
   // An order is placed once, with its card: it stays busy as the page
   // moves on to it, where its payment is followed.

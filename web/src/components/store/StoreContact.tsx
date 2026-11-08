@@ -10,7 +10,7 @@ import { directionsHref, mailtoHref, opensAppLinks, telHref, websiteHref, websit
 import { describeWeek, localWeekdayMinute, storeStatus } from "../../lib/storefront/storeHours";
 import { formatCatalogAddress } from "../../lib/ui/format";
 import { useClock } from "../../lib/hooks/useClock";
-import type { MerchantCatalog } from "../../holochain/types";
+import type { GeoPoint, MerchantCatalog } from "../../holochain/types";
 import { useT } from "../../i18n";
 import { SectionLabel } from "../ui";
 
@@ -51,6 +51,17 @@ export function StoreReach({ catalog, className }: { catalog: MerchantCatalog; c
     <div className={clsx("divide-y divide-ink-100 overflow-hidden rounded-2xl border border-ink-100 bg-white dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-900", className)}>
       {tel && (appLinks ? <Row icon={<Phone size={16} />} primary={catalog.phone} secondary={t("storeContact.call")} href={tel} /> : <CopyRow icon={<Phone size={16} />} text={catalog.phone} />)}
       {mailto && (appLinks ? <Row icon={<Mail size={16} />} primary={catalog.email} secondary={t("storeContact.email")} href={mailto} /> : <CopyRow icon={<Mail size={16} />} text={catalog.email} />)}
+    </div>
+  );
+}
+
+/// Where to go to collect an order: the store's address, opening directions.
+export function StoreWay({ location, address, className }: { location: GeoPoint; address: string; className?: string }) {
+  const t = useT();
+  if (!address) return null;
+  return (
+    <div className={clsx("overflow-hidden rounded-2xl border border-ink-100 bg-white dark:border-ink-800 dark:bg-ink-900", className)}>
+      <Row icon={<MapPin size={16} />} primary={address} secondary={t("storeContact.directions")} href={directionsHref(location)} external />
     </div>
   );
 }

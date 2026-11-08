@@ -4,8 +4,15 @@
 import { acknowledgeLeg, getLegsForOrder, getReceiptForLeg } from "../../holochain/zomes/attestation";
 import { completeDelivery } from "../../holochain/zomes/dispatch";
 import { actionHash, decodeEntry } from "../../holochain/decode";
-import type { Leg, LegKind } from "../../holochain/types";
-import { t } from "../../i18n";
+import type { DropoffPreference, Leg, LegKind } from "../../holochain/types";
+import { t, type MessageKey } from "../../i18n";
+
+/// How a delivery's handed over, as everyone's screens name it.
+export const DROPOFF_PREFERENCE_LABEL: Record<DropoffPreference, MessageKey> = {
+  HandToMe: "cart.drop.handToMe",
+  MeetOutside: "cart.drop.meetOutside",
+  LeaveAtDoor: "cart.drop.leaveAtDoor",
+};
 
 /// The driver's most recent handoff of `kind` on an order, if it's reached
 /// this device yet.

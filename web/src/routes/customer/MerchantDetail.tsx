@@ -3,7 +3,7 @@ import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ChevronRight, Clock, Heart, HeartPulse, Tag } from "lucide-react";
 import { motion } from "framer-motion";
 import clsx from "clsx";
-import { averageRating, getItemRatingSummary, type ItemRatingSummary } from "../../holochain/zomes/reputation";
+import { averageRating, getItemRatingSummaries, type ItemRatingSummary } from "../../holochain/zomes/reputation";
 import { useResource } from "../../lib/hooks/useResource";
 import { useGoBack } from "../../lib/hooks/useGoBack";
 import { soldRow } from "../../lib/storefront/sales";
@@ -11,7 +11,9 @@ import { useMyAllergies } from "../../lib/hooks/useMyAllergies";
 import { hasAllergies, honestTags, matchAllergies, needsALook } from "../../lib/storefront/allergens";
 import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
 import { hexToBytes, bytesToHex } from "../../holochain/decode";
-import { useCart } from "../../store/cart";
+import { useCart, type CartLine } from "../../store/cart";
+import { useCartSwitch } from "../../lib/hooks/useCartSwitch";
+import { NewCartSheet } from "../../components/store/NewCartSheet";
 import { formatCents } from "../../lib/ui/format";
 import { Chip, ChipRow, Skeleton } from "../../components/ui";
 import { useTerms } from "../../store/network";
@@ -65,15 +67,13 @@ function StorePage({ hash }: { hash: string }) {
   // As they sell right now: a sale's price, while it's running.
   const items = menu && catalog ? menu.items.map((row) => soldRow(row, catalog, now)) : null;
   const bags = menu?.bags ?? [];
-  // Bounded by the menu page itself (a merchant's own menu, already capped
-  // -- see list_menu_items' own pagination). Keyed by the exact item set,
-  // so a newly added item gets its rating read too.
+  // Read together, a batch per call. Keyed by the exact item set, so a newly
+  // added item gets its rating read too.
   const itemsKey = items ? `item-ratings:${items.map((row) => bytesToHex(row.hash)).join(",")}` : null;
   const { data: itemRatings = {} } = useResource<Record<string, ItemRatingSummary>>(itemsKey, async () => {
-    const entries = await Promise.all(
-      (items ?? []).map(async (row) => [bytesToHex(row.hash), await getItemRatingSummary(row.hash).catch(() => ({ count: 0, rating_sum: 0 }))] as const),
-    );
-    return Object.fromEntries(entries);
+    const rows = items ?? [];
+    const summaries = await getItemRatingSummaries(rows.map((row) => row.hash)).catch(() => []);
+    return Object.fromEntries(summaries.map((summary, i) => [bytesToHex(rows[i].hash), summary]));
   });
   const { rating, record } = useStoreStanding(hash, catalogHash);
   const { mine } = useMyAllergies();
@@ -86,6 +86,7 @@ function StorePage({ hash }: { hash: string }) {
   const toggleDiet = (tag: string) => setFilters(dietaryFilter.includes(tag) ? dietaryFilter.filter((t) => t !== tag) : [...dietaryFilter, tag], hideMatches);
   /// The item whose choices are open, if any.
   const [choosing, setChoosing] = useState<ItemRow | null>(null);
+  const cartSwitch = useCartSwitch();
 
   // Scoped to this one restaurant's own menu, not a union across every
   // nearby restaurant -- a per-merchant menu is naturally small and bounded,
@@ -125,6 +126,8 @@ function StorePage({ hash }: { hash: string }) {
     );
   }
 
+  /// Into the cart -- asked first if it holds another store's order.
+  const addLine = (line: CartLine) => cartSwitch.ask(catalogHash, () => cart.addLine(catalogHash, catalog.owner, catalog.business_name, line));
   /// An item without choices goes straight in the cart; one with choices
   /// opens its sheet.
   const addItem = (row: ItemRow) => {
@@ -135,7 +138,7 @@ function StorePage({ hash }: { hash: string }) {
       return;
     }
     const { hash: itemRef, item } = row;
-    cart.addLine(catalogHash, catalog.owner, catalog.business_name, { itemRef, name: item.name, basePriceCents: item.price_cents, priceCents: item.price_cents, choiceCharges: [], quantity: 1, selections: [], choiceLabels: [] });
+    addLine({ itemRef, name: item.name, basePriceCents: item.price_cents, priceCents: item.price_cents, choiceCharges: [], quantity: 1, selections: [], choiceLabels: [] });
   };
   const avgRating = rating ? averageRating(rating) : null;
   const grouped = groupByCategory(filteredItems);
@@ -199,7 +202,7 @@ function StorePage({ hash }: { hash: string }) {
 
         {hash && <StoreRewardsStrip catalogHex={hash} />}
         {hash && <StoreDeals catalogHex={hash} menu={items ?? []} />}
-        <StoreBags bags={bags} onAdd={(row) => cart.addLine(catalogHash, catalog.owner, catalog.business_name, bagLine(row))} />
+        <StoreBags bags={bags} onAdd={(row) => addLine(bagLine(row))} />
 
         {/* The menu: categories beside it and the cart beside that, as the window allows. */}
         <div className={clsx("mt-6 lg:grid lg:gap-8", browsable ? "lg:grid-cols-[11rem_minmax(0,1fr)] 2xl:grid-cols-[11rem_minmax(0,1fr)_18rem]" : "lg:grid-cols-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_18rem]")}>
@@ -262,6 +265,14 @@ function StorePage({ hash }: { hash: string }) {
             ))}
 
             {items.length === 0 && <p className="mt-6 rounded-2xl border border-ink-100 bg-white p-6 text-center text-sm text-ink-400 dark:border-ink-800 dark:bg-ink-900">{t("store.noMenu")}</p>}
+            {items.length > 0 && filteredItems.length === 0 && (
+              <div className="mt-6 rounded-2xl border border-ink-100 bg-white p-6 text-center dark:border-ink-800 dark:bg-ink-900">
+                <p className="text-sm text-ink-400">{t("store.noneMatch")}</p>
+                <button onClick={() => setFilters([], false)} className="mt-2 text-sm font-semibold text-handshake-600 dark:text-handshake-400">
+                  {t("store.showAll")}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="hidden 2xl:block">
@@ -278,11 +289,12 @@ function StorePage({ hash }: { hash: string }) {
           policy={catalog.allergy_policy}
           onClose={() => setChoosing(null)}
           onDone={(line) => {
-            cart.addLine(catalogHash, catalog.owner, catalog.business_name, line);
             setChoosing(null);
+            addLine(line);
           }}
         />
       )}
+      <NewCartSheet pending={cartSwitch.pending} onConfirm={cartSwitch.confirm} onCancel={cartSwitch.cancel} />
     </motion.div>
   );
 }

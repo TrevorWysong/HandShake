@@ -35,7 +35,8 @@ import { useDriverSettings } from "../../store/roleSettings";
 import { useTerms } from "../../store/network";
 import type { SentBid } from "../../store/sentBids";
 import { useAction } from "../../lib/hooks/useAction";
-import { BEFORE_PICKUP, DROPOFF_PREFERENCE_LABEL, ON_THE_WAY, TRACKED_STATUSES, dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
+import { DROPOFF_PREFERENCE_LABEL } from "../../lib/orders/handoffs";
+import { BEFORE_PICKUP, ON_THE_WAY, TRACKED_STATUSES, dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
 
 /// The order to make this driver's stops in -- see `planRoute`. Stores'
 /// locations are read once per set of stores being served.

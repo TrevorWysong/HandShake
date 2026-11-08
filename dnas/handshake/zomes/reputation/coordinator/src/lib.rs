@@ -59,6 +59,11 @@ fn subject_of(target: &ReputationTarget) -> Subject<'_> {
 /// The links of `link_type` under each of `bases` made within the network's
 /// `reputation_window`, read together.
 fn recent(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Vec<Link>> {
+    Ok(recent_each(bases, link_type)?.into_iter().flatten().collect())
+}
+
+/// `recent`, each base's links apart.
+fn recent_each(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Vec<Vec<Link>>> {
     let since = (sys_time()? - handshake_governance::reputation_window()).unwrap_or(Timestamp::from_micros(0));
     let mut queries = Vec::with_capacity(bases.len());
     for base in bases {
@@ -66,7 +71,7 @@ fn recent(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Vec
         query.after = Some(since);
         queries.push(query);
     }
-    Ok(get_links_many(queries)?.into_iter().flatten().collect())
+    get_links_many(queries)
 }
 
 /// Where a `ReviewTarget`'s reviews live.
@@ -82,15 +87,20 @@ fn review_links(target: &ReviewTarget) -> (AnyLinkableHash, LinkTypes) {
 /// once. Read from the links' validated tags alone -- one network read,
 /// however many reviews there are.
 fn ratings(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Vec<(AgentPubKey, u8)>> {
+    Ok(votes(recent(bases, link_type)?))
+}
+
+/// The ratings in `links`' tags, one per author per order.
+fn votes(links: Vec<Link>) -> Vec<(AgentPubKey, u8)> {
     let mut votes: BTreeMap<(AgentPubKey, Vec<u8>), u8> = BTreeMap::new();
-    for link in recent(bases, link_type)? {
+    for link in links {
         let tag = link.tag.into_inner();
         let (Some(&rating), Some(order)) = (tag.first(), tag.get(1..)) else { continue };
         if (1..=5).contains(&rating) {
             votes.entry((link.author, order.to_vec())).or_insert(rating);
         }
     }
-    Ok(votes.into_iter().map(|((author, _), rating)| (author, rating)).collect())
+    votes.into_iter().map(|((author, _), rating)| (author, rating)).collect()
 }
 
 /// Which of `reviewers` have rated an order from a store none of `owners`
@@ -526,8 +536,24 @@ pub struct ItemRatingSummary {
 /// (`rating_sum / count`; `count == 0` means no reviews yet).
 #[hdk_extern]
 pub fn get_item_rating_summary(item_ref: ActionHash) -> ExternResult<ItemRatingSummary> {
-    let ratings = ratings(vec![item_ref.into()], LinkTypes::ItemToReview)?;
-    Ok(ItemRatingSummary { count: ratings.len() as u32, rating_sum: ratings.iter().map(|&(_, r)| r as u32).sum() })
+    Ok(item_summary(ratings(vec![item_ref.into()], LinkTypes::ItemToReview)?))
+}
+
+/// The most items `get_item_rating_summaries` reads at once.
+pub const ITEM_BATCH: usize = 100;
+
+/// Each of `item_refs`' ratings, in order -- a menu's, read together.
+#[hdk_extern]
+pub fn get_item_rating_summaries(item_refs: Vec<ActionHash>) -> ExternResult<Vec<ItemRatingSummary>> {
+    if item_refs.len() > ITEM_BATCH {
+        return Err(guest("Ask for fewer items at once."));
+    }
+    let bases = item_refs.into_iter().map(Into::into).collect();
+    Ok(recent_each(bases, LinkTypes::ItemToReview)?.into_iter().map(|links| item_summary(votes(links))).collect())
+}
+
+fn item_summary(ratings: Vec<(AgentPubKey, u8)>) -> ItemRatingSummary {
+    ItemRatingSummary { count: ratings.len() as u32, rating_sum: ratings.iter().map(|&(_, r)| r as u32).sum() }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

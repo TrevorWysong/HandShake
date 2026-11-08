@@ -8,6 +8,8 @@ import { getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/z
 import { getCatalog } from "../../holochain/zomes/catalog";
 import { decodeEntry, bytesToHex } from "../../holochain/decode";
 import { useCart } from "../../store/cart";
+import { useCartSwitch } from "../../lib/hooks/useCartSwitch";
+import { NewCartSheet } from "../../components/store/NewCartSheet";
 import { usePolling, useResource } from "../../lib/hooks/useResource";
 import { useActiveOrders } from "../../store/activeOrders";
 import { customerProgress, type OrderNeed } from "../../lib/orders/progress";
@@ -17,13 +19,14 @@ import { useSession } from "../../store/session";
 import { cartLinesFromOrder, fetchMenu } from "../../lib/storefront/menu";
 import { customerOrderPath, isFinished, itemCount, mergeNewestFirst, toOrderRow, type OrderRow } from "../../lib/orders/orderEntries";
 import { Button, Card, EmptyState, Notice, SectionLabel, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
-import { StatusBadge, PickupStatusBadge } from "../../components/orders/OrderStatus";
+import { OrderRowBadge } from "../../components/orders/OrderRowBadge";
 import { formatCents } from "../../lib/ui/format";
 import { describeRecurrence } from "../../lib/orders/recurrence";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { fetchRecurringOrders } from "../../lib/orders/recurring";
 import { RecurringDue } from "../../components/orders/RecurringDue";
 import { InfoSheet } from "../../components/InfoSheet";
+import { LoadMore } from "../../components/LoadMore";
 import type { MerchantCatalog, Timestamp } from "../../holochain/types";
 import { useT, type MessageKey } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
@@ -92,13 +95,19 @@ interface PastState {
   nextBefore: Timestamp | null;
 }
 
-/// Finished orders, newest first. History holds every order, so in-progress
-/// ones are filtered out here (they're on the other tab) -- a page can come
-/// back shorter than its limit, which "Load more" handles like any other.
+/// Finished orders, newest first. History holds every order, so what's in
+/// progress -- on the other tab -- is left out here: whatever's on the
+/// active queue, or until that's read, what isn't finished. A decision can
+/// finish an order whose status stays as it was (one settled as delivered,
+/// one decided never delivered), and it's off the queue then.
 function PastOrders() {
   const t = useT();
   const loading = useAction();
-  const { data, mutate } = useResource<PastState>("customer-order-history", () => fetchPast(null));
+  const { data: read, mutate } = useResource<PastState>("customer-order-history", () => fetchPast(null));
+  const { agentPubKey } = useSession();
+  const { owner, orders: active } = useActiveOrders();
+  const activeHex = owner && agentPubKey && owner === bytesToHex(agentPubKey) && active ? new Set(active.map((o) => o.row.hex)) : null;
+  const data = read && { ...read, rows: read.rows.filter((row) => (activeHex ? !activeHex.has(row.hex) : isFinished(row))) };
 
   const loadMore = (before: Timestamp) => loading.run(async () => {
     const next = await fetchPast(before);
@@ -116,11 +125,7 @@ function PastOrders() {
           <ReorderButton row={row} />
         </OrderCard>
       ))}
-      {data.nextBefore !== null && (
-        <Button variant="ghost" loading={loading.busy} onClick={() => data.nextBefore && loadMore(data.nextBefore)} className="w-full py-2 text-xs">
-          {t("common.loadMore")}
-        </Button>
-      )}
+      {data.nextBefore !== null && <LoadMore loading={loading.busy} failed={!!loading.error} onMore={() => data.nextBefore && loadMore(data.nextBefore)} />}
       {loading.error && <Notice>{loading.error}</Notice>}
     </div>
   );
@@ -128,7 +133,7 @@ function PastOrders() {
 
 async function fetchPast(before: Timestamp | null): Promise<PastState> {
   const page = await getMyOrderHistory(before);
-  return { rows: page.orders.map(toOrderRow).filter(isFinished), nextBefore: page.next_before };
+  return { rows: page.orders.map(toOrderRow), nextBefore: page.next_before };
 }
 
 /// An order in progress: where it stands, large, as its own page and the
@@ -174,7 +179,7 @@ function OrderCard({ row, showTime, children }: { row: OrderRow; showTime?: bool
           {t("orders.items", { count })} · <StatNumber className="text-xs">{formatCents(row.order.order_total)}</StatNumber>
         </p>
       </Link>
-      {row.kind === "Delivery" ? <StatusBadge status={row.order.status} /> : <PickupStatusBadge status={row.order.status} />}
+      <OrderRowBadge row={row} />
       {children}
     </Card>
   );
@@ -188,6 +193,7 @@ function ReorderButton({ row }: { row: OrderRow }) {
   const cart = useCart();
   const navigate = useNavigate();
   const reordering = useAction();
+  const cartSwitch = useCartSwitch();
 
   const reorder = () => reordering.run(async () => {
     const { order } = row;
@@ -199,9 +205,12 @@ function ReorderButton({ row }: { row: OrderRow }) {
   });
 
   return (
-    <Button variant="ghost" className="px-2.5 py-1.5 text-xs" loading={reordering.busy} onClick={reorder} aria-label={reordering.error ?? t("orders.reorder")} title={reordering.error ?? undefined}>
-      <RotateCcw size={13} />
-    </Button>
+    <>
+      <Button variant="ghost" className="px-2.5 py-1.5 text-xs" loading={reordering.busy} onClick={() => cartSwitch.ask(row.order.catalog_ref, reorder, true)} aria-label={reordering.error ?? t("orders.reorder")} title={reordering.error ?? undefined}>
+        <RotateCcw size={13} />
+      </Button>
+      <NewCartSheet pending={cartSwitch.pending} onConfirm={cartSwitch.confirm} onCancel={cartSwitch.cancel} />
+    </>
   );
 }
 

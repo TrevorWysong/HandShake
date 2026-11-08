@@ -14,6 +14,7 @@ export const REFUSALS = {
   "refusal.an-order-can-be-picked-up-only": "An order can be picked up only once the store has checked its driver in.",
   "refusal.an-order-can-have-at-most-choices": "An order can have at most {0} choices across its items.",
   "refusal.another-driver-still-has-time-to-take": "Another driver still has time to take it.",
+  "refusal.ask-for-fewer-items-at-once": "Ask for fewer items at once.",
   "refusal.ask-for-fewer-stores-at-once": "Ask for fewer stores at once.",
   "refusal.choose-a-month": "Choose a month.",
   "refusal.choose-between-1-and-5-stars": "Choose between 1 and 5 stars.",

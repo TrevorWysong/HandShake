@@ -31,7 +31,8 @@ import { useStoreSteps } from "../../lib/orders/storeSteps";
 import { ResponseCountdown } from "../../components/orders/ResponseCountdown";
 import { NoStoreYet } from "../../components/store/NoStoreYet";
 import { Button, Card, Chip, ChipRow, EmptyState, Notice, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
-import { StatusBadge, PickupStatusBadge } from "../../components/orders/OrderStatus";
+import { OrderRowBadge } from "../../components/orders/OrderRowBadge";
+import { LoadMore } from "../../components/LoadMore";
 import { ChatPanel } from "../../components/orders/ChatPanel";
 import { OrderPayments } from "../../components/payments/OrderPayments";
 import { bytesEqual } from "../../holochain/decode";
@@ -486,11 +487,7 @@ function OrderHistory({ stores, storeLabel, scope }: ListProps) {
           {mayHaveOpenIssues(row, terms, now) && <OrderIssues orderRef={row.ref} role="store" />}
         </OrderCard>
       ))}
-      {hasMore && (
-        <Button variant="ghost" loading={loading.busy} onClick={() => loadMore(data)} className="w-full py-2 text-xs lg:col-span-2">
-          {t("common.loadMore")}
-        </Button>
-      )}
+      {hasMore && <LoadMore loading={loading.busy} failed={!!loading.error} onMore={() => loadMore(data)} className="lg:col-span-2" />}
       {loading.error && <Notice className="lg:col-span-2">{loading.error}</Notice>}
     </div>
   );
@@ -540,7 +537,7 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
       )}
       <div className="flex items-center justify-between">
         <StatNumber className="text-sm">{formatCents(order.order_total)}</StatNumber>
-        {leftTheStore(row) && (row.kind === "Delivery" ? <StatusBadge status={row.order.status} /> : <PickupStatusBadge status={row.order.status} />)}
+        {leftTheStore(row) && <OrderRowBadge row={row} />}
       </div>
       <p className="mt-1 text-xs text-ink-400">
         {t("orders.items", { count })}

@@ -55,8 +55,15 @@ export interface ItemRatingSummary {
   rating_sum: number;
 }
 
-export async function getItemRatingSummary(itemRef: ActionHash): Promise<ItemRatingSummary> {
-  return callZome("reputation", "get_item_rating_summary", itemRef);
+/// The most items one `getItemRatingSummaries` call reads (`ITEM_BATCH`).
+export const ITEM_BATCH = 100;
+
+/// Each item's rating, in order -- read together, a batch at a time.
+export async function getItemRatingSummaries(itemRefs: ActionHash[]): Promise<ItemRatingSummary[]> {
+  const batches: ActionHash[][] = [];
+  for (let i = 0; i < itemRefs.length; i += ITEM_BATCH) batches.push(itemRefs.slice(i, i + ITEM_BATCH));
+  const read = await Promise.all(batches.map((batch) => callZome<ItemRatingSummary[]>("reputation", "get_item_rating_summaries", batch)));
+  return read.flat();
 }
 
 /// A menu item's reviews, newest first -- pass the previous page's

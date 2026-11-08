@@ -13,6 +13,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.the-customer-still-has-time-to-say": "El cliente todavía tiene tiempo para decir que nunca llegó.",
   "refusal.this-order-isn-t-out-with-its": "Este pedido no está en camino con su repartidor.",
   "refusal.ask-for-fewer-stores-at-once": "Pide menos tiendas a la vez.",
+  "refusal.ask-for-fewer-items-at-once": "Pide menos artículos a la vez.",
   "refusal.this-store-can-t-be-found": "No se encuentra esta tienda.",
   "refusal.a-free-order-can-t-be-delivered": "Un pedido gratis no se puede enviar a domicilio: tu repartidor responde de lo que lleva. Elige recoger.",
   "refusal.a-goodie-bag-is-one-to-an": "Una bolsa sorpresa va de una en una por pedido.",

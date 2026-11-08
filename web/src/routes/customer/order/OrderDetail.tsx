@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { AlertTriangle, Bike, DoorOpen, Gavel, MapPin, ShieldCheck, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cancelOrder, claimNeverArrived, getMyHandoverCode, getOrder, getOrderDecisions, getOrderPrivateDetails, listBidsForOrder, acceptBid, confirmCollected } from "../../../holochain/zomes/dispatch";
-import { confirmDeliveryReceived, HandoffNotYetHere } from "../../../lib/orders/handoffs";
+import { confirmDeliveryReceived, DROPOFF_PREFERENCE_LABEL, HandoffNotYetHere } from "../../../lib/orders/handoffs";
 import { getCatalog } from "../../../holochain/zomes/catalog";
 import { fetchOrderItemNames } from "../../../lib/storefront/menu";
 import { getHandoffEvidence, getLegsForOrder } from "../../../holochain/zomes/attestation";
@@ -40,17 +40,14 @@ import { OrderAppeal } from "../../../components/orders/OrderAppeal";
 import { useTerms } from "../../../store/network";
 import { useT, type MessageKey } from "../../../i18n";
 import { HandoverCode } from "../../../components/orders/HandoverCode";
+import { StoreWay } from "../../../components/store/StoreContact";
 import { OrderPayments } from "../../../components/payments/OrderPayments";
 
 // Chat is only valid once a driver is assigned (live_counterpart needs
-// order.accepted_bid to exist) and before the delivery's own terminal state.
-const ACTIVE_DELIVERY_STATUSES: DeliveryStatus[] = ["BidAccepted", "MerchantConfirmed", "DriverEnRouteToMerchant", "PickedUp"];
-
-const DROPOFF_PREFERENCE_LABEL: Record<DeliveryOrder["dropoff_preference"], MessageKey> = {
-  LeaveAtDoor: "cart.drop.leaveAtDoor",
-  HandToMe: "cart.drop.handToMe",
-  MeetOutside: "cart.drop.meetOutside",
-};
+// order.accepted_bid to exist) and before the delivery's own terminal state
+// -- the driver's side shows it until then too: waiting at the store, and at
+// the door with nobody there, as much as on the way.
+const ACTIVE_DELIVERY_STATUSES: DeliveryStatus[] = ["BidAccepted", "MerchantConfirmed", "DriverEnRouteToMerchant", "DriverAtStore", "PickedUp", "Unanswered", "Disputed"];
 
 /// What the customer's told while a driver has their order.
 const DRIVER_PROGRESS: Partial<Record<DeliveryOrder["status"], MessageKey>> = {
@@ -312,7 +309,7 @@ export function OrderDetail() {
             </motion.div>
           )}
 
-          {!handedOver && ["BidAccepted", "MerchantConfirmed", "DriverEnRouteToMerchant", "PickedUp"].includes(order.status) && (
+          {!handedOver && ["BidAccepted", "MerchantConfirmed", "DriverEnRouteToMerchant", "DriverAtStore", "PickedUp"].includes(order.status) && (
             <motion.div variants={fadeSlideUp} className="mt-4 flex items-start gap-3 rounded-2xl border border-ink-100 p-4 dark:border-ink-800">
               <DoorOpen size={20} className="mt-0.5 shrink-0 text-ink-400" />
               <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">
@@ -366,27 +363,7 @@ export function OrderDetail() {
                   {t("order.haveIt")}
                 </Button>
               )}
-              <AnimatePresence mode="wait" initial={false}>
-                {confirmingClaim ? (
-                  <motion.div key="claim" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-xl bg-white p-3 dark:bg-ink-900">
-                    <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">
-                      {t("order.claim.warning")}
-                    </p>
-                    <div className="mt-3 flex gap-2">
-                      <Button variant="ghost" className="flex-1 py-2" onClick={() => setConfirmingClaim(false)}>
-                        {t("common.back")}
-                      </Button>
-                      <Button variant="danger" className="flex-1 py-2" loading={action.doing === "claim"} disabled={action.busy} onClick={claimItNeverArrived}>
-                        {t("order.claim.button")}
-                      </Button>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.button key="ask" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConfirmingClaim(true)} className="text-xs font-semibold text-handshake-700 underline-offset-4 hover:underline dark:text-handshake-300">
-                    {t("order.claim.ask")}
-                  </motion.button>
-                )}
-              </AnimatePresence>
+              <ClaimNeverArrived open={confirmingClaim} onOpen={setConfirmingClaim} claiming={action.doing === "claim"} busy={action.busy} onClaim={claimItNeverArrived} text={CLAIM_TEXT.pickedUp} />
             </motion.div>
           )}
 
@@ -406,25 +383,7 @@ export function OrderDetail() {
                   {t("order.haveIt")}
                 </Button>
               )}
-              <AnimatePresence mode="wait" initial={false}>
-                {confirmingClaim ? (
-                  <motion.div key="claim" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-xl bg-white p-3 dark:bg-ink-900">
-                    <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">{t("noShow.disputeWarning")}</p>
-                    <div className="mt-3 flex gap-2">
-                      <Button variant="ghost" className="flex-1 py-2" onClick={() => setConfirmingClaim(false)}>
-                        {t("common.back")}
-                      </Button>
-                      <Button variant="danger" className="flex-1 py-2" loading={action.doing === "claim"} disabled={action.busy} onClick={claimItNeverArrived}>
-                        {t("noShow.dispute")}
-                      </Button>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.button key="ask" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConfirmingClaim(true)} className="text-xs font-semibold text-amber-800 underline-offset-4 hover:underline dark:text-amber-200">
-                    {t("noShow.disputeAsk")}
-                  </motion.button>
-                )}
-              </AnimatePresence>
+              <ClaimNeverArrived open={confirmingClaim} onOpen={setConfirmingClaim} claiming={action.doing === "claim"} busy={action.busy} onClaim={claimItNeverArrived} text={CLAIM_TEXT.noShow} />
             </motion.div>
           )}
         </div>
@@ -451,7 +410,7 @@ export function OrderDetail() {
             <motion.div variants={fadeSlideUp}>
               <Card className="mt-4 p-4">
                 <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("order.collectFrom", { store: store?.name ?? t("order.theStore") })}</p>
-                {store?.address && <p className="mt-0.5 text-xs text-ink-400">{store.address}</p>}
+                {store && <StoreWay location={store.location} address={store.address} className="mt-2" />}
                 <p className="mt-2 text-xs leading-relaxed text-ink-400">
                   {t("order.collectHint")}
                 </p>
@@ -504,6 +463,37 @@ export function OrderDetail() {
         </div>
       </div>
     </motion.div>
+  );
+}
+
+const CLAIM_TEXT = {
+  pickedUp: { ask: "order.claim.ask", warning: "order.claim.warning", confirm: "order.claim.button", tone: "text-handshake-700 dark:text-handshake-300" },
+  noShow: { ask: "noShow.disputeAsk", warning: "noShow.disputeWarning", confirm: "noShow.dispute", tone: "text-amber-800 dark:text-amber-200" },
+} as const satisfies Record<string, { ask: MessageKey; warning: MessageKey; confirm: MessageKey; tone: string }>;
+
+/// Saying it never came: asked, warned of what it means, then claimed.
+function ClaimNeverArrived({ open, onOpen, claiming, busy, onClaim, text }: { open: boolean; onOpen: (open: boolean) => void; claiming: boolean; busy: boolean; onClaim: () => void; text: (typeof CLAIM_TEXT)[keyof typeof CLAIM_TEXT] }) {
+  const t = useT();
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {open ? (
+        <motion.div key="claim" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="rounded-xl bg-white p-3 dark:bg-ink-900">
+          <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">{t(text.warning)}</p>
+          <div className="mt-3 flex gap-2">
+            <Button variant="ghost" className="flex-1 py-2" onClick={() => onOpen(false)}>
+              {t("common.back")}
+            </Button>
+            <Button variant="danger" className="flex-1 py-2" loading={claiming} disabled={busy} onClick={onClaim}>
+              {t(text.confirm)}
+            </Button>
+          </div>
+        </motion.div>
+      ) : (
+        <motion.button key="ask" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => onOpen(true)} className={`text-xs font-semibold underline-offset-4 hover:underline ${text.tone}`}>
+          {t(text.ask)}
+        </motion.button>
+      )}
+    </AnimatePresence>
   );
 }
 

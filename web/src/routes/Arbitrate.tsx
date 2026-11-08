@@ -2,6 +2,7 @@
 // store's settlement, with both sides' evidence -- sealed to the arbiter
 // alone -- and the ruling. An award is paid from the store's next
 // cash-out.
+import { LoadMore } from "../components/LoadMore";
 import { useState } from "react";
 import { TimeAgo } from "../components/TimeAgo";
 import { Gavel } from "lucide-react";
@@ -40,11 +41,7 @@ export default function ArbitratePage() {
       <div className="flex flex-col gap-4">
         {docket?.map((appeal) => <Case key={bytesToHex(appeal.appeal)} appeal={appeal} onRuled={reload} />)}
       </div>
-      {cursor !== null && (
-        <Button variant="ghost" loading={loading.busy} onClick={() => cursor !== null && loadOlder(cursor)} className="mt-4 w-full py-2 text-xs">
-          {t("common.loadMore")}
-        </Button>
-      )}
+      {cursor !== null && <LoadMore loading={loading.busy} failed={!!loading.error} onMore={() => loadOlder(cursor)} className="mt-4" />}
       {loading.error && <Notice className="mt-2">{loading.error}</Notice>}
     </div>
   );

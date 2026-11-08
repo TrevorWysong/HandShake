@@ -1,14 +1,7 @@
 // A driver's deliveries as their dashboard lays them out: each order's row,
 // where it's going, and the stages it moves through on their side.
 import type { Bid, DeliveryOrder, DeliveryStatus, DropoffDetails, GeoPoint } from "../../holochain/types";
-import type { MessageKey } from "../../i18n";
 import { geohashCenter } from "../places/geohash";
-
-export const DROPOFF_PREFERENCE_LABEL: Record<DeliveryOrder["dropoff_preference"], MessageKey> = {
-  LeaveAtDoor: "cart.drop.leaveAtDoor",
-  HandToMe: "cart.drop.handToMe",
-  MeetOutside: "cart.drop.meetOutside",
-};
 
 // Live location is only meaningful once the driver has committed and is
 // moving on this delivery. Every 8s: a few seconds, not sub-second -- fast

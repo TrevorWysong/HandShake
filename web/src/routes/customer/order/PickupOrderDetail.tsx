@@ -15,7 +15,7 @@ import { customerProgress, orderEstimate } from "../../../lib/orders/progress";
 import { useClock } from "../../../lib/hooks/useClock";
 import { Button, Card, Notice, Skeleton, StatNumber } from "../../../components/ui";
 import { WaitingForStore } from "../../../components/orders/WaitingForStore";
-import { formatCents, formatClockTime, formatDeadline } from "../../../lib/ui/format";
+import { formatCatalogAddress, formatCents, formatClockTime, formatDeadline } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useAction } from "../../../lib/hooks/useAction";
 import type { MerchantCatalog, PickupOrder } from "../../../holochain/types";
@@ -29,7 +29,7 @@ import { RateOrder } from "../../../components/orders/RateOrder";
 import { useT } from "../../../i18n";
 import { useTerms } from "../../../store/network";
 import { Sheet } from "../../../components/Sheet";
-import { StoreReach } from "../../../components/store/StoreContact";
+import { StoreReach, StoreWay } from "../../../components/store/StoreContact";
 import { currentBeacon, PROOF_MARGIN_MICROS } from "../../../lib/network/timeSource";
 import { OrderPayments } from "../../../components/payments/OrderPayments";
 
@@ -164,11 +164,14 @@ export function PickupOrderDetail() {
       )}
 
       {order.status === "MerchantConfirmed" && (
-        <motion.div variants={fadeSlideUp} className="mt-5 flex items-center gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
-          <ChefHat size={20} className="text-handshake-600" />
-          <p className="text-sm text-handshake-700 dark:text-handshake-300">
-            {order.ready_by !== null ? t("pickup.preparingBy", { time: formatClockTime(order.ready_by) }) : t("pickup.preparing")}
-          </p>
+        <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
+          <div className="flex items-center gap-3">
+            <ChefHat size={20} className="shrink-0 text-handshake-600" />
+            <p className="text-sm text-handshake-700 dark:text-handshake-300">
+              {order.ready_by !== null ? t("pickup.preparingBy", { time: formatClockTime(order.ready_by) }) : t("pickup.preparing")}
+            </p>
+          </div>
+          {store && <StoreWay location={store.location} address={formatCatalogAddress(store)} />}
         </motion.div>
       )}
 
@@ -194,6 +197,7 @@ export function PickupOrderDetail() {
                 {collectBy > now.getTime() * 1000 ? t("pickup.ready", { time: formatDeadline(collectBy) }) : t("pickup.readyLate")}
               </p>
             </div>
+            {store && <StoreWay location={store.location} address={formatCatalogAddress(store)} />}
             <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmPickup}>
               {t("pickup.pickedUp")}
             </Button>
