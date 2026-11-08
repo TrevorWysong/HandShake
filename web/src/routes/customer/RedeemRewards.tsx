@@ -15,6 +15,8 @@ import { RewardArt } from "../../components/rewards/RewardPieces";
 import { Sheet } from "../../components/Sheet";
 import { Button, Skeleton } from "../../components/ui";
 import { useCart } from "../../store/cart";
+import { useCartSwitch } from "../../lib/hooks/useCartSwitch";
+import { NewCartSheet } from "../../components/store/NewCartSheet";
 import type { MerchantCatalog, Reward, RewardsProgram } from "../../holochain/types";
 import { useT } from "../../i18n";
 
@@ -35,10 +37,14 @@ export function RedeemRewards() {
   const [bucket, setBucket] = useState<number | null>(null);
   const [opening, setOpening] = useState<Reward | null>(null);
   const [added, setAdded] = useState(false);
+  // Into this store's bag -- asked first if it holds another store's order.
+  const cartSwitch = useCartSwitch();
   const chooser = useRewardChooser(catalogRef, menu, (reward, line) => {
     if (!store) return;
-    cart.redeem(catalogRef, store.owner, store.business_name, { id: reward.id, name: reward.name, cost: reward.cost }, line);
-    setAdded(true);
+    cartSwitch.ask(catalogRef, () => {
+      cart.redeem(catalogRef, store.owner, store.business_name, { id: reward.id, name: reward.name, cost: reward.cost }, line);
+      setAdded(true);
+    });
   });
 
   if (!card) {
@@ -223,6 +229,7 @@ export function RedeemRewards() {
         )}
       </Sheet>
       {chooser.sheet}
+      <NewCartSheet pending={cartSwitch.pending} onConfirm={cartSwitch.confirm} onCancel={cartSwitch.cancel} />
     </div>
   );
 }

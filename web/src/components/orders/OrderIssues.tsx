@@ -312,10 +312,12 @@ function ReportIssueSheet({
               <AnimatePresence initial={false}>
                 {units > 0 && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="mt-3 grid grid-cols-3 gap-2" role="radiogroup" aria-label={t("issues.whatsWrong", { item: line.name })}>
                       {(["Missing", "Wrong", "Allergen"] as const).map((kind) => (
                         <button
                           key={kind}
+                          role="radio"
+                          aria-checked={(d?.kind ?? "Missing") === kind}
                           onClick={() => setDraft((dr) => ({ ...dr, [position]: { quantity: units, kind } }))}
                           className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition ${
                             (d?.kind ?? "Missing") === kind ? "bg-ink-900 text-white dark:bg-ink-50 dark:text-ink-900" : "bg-white text-ink-600 ring-1 ring-ink-200 dark:bg-ink-900 dark:text-ink-300 dark:ring-ink-700"

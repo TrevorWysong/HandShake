@@ -1,35 +1,22 @@
 // Chat between an order's two active parties -- a delivery's customer and
 // driver, a pickup's customer and store -- app to app: see holochain/live.ts,
 // and dispatch_coordinator::live for why it's deliberately never stored.
-// Consequence of that design, named honestly: history is in-memory only and
-// does not survive a page reload or switching away from this screen. So a
-// panel stays mounted while its order is on screen, even folded away, and
-// keeps listening.
-import { useRef, useState } from "react";
+// Its lines are held for the app while it runs (`store/chats`), so they're
+// here however someone moves round the app, and gone with a reload.
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, MessageCircle, Send } from "lucide-react";
 import clsx from "clsx";
 import { sendChatMessage } from "../../holochain/live";
-import { myAgentPubKey } from "../../holochain/client";
-import { useLiveSignal } from "../../lib/hooks/useResource";
-import { bytesEqual } from "../../holochain/decode";
+import { bytesToHex } from "../../holochain/decode";
 import { formatClockTime, nowMicros } from "../../lib/ui/format";
 import type { ActionHash } from "../../holochain/types";
 import { MAX_NOTE_CHARS } from "../../holochain/types";
+import { holdChatLine, useChats, type ChatLine } from "../../store/chats";
 import { useT } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
 
-interface ChatLine {
-  /// Its place in the conversation -- what's been read is up to one.
-  seq: number;
-  mine: boolean;
-  text: string;
-  sentAt: number;
-}
-
-/// The most lines a panel keeps -- the latest. Its counterpart can send as
-/// many as they like; this device holds a screenful's worth of history.
-const MAX_LINES = 200;
+const NO_LINES: ChatLine[] = [];
 
 interface Props {
   orderRef: ActionHash;
@@ -43,26 +30,16 @@ interface Props {
 
 export function ChatPanel({ orderRef, title, counterpart, collapsible = false }: Props) {
   const t = useT();
-  const [lines, setLines] = useState<ChatLine[]>([]);
+  const orderHex = bytesToHex(orderRef);
+  const lines = useChats((s) => s.lines[orderHex]) ?? NO_LINES;
   const [open, setOpen] = useState(!collapsible);
+  // Folded, what came before it was shown is unread.
   const [readUpTo, setReadUpTo] = useState(0);
   const [draft, setDraft] = useState("");
   const sending = useAction();
-  const nextSeq = useRef(1);
 
-  const append = (line: Omit<ChatLine, "seq">) => {
-    const seq = nextSeq.current++;
-    setLines((prev) => [...prev, { ...line, seq }].slice(-MAX_LINES));
-  };
   const latest = lines.length ? lines[lines.length - 1].seq : 0;
   const unread = open ? 0 : lines.filter((line) => !line.mine && line.seq > readUpTo).length;
-
-  useLiveSignal((signal) => {
-    if (!("ChatMessage" in signal)) return;
-    const msg = signal.ChatMessage;
-    if (!bytesEqual(msg.order_ref, orderRef)) return;
-    append({ mine: bytesEqual(msg.from, myAgentPubKey()), text: msg.text, sentAt: msg.sent_at });
-  });
 
   // Opening or folding it, everything so far has been seen.
   function toggle() {
@@ -79,7 +56,7 @@ export function ChatPanel({ orderRef, title, counterpart, collapsible = false }:
       await sendChatMessage(orderRef, text);
       // A direct signal only reaches the *other* party -- show our own line
       // here as it goes.
-      append({ mine: true, text, sentAt: nowMicros() });
+      holdChatLine(orderHex, { mine: true, text, sentAt: nowMicros() });
       setDraft("");
     });
   }

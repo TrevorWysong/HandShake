@@ -3,6 +3,7 @@ import { notificationFor } from "../../lib/orders/notifications";
 import { playChime } from "../../lib/ui/chime";
 import { useLiveSignal, useLocalSignal } from "../../lib/hooks/useResource";
 import { usePreferences } from "../../store/preferences";
+import { holdChatSignal } from "../../store/chats";
 import { wakeCustomer } from "../../lib/network/push";
 import type { LocalSignal } from "../../holochain/types";
 import type { LiveSignal } from "../../holochain/live";
@@ -36,5 +37,7 @@ export function Notifier() {
   };
   useLocalSignal(notify);
   useLiveSignal(notify);
+  // Every order's chat, held wherever in the app they are.
+  useLiveSignal(holdChatSignal);
   return null;
 }

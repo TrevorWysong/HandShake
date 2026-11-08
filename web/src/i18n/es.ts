@@ -374,6 +374,7 @@ export const es: Catalog = {
   "decline.label.CantMakeAsAsked": "No puede hacerlo como se pidió",
   "decline.reason.CantMakeAsAsked": "La tienda no puede prepararlo como pediste, incluidas las alergias o notas que le indicaste. Se libera cualquier retención en tu tarjeta.",
   "issues.allergen": "Alérgeno",
+  "issues.whatsWrong": "Qué pasa con {item}",
   "issues.allergenMedical": "Si tienes una reacción, busca primero ayuda médica y llama a emergencias si es grave. Al reportarlo aquí, solo la tienda sabe que fue un alérgeno: los demás lo ven como un producto incorrecto. El pedido conserva lo que dijo la tienda cuando pediste. Este informe no afecta a ningún otro derecho que tengas.",
   "allergy.canOmit": "Se puede preparar sin esto, si lo pides (aun así puede tener contacto en la cocina):",
   "store.flagging": "Señalando: {allergens}",

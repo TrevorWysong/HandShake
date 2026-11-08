@@ -247,6 +247,7 @@ function RecurringOrders() {
           </Card>
         ))}
       </div>
+      {toggling.error && <Notice className="mt-2">{toggling.error}</Notice>}
     </div>
   );
 }

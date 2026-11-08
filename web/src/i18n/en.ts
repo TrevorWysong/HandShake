@@ -379,6 +379,7 @@ export const en = {
   "decline.label.CantMakeAsAsked": "Can't make as asked",
   "decline.reason.CantMakeAsAsked": "The store can't make this the way you asked, including any allergies or notes you told it. Any hold on your card is released.",
   "issues.allergen": "Allergen",
+  "issues.whatsWrong": "What's wrong with {item}",
   "issues.allergenMedical": "If you're having a reaction, get medical help first, and call emergency services if it's severe. Reporting it here tells only the store that it was an allergen: others see it as a wrong item. The order keeps what the store said when you ordered. This report doesn't affect any other rights you have.",
   "allergy.canOmit": "Can be made without, if you ask (it may still meet it in the kitchen):",
   "store.flagging": "Flagging: {allergens}",
