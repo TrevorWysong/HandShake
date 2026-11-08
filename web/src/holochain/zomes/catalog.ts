@@ -156,6 +156,12 @@ export async function getCatalog(catalogRef: ActionHash): Promise<HcRecord> {
   return callZome("catalog", "get_catalog", catalogRef);
 }
 
+/// Takes one of the caller's items off their menu (`remove_menu_item`):
+/// sold out, and no longer listed. Orders that had it keep it.
+export async function removeMenuItem(originalAction: ActionHash): Promise<void> {
+  return callZome("catalog", "remove_menu_item", originalAction);
+}
+
 /// Whether the store's conductor accepts new orders on its own -- see
 /// `MerchantCatalog.auto_accept_orders`.
 export async function setAutoAcceptOrders(originalAction: ActionHash, autoAcceptOrders: boolean): Promise<HcRecord> {

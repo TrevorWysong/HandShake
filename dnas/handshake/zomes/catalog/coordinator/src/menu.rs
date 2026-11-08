@@ -67,6 +67,29 @@ pub fn update_menu_item(input: UpdateMenuItemInput) -> ExternResult<Record> {
     written(updated)
 }
 
+/// Takes one of the caller's items off their menu: marked sold out -- so an
+/// order a modified app still prices from it is refused when the store
+/// answers (`dispatch::pricing::sold_out_item`) -- and no longer listed.
+/// Orders that had it keep it, and its reviews stay its own.
+#[hdk_extern]
+pub fn remove_menu_item(original_action: ActionHash) -> ExternResult<()> {
+    let current = my_current_version(original_action.clone())?.ok_or(guest("Only its store's owner can remove an item."))?;
+    let mut item = decode_or::<MenuItem>(&current.record).ok_or(guest("That isn't a menu item."))?;
+    let catalog_ref = item.catalog_ref.clone();
+    if item.available {
+        item.available = false;
+        update_version(&current, &EntryTypes::MenuItem(item), LinkTypes::Version)?;
+    }
+    let me = agent_info()?.agent_initial_pubkey;
+    let target = AnyLinkableHash::from(original_action);
+    for link in get_links(LinkQuery::try_new(catalog_ref.clone(), LinkTypes::CatalogToMenuItem)?.author(me), GetStrategy::Local)? {
+        if link.target == target {
+            delete_link(link.create_link_hash, GetOptions::default())?;
+        }
+    }
+    recompute_dietary_tags(&catalog_ref)
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ListMenuItemsInput {
     pub catalog_ref: ActionHash,

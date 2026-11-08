@@ -12,11 +12,13 @@ pub struct ItemVersion {
     pub written_at: Timestamp,
 }
 
-/// A menu item's name now, and every version of it, oldest first.
+/// A menu item's name now, whether it's to be had now (a choice group
+/// always is), and every version of it, oldest first.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ItemVersions {
     pub item_ref: ActionHash,
     pub name: String,
+    pub available: bool,
     pub versions: Vec<ItemVersion>,
 }
 
@@ -31,9 +33,10 @@ pub fn get_my_item_versions(item_refs: Vec<ActionHash>) -> ExternResult<Vec<Item
         .into_iter()
         .map(|item_ref| {
             let versions = my_versions(item_ref.clone())?;
-            let name = versions.last().and_then(|r| r.entry().to_app_option::<MenuItem>().ok().flatten()).map(|item| item.name).unwrap_or_default();
+            let current = versions.last().and_then(|r| r.entry().to_app_option::<MenuItem>().ok().flatten());
+            let (name, available) = current.map(|item| (item.name, item.available)).unwrap_or_default();
             let versions = versions.iter().map(|r| ItemVersion { action: r.action_address().clone(), written_at: r.action().timestamp() }).collect();
-            Ok(ItemVersions { item_ref, name, versions })
+            Ok(ItemVersions { item_ref, name, available, versions })
         })
         .collect()
 }

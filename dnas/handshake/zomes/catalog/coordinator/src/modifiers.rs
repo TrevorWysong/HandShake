@@ -99,7 +99,7 @@ pub fn get_my_group_versions(group_refs: Vec<ActionHash>) -> ExternResult<Vec<It
             let versions = my_versions(group_ref.clone())?;
             let name = versions.last().and_then(decode_or::<ModifierGroup>).map(|g| g.name).unwrap_or_default();
             let versions = versions.iter().map(|r| ItemVersion { action: r.action_address().clone(), written_at: r.action().timestamp() }).collect();
-            Ok(ItemVersions { item_ref: group_ref, name, versions })
+            Ok(ItemVersions { item_ref: group_ref, name, available: true, versions })
         })
         .collect()
 }

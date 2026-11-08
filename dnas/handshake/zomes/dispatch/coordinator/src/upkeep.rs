@@ -34,7 +34,7 @@
 use crate::order_queues::{get_active_orders_for_store, get_my_active_orders, OrderEntry, OrderKind};
 use crate::orders::{accept_delivery_order, cancel_delivery, open_scheduled_order, AcceptOrderInput, KitchenNote};
 use crate::pickup::{accept_pickup_order, cancel_pickup};
-use crate::pricing::outdated_item;
+use crate::pricing::{outdated_item, sold_out_item};
 use crate::stores::{closed_reason, current_catalog, my_stores};
 use dispatch_integrity::*;
 use hdk::prelude::*;
@@ -384,7 +384,8 @@ impl WaitingOrder {
     /// Accepts it, with the store's usual prep time -- or declines it if
     /// the store is closed (goodie bags alone run on their own windows), a
     /// goodie bag on it is sold out or gone, it was placed under the store's
-    /// earlier terms, or it's priced from an outdated menu. An order with
+    /// earlier terms, it's priced from an outdated menu, or an item on it has
+    /// since sold out. An order with
     /// allergies on it waits for a person, unless the store's chosen otherwise --
     /// and, nobody having come, is declined before its window closes: left to
     /// lapse, anyone could mark an unattended store as never answering, by
@@ -399,6 +400,8 @@ impl WaitingOrder {
             Some(DeclineReason::TermsChanged)
         } else if outdated_item(order_ref, &self.lines, self.promo_code_ref.as_ref())?.is_some() {
             Some(DeclineReason::OutdatedPrices)
+        } else if sold_out_item(&self.lines)?.is_some() {
+            Some(DeclineReason::ItemsUnavailable)
         } else if crate::promos::promo_used_up(order_ref, self.promo_code_ref.as_ref())? {
             Some(DeclineReason::PromoUsedUp)
         } else {

@@ -278,10 +278,26 @@ pub(crate) fn ensure_priced_from_current_menu(order_ref: &ActionHash, lines: &[O
     if placed.as_micros() > sys_time()?.as_micros() + handshake_governance::clock_tolerance().as_micros() as i64 {
         return Err(guest("This order is dated in the future, so it can't be accepted. Decline it."));
     }
-    match outdated_item(order_ref, lines, promo_ref)? {
-        Some(name) => Err(guest(format!("{name} was priced from an outdated menu, so this order can't be accepted -- decline it"))),
+    if let Some(name) = outdated_item(order_ref, lines, promo_ref)? {
+        return Err(guest(format!("{name} was priced from an outdated menu, so this order can't be accepted -- decline it")));
+    }
+    match sold_out_item(lines)? {
+        Some(name) => Err(guest(format!("{name} is sold out, so this order can't be accepted -- decline it"))),
         None => Ok(()),
     }
+}
+
+/// The name of the first menu item on the order the store has since marked
+/// sold out, or taken off its menu -- from its own chain. A customer's app
+/// won't order one, but a modified app can cite its latest version, which
+/// validation can't hold against it: availability is the store's word now.
+pub(crate) fn sold_out_item(lines: &[OrderLine]) -> ExternResult<Option<String>> {
+    let bags: Vec<ActionHash> = crate::bags::bags_on(lines)?.into_iter().map(|(bag, _)| bag).collect();
+    let items: Vec<ActionHash> = lines.iter().filter(|line| !bags.contains(&line.item_ref)).map(|line| line.item_ref.clone()).collect();
+    if items.is_empty() {
+        return Ok(None);
+    }
+    Ok(my_item_versions(items)?.into_iter().find(|history| !history.available).map(|history| if history.name.is_empty() { "An item".to_string() } else { history.name }))
 }
 
 /// The name of the first item `ensure_priced_from_current_menu` would
@@ -527,6 +543,7 @@ fn promo_lapsed(order_ref: &ActionHash, promo_ref: &ActionHash) -> ExternResult<
 #[derive(Deserialize, Debug)]
 struct ItemVersionsWire {
     name: String,
+    available: bool,
     versions: Vec<ItemVersionWire>,
 }
 

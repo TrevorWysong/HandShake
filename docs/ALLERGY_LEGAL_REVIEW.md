@@ -1,6 +1,6 @@
 # Allergy wording: first-pass legal review
 
-Reviewed 2026-11-06 by Claude (an AI), for the project's owner. **This isn't legal advice and no lawyer has reviewed it.** It's meant to shrink what counsel has to look at: what the rules seem to require, what changed because of them, and what only counsel can answer. Laws here are moving fast, and some sources below are secondary.
+Reviewed 2026-11-06 for the project's owner. **This isn't legal advice and no lawyer has reviewed it.** It's meant to shrink what counsel has to look at: what the rules seem to require, what changed because of them, and what only counsel can answer. Laws here are moving fast, and some sources below are secondary.
 
 ## What the rules seem to say
 

@@ -14,6 +14,8 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.this-order-isn-t-out-with-its": "Este pedido no está en camino con su repartidor.",
   "refusal.ask-for-fewer-stores-at-once": "Pide menos tiendas a la vez.",
   "refusal.ask-for-fewer-items-at-once": "Pide menos artículos a la vez.",
+  "refusal.only-its-store-s-owner-can-remove": "Solo el dueño de la tienda puede quitar un artículo.",
+  "refusal.that-isn-t-a-menu-item": "Eso no es un artículo del menú.",
   "refusal.this-store-can-t-be-found": "No se encuentra esta tienda.",
   "refusal.a-free-order-can-t-be-delivered": "Un pedido gratis no se puede enviar a domicilio: tu repartidor responde de lo que lleva. Elige recoger.",
   "refusal.a-goodie-bag-is-one-to-an": "Una bolsa sorpresa va de una en una por pedido.",

@@ -2,7 +2,8 @@
 // order pinned to an old price is stopped: an order reaches drivers only
 // once its store accepts it, only the store can accept or prepare it
 // (validation, not just the honest coordinator), and the store's
-// acceptance refuses a line priced from an outdated menu.
+// acceptance refuses a line priced from an outdated menu -- or from an item
+// it's since sold out of, or taken off its menu.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
@@ -122,4 +123,38 @@ await runScenario(async (scenario) => {
   await call(merchant, "dispatch")("decline_pickup_order", { order_original_action: pinned, reason: "OutdatedPrices" });
   assert.equal(await status(merchant, "get_pickup_order", pinned), "Cancelled");
   console.log("[PASS] the store refuses an order priced from an outdated menu, and declines it");
+
+  // --- An item taken off the menu can't be ordered, even by citing it. ---
+  await call(merchant, "catalog")("remove_menu_item", burgerV1);
+  await sync();
+  const menu = await call(customer, "catalog")<{ items: unknown[] }>("list_menu_items", { catalog_ref: store, after: null });
+  assert.equal(menu.items.length, 0, "it's off the menu");
+  await assert.rejects(
+    call(customer, "dispatch")("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: burgerV1, quantity: 1 }], order_total: 1200 }),
+    /Burger is sold out/,
+    "a customer's app won't order it",
+  );
+  const [history] = await call(merchant, "catalog")<{ available: boolean; versions: { action: Uint8Array }[] }[]>("get_my_item_versions", [burgerV1]);
+  assert.equal(history.available, false, "it's marked sold out");
+  const removed = history.versions[history.versions.length - 1].action;
+  const cited = actionHash(
+    await call(customer, "dispatch")<HcRecord>("create_raw_pickup_order_for_testing", {
+      requester: customer.agentPubKey,
+      merchant: merchant.agentPubKey,
+      catalog_ref: store,
+      catalog_version: store,
+      lines: [{ item_ref: burgerV1, priced_version: removed, quantity: 1 }],
+      order_total: 1200,
+      status: "Placed",
+      requested_at: Date.now() * 1000,
+      kitchen_note: null,
+      promo_code_ref: null,
+      loyalty_proof: [],
+    }),
+  );
+  await sync();
+  await customerPaid(merchant, cited, all);
+  await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: cited }), /Burger is sold out/, "the store refuses an order a modified app priced from it");
+  await assert.rejects(call(customer, "catalog")("remove_menu_item", burgerV1), /Only its store's owner/, "and only its owner removes an item");
+  console.log("[PASS] an item taken off the menu is sold out: no app orders it, and the store refuses one that does");
 });

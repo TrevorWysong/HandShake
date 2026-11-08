@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Bike, MapPin, Power, Route } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
@@ -25,6 +24,7 @@ import { DriverSettingsCard } from "./DriverSettingsCard";
 import { VerificationCard } from "./VerificationCard";
 import { useTerms } from "../../store/network";
 import { useSentBids } from "../../store/sentBids";
+import { useDriverOnline } from "../../store/driverOnline";
 import { useAction } from "../../lib/hooks/useAction";
 import { ActiveDeliveryCard, BidCard, SuggestedRoute } from "./DriverCards";
 import { dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
@@ -43,7 +43,7 @@ export function DriverDashboard() {
   useLocalSignal((signal) => {
     if ("BidReleased" in signal) useSentBids.getState().forgetBid(bytesToHex(signal.BidReleased));
   });
-  const [online, setOnline] = useState(false);
+  const online = useDriverOnline((s) => s.driver === driverHex);
   // One offer at a time, sent or taken back, named by its order.
   const bidding = useAction();
   // Driver ratings only -- if this agent also runs a store, that store's
@@ -118,7 +118,7 @@ export function DriverDashboard() {
   );
 
   function toggleOnline() {
-    setOnline(!online);
+    useDriverOnline.getState().setOnline(driverHex, !online);
   }
 
   const placeBid = (orderRef: Uint8Array, trip: { etaMinutes: number; toStoreMinutes: number }, feeCents: number) =>
