@@ -16,7 +16,7 @@
 //! doc comment for why.
 
 use hdk::prelude::*;
-use handshake_coordinator_support::{call_local, call_role, decode_or, guest, original_action_of, resolve_latest, written};
+use handshake_coordinator_support::{call_local, call_role, decode_or, get_links_many, guest, original_action_of, read_records, resolve_latest, written};
 use std::collections::BTreeMap;
 use reputation_integrity::*;
 
@@ -57,16 +57,16 @@ fn subject_of(target: &ReputationTarget) -> Subject<'_> {
 }
 
 /// The links of `link_type` under each of `bases` made within the network's
-/// `reputation_window`.
+/// `reputation_window`, read together.
 fn recent(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Vec<Link>> {
     let since = (sys_time()? - handshake_governance::reputation_window()).unwrap_or(Timestamp::from_micros(0));
-    let mut links = Vec::new();
+    let mut queries = Vec::with_capacity(bases.len());
     for base in bases {
         let mut query = LinkQuery::try_new(base, link_type)?;
         query.after = Some(since);
-        links.extend(get_links(query, GetStrategy::default())?);
+        queries.push(query);
     }
-    Ok(links)
+    Ok(get_links_many(queries)?.into_iter().flatten().collect())
 }
 
 /// Where a `ReviewTarget`'s reviews live.
@@ -93,15 +93,21 @@ fn ratings(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Ve
     Ok(votes.into_iter().map(|((author, _), rating)| (author, rating)).collect())
 }
 
-/// Whether `reviewer` has rated an order from a store none of `owners` owns
-/// -- each such review is of a real order they had, from someone else. One
-/// who's only ever rated this store could be its owner's second account.
-/// With its owners unknown, two stores rated stand in for one elsewhere.
-fn rated_elsewhere(reviewer: &AgentPubKey, owners: &[AgentPubKey]) -> ExternResult<bool> {
-    let links = get_links(LinkQuery::try_new(reviewer.clone(), LinkTypes::ReviewerToReview)?, GetStrategy::default())?;
-    let rated: std::collections::BTreeSet<Vec<u8>> = links.into_iter().filter(|link| &link.author == reviewer).map(|link| link.tag.into_inner()).collect();
-    let elsewhere = rated.iter().filter(|tag| !owners.iter().any(|owner| &reviewer_tag(owner).into_inner() == *tag)).count();
-    Ok(elsewhere >= if owners.is_empty() { 2 } else { 1 })
+/// Which of `reviewers` have rated an order from a store none of `owners`
+/// owns -- each such review is of a real order they had, from someone else.
+/// One who's only ever rated this store could be its owner's second
+/// account. With its owners unknown, two stores rated stand in for one
+/// elsewhere. Every reviewer's reviews are read together.
+fn rated_elsewhere(reviewers: &[AgentPubKey], owners: &[AgentPubKey]) -> ExternResult<BTreeMap<AgentPubKey, bool>> {
+    let queries = reviewers.iter().map(|reviewer| LinkQuery::try_new(reviewer.clone(), LinkTypes::ReviewerToReview)).collect::<ExternResult<Vec<_>>>()?;
+    let owner_tags: Vec<Vec<u8>> = owners.iter().map(|owner| reviewer_tag(owner).into_inner()).collect();
+    let mut elsewhere = BTreeMap::new();
+    for (reviewer, links) in reviewers.iter().zip(get_links_many(queries)?) {
+        let rated: std::collections::BTreeSet<Vec<u8>> = links.into_iter().filter(|link| &link.author == reviewer).map(|link| link.tag.into_inner()).collect();
+        let others = rated.iter().filter(|tag| !owner_tags.contains(tag)).count();
+        elsewhere.insert(reviewer.clone(), others >= if owners.is_empty() { 2 } else { 1 });
+    }
+    Ok(elsewhere)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -424,28 +430,22 @@ pub fn get_rating_summary(target: ReviewTarget) -> ExternResult<RatingSummary> {
     // comes from a different store's order.
     let owners: Option<Vec<AgentPubKey>> = match &target {
         ReviewTarget::Store(_) => {
-            let mut owners = Vec::new();
-            for catalog in bases.iter().filter_map(|base| base.clone().into_action_hash()) {
-                owners.extend(get(catalog, GetOptions::default())?.map(|record| record.action().author().clone()));
-            }
-            Some(owners)
+            let catalogs: Vec<ActionHash> = bases.iter().filter_map(|base| base.clone().into_action_hash()).collect();
+            Some(read_records(&catalogs)?.into_iter().flatten().map(|record| record.action().author().clone()).collect())
         }
         ReviewTarget::Driver(_) => None,
     };
+    let votes = ratings(bases, review_link)?;
+    let elsewhere = match &owners {
+        Some(owners) => {
+            let reviewers: Vec<AgentPubKey> = votes.iter().map(|(reviewer, _)| reviewer.clone()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+            Some(rated_elsewhere(&reviewers, owners)?)
+        }
+        None => None,
+    };
     let mut summary = RatingSummary::default();
-    let mut elsewhere: BTreeMap<AgentPubKey, bool> = BTreeMap::new();
-    for (reviewer, rating) in ratings(bases, review_link)? {
-        let counts = match &owners {
-            None => true,
-            Some(owners) => match elsewhere.get(&reviewer) {
-                Some(counts) => *counts,
-                None => {
-                    let counts = rated_elsewhere(&reviewer, owners)?;
-                    elsewhere.insert(reviewer, counts);
-                    counts
-                }
-            },
-        };
+    for (reviewer, rating) in votes {
+        let counts = elsewhere.as_ref().is_none_or(|elsewhere| elsewhere.get(&reviewer).copied().unwrap_or(false));
         if counts {
             summary.count += 1;
             summary.rating_sum += rating as u32;
