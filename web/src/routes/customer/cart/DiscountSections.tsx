@@ -37,7 +37,7 @@ export function RewardsSection({ discounts, menuItems, onBrowse }: { discounts: 
             <RewardTile key={reward.id} program={program} reward={reward} balance={card.balance} tier={card.tier} menu={menuItems} selected={chosenReward?.id === reward.id} onSelect={() => discounts.toggleReward(reward)} />
           ))}
       </RewardRail>
-      {chosenReward && rewardDiscountCents === 0 && <p className="mt-1 text-xs text-amber-600">{t("rewards.addItemToUse")}</p>}
+      {chosenReward && rewardDiscountCents === 0 && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t("rewards.addItemToUse")}</p>}
       {chosenReward && rewardDiscountCents > 0 && <p className="mt-1 text-xs text-ink-500">{t("rewards.usingInstead")}</p>}
       <button type="button" onClick={onBrowse} className="mt-2 text-xs font-bold hover:underline" style={{ color: accent }}>
         {t("cart.reward.browse")} →
@@ -78,8 +78,8 @@ export function PromoSection({ discounts }: { discounts: Discounts }) {
                 ))}
               </div>
             )}
-            {!promoEvaluation?.eligible && <p className="mt-1 text-xs text-red-600">{t("cart.promo.noLonger", { requirement: describeRequirement(applied.promo.requirement, itemName) })}</p>}
-            {discounts.promoAwaitingItem && <p className="mt-1 text-xs text-amber-600">{t("cart.promo.addItem")}</p>}
+            {!promoEvaluation?.eligible && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{t("cart.promo.noLonger", { requirement: describeRequirement(applied.promo.requirement, itemName) })}</p>}
+            {discounts.promoAwaitingItem && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t("cart.promo.addItem")}</p>}
           </motion.div>
         ) : (
           <motion.div key="unapplied" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2">
@@ -90,7 +90,7 @@ export function PromoSection({ discounts }: { discounts: Discounts }) {
           </motion.div>
         )}
       </AnimatePresence>
-      {discounts.promoError && <p className="mt-1 text-xs text-red-600">{discounts.promoError}</p>}
+      {discounts.promoError && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{discounts.promoError}</p>}
     </Section>
   );
 }

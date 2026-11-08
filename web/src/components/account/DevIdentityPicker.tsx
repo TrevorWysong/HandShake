@@ -43,7 +43,7 @@ export function DevIdentityPicker({
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-dashed border-ink-200 dark:border-ink-700">
             {error !== undefined ? (
-              <p className="px-3 py-2.5 text-xs text-red-600">Couldn't reach {adminUrl}: {describeError(error)}. Is `npm run dev:conductor` running?</p>
+              <p className="px-3 py-2.5 text-xs text-red-600 dark:text-red-400">Couldn't reach {adminUrl}: {describeError(error)}. Is `npm run dev:conductor` running?</p>
             ) : identities === undefined ? (
               <div className="flex justify-center py-3">
                 <Spinner className="h-4 w-4" />

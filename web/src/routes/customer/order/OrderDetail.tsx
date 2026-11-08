@@ -367,7 +367,7 @@ export function OrderDetail() {
           {order.status === "Unanswered" && (
             <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-amber-50 p-4 dark:bg-amber-900/20">
               <div className="flex items-start gap-3">
-                <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600" />
+                <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
                 <p className="text-sm text-amber-900 dark:text-amber-100">
                   {decisions?.no_show_upheld_after ? t("noShow.customerDetail", { time: formatDeadline(decisions.no_show_upheld_after) }) : t("noShow.customerDetailSoon")}
                 </p>

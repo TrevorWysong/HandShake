@@ -255,7 +255,7 @@ function NewBagForm({ catalogRef, onCreated }: { catalogRef: Uint8Array; onCreat
           {t("bags.offerDelivery")}
         </label>
       </div>
-      {problem && form.title.trim() && <p className="text-xs text-amber-600">{problem}</p>}
+      {problem && form.title.trim() && <p className="text-xs text-amber-600 dark:text-amber-400">{problem}</p>}
       {save.error && <Notice>{save.error}</Notice>}
       <Button loading={save.busy} disabled={!!problem} onClick={list} className="py-2.5 text-xs">
         {t("bags.list")}

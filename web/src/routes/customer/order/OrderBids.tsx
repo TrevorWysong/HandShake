@@ -160,13 +160,13 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
                           <span className="text-xs text-ink-400">{t("order.noReviews")}</span>
                         )}
                         <span className="text-xs text-ink-400">· {t("order.completed", { count: stats.completedCount })}</span>
-                        {stats.droppedCount > 0 && <span className="text-xs text-amber-600">· {t("order.dropped", { count: stats.droppedCount })}</span>}
+                        {stats.droppedCount > 0 && <span className="text-xs text-amber-600 dark:text-amber-400">· {t("order.dropped", { count: stats.droppedCount })}</span>}
                         {stats.lapsedCount > 0 && <span className="text-xs text-ink-400">· {t("order.lapsed", { count: stats.lapsedCount })}</span>}
                       </div>
                     )}
                     {load && <p className="mt-1 text-xs text-ink-400">{describeLoad(load)}</p>}
                     {complaints && (
-                      <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-600">
+                      <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
                         <AlertTriangle size={12} /> {t("order.complaints", { count: w.count })}
                       </p>
                     )}

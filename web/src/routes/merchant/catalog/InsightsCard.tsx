@@ -33,7 +33,7 @@ export function InsightsCard({ catalogRef, items }: { catalogRef: Uint8Array; it
       {days === null ? (
         <p className="text-xs text-ink-400">{t("insights.intro")}</p>
       ) : error ? (
-        <p className="text-xs text-red-600">{t("insights.error")}</p>
+        <p className="text-xs text-red-600 dark:text-red-400">{t("insights.error")}</p>
       ) : !insights ? (
         <Skeleton className="h-28" />
       ) : (

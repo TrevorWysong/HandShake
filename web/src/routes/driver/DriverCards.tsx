@@ -278,13 +278,13 @@ export function BidCard({
         {order.tip_cents > 0 && <span className="font-semibold text-presence-600"> · {t("drive.tipAmount", { amount: formatCents(order.tip_cents) })}</span>}
       </p>
       {order.priority && (
-        <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-600">
+        <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
           <Zap size={12} /> {t("drive.priority")}
         </p>
       )}
       <CustomerHistory customer={order.requester} />
       {store && (store.late_count > 0 || store.check_in_refused_count > 0) && (
-        <p className="mt-1 text-xs font-semibold text-amber-600">
+        <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
           {t("drive.storeRecord", { late: store.late_count, refused: store.check_in_refused_count })}
         </p>
       )}

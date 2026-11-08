@@ -169,7 +169,7 @@ export function ProfilePage() {
             </p>
             <Textarea maxLength={MAX_NOTE_CHARS} value={draft.bio} onChange={(e) => setDraft((d) => ({ ...d, bio: e.target.value }))} rows={2} placeholder={t("profile.bio")} />
             <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} placeholder={t("profile.phone")} inputMode="tel" autoComplete="tel" aria-invalid={phoneNumber === null} type="tel" />
-            {phoneNumber === null && <p className="-mt-1 text-xs text-amber-600">{t("phone.invalid")}</p>}
+            {phoneNumber === null && <p className="-mt-1 text-xs text-amber-600 dark:text-amber-400">{t("phone.invalid")}</p>}
             {action.error && <Notice>{action.error}</Notice>}
             <Button loading={action.busy} disabled={phoneNumber === null} onClick={saveProfile} className="py-2 text-xs">
               {t("common.save")}

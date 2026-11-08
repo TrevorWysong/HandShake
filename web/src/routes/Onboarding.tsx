@@ -219,7 +219,7 @@ export function Onboarding() {
                 </Field>
                 <Field label={t("onboarding.phone")} className="mb-4">
                   <Input maxLength={MAX_PHONE_CHARS} value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" aria-invalid={phoneNumber === null} />
-                  {phoneNumber === null && <p className="mt-1 text-xs text-amber-600">{t("phone.invalid")}</p>}
+                  {phoneNumber === null && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t("phone.invalid")}</p>}
                 </Field>
                 <div className="mb-4 flex flex-col gap-2">
                   <SplitAddressFields
@@ -324,7 +324,7 @@ export function Onboarding() {
               {showError && (
                 <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
                   <p>{showError}</p>
-                  <p className="mt-1.5 text-[11px] text-red-600">
+                  <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">
                     Either your local node isn't running (start it with <code>npm run dev:conductor</code>), or its data was reset since this identity was created, in which case it can't be recovered.{" "}
                     <button onClick={signOut} className="font-semibold underline">
                       Forget it and start over

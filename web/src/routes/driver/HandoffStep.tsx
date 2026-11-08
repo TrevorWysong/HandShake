@@ -261,7 +261,7 @@ function NobodyCame({ arrivedAt, busy, onSay }: { arrivedAt: number; busy: boole
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-amber-50 p-4 dark:bg-amber-900/20">
       <div className="flex items-start gap-3">
-        <BellRing size={18} className="mt-0.5 shrink-0 text-amber-600" />
+        <BellRing size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
         <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">
           <span className="font-semibold">{t("noShow.toldTitle")}</span> {waited ? t("noShow.canSay") : t("noShow.waitUntil", { time: formatClockTime(canSay) })}
         </p>

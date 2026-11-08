@@ -36,7 +36,7 @@ export function RecoveryNudge({ compact = false }: { compact?: boolean }) {
   }
   return (
     <Link to="/account" className="mb-4 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-900/20">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-600 dark:text-amber-400 dark:bg-amber-900/30">
         <ShieldAlert size={18} />
       </span>
       <span className="min-w-0 flex-1">

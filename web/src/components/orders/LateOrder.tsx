@@ -84,7 +84,7 @@ export function LateOrder({ orderRef, order, storeAddress, onChanged }: { orderR
           <Button variant="secondary" onClick={() => setConfirming(true)} className="mt-3 w-full justify-center py-2.5 text-sm">
             <ShoppingBag size={16} /> {t("late.collectMyself")}
           </Button>
-          {action.error && <p className="mt-2 text-xs text-red-600">{action.error}</p>}
+          {action.error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
         </Card>
       )}
       <Sheet

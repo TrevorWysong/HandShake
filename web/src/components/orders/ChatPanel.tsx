@@ -130,7 +130,7 @@ export function ChatPanel({ orderRef, title, counterpart, collapsible = false }:
                 <Send size={15} />
               </motion.button>
             </form>
-            {sending.error && <p className="px-4 pb-2 text-[11px] text-amber-600">{t("chat.notSent")}</p>}
+            {sending.error && <p className="px-4 pb-2 text-[11px] text-amber-600 dark:text-amber-400">{t("chat.notSent")}</p>}
           </motion.div>
         )}
       </AnimatePresence>

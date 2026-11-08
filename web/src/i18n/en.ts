@@ -1598,6 +1598,7 @@ export const en = {
   "storeSettings.cuisine": "Cuisine",
   "storeSettings.cuisinePlaceholder": "Cuban, Italian, …",
   "storeSettings.radius": "Delivery radius (km)",
+  "storeSettings.radiusProblem": "Deliver within more than 0 and at most {max} km.",
   "storeSettings.sharing": "Delivery cost sharing",
   "storeSettings.editSharing": "Edit delivery cost sharing",
   "storeSettings.sharingDetail": "Your share of each delivery fee, split with the customer automatically (50/50 to start), and the most a fee can be on your orders, which caps what your share can cost you.",

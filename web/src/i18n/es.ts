@@ -1593,6 +1593,7 @@ export const es: Catalog = {
   "storeSettings.cuisine": "Cocina",
   "storeSettings.cuisinePlaceholder": "Cubana, italiana, …",
   "storeSettings.radius": "Radio de entrega (km)",
+  "storeSettings.radiusProblem": "Entrega a más de 0 y como mucho {max} km.",
   "storeSettings.sharing": "Reparto del coste de envío",
   "storeSettings.editSharing": "Editar reparto del coste de envío",
   "storeSettings.sharingDetail": "Tu parte de cada tarifa de envío, repartida automáticamente con el cliente (mitad y mitad al principio), y la tarifa máxima en tus pedidos, que limita lo que te puede costar tu parte.",

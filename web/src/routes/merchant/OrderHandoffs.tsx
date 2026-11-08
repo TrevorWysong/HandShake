@@ -168,7 +168,7 @@ export function NeverCameForPickup({ row }: { row: QueueRow }) {
       <Button variant="ghost" className="mt-2 w-full py-2 text-xs" loading={recording.busy} onClick={() => recording.run(async () => markPickupNotCollected(row.ref, await currentBeacon()))}>
         {t("merchantOrders.neverCame")}
       </Button>
-      {recording.error && <p className="mt-2 text-xs text-red-600">{recording.error}</p>}
+      {recording.error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{recording.error}</p>}
     </>
   );
 }
@@ -215,7 +215,7 @@ export function CollectionHandoff({ row }: { row: QueueRow }) {
           {t("merchantOrders.neverCame")}
         </Button>
       )}
-      {handing.error && <p className="mt-2 text-xs text-red-600">{handing.error}</p>}
+      {handing.error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{handing.error}</p>}
     </div>
   );
 }

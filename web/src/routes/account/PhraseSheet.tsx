@@ -48,7 +48,7 @@ export function PhraseSheet({ plan, onClose, onSaved }: { plan: PlanView | null;
                 {replacing ? t("account.newPhrase") : t("account.showWords")}
               </Button>
               {replacing && (
-                <button type="button" onClick={() => savePlan(null)} disabled={saving.busy} className="mt-3 w-full text-center text-xs font-semibold text-red-600">
+                <button type="button" onClick={() => savePlan(null)} disabled={saving.busy} className="mt-3 w-full text-center text-xs font-semibold text-red-600 dark:text-red-400">
                   {t("account.phraseOff")}
                 </button>
               )}

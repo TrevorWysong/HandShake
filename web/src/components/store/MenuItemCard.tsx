@@ -68,7 +68,7 @@ export function MenuItemCard({ row, rating, minAge, canAdd, match, store, now, o
         {item.allergens && item.allergens.can_omit.length > 0 && <span className="mt-0.5 text-[11px] text-ink-500 dark:text-ink-400"><span className="font-semibold">{t("allergy.canOmit")}</span> {names(item.allergens.can_omit)}</span>}
         {saysMay && <span className="mt-0.5 text-[11px] text-ink-500 dark:text-ink-400"><span className="font-semibold">{t("allergy.mayContain")}</span> {saysMay}</span>}
         {match && <AllergyWarning match={match} className="mt-2" />}
-        {!item.available && <span className="mt-1 text-xs font-medium text-red-600">{t("store.unavailable")}</span>}
+        {!item.available && <span className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{t("store.unavailable")}</span>}
       </span>
       <span className="relative shrink-0 self-center">
         {item.photo_data_uri && <img src={item.photo_data_uri} alt="" className="h-24 w-24 rounded-xl object-cover" />}

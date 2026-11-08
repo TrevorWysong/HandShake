@@ -66,7 +66,7 @@ export function PhotoInput({ value, onChange, shape = "circle", className }: Pro
         )}
       </button>
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
-      {action.error && <p className="mt-1 text-[11px] text-red-600">{action.error}</p>}
+      {action.error && <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{action.error}</p>}
     </div>
   );
 }

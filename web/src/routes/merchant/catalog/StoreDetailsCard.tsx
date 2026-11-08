@@ -98,6 +98,9 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
   const t = useT();
   const save = useAction();
   const set = (patch: Partial<DetailsDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  // What validation holds a delivery radius to.
+  const maxRadiusKm = useTerms().max_delivery_radius_km;
+  const radiusOk = Number.isFinite(draft.max_delivery_radius_km) && draft.max_delivery_radius_km > 0 && draft.max_delivery_radius_km <= maxRadiusKm;
   const email = draft.email.trim();
   const website = normalizeWebsite(draft.website);
   const emailOk = isStoreEmail(email);
@@ -126,23 +129,24 @@ function DetailsEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: 
       <p className="-mt-1 text-xs text-ink-400">{t("storeSettings.contactDetail")}</p>
       <Field label={t("profile.phone")}>
         <Input maxLength={MAX_PHONE_CHARS} value={draft.phone} onChange={(e) => set({ phone: e.target.value })} type="tel" inputMode="tel" autoComplete="tel" aria-invalid={phone === null} />
-        {phone === null && <p className="mt-1 text-xs text-amber-600">{t("phone.invalid")}</p>}
+        {phone === null && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t("phone.invalid")}</p>}
       </Field>
       <Field label={t("storeSettings.email")}>
         <Input maxLength={MAX_EMAIL_CHARS} value={draft.email} onChange={(e) => set({ email: e.target.value })} type="email" inputMode="email" autoComplete="email" placeholder="hello@yourstore.com" aria-invalid={!emailOk} />
-        {!emailOk && <p className="mt-1 text-xs text-amber-600">{t("storeSettings.emailInvalid")}</p>}
+        {!emailOk && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t("storeSettings.emailInvalid")}</p>}
       </Field>
       <Field label={t("storeSettings.website")}>
         <Input maxLength={MAX_WEBSITE_CHARS} value={draft.website} onChange={(e) => set({ website: e.target.value })} type="url" inputMode="url" autoComplete="url" placeholder="yourstore.com" aria-invalid={!websiteOk} />
-        {!websiteOk && <p className="mt-1 text-xs text-amber-600">{t("storeSettings.websiteInvalid")}</p>}
+        {!websiteOk && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t("storeSettings.websiteInvalid")}</p>}
       </Field>
       <Field label={t("storeSettings.radius")}>
-        <Input type="number" min={0} step="any" value={draft.max_delivery_radius_km} onChange={(e) => set({ max_delivery_radius_km: Number(e.target.value) })} placeholder="8" />
+        <Input type="number" min={0} max={maxRadiusKm} step="any" value={draft.max_delivery_radius_km} onChange={(e) => set({ max_delivery_radius_km: Number(e.target.value) })} placeholder="8" aria-invalid={!radiusOk} />
+        {!radiusOk && <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{t("storeSettings.radiusProblem", { max: maxRadiusKm })}</p>}
       </Field>
-      <Button loading={save.busy} disabled={!emailOk || !websiteOk || phone === null} onClick={() => save.run(() => onSave({ ...draft, email, website, phone: phone ?? "" }))} className="py-2 text-xs">
+      <Button loading={save.busy} disabled={!emailOk || !websiteOk || !radiusOk || phone === null} onClick={() => save.run(() => onSave({ ...draft, email, website, phone: phone ?? "" }))} className="py-2 text-xs">
         {t("common.save")}
       </Button>
-      {save.error && <p className="text-xs text-red-600">{save.error}</p>}
+      {save.error && <p className="text-xs text-red-600 dark:text-red-400">{save.error}</p>}
     </div>
   );
 }
@@ -318,7 +322,7 @@ export function StoreWaitCard({ catalog, catalogRef, onSaved }: { catalog: Merch
           </Button>
         )}
       </div>
-      {!valid && <p className="mt-2 text-xs text-amber-600">{t("storeSettings.between", { min, max })}</p>}
+      {!valid && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{t("storeSettings.between", { min, max })}</p>}
       {save.error && <Notice className="mt-3">{save.error}</Notice>}
     </Card>
   );
@@ -356,7 +360,7 @@ export function BusyCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCa
           </Button>
         )}
       </div>
-      {!valid && <p className="mt-2 text-xs text-amber-600">{t("storeSettings.busyRange", { max: room })}</p>}
+      {!valid && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{t("storeSettings.busyRange", { max: room })}</p>}
       {save.error && <Notice className="mt-3">{save.error}</Notice>}
     </Card>
   );
@@ -486,7 +490,7 @@ export function ListingCard({ catalogRef }: { catalogRef: Uint8Array }) {
           {t("storeSettings.listAgain")}
         </Button>
       )}
-      {save.error && <p className="mt-2 text-xs text-red-600">{save.error}</p>}
+      {save.error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{save.error}</p>}
     </Card>
   );
 }

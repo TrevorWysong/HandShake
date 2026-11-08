@@ -348,7 +348,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
             <div className="mx-auto max-w-lg rounded-2xl bg-white/90 p-3 shadow-[var(--shadow-float)] backdrop-blur-md dark:bg-ink-900/90">
               <AnimatePresence>
                 {(problem || action.error) && (
-                  <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mb-2 text-xs font-semibold text-red-600">
+                  <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mb-2 text-xs font-semibold text-red-600 dark:text-red-400">
                     {problem ?? action.error}
                   </motion.p>
                 )}
