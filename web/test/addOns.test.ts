@@ -6,7 +6,7 @@ import { encodeGeohash } from "../src/lib/places/geohash.ts";
 import type { DeliveryOrder, GeoPoint } from "../src/holochain/types.ts";
 
 const NETWORK = { max_concurrent_deliveries: 3, add_on_detour_km: 2 };
-const TERMS = offerRules(NETWORK, { maxAtOnce: null, takePriority: true, minFeeCents: 0 });
+const TERMS = offerRules(NETWORK, { maxAtOnce: null, takePriority: true, minFeeCents: 0, detourKm: null });
 const HOME: GeoPoint = { lat: 27.7676, lon: -82.6403 };
 // About 1km and 20km north.
 const NEAR: GeoPoint = { lat: 27.7766, lon: -82.6403 };
@@ -68,12 +68,20 @@ test("carryRefusal mirrors the network's rule", () => {
 });
 
 test("a driver's own limits narrow what they're offered, never widen it", () => {
-  const one = offerRules(NETWORK, { maxAtOnce: 1, takePriority: false, minFeeCents: 500 });
+  const one = offerRules(NETWORK, { maxAtOnce: 1, takePriority: false, minFeeCents: 500, detourKm: null });
   assert.equal(one.maxAtOnce, 1);
-  assert.equal(offerRules(NETWORK, { maxAtOnce: 9, takePriority: true, minFeeCents: 0 }).maxAtOnce, 3, "never past the network's limit");
+  assert.equal(offerRules(NETWORK, { maxAtOnce: 9, takePriority: true, minFeeCents: 0, detourKm: null }).maxAtOnce, 3, "never past the network's limit");
   assert.equal(offerRefusal([carrying(order({}))], one), "AtLimit");
   const cheap = { ...order({}), max_delivery_fee: 300 };
   const fair = { ...order({}), max_delivery_fee: 600 };
   const uncapped = { ...order({}), max_delivery_fee: null };
   assert.deepEqual(offerable([open(cheap), open(fair), open(uncapped), open(order({ priority: true }))], [], one), [open(fair), open(uncapped)]);
+});
+
+test("a driver's own add-on distance narrows or widens what's on their way", () => {
+  const delivering = [carrying(order({ status: "PickedUp" }), HOME)];
+  const nearby = [open(order({ store: STORE_B, to: NEAR }))];
+  assert.equal(offerable(nearby, delivering, TERMS).length, 1, "1 km is within the network's 2 km");
+  assert.equal(offerable(nearby, delivering, offerRules(NETWORK, { maxAtOnce: null, takePriority: true, minFeeCents: 0, detourKm: 0.5 })).length, 0, "but not within their own half a km");
+  assert.equal(offerable([open(order({ store: STORE_B, to: FAR }))], delivering, offerRules(NETWORK, { maxAtOnce: null, takePriority: true, minFeeCents: 0, detourKm: 5 })).length, 0, "and 20 km is beyond any");
 });

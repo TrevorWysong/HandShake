@@ -242,6 +242,7 @@ export function AddressSwitcher({
                   <button
                     onClick={() => removeAddress(row)}
                     disabled={action.busy}
+                    aria-label={t("common.remove")}
                     className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-300 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
                   >
                     <Trash2 size={15} />

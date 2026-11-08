@@ -72,12 +72,12 @@ pub(crate) fn validate_carry_ended(ended: &CarryEnded, author: &AgentPubKey, pre
     if !is_commit(&committed, author) || original_creation(ended.committed.clone())? != ended.order {
         return invalid("a carry ends on its driver's own commit to that order");
     }
-    // The order left their hands: their store decided it never arrived, or
-    // a later version of it is over, no longer theirs, or theirs to say
-    // nobody came for (what's held for it stays held till the store decides).
+    // The order left their hands: their store decided where it went, or a
+    // later version of it is over, no longer theirs, or theirs to say nobody
+    // came for (what's held for it stays held till the store decides).
     let basis = must_get_valid_record(ended.basis.clone())?;
     let left = if let Some(outcome) = decode::<OrderOutcome>(&basis) {
-        outcome.order == ended.order && matches!(outcome.outcome, Outcome::NotDelivered { .. })
+        outcome.order == ended.order
     } else {
         match Version::of(basis) {
             Some(version) if lineage::descends_from(&version, &ended.committed)? => {

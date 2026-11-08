@@ -85,16 +85,27 @@ pub struct BagView {
 /// ones that can still be live (validation caps a bag's lifetime), so this
 /// reads a week of links at most, never a store's whole history.
 fn recent_bags(catalog_ref: &ActionHash) -> ExternResult<Vec<(BagView, GoodieBag)>> {
+    let links = get_links(recent_bags_query(catalog_ref)?, GetStrategy::default())?;
+    Ok(resolve_links_to_records_with_original(links).into_iter().filter_map(|(original_action, record)| bag_of(catalog_ref, original_action, record)).collect())
+}
+
+/// The links to a store's recent bags (`recent_bags`).
+pub(crate) fn recent_bags_query(catalog_ref: &ActionHash) -> ExternResult<LinkQuery> {
     let mut query = LinkQuery::try_new(catalog_ref.clone(), LinkTypes::CatalogToBag)?;
     query.after = Some(Timestamp::from_micros(sys_time()?.as_micros() - bag_lifetime_micros()));
-    let links = get_links(query, GetStrategy::default())?;
-    Ok(resolve_links_to_records_with_original(links)
-        .into_iter()
-        .filter_map(|(original_action, record)| {
-            let bag = decode_or::<GoodieBag>(&record)?;
-            (&bag.catalog_ref == catalog_ref).then_some((BagView { original_action, record }, bag))
-        })
-        .collect())
+    Ok(query)
+}
+
+/// `record`, the current version of the bag at `original_action`, if it's
+/// one of `catalog_ref`'s.
+fn bag_of(catalog_ref: &ActionHash, original_action: ActionHash, record: Record) -> Option<(BagView, GoodieBag)> {
+    let bag = decode_or::<GoodieBag>(&record)?;
+    (&bag.catalog_ref == catalog_ref).then_some((BagView { original_action, record }, bag))
+}
+
+/// The same, if it can still be ordered at `now`.
+pub(crate) fn live_bag(catalog_ref: &ActionHash, original_action: ActionHash, record: Record, now: Timestamp) -> Option<BagView> {
+    bag_of(catalog_ref, original_action, record).filter(|(_, bag)| bag.pickup_window_end > now).map(|(view, _)| view)
 }
 
 /// The store's bags that can still be ordered (window not over).
@@ -104,7 +115,7 @@ pub fn list_goodie_bags_for_catalog(catalog_ref: ActionHash) -> ExternResult<Vec
 }
 
 /// See `list_goodie_bags_for_catalog`.
-pub(crate) fn live_bags(catalog_ref: &ActionHash) -> ExternResult<Vec<BagView>> {
+fn live_bags(catalog_ref: &ActionHash) -> ExternResult<Vec<BagView>> {
     let now = sys_time()?;
     Ok(recent_bags(catalog_ref)?.into_iter().filter(|(_, bag)| bag.pickup_window_end > now).map(|(view, _)| view).collect())
 }

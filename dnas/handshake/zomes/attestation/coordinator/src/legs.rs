@@ -385,14 +385,15 @@ fn handoff_proof(order_ref: ActionHash, kind: LegKind) -> ExternResult<Option<Ac
     Ok(None)
 }
 
-/// Proof the store handed the order to the caller -- its record of handing
-/// over their pickup leg, what `DeliveryOrder::pickup_proof` cites.
+/// Proof the store handed the order over -- its record of handing over a
+/// driver's pickup leg, what `DeliveryOrder::pickup_proof` cites: to the
+/// caller, or, for the store, to the driver who took it.
 #[hdk_extern]
 pub fn pickup_proof_for_order(order_ref: ActionHash) -> ExternResult<Option<ActionHash>> {
     let me = agent_info()?.agent_initial_pubkey;
     for record in get_legs_for_order(order_ref)? {
         let Some(leg) = record.entry().to_app_option::<Leg>().ok().flatten() else { continue };
-        if leg.kind != LegKind::MerchantHandoff || leg.from != me {
+        if leg.kind != LegKind::MerchantHandoff || (leg.from != me && leg.to != me) {
             continue;
         }
         if let Some(receipt) = get_receipt_for_leg(record.action_address().clone())? {

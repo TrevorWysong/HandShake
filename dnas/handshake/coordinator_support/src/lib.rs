@@ -90,12 +90,8 @@ pub fn resolve_version(action_hash: ActionHash) -> ExternResult<EntryVersion> {
     // The network's answer, or -- when it can't be reached -- what this
     // device has seen: older, perhaps, but never nothing.
     let links = get_links(versions.clone(), GetStrategy::Network).or_else(|_| get_links(versions, GetStrategy::Local))?;
-    let tip = links
-        .into_iter()
-        .filter_map(|link| Some((handshake_integrity_support::versions::version_depth(&link.tag)?, link.timestamp, link.target.into_action_hash()?)))
-        .max_by(|(d1, t1, h1), (d2, t2, h2)| d1.cmp(d2).then(t2.cmp(t1)).then(h2.cmp(h1)));
-    match tip {
-        Some((depth, _, hash)) => Ok(EntryVersion { original, record: read_record(hash)?, depth }),
+    match tip_of(links) {
+        Some((depth, hash)) => Ok(EntryVersion { original, record: read_record(hash)?, depth }),
         None if given.action_address() == &original => Ok(EntryVersion { original, record: given, depth: 0 }),
         None => Ok(EntryVersion { record: read_record(original.clone())?, original, depth: 0 }),
     }
@@ -138,6 +134,52 @@ pub fn version_at(action_hash: ActionHash) -> ExternResult<EntryVersion> {
         original = read_record(update.original_action_address.clone())?;
     }
     Ok(EntryVersion { original: original.action_address().clone(), record, depth })
+}
+
+/// The current version among an entry's `Version` links, and its depth: the
+/// deepest, and of two as deep the first written -- what every reader picks.
+fn tip_of(links: Vec<Link>) -> Option<(u32, ActionHash)> {
+    links
+        .into_iter()
+        .filter_map(|link| Some((handshake_integrity_support::versions::version_depth(&link.tag)?, link.timestamp, link.target.into_action_hash()?)))
+        .max_by(|(d1, t1, h1), (d2, t2, h2)| d1.cmp(d2).then(t2.cmp(t1)).then(h2.cmp(h1)))
+        .map(|(depth, _, hash)| (depth, hash))
+}
+
+/// Many link reads in one: the host makes them together, where `get_links`
+/// in a loop waits on each in turn. Each from the network, or -- when it
+/// can't be reached -- what this device has seen.
+pub fn get_links_many(queries: Vec<LinkQuery>) -> ExternResult<Vec<Vec<Link>>> {
+    let inputs = |strategy: GetStrategy| queries.iter().cloned().map(|query| GetLinksInput::from_query(query, strategy)).collect::<Vec<_>>();
+    HDK.with(|h| h.borrow().get_links(inputs(GetStrategy::Network))).or_else(|_| HDK.with(|h| h.borrow().get_links(inputs(GetStrategy::Local))))
+}
+
+/// Many records in one read, each from this device when it's here, else the
+/// network -- `None` for one found in neither.
+pub fn read_records(hashes: &[ActionHash]) -> ExternResult<Vec<Option<Record>>> {
+    let get_all = |hashes: Vec<&ActionHash>, options: GetOptions| HDK.with(|h| h.borrow().get(hashes.into_iter().map(|hash| GetInput::new(hash.clone().into(), options.clone())).collect()));
+    let mut found = get_all(hashes.iter().collect(), GetOptions::local())?;
+    let missing: Vec<usize> = found.iter().enumerate().filter(|(_, r)| r.is_none()).map(|(i, _)| i).collect();
+    if !missing.is_empty() {
+        for (i, record) in missing.iter().zip(get_all(missing.iter().map(|&i| &hashes[i]).collect(), GetOptions::network())?) {
+            found[*i] = record;
+        }
+    }
+    Ok(found)
+}
+
+/// Where each entry at `originals` (their original actions) is now -- its
+/// current version's action, or the original itself if it's never been
+/// updated -- for many at once, in one read of their version links
+/// (`versions`, the zome's `Version` link type).
+pub fn latest_versions(originals: &[ActionHash], versions: impl Fn(&ActionHash) -> ExternResult<LinkQuery>) -> ExternResult<Vec<ActionHash>> {
+    let queries = originals.iter().map(&versions).collect::<ExternResult<Vec<_>>>()?;
+    Ok(get_links_many(queries)?.into_iter().zip(originals).map(|(links, original)| current_of(links, original)).collect())
+}
+
+/// Where the entry at `original` is now, from its `Version` links.
+pub fn current_of(links: Vec<Link>, original: &ActionHash) -> ActionHash {
+    tip_of(links).map_or_else(|| original.clone(), |(_, tip)| tip)
 }
 
 /// A record by its action, which never changes once written: from this

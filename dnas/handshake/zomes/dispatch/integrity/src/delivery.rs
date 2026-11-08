@@ -215,7 +215,58 @@ fn validate_pickup_proof(order_original_creation: &ActionHash, proof: &ActionHas
     }
     let Some(leg) = decode::<Leg>(&must_get_valid_record(receipt.leg)?) else { return Ok(Err("a pickup receipt must acknowledge a handoff")) };
     let ours = leg.kind == LegKind::MerchantHandoff && &leg.from == driver && &resolve_original_creation(leg.order_ref)? == order_original_creation;
-    Ok(if ours { Ok(()) } else { Err("pickup_proof must be the store handing this order to this driver") })
+    if !ours {
+        return Ok(Err("pickup_proof must be the store handing this order to this driver"));
+    }
+    // Never once the store had called the order off: its chain, up to its
+    // record, says whether it had.
+    if lineage::wrote_any(merchant, proof, order_original_creation, |v| v.cancellation().is_some())? {
+        return Ok(Err("a store that's called an order off can't hand it over"));
+    }
+    Ok(Ok(()))
+}
+
+/// The handoff legs `author` recorded from `chain_top` back to `order`'s
+/// placement: their own -- or, `acknowledged`, the others' they
+/// acknowledged with a receipt.
+fn legs_since(author: &AgentPubKey, chain_top: &ActionHash, order: &ActionHash, acknowledged: bool) -> ExternResult<Vec<Leg>> {
+    let placed = must_get_action(order.clone())?.hashed.content.header.timestamp;
+    let index = if acknowledged { attestation_types::RECEIPT_INDEX } else { attestation_types::LEG_INDEX };
+    let mut legs = Vec::new();
+    for bytes in entries_since(author, chain_top, placed, &[attestation_types::attestation_entry_type(index)?])? {
+        if !acknowledged {
+            legs.extend(Leg::try_from(bytes).ok());
+        } else if let Ok(receipt) = ReceiptAttestation::try_from(bytes) {
+            legs.extend(decode::<Leg>(&must_get_valid_record(receipt.leg)?));
+        }
+    }
+    Ok(legs)
+}
+
+/// Whether one of `legs` is `order` (its original action) leaving its store.
+fn leaves_store(legs: Vec<Leg>, order: &ActionHash) -> ExternResult<bool> {
+    for leg in legs {
+        if leg.kind == LegKind::MerchantHandoff && &resolve_original_creation(leg.order_ref)? == order {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Whether `store` has handed `order` (its original action) over, as its
+/// own chain says from `chain_top` back: it acknowledged a driver taking
+/// it, or recorded its customer collecting it.
+fn handed_over(store: &AgentPubKey, chain_top: &ActionHash, order: &ActionHash) -> ExternResult<bool> {
+    if lineage::wrote_any(store, chain_top, order, |v| matches!(v, lineage::AnyVersion::Delivery(o) if o.status == DeliveryStatus::Collected))? {
+        return Ok(true);
+    }
+    leaves_store(legs_since(store, chain_top, order, true)?, order)
+}
+
+/// Whether `driver` recorded taking `order` (its original action) from its
+/// store -- their own handoff leg -- from `chain_top` back.
+fn took_from_store(driver: &AgentPubKey, chain_top: &ActionHash, order: &ActionHash) -> ExternResult<bool> {
+    leaves_store(legs_since(driver, chain_top, order, false)?, order)
 }
 
 /// What one update does, as these rules need it.
@@ -347,6 +398,13 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     });
     if let Some(reason) = check_cancellation(&update, cancelled_from, &prior.cancellation, &order.cancellation) {
         return Ok(Some(reason));
+    }
+    // Once the food's left the store, the store can't call the order off,
+    // move its driver on, or have its customer collect it instead: its own
+    // chain says whether it's handed it over -- to a driver, or to its
+    // customer.
+    if is_merchant && (cancelled_from.is_some() || step.collecting || step.releasing) && handed_over(author, prev_action, &order_original)? {
+        return Ok(Some("a store that's handed an order over can't take it back".into()));
     }
 
     // The driver: set when the customer accepts their bid, gone when they
@@ -480,6 +538,11 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         if bound {
             return Ok(Some("a driver either leaves an order or picks it up -- not both".into()));
         }
+        // Nor leaves one they've taken from the store, whoever records the
+        // pickup.
+        if driver_leaving && took_from_store(author, prev_action, &order_original)? {
+            return Ok(Some("a driver who's taken an order from its store can't leave it".into()));
+        }
     }
 
     // The store moving a driver on: one who hasn't committed within the
@@ -567,12 +630,14 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         }
     }
 
-    // The driver picks the order up on the store's record of handing it over.
+    // The driver picks the order up on the store's record of handing it over
+    // -- recorded by them, or by the store.
     if step.picking_up {
         let Some(proof) = &order.pickup_proof else {
             return Ok(Some("picking an order up needs the store's record of handing it over".into()));
         };
-        if let Err(reason) = validate_pickup_proof(&order_original, proof, &prior.merchant, author)? {
+        let Some(driver) = provider else { return Ok(Some("this order has no driver to pick it up".into())) };
+        if let Err(reason) = validate_pickup_proof(&order_original, proof, &prior.merchant, driver)? {
             return Ok(Some(reason.into()));
         }
     } else if prior.pickup_proof != order.pickup_proof {

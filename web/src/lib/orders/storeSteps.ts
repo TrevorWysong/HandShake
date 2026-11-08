@@ -1,7 +1,8 @@
 // What a store's app does for it while it's open: the steps its orders call
 // for once a deadline passes that cost someone else if claimed early --
 // moving on a late driver who's committed, recording a customer collecting
-// from a late driver, ending an order no driver came for. Each needs proof
+// from a late driver, ending an order no driver came for, settling as
+// delivered one its driver picked up that nobody's said more of. Each needs proof
 // of the time from the network's time source, which the store's conductor
 // can't reach; so its app fetches a round and takes them. (The conductor
 // takes every step that's the store's word on its own.)

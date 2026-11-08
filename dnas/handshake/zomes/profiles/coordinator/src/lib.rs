@@ -318,7 +318,7 @@ pub fn list_my_addresses(_: ()) -> ExternResult<Vec<SavedAddressView>> {
 pub fn my_sealed_allergies_length_for_testing(_: ()) -> ExternResult<Option<usize>> {
     let Some(original) = allergies_link()? else { return Ok(None) };
     let record = resolve_latest(original)?;
-    Ok(record.entry().to_app_option::<SealedAllergies>().ok().flatten().map(|entry| ExternIO::encode(&entry.sealed).map(|io| io.0.len())).transpose().map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?)
+    record.entry().to_app_option::<SealedAllergies>().ok().flatten().map(|entry| ExternIO::encode(&entry.sealed).map(|io| io.0.len())).transpose().map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))
 }
 
 #[cfg(feature = "test-utils")]

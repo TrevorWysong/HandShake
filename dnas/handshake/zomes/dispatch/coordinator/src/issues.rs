@@ -444,7 +444,7 @@ pub fn decide_order(order: ActionHash) -> ExternResult<bool> {
                 let no_show = no_show_word(&latest)?;
                 match (&delivery.status, no_show) {
                     (DeliveryStatus::Delivered, _) => {
-                        let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::Delivered { proof: latest.action_address().clone() } }))?;
+                        let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::Delivered { proof: latest.action_address().clone() } , beacon: None }))?;
                         // A customer who claimed it never came, and it had.
                         if came_out_of_claim(&latest)? {
                             record_reputation_event(&requester, ReputationTargetWire::Customer(requester.clone()), order.clone(), ReputationEventKindWire::DisputeResolvedAgainst, hash.clone())?;
@@ -458,7 +458,7 @@ pub fn decide_order(order: ActionHash) -> ExternResult<bool> {
                     // arrived before then (`decide_not_delivered`).
                     (_, Some(word)) => {
                         if now >= word.action().timestamp().as_micros() + handshake_governance::report_window().as_micros() as i64 {
-                            let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::Delivered { proof: word.action_address().clone() } }))?;
+                            let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::Delivered { proof: word.action_address().clone() } , beacon: None }))?;
                             record_reputation_event(&requester, ReputationTargetWire::Customer(requester.clone()), order.clone(), ReputationEventKindWire::NoShow, hash.clone())?;
                             delivered_on(&order, &delivery, &hash)?;
                             let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, vec![requester.clone()]);
@@ -560,7 +560,7 @@ fn came_out_of_claim(delivered: &Record) -> ExternResult<bool> {
 /// (`claim`): everyone's money goes back, and the driver's collateral pays
 /// the store for the food -- recorded against the driver.
 fn not_delivered(order: &ActionHash, claim: &Record, delivery: &DeliveryOrder) -> ExternResult<ActionHash> {
-    let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::NotDelivered { claim: claim.action_address().clone() } }))?;
+    let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::NotDelivered { claim: claim.action_address().clone() } , beacon: None }))?;
     if let Some(bid_ref) = &delivery.accepted_bid {
         if let Some(bid) = get(bid_ref.clone(), GetOptions::default())?.and_then(|r| decode_or::<Bid>(&r)) {
             let driver = bid.bidder;
@@ -590,4 +590,32 @@ pub fn decide_not_delivered(order: ActionHash) -> ExternResult<ActionHash> {
     let latest = resolve_latest(order.clone())?;
     let delivery = decode_or::<DeliveryOrder>(&latest).filter(|o| o.status == DeliveryStatus::Disputed).ok_or(guest("The customer hasn't said it never arrived."))?;
     not_delivered(&order, &latest, &delivery)
+}
+
+/// The store settling, as delivered, a delivery its driver picked up that
+/// nobody's said more of -- no proof it arrived, no claim it didn't -- once
+/// its customer's time to say it never came has run, proved by its app
+/// (`deliveries::get_store_steps_due`). The store and the driver are paid
+/// as for any delivery; a customer who never got it appeals.
+#[hdk_extern]
+pub fn settle_stalled_delivery(input: crate::deliveries::TimedStepInput) -> ExternResult<ActionHash> {
+    let order = original_action_of(input.order_ref)?;
+    let (requester, merchant) = parties_of(&order)?;
+    if merchant != agent_info()?.agent_initial_pubkey {
+        return Err(guest("Only the order's store decides this."));
+    }
+    let decisions = decisions_of(&order)?;
+    if decisions.delivered.is_some() || decisions.not_delivered.is_some() {
+        return Err(guest("This order's outcome is already decided."));
+    }
+    let latest = resolve_latest(order.clone())?;
+    let delivery = decode_or::<DeliveryOrder>(&latest).filter(|o| o.status == DeliveryStatus::PickedUp).ok_or(guest("This order isn't out with its driver."))?;
+    if handshake_integrity_support::beacon::proves_past(input.beacon.as_ref(), lineage::stalled_delivery_settles_at(latest.action().timestamp())).is_err() {
+        return Err(guest("The customer still has time to say it never came."));
+    }
+    let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::Delivered { proof: latest.action_address().clone() }, beacon: input.beacon }))?;
+    let driver = delivery.accepted_bid.as_ref().and_then(|b| get(b.clone(), GetOptions::default()).ok().flatten()).and_then(|r| decode_or::<Bid>(&r)).map(|bid| bid.bidder);
+    let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, std::iter::once(requester).chain(driver).collect());
+    crate::order_queues::retire(&crate::OrderParties::delivery(&order, &delivery)?)?;
+    Ok(hash)
 }

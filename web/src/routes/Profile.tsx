@@ -155,7 +155,7 @@ export function ProfilePage() {
       <Card className="mb-4 p-4">
         <div className="mb-2 flex items-center justify-between">
           <SectionLabel>{t("profile.about")}</SectionLabel>
-          <button onClick={toggleEditing} className="text-ink-400 hover:text-handshake-600">
+          <button onClick={toggleEditing} aria-label={t("common.edit")} className="text-ink-400 hover:text-handshake-600">
             <Pencil size={14} />
           </button>
         </div>
@@ -189,7 +189,7 @@ export function ProfilePage() {
         <Card className="mb-4 p-4">
           <div className="mb-2 flex items-center justify-between">
             <SectionLabel icon={<Truck size={13} />}>{t("profile.vehicle")}</SectionLabel>
-            <button onClick={toggleEditingVehicle} className="text-ink-400 hover:text-handshake-600">
+            <button onClick={toggleEditingVehicle} aria-label={t("common.edit")} className="text-ink-400 hover:text-handshake-600">
               <Pencil size={14} />
             </button>
           </div>

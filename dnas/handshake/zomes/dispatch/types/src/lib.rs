@@ -136,11 +136,12 @@ impl DeliveryStatus {
             // The driver committing, with their collateral; then the store
             // cooking; then the store checking them in at the counter; then
             // the driver collecting it, on the store's record of handing it
-            // over.
+            // over -- recorded by the driver, or by the store on their own
+            // record of taking it, should their app never say.
             (BidAccepted, DriverEnRouteToMerchant) => Some(AcceptedProvider),
             (DriverEnRouteToMerchant, MerchantConfirmed) => Some(Merchant),
             (MerchantConfirmed, DriverAtStore) => Some(Merchant),
-            (DriverAtStore, PickedUp) => Some(AcceptedProvider),
+            (DriverAtStore, PickedUp) => Some(MerchantOrProvider),
             // Before it's picked up, either side can call it off -- and a
             // driver kept waiting can call the store late.
             (BidAccepted | DriverEnRouteToMerchant | MerchantConfirmed, Cancelled) => Some(RequesterOrMerchant),

@@ -2483,6 +2483,11 @@ export interface OrderOutcome {
    */
   order: ActionHash;
   outcome: Outcome;
+  /**
+   * A round of the network's time source, for an outcome whose time has
+   * to be proved: a pickup nobody's said more of, settled as delivered.
+   */
+  beacon: Beacon | null;
 }
 
 /**
@@ -2587,7 +2592,9 @@ export interface OrderTiming {
  */
 export type Outcome =
   /**
-   * It reached the customer. `proof`: a `Delivered` version of the order.
+   * It reached the customer. `proof`: a `Delivered` version of the order;
+   * or the driver's word that nobody came, or the driver's pickup, each
+   * unanswered past the customer's time to say otherwise.
    */
   | {
       Delivered: {
@@ -4168,7 +4175,12 @@ export type StoreStep =
   /**
    * End an order no driver came for.
    */
-  | "EndForNoDriver";
+  | "EndForNoDriver"
+  /**
+   * Settle as delivered one its driver picked up that nobody's said more
+   * of (`issues::settle_stalled_delivery`).
+   */
+  | "SettleStalled";
 
 export interface StoreStepDue {
   order: ActionHash;

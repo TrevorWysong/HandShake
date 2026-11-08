@@ -6,6 +6,11 @@ import { spoken, type PolicyChange, type PolicyContent, type PolicySection } fro
 
 const changes: PolicyChange[] = [
   {
+    version: "1.9",
+    date: "2026-11-08",
+    summary: "Envíos: una vez que una tienda entrega un pedido, a un repartidor o a su cliente, ya no puede cancelarlo, y un repartidor que lo recogió no puede dejarlo. Uno recogido del que nadie dice nada más se liquida como entregado cuando se acaba el tiempo del cliente para decir lo contrario; un cliente al que nunca le llegó puede apelar. Los repartidores eligen cuánto se desvían por un pedido extra.",
+  },
+  {
     version: "1.8",
     date: "2026-11-07",
     summary: "Envíos: uno en el que la tienda deja de responder cuando le toca a ella se puede cerrar sin cobro, y la tienda le paga a cualquier repartidor al que hizo el check-in. Si uno recogido nunca llega, tu app lo reporta por ti al día siguiente. Quien recoge un pedido tiene todo su plazo desde la hora en que debía estar listo.",
@@ -154,6 +159,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       points: [
         "Desde que tu repartidor recoge tu pedido, y hasta que se entrega, puedes decir que no llegó. Tu repartidor aún puede aparecer y entregarlo como siempre.",
         `Si aún no ha llegado ${spoken(t.order_lapse_secs)} después de recogerlo, tu app dice por ti que no llegó, así que un repartidor que se queda con la comida la paga.`,
+        `Si nadie dice nada, ni que llegó ni que no, la tienda lo liquida como entregado ${spoken(t.order_lapse_secs + t.report_window_secs)} después de recogerlo, así que un repartidor y un cliente no pueden quedarse con la comida sin pagarla entre los dos. Si el tuyo nunca llegó, puedes apelar al árbitro de la red.`,
         `Si no lo hace, decide la tienda. Su app lo hace sola cuando tu reclamación lleva ${spoken(t.claim_grace_secs)}, o la tienda puede decidir antes.`,
         "Cuando la tienda decide que no llegó, recuperas lo que pagaste por la comida, el envío y tu propina. La tienda recupera su parte de la tarifa, y la garantía del repartidor paga a la tienda la comida.",
         "La tienda cobra la comida en cualquier caso, de ti si llegó o del repartidor si no, así que no gana nada con ninguna respuesta.",
@@ -162,7 +168,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       effects: [
         { who: "customers", good: "Nunca pierdes dinero por comida que no te llegó.", bad: "Si dices que no llegó y luego se entrega, queda en tu historial, donde lo ven los repartidores." },
         { who: "drivers", good: "Si lo entregas con el código del cliente, nadie puede decir que no llegó.", bad: "Si lo recoges y no lo entregas, pierdes tu garantía y tu tarifa, y queda en tu historial." },
-        { who: "stores", good: "La comida siempre se paga.", bad: "Tú decides qué pasa cuando cliente y repartidor no están de acuerdo, y esa decisión es pública." },
+        { who: "stores", good: "La comida siempre se paga, aunque nadie diga qué pasó con ella.", bad: "Tú decides qué pasa cuando cliente y repartidor no están de acuerdo, y esa decisión es pública." },
       ],
     },
     {
@@ -174,7 +180,7 @@ function sections(t: NetworkTerms): PolicySection[] {
           : `Un repartidor lleva como máximo ${t.max_concurrent_deliveries} pedidos a la vez, como en las grandes apps de reparto, y puedes pedir uno sin otros pedidos.`,
       points: [
         `Un repartidor puede aceptar como máximo ${t.max_concurrent_deliveries} ${t.max_concurrent_deliveries === 1 ? "pedido" : "pedidos"} a la vez. La red cuenta los compromisos que ha asumido y rechaza uno más allá de eso, así que ninguna app puede saltárselo.`,
-        `Mientras reparte, a un repartidor solo se le ofrecen pedidos de camino: de una tienda donde aún tiene que recoger, o que van a menos de ${t.add_on_detour_km} km de una de sus entregas.`,
+        `Mientras reparte, a un repartidor solo se le ofrecen pedidos de camino: de una tienda donde aún tiene que recoger, o que van a menos de ${t.add_on_detour_km} km de una de sus entregas, o la distancia que elija.`,
         "Cada oferta muestra cuántos pedidos más tiene ese repartidor, y tú eliges. Un repartidor no puede ocultar los pedidos que ha aceptado.",
         "Elige Prioritario al pagar para un repartidor sin otros pedidos. Nadie puede recoger tu pedido llevando otro, ni otro llevando el tuyo. Los repartidores suelen pujar más por ello.",
         "Un repartidor cuyo pedido no llega puede aceptar más en cuanto pierde su garantía por él, cosa que su app hace al decidir la tienda.",
@@ -256,6 +262,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         "Después de que la tienda lo acepte, cancelar significa que la tienda se queda con el precio de la comida que empezó. Después de asignar un repartidor, el repartidor se queda también con su tarifa. Tu propina siempre se te devuelve.",
         "Si cancela una tienda o un repartidor, se te devuelve todo lo que se les habría pagado.",
         "Una vez que el repartidor ha recogido tu pedido, no se puede cancelar: o se entrega, o no llega (ver más arriba).",
+        "Una vez que una tienda ha entregado un pedido, a su repartidor o a ti, no puede cancelarlo, y un repartidor que lo recogió en la tienda no puede dejarlo. Si la app del repartidor nunca registra la recogida, la registra la tienda.",
       ],
     },
     {

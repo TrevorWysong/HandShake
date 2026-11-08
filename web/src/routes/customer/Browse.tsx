@@ -2,15 +2,15 @@ import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PackageOpen, Search } from "lucide-react";
 import { motion } from "framer-motion";
-import { getNearbyListings } from "../../holochain/zomes/catalog";
+import { AREA_PRECISION, getNearbyListings } from "../../holochain/zomes/catalog";
 import { RecurringDue } from "../../components/orders/RecurringDue";
 import { bytesToHex } from "../../holochain/decode";
 import { encodeGeohash } from "../../lib/places/geohash";
 import { useSession } from "../../store/session";
 import { useFavorites } from "../../lib/hooks/useFavorites";
 import { usePolling, useResource } from "../../lib/hooks/useResource";
-import { minutesFrom, useNearbyStores } from "../../store/nearbyStores";
-import { nearestFirst } from "../../lib/storefront/nearby";
+import { FIRST_PAGE, minutesFrom, useNearbyStores } from "../../store/nearbyStores";
+import { inTiers, nearestFirst, pageByPage } from "../../lib/storefront/nearby";
 import { formatCents, nowMicros } from "../../lib/ui/format";
 import { RestaurantCard } from "../../components/store/RestaurantCard";
 import { AddressSwitcher } from "../../components/places/AddressSwitcher";
@@ -33,7 +33,16 @@ const SEARCHED = 300;
 // A store that just listed can take a while to be found -- its listing has
 // to reach whichever peer answers this read, seconds to a minute here -- so
 // the listings are polled, slowly (`POLL.slow`): stores open and close
-// rarely. Each store shown is refreshed on the same beat.
+// rarely. Each store shown is read again once its card is a few minutes old
+// (`nearbyStores`).
+//
+// Paging is the network's own: every store is listed under its cell and the
+// wider area around it (`AREA_PRECISION`). Browse reads the cells around
+// someone first, ranks them nearest first from the listings alone, and
+// reads stores a page at a time as the list scrolls; past the last of them,
+// it reads the wider area, and goes on with the stores farther out. How far
+// it's read is kept for the session, so coming back from a store finds the
+// list where it was left.
 
 function CardSkeleton() {
   return (
@@ -62,16 +71,24 @@ export function Browse() {
   // the browsing cell -- changing address drops any in-flight reply for the
   // old one instead of letting it overwrite the new list.
   const geohash = encodeGeohash(location.lat, location.lon);
-  const { data: listings } = useResource(`browse-listings:${geohash}`, () => getNearbyListings(geohash), { pollMs: POLL.slow });
-  const ordered = useMemo(() => listings && nearestFirst(listings, location), [listings, location]);
+  const area = geohash.slice(0, AREA_PRECISION);
+  const { data: nearListings } = useResource(`browse-listings:${geohash}`, () => getNearbyListings(geohash), { pollMs: POLL.slow });
+  const near = useMemo(() => nearListings && nearestFirst(nearListings, location), [nearListings, location]);
 
   // Browsing reads a page at a time, as the list scrolls; exploring --
   // searching, filtering, sorting, or about to -- reads the nearest
   // `SEARCHED`, so every choice counts what's really near.
   const [opened, setOpened] = useState(false);
   const exploring = opened || isNarrowed(filters) || filters.sort !== "relevance";
-  const [paging, setPaging] = useState({ geohash, pages: 1 });
-  const pages = paging.geohash === geohash ? paging.pages : 1;
+  const paging = useNearbyStores((s) => s.paging[geohash]) ?? FIRST_PAGE;
+  const setPaging = useNearbyStores((s) => s.setPaging);
+  const pages = paging.pages;
+  // The wider area, once the cells around here are looked through.
+  const widen = paging.wide || (exploring && !!near && near.length < SEARCHED);
+  const { data: widerListings } = useResource(widen ? `browse-listings:${area}` : null, () => getNearbyListings(area), { pollMs: POLL.slow });
+  const wider = useMemo(() => widerListings && nearestFirst(widerListings, location), [widerListings, location]);
+  const ordered = useMemo(() => near && inTiers(near, widen ? wider : undefined), [near, wider, widen]);
+  const widening = widen && wider === undefined;
   const wanted = Math.min(ordered?.length ?? 0, exploring ? Math.max(pages * PAGE, SEARCHED) : pages * PAGE);
   const want = useMemo(() => ordered?.slice(0, wanted) ?? [], [ordered, wanted]);
   const read = useNearbyStores((s) => s.read);
@@ -83,7 +100,8 @@ export function Browse() {
   // What's been read of them, nearest first, and how many are still coming.
   const rows = useMemo(() => want.flatMap((l) => known[l.hex] ?? []), [want, known]);
   const pending = want.filter((l) => !known[l.hex] && !gone[l.hex]).length;
-  const more = !!ordered && wanted < ordered.length;
+  // More to read: of what's listed, or farther out.
+  const more = !!ordered && (wanted < ordered.length || !widen);
   const found = ordered?.filter((l) => !gone[l.hex]).length ?? 0;
 
   // Bags still open to order, from the stores shown: one that closed since
@@ -117,27 +135,29 @@ export function Browse() {
   // Exploring orders everything read; browsing orders each page on its own,
   // so reading the next never moves what's above it.
   const filtered = useMemo(() => {
-    if (exploring) return applyFilters(stores, (store) => store.facts, filters);
-    const out: typeof stores = [];
-    for (let i = 0; i < stores.length; i += PAGE) out.push(...applyFilters(stores.slice(i, i + PAGE), (store) => store.facts, filters));
-    return out;
+    const order = (page: typeof stores) => applyFilters(page, (store) => store.facts, filters);
+    return exploring ? order(stores) : pageByPage(stores, PAGE, order);
   }, [stores, filters, exploring]);
   const options = (pick: (store: StoreFacts) => string[]) => [...new Set(stores.flatMap((store) => pick(store.facts).filter(Boolean)))].sort();
   const lookingForDeals = filters.deals && rows.some((r) => !deals[r.hex] && r.bags.length === 0);
   const narrowed = isNarrowed(filters);
-  const loading = ordered === undefined || (rows.length === 0 && pending > 0);
+  // Nothing to show yet, with more on its way -- or, with none around here,
+  // before the wider area's been looked at.
+  const loading = ordered === undefined || (rows.length === 0 && (pending > 0 || widening || !widen));
 
-  // Reaching the end of the list reads the next page. Keyed on what's still
-  // coming, so once a page lands with the end still in view, the next one's
-  // read too.
+  // Reaching the end of the list reads the next page -- past the last store
+  // around here, from the wider area. Keyed on what's still coming, so once a
+  // page lands with the end still in view, the next one's read too.
+  const nearCount = near?.length ?? 0;
   const seeMore = useCallback(
     (node: HTMLDivElement | null) => {
       if (!node || pending > 0) return;
-      const observer = new IntersectionObserver(([entry]) => entry?.isIntersecting && setPaging({ geohash, pages: pages + 1 }), { rootMargin: "800px 0px" });
+      const next = { pages: pages + 1, wide: paging.wide || pages * PAGE >= nearCount };
+      const observer = new IntersectionObserver(([entry]) => entry?.isIntersecting && setPaging(geohash, next), { rootMargin: "800px 0px" });
       observer.observe(node);
       return () => observer.disconnect();
     },
-    [pending, geohash, pages],
+    [pending, geohash, pages, paging.wide, nearCount, setPaging],
   );
 
   const openCount = (count: number) => (count === 0 ? t("browse.noneOpen") : t("browse.openCount", { count }));
@@ -245,7 +265,7 @@ export function Browse() {
             />
           ))}
           {/* The next page on its way, where it'll land. */}
-          {!exploring && pending > 0 && Array.from({ length: Math.min(pending, 4) }).map((_, i) => <CardSkeleton key={`more-${i}`} />)}
+          {!exploring && (pending > 0 || widening) && Array.from({ length: widening ? 4 : Math.min(pending, 4) }).map((_, i) => <CardSkeleton key={`more-${i}`} />)}
         </motion.div>
       )}
 
@@ -255,7 +275,7 @@ export function Browse() {
           {pending > 0 ? t("browse.searchingMore") : t("browse.searchedNearest", { count: rows.length, total: found })}
         </p>
       )}
-      {!exploring && more && <div ref={seeMore} key={`${wanted}:${pending}`} aria-hidden className="h-px" />}
+      {!exploring && more && !widening && <div ref={seeMore} key={`${wanted}:${pending}:${widen}`} aria-hidden className="h-px" />}
       <div className="pb-6" />
     </div>
   );

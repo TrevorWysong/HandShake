@@ -8,13 +8,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Card, Chip, Input, Switch } from "../../components/ui";
 import { currencySymbol, formatCents, fromMinorUnits, toMinorUnits } from "../../lib/ui/format";
 import { useTerms } from "../../store/network";
-import { useDriverSettings } from "../../store/roleSettings";
+import { DETOUR_CHOICES_KM, useDriverSettings } from "../../store/roleSettings";
 import { useT } from "../../i18n";
 import { TRAVEL_MODES } from "../../lib/driving/routing";
 
 export function DriverSettingsCard() {
   const t = useT();
-  const networkMax = useTerms().max_concurrent_deliveries;
+  const terms = useTerms();
+  const networkMax = terms.max_concurrent_deliveries;
   const { limits, travelMode, setLimits, setTravelMode, autoBid, setAutoBid } = useDriverSettings();
   const [open, setOpen] = useState(false);
   const atOnce = Math.min(limits.maxAtOnce ?? networkMax, networkMax);
@@ -64,6 +65,17 @@ export function DriverSettingsCard() {
                   <span className="block text-[11px] text-ink-400">{t("driverSettings.priorityDetail")}</span>
                 </span>
                 <Switch checked={limits.takePriority} onChange={(takePriority) => setLimits({ takePriority })} label={t("driverSettings.takePriority")} />
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold text-ink-500">{t("driverSettings.detour")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {DETOUR_CHOICES_KM.map((km) => (
+                    <Chip key={km} active={(limits.detourKm ?? terms.add_on_detour_km) === km} onClick={() => setLimits({ detourKm: km === terms.add_on_detour_km ? null : km })}>
+                      {t("driverSettings.km", { km })}
+                    </Chip>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-ink-400">{t("driverSettings.detourDetail", { km: terms.add_on_detour_km })}</p>
               </div>
               <label className="block text-xs font-semibold text-ink-500">
                 {t("driverSettings.lowestFee")}

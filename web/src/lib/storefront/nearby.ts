@@ -27,3 +27,21 @@ export function nearestFirst(listings: NearbyListing[], here: GeoPoint): Listing
   }
   return found.sort((a, b) => a.km - b.km).map(({ hash, hex, point }) => ({ hash, hex, point }));
 }
+
+/// Every listing read so far, in the order they're shown: those in the cells
+/// around someone, nearest first, then -- once the wider area's been read --
+/// the rest of it, nearest first after them. Nothing shown moves for what
+/// comes after it.
+export function inTiers(near: Listing[], wider: Listing[] | undefined): Listing[] {
+  if (!wider) return near;
+  const shown = new Set(near.map((l) => l.hex));
+  return [...near, ...wider.filter((l) => !shown.has(l.hex))];
+}
+
+/// `items` ordered a page of `size` at a time, each page on its own: reading
+/// the next page never moves what's above it.
+export function pageByPage<T>(items: T[], size: number, order: (page: T[]) => T[]): T[] {
+  const out: T[] = [];
+  for (let i = 0; i < items.length; i += size) out.push(...order(items.slice(i, i + size)));
+  return out;
+}

@@ -16,6 +16,19 @@ pub use handshake_types::PinSecret;
 use handshake_types::GeoPoint;
 use handshake_integrity_support::SealedChunks;
 
+/// Where `attestation_integrity`'s `Leg` and `ReceiptAttestation` entry
+/// types sit (asserted there) -- for `dispatch_integrity` to find a party's
+/// handoffs on their own chain.
+pub const LEG_INDEX: u8 = 0;
+pub const RECEIPT_INDEX: u8 = 1;
+
+/// `attestation_integrity`'s entry type at `index`, found by the zome's
+/// name in this DNA.
+pub fn attestation_entry_type(index: u8) -> ExternResult<ScopedEntryDefIndex> {
+    let zome = dna_info()?.zome_names.iter().position(|z| z.0 == "attestation_integrity").ok_or(wasm_error!(WasmErrorInner::Guest("this DNA has no attestation zome".into())))?;
+    Ok(ScopedEntryDefIndex { zome_index: ZomeIndex(zome as u8), zome_type: EntryDefIndex(index) })
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum LegKind {
     MerchantHandoff,

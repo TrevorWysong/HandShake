@@ -532,8 +532,8 @@ export async function getStoreStepsDue(): Promise<StoreStepDue[]> {
 }
 
 /// Takes one store step, proved past its deadline by `beacon`.
-export async function takeStoreStep(step: StoreStep, orderRef: ActionHash, beacon: Beacon): Promise<HcRecord> {
-  const fn = { MoveDriverOn: "move_driver_on", RecordCollecting: "record_collecting", EndForNoDriver: "end_for_no_driver" }[step];
+export async function takeStoreStep(step: StoreStep, orderRef: ActionHash, beacon: Beacon): Promise<unknown> {
+  const fn = { MoveDriverOn: "move_driver_on", RecordCollecting: "record_collecting", EndForNoDriver: "end_for_no_driver", SettleStalled: "settle_stalled_delivery" }[step];
   return callZome("dispatch", fn, { order_ref: orderRef, beacon });
 }
 

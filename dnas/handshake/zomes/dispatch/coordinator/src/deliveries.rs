@@ -692,6 +692,11 @@ pub fn get_order_timing(order_ref: ActionHash) -> ExternResult<OrderTiming> {
 
 // --- what the store's app does ---
 
+/// How long a store gives its driver's app to record a pickup it's handed
+/// over before recording it itself -- theirs does as the store's record
+/// reaches it, in moments.
+const DRIVER_PICKUP_GRACE: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// What a store's deliveries call for once a deadline has passed -- the
 /// steps its app takes, with proof of the time (`get_store_steps_due`).
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -702,6 +707,9 @@ pub enum StoreStep {
     RecordCollecting,
     /// End an order no driver came for.
     EndForNoDriver,
+    /// Settle as delivered one its driver picked up that nobody's said more
+    /// of (`issues::settle_stalled_delivery`).
+    SettleStalled,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -732,6 +740,7 @@ fn next_store_step(order_ref: &ActionHash, record: &Record, order: &DeliveryOrde
     Ok(match order.status {
         DeliveryStatus::BidAccepted | DeliveryStatus::MerchantConfirmed | DeliveryStatus::DriverEnRouteToMerchant => driver_due.map(|due| (StoreStep::MoveDriverOn, due, committed)),
         DeliveryStatus::Open => no_driver_after(record)?.map(|after| (StoreStep::EndForNoDriver, after, true)),
+        DeliveryStatus::PickedUp => Some((StoreStep::SettleStalled, lineage::stalled_delivery_settles_at(record.action().timestamp()), true)),
         _ => None,
     })
 }
@@ -776,6 +785,20 @@ pub(crate) fn tend_store_delivery(order_ref: &ActionHash, record: &Record, order
         call_own("start_cooking", order_ref);
         return Ok(Some(Timestamp::from_micros(now.as_micros().saturating_add(1_000_000))));
     }
+    // Handed over, and the driver's app never said it picked it up: the
+    // store records it, on its own record of handing it over -- so the
+    // order goes on to its outcome, never back to the store.
+    if order.status == DeliveryStatus::DriverAtStore {
+        if let Ok(Some(handed_over)) = call_local::<_, Option<ActionHash>>("attestation", "pickup_proof_for_order", order_ref.clone())? {
+            let Some(at) = get(handed_over, GetOptions::default())?.map(|r| r.action().timestamp()) else { return Ok(None) };
+            let due = Timestamp::from_micros(at.as_micros().saturating_add(DRIVER_PICKUP_GRACE.as_micros() as i64));
+            if now < due {
+                return Ok(Some(due));
+            }
+            call_own("pick_up_order", order_ref);
+            return Ok(None);
+        }
+    }
     let Some((step, due, proved)) = next_store_step(order_ref, record, order)? else { return Ok(None) };
     if proved {
         return Ok(None);
@@ -786,7 +809,7 @@ pub(crate) fn tend_store_delivery(order_ref: &ActionHash, record: &Record, order
     let function = match step {
         StoreStep::MoveDriverOn => "move_driver_on",
         StoreStep::RecordCollecting => "record_collecting",
-        StoreStep::EndForNoDriver => return Ok(None),
+        StoreStep::EndForNoDriver | StoreStep::SettleStalled => return Ok(None),
     };
     call_own(function, &TimedStepInput { order_ref: order_ref.clone(), beacon: None });
     Ok(None)
@@ -823,7 +846,8 @@ pub(crate) fn end_carries() -> ExternResult<u32> {
         let basis = if left {
             Some(latest.action_address().clone())
         } else {
-            crate::issues::decisions_of(&order)?.not_delivered.map(|(outcome, _)| outcome)
+            let decided = crate::issues::decisions_of(&order)?;
+            decided.not_delivered.or(decided.delivered).map(|(outcome, _)| outcome)
         };
         if let Some(basis) = basis {
             if handshake_coordinator_support::isolated::<_, ActionHash>("record_carry_ended", CarryEnded { order, committed, basis }).is_some() {

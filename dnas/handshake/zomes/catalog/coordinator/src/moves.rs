@@ -236,13 +236,6 @@ pub fn store_line(catalog: ActionHash) -> ExternResult<Vec<ActionHash>> {
     Ok(line)
 }
 
-/// Whether the store has moved to a new key -- left out of listings, as its
-/// owner carries on from the new one.
-pub(crate) fn has_moved(catalog: &ActionHash) -> ExternResult<bool> {
-    let links = get_links(LinkQuery::try_new(catalog.clone(), LinkTypes::CatalogToSuccessor)?, GetStrategy::default())?;
-    Ok(!links.is_empty() && store_successor(catalog.clone())?.is_some())
-}
-
 // --- bringing a store over from the previous network (docs/MIGRATION.md) ---
 
 /// The account zome's answer for who an agent was on the previous network.

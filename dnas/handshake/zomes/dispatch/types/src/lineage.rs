@@ -373,6 +373,15 @@ pub fn lapses_at(version: &Version) -> ExternResult<Option<Timestamp>> {
     Ok(owed.then(|| Timestamp::from_micros(from.as_micros().saturating_add(handshake_governance::order_lapse().as_micros() as i64))))
 }
 
+/// When a delivery its driver picked up at `picked_up_at`, that nobody's
+/// said more of -- no proof it arrived, no claim it didn't -- is settled as
+/// delivered: past the network's lapse, when its customer's app says it
+/// never came, and their report window after that.
+pub fn stalled_delivery_settles_at(picked_up_at: Timestamp) -> Timestamp {
+    let wait = handshake_governance::order_lapse() + handshake_governance::report_window();
+    Timestamp::from_micros(picked_up_at.as_micros().saturating_add(wait.as_micros() as i64))
+}
+
 /// How long the store behind `order` may keep a checked-in driver waiting
 /// past its ready time, by the terms the order was placed under.
 pub fn store_wait(order: &DeliveryOrder) -> ExternResult<core::time::Duration> {

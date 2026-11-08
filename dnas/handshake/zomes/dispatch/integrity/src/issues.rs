@@ -7,9 +7,11 @@
 //! - only the order's store decides its outcome and its settlement, once
 //!   each -- so every payment cites the same decision, and none can
 //!   contradict another;
-//! - *Delivered* only on the order completed with proof; *not delivered*
-//!   only on the customer's claim, made after the driver's proven pickup,
-//!   and never by a store that cancelled the order;
+//! - *Delivered* only on the order completed with proof -- or on the
+//!   driver's word that nobody came, or their proven pickup, once the
+//!   customer's time to say otherwise has run; *not delivered* only on the
+//!   customer's claim, made after the driver's proven pickup, and never by a
+//!   store that cancelled the order;
 //! - a settlement's refund is never more than the issues it cites are worth
 //!   of what the customer paid -- plus, for a delivery its customer
 //!   collected themselves, the store's share of the fee it would have paid a
@@ -169,7 +171,21 @@ pub(crate) fn validate_outcome(outcome: &OrderOutcome, author: &AgentPubKey, at:
                     let window_ends = (record.action().timestamp() + handshake_governance::report_window()).map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())))?;
                     require(at >= window_ends, "a store upholds a driver's word that nobody came only once the customer's report window has run")
                 }
-                _ => invalid("a delivered outcome cites the order completed on proof the customer has it, or the driver's word that nobody came"),
+                // Picked up, and nobody's said more: no proof it arrived, no
+                // claim it didn't, past the lapse (when the customer's app
+                // says it never came) and their report window after -- on
+                // proof of the time, as it costs the customer if claimed
+                // early. A driver who kept it and a customer who never says
+                // so can't leave the store unpaid; a customer who never got
+                // it appeals.
+                DeliveryStatus::PickedUp => {
+                    let settles_at = dispatch_types::lineage::stalled_delivery_settles_at(record.action().timestamp());
+                    match handshake_integrity_support::beacon::proves_past(outcome.beacon.as_ref(), settles_at) {
+                        Ok(()) => valid(),
+                        Err(_) => invalid("a store settles a pickup nobody's said more of as delivered only once the customer's time to claim has run, proved"),
+                    }
+                }
+                _ => invalid("a delivered outcome cites the order completed on proof the customer has it, the driver's word that nobody came, or their pickup"),
             }
         }
         Outcome::NotDelivered { claim } => {

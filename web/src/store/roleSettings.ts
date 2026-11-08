@@ -51,7 +51,13 @@ export interface DriverLimits {
   takePriority: boolean;
   /// The lowest fee cap they'll see an order for, in minor units.
   minFeeCents: number;
+  /// How near one of their drop-offs an add-on may go, in km; `null` for the
+  /// network's suggestion.
+  detourKm: number | null;
 }
+
+/// The add-on distances a driver can pick from, in km.
+export const DETOUR_CHOICES_KM = [0.5, 1, 2, 3, 5];
 
 /// A driver's rule for bidding automatically, as the big apps offer orders:
 /// on every order they're offered, at their own rate.
@@ -79,7 +85,7 @@ interface DriverSettings {
 export const useDriverSettings = create<DriverSettings>()(
   persist(
     (set) => ({
-      limits: { maxAtOnce: null, takePriority: true, minFeeCents: 0 },
+      limits: { maxAtOnce: null, takePriority: true, minFeeCents: 0, detourKm: null },
       autoBid: { on: false, perKmCents: 100, skipRefusals: 3 },
       setAutoBid: (autoBid) => set((state) => ({ autoBid: { ...state.autoBid, ...autoBid } })),
       travelMode: "car",
@@ -87,7 +93,14 @@ export const useDriverSettings = create<DriverSettings>()(
       setTravelMode: (travelMode) => set({ travelMode }),
     }),
     // Settings saved before a field existed take its default.
-    { name: "handshake.driver-settings.v1", storage: identityStorage(), merge: (saved, current) => ({ ...current, ...(saved as Partial<DriverSettings> | undefined), autoBid: { ...current.autoBid, ...(saved as Partial<DriverSettings> | undefined)?.autoBid } }) },
+    {
+      name: "handshake.driver-settings.v1",
+      storage: identityStorage(),
+      merge: (saved, current) => {
+        const stored = saved as Partial<DriverSettings> | undefined;
+        return { ...current, ...stored, limits: { ...current.limits, ...stored?.limits }, autoBid: { ...current.autoBid, ...stored?.autoBid } };
+      },
+    },
   ),
 );
 perIdentity(useCustomerSettings);

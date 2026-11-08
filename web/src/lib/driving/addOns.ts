@@ -30,7 +30,8 @@ function loadOf(commitments: Commitment[]): InHand {
 export interface OfferRules {
   /// The most orders at once: the network's, or the driver's own if lower.
   maxAtOnce: number;
-  /// How near a remaining drop-off an add-on may go.
+  /// How near a remaining drop-off an add-on may go: the driver's own
+  /// choice, or the network's suggestion.
   detourKm: number;
   /// Whether the driver takes priority orders.
   takePriority: boolean;
@@ -40,11 +41,11 @@ export interface OfferRules {
 
 export function offerRules(
   terms: { max_concurrent_deliveries: number; add_on_detour_km: number },
-  own: { maxAtOnce: number | null; takePriority: boolean; minFeeCents: number },
+  own: { maxAtOnce: number | null; takePriority: boolean; minFeeCents: number; detourKm: number | null },
 ): OfferRules {
   return {
     maxAtOnce: Math.min(terms.max_concurrent_deliveries, own.maxAtOnce ?? terms.max_concurrent_deliveries),
-    detourKm: terms.add_on_detour_km,
+    detourKm: own.detourKm ?? terms.add_on_detour_km,
     takePriority: own.takePriority,
     minFeeCents: own.minFeeCents,
   };

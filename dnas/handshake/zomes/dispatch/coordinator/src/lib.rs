@@ -395,6 +395,9 @@ mod test_utils {
         pub release: bool,
         #[serde(default)]
         pub beacon: Option<handshake_types::Beacon>,
+        /// The store's record of handing it over, for a pickup.
+        #[serde(default)]
+        pub pickup_proof: Option<ActionHash>,
     }
 
     /// Updates one specific version of a delivery -- branching its history,
@@ -413,6 +416,9 @@ mod test_utils {
         }
         if input.beacon.is_some() {
             order.beacon = input.beacon;
+        }
+        if input.pickup_proof.is_some() {
+            order.pickup_proof = input.pickup_proof;
         }
         handshake_coordinator_support::update_version(&version, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)
     }

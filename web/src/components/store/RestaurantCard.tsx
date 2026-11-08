@@ -56,6 +56,8 @@ export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount,
   const t = useT();
   const status = storeStatus(catalog, now);
   const estimate = customer ? deliveryEstimate(catalog, customer, driveMinutes) : null;
+  // Farther than the store delivers: it's there to collect from.
+  const pickupOnly = !!estimate && estimate.km > catalog.max_delivery_radius_km;
   const gradient = pick(GRADIENTS, catalogHash);
   const emoji = pick(EMOJI, catalogHash.slice().reverse());
   const hex = bytesToHex(catalogHash);
@@ -97,6 +99,8 @@ export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount,
                 onToggleFavorite();
               }}
               whileTap={{ scale: 0.85 }}
+              aria-label={t(favorited ? "store.unfavorite" : "store.favorite")}
+              aria-pressed={favorited}
               className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm transition hover:bg-black/60"
             >
               <Heart size={14} fill={favorited ? "currentColor" : "none"} className={favorited ? "text-red-400" : undefined} />
@@ -115,7 +119,7 @@ export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount,
           <p className={clsx("mt-1 flex min-w-0 items-center gap-1 truncate text-xs", status.open ? "text-presence-600" : "text-ink-400")}>
             <Clock size={11} className="shrink-0" />
             <span className="truncate">
-              {status.open && estimate?.fromMinutes ? `${estimate.fromMinutes}–${estimate.toMinutes} min` : status.label}
+              {status.open && pickupOnly ? t("card.pickupOnly") : status.open && estimate?.fromMinutes ? `${estimate.fromMinutes}–${estimate.toMinutes} min` : status.label}
               {estimate && <span className="text-ink-400"> · {formatDistance(estimate.km)}</span>}
             </span>
           </p>

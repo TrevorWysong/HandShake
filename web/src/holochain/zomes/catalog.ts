@@ -30,6 +30,9 @@ export interface ListedStore extends CatalogView {
 
 /// The most stores `getListedStores` reads at once (the Rust `STORE_BATCH`).
 export const STORE_BATCH = 50;
+/// The wider cell every store is listed under too, about 5 km across (the
+/// Rust `AREA_PRECISION`): read once the nearer cells are looked through.
+export const AREA_PRECISION = 5;
 
 export interface MenuItemsPage {
   items: MenuItemView[];

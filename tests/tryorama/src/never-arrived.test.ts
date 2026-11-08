@@ -75,7 +75,7 @@ await runScenario(async (scenario) => {
   const pickedUp = await latestVersion(lost);
   await assert.rejects(call(merchant, "dispatch")("decide_not_delivered", lost), /hasn't said it never arrived/, "the store can't decide it undelivered unprompted");
   await assert.rejects(raw(merchant, { order: lost, outcome: { NotDelivered: { claim: pickedUp } } }), /cites the customer's claim/, "nor forge one without the customer's claim");
-  await assert.rejects(raw(merchant, { order: lost, outcome: { Delivered: { proof: pickedUp } } }), /completed on proof/, "nor decide it delivered without the proof");
+  await assert.rejects(raw(merchant, { order: lost, outcome: { Delivered: { proof: pickedUp } } }), /time to claim has run/, "nor decide it delivered without the proof, while the customer has time to say it never came");
   await call(customer, "dispatch")("claim_never_arrived", lost);
   await sync();
   const claim = await latestVersion(lost);

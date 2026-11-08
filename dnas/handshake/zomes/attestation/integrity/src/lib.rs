@@ -55,6 +55,9 @@ pub enum LinkTypes {
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
+// `dispatch_integrity` finds a party's handoffs on their chain by these
+// indexes, to know who's handed an order over.
+const _: () = assert!(UnitEntryTypes::Leg as u8 == attestation_types::LEG_INDEX && UnitEntryTypes::ReceiptAttestation as u8 == attestation_types::RECEIPT_INDEX, "dispatch_integrity reads these entry types' indexes");
 
 #[hdk_extern]
 pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {

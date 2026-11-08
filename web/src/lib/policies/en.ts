@@ -8,6 +8,11 @@ import { spoken, type PolicyChange, type PolicyContent, type PolicySection } fro
 
 const changes: PolicyChange[] = [
   {
+    version: "1.9",
+    date: "2026-11-08",
+    summary: "Deliveries: once a store hands an order over, to a driver or to its customer, it can't call it off, and a driver who's taken it can't leave it. One picked up that nobody says more of is settled as delivered once the customer's time to say otherwise has run; a customer who never got it can appeal. Drivers choose how far off their way an add-on may be.",
+  },
+  {
     version: "1.8",
     date: "2026-11-07",
     summary: "Deliveries: one its store goes silent on, while it's the store's turn, can be closed with no charge, and the store pays any driver it had checked in. One picked up that never arrives is reported for you a day on. A customer collecting an order has their full window from when it's due ready.",
@@ -156,6 +161,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       points: [
         "Once your driver has picked up your order, and until it's delivered, you can say it never arrived. Your driver can still turn up and hand it over as usual.",
         `If it still hasn't arrived ${spoken(t.order_lapse_secs)} after pickup, your app says it never arrived for you, so a driver who keeps the food pays for it.`,
+        `If nobody says anything, that it arrived or that it didn't, the store settles it as delivered ${spoken(t.order_lapse_secs + t.report_window_secs)} after pickup, so a driver and customer can't keep the food unpaid between them. If yours never came, you can appeal to the network's arbiter.`,
         `If they don't, the store decides. Its app does so on its own once your claim has stood for ${spoken(t.claim_grace_secs)}, or the store can decide sooner.`,
         "When the store decides it never arrived, you get back what you paid for the food, the delivery fee and your tip. The store gets back its share of the fee, and the driver's collateral pays the store for the food.",
         "The store is paid for the food either way, by you if it arrived or by the driver if it didn't, so it has nothing to gain from either answer.",
@@ -164,7 +170,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       effects: [
         { who: "customers", good: "You're never out of pocket for food that didn't reach you.", bad: "If you say it never arrived and it's then delivered, that goes on your record, where drivers see it." },
         { who: "drivers", good: "If you hand it over with the customer's code, nobody can claim it didn't arrive.", bad: "If you pick it up and don't deliver it, you lose your collateral and your fee, and it's on your record." },
-        { who: "stores", good: "The food is always paid for.", bad: "You decide what happens when a customer and driver disagree, and that decision is public." },
+        { who: "stores", good: "The food is always paid for, even when nobody says what happened to it.", bad: "You decide what happens when a customer and driver disagree, and that decision is public." },
       ],
     },
     {
@@ -173,7 +179,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       summary: `A driver carries at most ${t.max_concurrent_deliveries} order${t.max_concurrent_deliveries === 1 ? "" : "s"} at once, as on the big delivery apps, and you can ask for one with no others.`,
       points: [
         `A driver can take on at most ${t.max_concurrent_deliveries} order${t.max_concurrent_deliveries === 1 ? "" : "s"} at once. The network counts what they've committed to and refuses one past that, so no app can get around it.`,
-        `While delivering, a driver is offered only add-ons on their way: orders from a store they're still to collect from, or going within ${t.add_on_detour_km} km of one of their drop-offs.`,
+        `While delivering, a driver is offered only add-ons on their way: orders from a store they're still to collect from, or going within ${t.add_on_detour_km} km of one of their drop-offs, or the distance they choose.`,
         "Every bid shows how many other orders that driver has, and you choose. A driver can't hide orders they've taken on.",
         "Choose Priority at checkout for a driver with no other orders. Nobody can pick up your order while carrying another, or another while carrying yours. Drivers usually bid more for it.",
         "A driver whose order never arrives is free to take more once their collateral for it is forfeited, which their app does on the store's decision.",
@@ -253,6 +259,7 @@ function sections(t: NetworkTerms): PolicySection[] {
         "After the store accepts, cancelling means the store keeps the price of the food it started on. After a driver is assigned, the driver keeps their fee as well. Your tip always comes back to you.",
         "If a store or driver cancels, everything they'd have been paid is returned to you.",
         "Once the driver has picked up your order, it can't be cancelled: it's either delivered, or it never arrives (see above).",
+        "Once a store has handed an order over, to its driver or to you, it can't cancel it, and a driver who's taken it from the store can't drop it. If the driver's app never records the pickup, the store records it.",
       ],
     },
     {

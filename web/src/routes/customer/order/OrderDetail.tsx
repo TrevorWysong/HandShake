@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { AlertTriangle, Bike, DoorOpen, MapPin, ShieldCheck, Zap } from "lucide-react";
+import { AlertTriangle, Bike, DoorOpen, Gavel, MapPin, ShieldCheck, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cancelOrder, claimNeverArrived, getMyHandoverCode, getOrder, getOrderDecisions, getOrderPrivateDetails, listBidsForOrder, acceptBid, confirmCollected } from "../../../holochain/zomes/dispatch";
 import { confirmDeliveryReceived, HandoffNotYetHere } from "../../../lib/orders/handoffs";
@@ -36,6 +36,8 @@ import { RateOrder } from "../../../components/orders/RateOrder";
 import { OrderBids } from "./OrderBids";
 import { OrderSummary } from "../../../components/orders/OrderLines";
 import { OrderIssues } from "../../../components/orders/OrderIssues";
+import { OrderAppeal } from "../../../components/orders/OrderAppeal";
+import { useTerms } from "../../../store/network";
 import { useT, type MessageKey } from "../../../i18n";
 import { HandoverCode } from "../../../components/orders/HandoverCode";
 import { OrderPayments } from "../../../components/payments/OrderPayments";
@@ -63,6 +65,7 @@ export function OrderDetail() {
   const orderRef = hexToBytes(hash);
   const t = useT();
   const now = useClock();
+  const terms = useTerms();
   const [confirmingClaim, setConfirmingClaim] = useState(false);
   // One step on the order at a time: no cancelling it while confirming it.
   const action = useAction();
@@ -112,8 +115,9 @@ export function OrderDetail() {
   // being -- worked out here, the only place both are known.
   const arrivedKm = dropoff?.geo && details?.dropoff ? distanceKm(dropoff.geo, details.dropoff.point) : null;
   // Where a claim that it never arrived -- or the driver's word that nobody
-  // came -- stands with the store.
-  const contested = order?.status === "Disputed" || order?.status === "Unanswered";
+  // came -- stands with the store; and whether one picked up that nobody
+  // said more of has been settled as delivered.
+  const contested = order?.status === "Disputed" || order?.status === "Unanswered" || order?.status === "PickedUp";
   const { data: decisions } = useResource(contested ? `order-decisions:${hash}` : null, () => getOrderDecisions(orderRef), { pollMs: POLL.signalled, refreshOn: isOrderOrBidSignal });
   // The customer's handover code, while a driver's on the way: shown at the
   // door. An order left at the door has no handover.
@@ -317,7 +321,23 @@ export function OrderDetail() {
             </motion.div>
           )}
 
-          {order.status === "PickedUp" && (
+          {/* Picked up, and nobody said more in time -- no proof it arrived,
+              no claim it didn't: the store settled it as delivered. A
+              customer who never got it takes it to the arbiter. */}
+          {order.status === "PickedUp" && decisions?.delivered && (
+            <motion.div variants={fadeSlideUp} className="mt-5 overflow-hidden rounded-2xl border border-ink-200 dark:border-ink-700">
+              <div className="flex items-start gap-3 p-4">
+                <Gavel size={18} className="mt-0.5 shrink-0 text-ink-400" />
+                <div>
+                  <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("order.settledDelivered")}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{t("order.settledDeliveredDetail")}</p>
+                </div>
+              </div>
+              {decisions.refund !== null && <OrderAppeal orderRef={orderRef} role="customer" kept={order.order_total - decisions.refund} />}
+            </motion.div>
+          )}
+
+          {order.status === "PickedUp" && !decisions?.delivered && (
             <motion.div variants={fadeSlideUp} className="mt-5 flex flex-col gap-3 rounded-2xl bg-handshake-50 dark:bg-handshake-900/20 p-4">
               <div className="flex items-center gap-3">
                 <Bike size={20} className="text-handshake-600" />
@@ -336,6 +356,11 @@ export function OrderDetail() {
                   {t("order.confirmHint")}
                 </p>
               ) : null}
+              {!dropoff && snapshot && (
+                <p className="text-[11px] text-handshake-700/80 dark:text-handshake-300/80">
+                  {t("order.claimsFor", { time: formatDeadline(snapshot.writtenAt + terms.order_lapse_secs * 1_000_000) })}
+                </p>
+              )}
               {handedOver && (
                 <Button loading={action.doing === "complete"} disabled={action.busy} onClick={confirmReceipt}>
                   {t("order.haveIt")}

@@ -24,6 +24,21 @@ pub fn catalog_geohash_path(geohash: &str) -> String {
     format!("catalog_geohash.{geohash}")
 }
 
+/// The coarser cell a store is listed under too (about 5 km across, where
+/// its own is about 1): what an app reads once someone's looked through
+/// every store in the cells around them, for the ones farther out. Each read
+/// stays one cell and its neighbors at either size, so a dense city costs
+/// the nearer read first, and the wider only to whoever scrolls that far.
+pub const AREA_PRECISION: usize = 5;
+
+/// The cells a store at `geohash` is listed under: its own, and the coarser
+/// one around it.
+pub fn listing_cells(geohash: &str) -> Vec<&str> {
+    let mut cells = vec![geohash];
+    cells.extend(geohash.get(..AREA_PRECISION).filter(|area| *area != geohash));
+    cells
+}
+
 pub fn validate_create_link(link_type: LinkTypes, link: &TypedAction<CreateLinkData>) -> ExternResult<ValidateCallbackResult> {
     let (base, target, author) = (&link.base_address, &link.target_address, link.author());
     // Anchors are computed, never walked: every catalog link targets a
@@ -95,11 +110,16 @@ pub fn validate_delete_link(original_author: &AgentPubKey, author: &AgentPubKey)
 }
 
 /// A store's listing for customers to find: by its owner, under its own
-/// area's anchor, to its original action. Nothing stops an owner listing a
+/// cell's anchor or its wider area's (`listing_cells`), to its original
+/// action. Nothing stops an owner listing a
 /// store twice but the reads, which show it once; a listing's only cost is
 /// the store behind it (`MAX_STORES_PER_OWNER`).
 fn validate_listing(link: &TypedAction<CreateLinkData>, record: &Record) -> ExternResult<ValidateCallbackResult> {
     let Some(catalog) = decode::<MerchantCatalog>(record) else { return invalid("a listing is of a store") };
-    let own = matches!(record.action().data, ActionData::Create(_)) && link.author() == &catalog.owner && link.base_address == path_hash(catalog_geohash_path(&catalog.geohash))? && link.tag == listing_tag(&catalog);
+    let mut under_own = false;
+    for cell in listing_cells(&catalog.geohash) {
+        under_own |= link.base_address == path_hash(catalog_geohash_path(cell))?;
+    }
+    let own = matches!(record.action().data, ActionData::Create(_)) && link.author() == &catalog.owner && under_own && link.tag == listing_tag(&catalog);
     require(own, "a store is listed by its owner, under its own area, by its original action, saying where it is")
 }

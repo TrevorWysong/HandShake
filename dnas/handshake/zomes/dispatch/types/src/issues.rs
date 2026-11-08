@@ -10,7 +10,11 @@
 //!   the order completed on proof the customer has it -- the driver is then
 //!   paid. *Not delivered*, citing the customer's claim after a proven
 //!   pickup -- the customer and the store get back what they paid, and the
-//!   store takes the driver's collateral for the food.
+//!   store takes the driver's collateral for the food. A delivery picked up
+//!   that nobody says more of -- no proof it arrived, no claim it didn't --
+//!   is *delivered* once its customer's time to claim has run, proved: the
+//!   store is paid as for any delivery, and the customer's recourse is an
+//!   appeal.
 //! - `ItemSettlement`: what the food's payment comes to. The customer
 //!   reports items missing or wrong (`ItemIssue`), the store accepts or
 //!   declines each (`IssueResponse`) and has the final say, as it would if
@@ -87,7 +91,9 @@ pub struct IssueResponse {
 /// docs.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
-    /// It reached the customer. `proof`: a `Delivered` version of the order.
+    /// It reached the customer. `proof`: a `Delivered` version of the order;
+    /// or the driver's word that nobody came, or the driver's pickup, each
+    /// unanswered past the customer's time to say otherwise.
     Delivered { proof: ActionHash },
     /// It never did. `claim`: the customer's update claiming so, made after
     /// the driver's proven pickup.
@@ -104,6 +110,9 @@ pub struct OrderOutcome {
     /// The order's original action.
     pub order: ActionHash,
     pub outcome: Outcome,
+    /// A round of the network's time source, for an outcome whose time has
+    /// to be proved: a pickup nobody's said more of, settled as delivered.
+    pub beacon: Option<crate::Beacon>,
 }
 
 /// What an order's food payment comes to, written once by its store: the

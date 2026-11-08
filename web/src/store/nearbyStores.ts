@@ -4,7 +4,8 @@
 // network holds to the store's own location. A store's record, goodie bags,
 // rating and drive time are read only once it's shown, a batch at a time,
 // and kept for the session: scrolling on reads the next stores, and coming
-// back to Browse reads none again until they're due a refresh.
+// back to Browse reads none again until they're due a refresh -- and finds
+// the list as far down as it was left.
 import { create } from "zustand";
 import { getListedStores, STORE_BATCH } from "../holochain/zomes/catalog";
 import type { Listing } from "../lib/storefront/nearby";
@@ -13,7 +14,6 @@ import { bytesToHex, decodeEntry } from "../holochain/decode";
 import type { GeoPoint, GoodieBag, MerchantCatalog } from "../holochain/types";
 import { minutesTo } from "../lib/driving/routing";
 import { hasDeal } from "../lib/storefront/storeDeals";
-import { POLL } from "../lib/network/poll";
 
 export interface BagRow {
   hash: Uint8Array;
@@ -29,9 +29,21 @@ export interface NearbyStore {
   rating: number;
   reviewCount: number;
   /// When it was read, in milliseconds: it's read again once it's older than
-  /// Browse's poll.
+  /// `FRESH_MS`.
   readAt: number;
 }
+
+/// How long a store's card stays as read before it's read again: menus,
+/// hours and ratings change rarely, and a store's own page reads it fresh.
+const FRESH_MS = 5 * 60_000;
+
+/// How far down Browse has read around one place: how many pages, and
+/// whether past the cells around it into the wider area.
+export interface Paging {
+  pages: number;
+  wide: boolean;
+}
+export const FIRST_PAGE: Paging = { pages: 1, wide: false };
 
 /// Where `here` is, as a key for drive times from it.
 const placeKey = (here: GeoPoint) => `${here.lat.toFixed(5)},${here.lon.toFixed(5)}`;
@@ -45,6 +57,9 @@ interface NearbyStoresState {
   /// Whether each store has a deal on, and when that was asked -- only while
   /// someone's looking for deals.
   deals: Record<string, { deal: boolean; at: number }>;
+  /// How far down Browse has read, by the place's geohash.
+  paging: Record<string, Paging>;
+  setPaging: (geohash: string, paging: Paging) => void;
   /// Brings `listings` up to date: reads each store not yet read, or due a
   /// refresh, and the drive time to `here` from each store that lacks one --
   /// and, `withDeals`, whether each has a deal on.
@@ -59,8 +74,10 @@ export const useNearbyStores = create<NearbyStoresState>((set, get) => ({
   gone: {},
   minutes: {},
   deals: {},
+  paging: {},
+  setPaging: (geohash, paging) => set((s) => ({ paging: { ...s.paging, [geohash]: paging } })),
   read: async (listings, here, withDeals) => {
-    const due = Date.now() - POLL.slow;
+    const due = Date.now() - FRESH_MS;
     const readAt = (hex: string) => get().stores[hex]?.readAt ?? get().gone[hex] ?? 0;
     const stale = listings.filter((l) => !reading.has(l.hex) && !(readAt(l.hex) > due));
     stale.forEach((l) => reading.add(l.hex));
