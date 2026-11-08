@@ -5,7 +5,7 @@ import clsx from "clsx";
 import type { RewardsProgram } from "../../holochain/types";
 import { ACCENTS } from "../../lib/rewards/rewards";
 import { PendingChip } from "./PendingPoints";
-import { useT } from "../../i18n";
+import { appLocale, useT } from "../../i18n";
 
 /// A number that counts up to `value` when it changes, from wherever it
 /// had got to. The count runs outside React (a motion value the span
@@ -136,7 +136,7 @@ export function RewardsCard({
       {!compact && (program.tagline || expiresAt) && (
         <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/15 pt-3 text-xs text-white/75">
           <span className="min-w-0 truncate">{program.tagline}</span>
-          {expiresAt && balance > 0 && <span className="shrink-0">{t("rewards.expires", { date: new Date(expiresAt / 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }) })}</span>}
+          {expiresAt && balance > 0 && <span className="shrink-0">{t("rewards.expires", { date: new Date(expiresAt / 1000).toLocaleDateString(appLocale(), { month: "short", day: "numeric" }) })}</span>}
         </div>
       )}
       {!program.active && <div className="mt-3 rounded-xl bg-black/25 px-3 py-2 text-xs font-semibold">{t("rewards.paused")}</div>}

@@ -6,19 +6,11 @@ import type { ItemSale, OpeningPeriod } from "../../../holochain/types";
 import { MAX_LABEL_CHARS } from "../../../holochain/types";
 import { Field, Input, Switch } from "../../../components/ui";
 import { fromTimeInput, toTimeInput, WEEK } from "../../../lib/storefront/storeHours";
-import { currencySymbol, fromMinorUnits, toMinorUnits } from "../../../lib/ui/format";
+import { currencySymbol, fromMinorUnits, toMinorUnits, fromLocalDateTime, toLocalDateTime } from "../../../lib/ui/format";
 import { useT, type MessageKey } from "../../../i18n";
 
 const PERCENTS = [10, 15, 20, 25, 30, 50];
 const DAY_NAME: Record<number, MessageKey> = { 0: "sale.day.0", 1: "sale.day.1", 2: "sale.day.2", 3: "sale.day.3", 4: "sale.day.4", 5: "sale.day.5", 6: "sale.day.6" };
-
-/// A timestamp as a `datetime-local` value on this device, and back.
-function toLocalInput(micros: number | null): string {
-  if (micros === null) return "";
-  const at = new Date(micros / 1000);
-  return new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
-const fromLocalInput = (value: string): number | null => (value ? new Date(value).getTime() * 1000 : null);
 
 export function SaleEditor({ value, fullCents, problem, onChange }: { value: ItemSale | null; fullCents: number; problem: string | null; onChange: (next: ItemSale | null) => void }) {
   const t = useT();
@@ -119,10 +111,10 @@ export function SaleEditor({ value, fullCents, problem, onChange }: { value: Ite
           {dated && (
             <div className="flex flex-col gap-2 sm:flex-row">
               <Field label={t("sale.startsAt")} className="min-w-0 flex-1">
-                <Input type="datetime-local" value={toLocalInput(sale.starts_at)} onChange={(e) => set({ starts_at: fromLocalInput(e.target.value) })} />
+                <Input type="datetime-local" value={toLocalDateTime(sale.starts_at)} onChange={(e) => set({ starts_at: fromLocalDateTime(e.target.value) })} />
               </Field>
               <Field label={t("sale.endsAt")} className="min-w-0 flex-1">
-                <Input type="datetime-local" value={toLocalInput(sale.ends_at)} onChange={(e) => set({ ends_at: fromLocalInput(e.target.value) })} />
+                <Input type="datetime-local" value={toLocalDateTime(sale.ends_at)} onChange={(e) => set({ ends_at: fromLocalDateTime(e.target.value) })} />
               </Field>
             </div>
           )}

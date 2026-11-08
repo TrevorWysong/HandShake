@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useClock } from "../../../lib/hooks/useClock";
 import { Gift, ListChecks, Plus, Sparkles, Tag, Users } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPromoCode, listPromoCodesForCatalog, setPromoCodeActive } from "../../../holochain/zomes/catalog";
@@ -12,7 +13,7 @@ import { describeLimits } from "../../../lib/storefront/promotions";
 import { myPromoUses } from "../../../holochain/zomes/dispatch";
 import type { PromoCode, PromoRequirement, PromoReward, Timestamp } from "../../../holochain/types";
 import { MAX_PROMO_CODE_CHARS } from "../../../holochain/types";
-import { currencySymbol } from "../../../lib/ui/format";
+import { currencySymbol, fromLocalDateTime, toLocalDateTime } from "../../../lib/ui/format";
 import { ChoiceTermsEditor } from "./ChoiceTermsEditor";
 import { useT } from "../../../i18n";
 import { useAction } from "../../../lib/hooks/useAction";
@@ -116,6 +117,9 @@ export function PromoCodesCard({ storeHex, catalogRef, items }: { storeHex: stri
   );
 }
 
+/// A new code's end date starts a week out.
+const WEEK_MICROS = 7 * 24 * 3600 * 1_000_000;
+
 /// Owns its own draft, so closing it (or creating a code) throws the draft
 /// away by unmounting -- nothing to reset by hand.
 function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: Uint8Array; items: ItemRow[]; itemName: (hex: string) => string | undefined; onCreated: () => Promise<void> }) {
@@ -125,10 +129,13 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
   const set = (patch: Partial<PromoForm>) => setForm((f) => ({ ...f, ...patch }));
   const requirement = buildRequirement(form);
   const reward = buildReward(form);
-  const ready = !!form.code.trim() && !!requirement && !!reward;
+  // An end date has to be ahead of now: one behind it starts the code dead.
+  const now = useClock();
+  const endsTooSoon = form.expiresAt !== null && form.expiresAt <= now.getTime() * 1000;
+  const ready = !!form.code.trim() && !!requirement && !!reward && !endsTooSoon;
 
   const create = (requirementNow: PromoRequirement, rewardNow: PromoReward) => save.run(async () => {
-    await createPromoCode({ catalog_ref: catalogRef, code: form.code.trim().toUpperCase(), requirement: requirementNow, reward: rewardNow, auto_apply: form.autoApply, limits: buildLimits(form) });
+    await createPromoCode({ catalog_ref: catalogRef, code: form.code.trim().toUpperCase(), requirement: requirementNow, reward: rewardNow, auto_apply: form.autoApply, limits: buildLimits(form), expires_at: form.expiresAt });
     await onCreated();
   });
 
@@ -274,6 +281,19 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
           <Switch checked={form.totalLimited} onChange={(totalLimited) => set({ totalLimited })} label={t("promoEditor.totalLimit")} />
         </div>
         {form.totalLimited && <Input type="number" min={1} max={1000000} value={form.total} onChange={(e) => set({ total: Number(e.target.value) })} suffix={t("promoEditor.orders")} className="mt-2" />}
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("promoEditor.ends")}</p>
+            <p className="text-xs text-ink-400">{t("promoEditor.endsHint")}</p>
+          </div>
+          <Switch checked={form.expiresAt !== null} onChange={(on) => set({ expiresAt: on ? Date.now() * 1000 + WEEK_MICROS : null })} label={t("promoEditor.ends")} />
+        </div>
+        {form.expiresAt !== null && (
+          <>
+            <Input type="datetime-local" value={toLocalDateTime(form.expiresAt)} onChange={(e) => set({ expiresAt: fromLocalDateTime(e.target.value) ?? form.expiresAt })} aria-label={t("promoEditor.ends")} className="mt-2" />
+            {endsTooSoon && <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{t("promoEditor.endsPast")}</p>}
+          </>
+        )}
       </div>
 
       {requirement && reward && (
@@ -281,7 +301,7 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
           <Sparkles size={14} className="mt-0.5 shrink-0" />
           <span>
             {describeRequirement(requirement, itemName)} · {describeReward(reward, itemName)}
-            {describeLimits({ limits: buildLimits(form), expires_at: null } as PromoCode).map((chip) => ` · ${chip}`)}
+            {describeLimits({ limits: buildLimits(form), expires_at: form.expiresAt } as PromoCode).map((chip) => ` · ${chip}`)}
           </span>
         </div>
       )}

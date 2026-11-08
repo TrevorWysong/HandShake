@@ -6,7 +6,7 @@ import type { ItemRow } from "../storefront/menu";
 import type { Accent, ChoiceTerms, PointsState, PointsStatus, PromoReward, Reward, RewardsProgram } from "../../holochain/types";
 import { bytesEqual } from "../../holochain/decode";
 import { computePromoEffect } from "../storefront/promotions";
-import type { Translate } from "../../i18n";
+import { appLocale, type Translate } from "../../i18n";
 
 export type { Accent };
 
@@ -175,13 +175,13 @@ const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 /// "Mon, Wed 2:00 PM-4:00 PM".
 export function describeHappyHour(days: number, start: number, end: number, t: Translate): string {
   const named = DAY_KEYS.filter((_, i) => days & (1 << i)).map((d) => t(`rewards.day.${d}`));
-  const clock = (minute: number) => new Date(2000, 0, 1, Math.floor(minute / 60), minute % 60).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const clock = (minute: number) => new Date(2000, 0, 1, Math.floor(minute / 60), minute % 60).toLocaleTimeString(appLocale(), { hour: "numeric", minute: "2-digit" });
   const when = days === 0b111_1111 ? t("rewards.everyDay") : named.join(", ");
   return `${when} · ${clock(start)}–${clock(end)}`;
 }
 
 
-export const shortDate = (micros: number) => new Date(micros / 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+export const shortDate = (micros: number) => new Date(micros / 1000).toLocaleDateString(appLocale(), { month: "short", day: "numeric" });
 
 /// Where a pending order's points stand, in a few words.
 export function pendingLine(status: PointsStatus, t: Translate): string {

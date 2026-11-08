@@ -31,6 +31,8 @@ export const EMPTY_PROMO_FORM = {
   oncePer: "any" as "any" | PromoPeriod,
   totalLimited: false,
   total: 100,
+  /// When it stops working (microseconds), if it does.
+  expiresAt: null as number | null,
 };
 
 export type PromoForm = typeof EMPTY_PROMO_FORM;

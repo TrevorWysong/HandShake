@@ -127,3 +127,12 @@ export function formatDistance(km: number, locale: string = typeof navigator ===
   const unit = miles ? "mi" : "km";
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: value < 10 ? 1 : 0 }).format(value)} ${unit}`;
 }
+
+/// A timestamp (microseconds) as a `datetime-local` input's value on this
+/// device -- empty for none -- and back.
+export function toLocalDateTime(micros: number | null): string {
+  if (micros === null) return "";
+  const at = new Date(micros / 1000);
+  return new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+export const fromLocalDateTime = (value: string): number | null => (value ? new Date(value).getTime() * 1000 : null);

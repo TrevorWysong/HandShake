@@ -15,7 +15,7 @@ import { HowYouEarn, RewardRail, RewardTile, TierLadder } from "../../components
 import { Button, Card, Skeleton } from "../../components/ui";
 import type { CardView, PointsLine } from "../../holochain/types";
 import { useCart } from "../../store/cart";
-import { useT } from "../../i18n";
+import { appLocale, useT } from "../../i18n";
 import { useAction } from "../../lib/hooks/useAction";
 
 /// Every rewards card the customer holds, most recently used first, and
@@ -69,7 +69,8 @@ export function RewardsPage() {
   );
 }
 
-const MONTHS = Array.from({ length: 12 }, (_, i) => new Date(2000, i, 1).toLocaleDateString(undefined, { month: "long" }));
+/// A month's name (1 to 12) in the app's language.
+const monthName = (month: number) => new Date(2000, month - 1, 1).toLocaleDateString(appLocale(), { month: "long" });
 
 /// The customer's birth month -- set once, for every store's birthday treat.
 function BirthdayCard() {
@@ -88,7 +89,7 @@ function BirthdayCard() {
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("rewards.birthdayTitle")}</p>
-          <p className="text-xs text-ink-500">{month ? t("rewards.birthdaySet", { month: MONTHS[month - 1] }) : t("rewards.birthdayBody")}</p>
+          <p className="text-xs text-ink-500">{month ? t("rewards.birthdaySet", { month: monthName(month) }) : t("rewards.birthdayBody")}</p>
         </div>
       </div>
       {month === null && (
@@ -97,14 +98,14 @@ function BirthdayCard() {
             <button type="button" aria-label={t("rewards.prevMonth")} onClick={() => setChoice((m) => (m === 1 ? 12 : m - 1))} className="grid h-9 w-9 place-items-center rounded-xl hover:bg-white dark:hover:bg-ink-700">
               <Minus size={16} />
             </button>
-            <span className="text-sm font-bold text-ink-900 dark:text-ink-50">{MONTHS[choice - 1]}</span>
+            <span className="text-sm font-bold text-ink-900 dark:text-ink-50">{monthName(choice)}</span>
             <button type="button" aria-label={t("rewards.nextMonth")} onClick={() => setChoice((m) => (m === 12 ? 1 : m + 1))} className="grid h-9 w-9 place-items-center rounded-xl hover:bg-white dark:hover:bg-ink-700">
               <Plus size={16} />
             </button>
           </div>
           {confirming ? (
             <div className="mt-3">
-              <p className="mb-2 text-xs text-ink-500">{t("rewards.birthdayOnce", { month: MONTHS[choice - 1] })}</p>
+              <p className="mb-2 text-xs text-ink-500">{t("rewards.birthdayOnce", { month: monthName(choice) })}</p>
               <div className="flex gap-2">
                 <Button variant="ghost" className="flex-1" onClick={() => setConfirming(false)}>
                   {t("common.cancel")}
@@ -247,7 +248,7 @@ function Activity({ card }: { card: CardView }) {
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{lineLabel(line, t)}</p>
-            <p className="text-xs text-ink-400">{new Date(line.at / 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
+            <p className="text-xs text-ink-400">{new Date(line.at / 1000).toLocaleDateString(appLocale(), { month: "short", day: "numeric", year: "numeric" })}</p>
           </div>
           <span className={clsx("text-sm font-black tabular-nums", line.points < 0 ? "text-ink-500" : "")} style={line.points >= 0 ? { color: colors.to } : undefined}>
             {line.points > 0 ? "+" : ""}

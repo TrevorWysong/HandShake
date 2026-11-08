@@ -11,7 +11,7 @@ import { lineKey, type CartLine } from "../../store/cart";
 import type { ActionHash, ChoiceTerms, PromoBlock, PromoCode, PromoLimits, PromoRequirement, PromoReward, PromoStanding } from "../../holochain/types";
 import { bytesToHex } from "../../holochain/decode";
 import { formatCents } from "../ui/format";
-import { t } from "../../i18n";
+import { appLocale, t } from "../../i18n";
 
 /// The cart's lines of `itemRef` -- the same item may be on several, with
 /// different choices.
@@ -161,7 +161,7 @@ export function describeLimits(promo: PromoCode, standing?: PromoStanding): stri
   if (limits.per_customer === 1) chips.push(t("deals.chip.once"));
   else if (limits.per_customer) chips.push(t("deals.chip.uses", { count: limits.per_customer }));
   if (limits.once_per) chips.push(t(`deals.chip.per.${limits.once_per}`));
-  if (promo.expires_at) chips.push(t("deals.chip.ends", { date: new Date(promo.expires_at / 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" }) }));
+  if (promo.expires_at) chips.push(t("deals.chip.ends", { date: new Date(promo.expires_at / 1000).toLocaleDateString(appLocale(), { month: "short", day: "numeric" }) }));
   if (standing?.remaining != null && standing.remaining > 0 && standing.remaining <= 50) chips.push(t("deals.chip.left", { count: standing.remaining }));
   return chips;
 }
