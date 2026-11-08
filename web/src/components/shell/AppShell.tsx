@@ -11,6 +11,8 @@ import { PresenceDot } from "../ui";
 import { NavItem, type NavPlacement } from "./NavItem";
 import { MerchantNav } from "./MerchantNav";
 import { Notifier } from "./Notifier";
+import { DriverFeed } from "./DriverFeed";
+import { useDriverFeed } from "../../store/driverFeed";
 import { Toaster } from "./Toaster";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { ActiveOrderCard } from "./ActiveOrderCard";
@@ -113,6 +115,9 @@ export function AppShell() {
   const mode = routeMode && availableModes.includes(routeMode) ? routeMode : chosenMode;
   // Their orders in progress follow a customer around the app.
   const owner = agentPubKey ? bytesToHex(agentPubKey) : null;
+  // Online to drive, whichever mode they're in: their feed runs, and the
+  // mode switch shows it.
+  const driving = useDriverFeed((s) => !!owner && s.driver === owner);
   const refreshActiveOrders = useActiveOrders((s) => s.refresh);
   usePolling(() => owner && refreshActiveOrders(owner).catch(() => undefined), { pollMs: POLL.signalled, refreshOn: () => true }, mode === "customer" && !!owner, owner ?? undefined);
   const cards = useCardOrders(pathname, owner);
@@ -134,11 +139,16 @@ export function AppShell() {
           key={m}
           onClick={() => switchMode(m)}
           className={clsx(
-            "flex-1 rounded-full px-2.5 py-1 capitalize transition",
+            "flex flex-1 items-center justify-center gap-1.5 rounded-full px-2.5 py-1 capitalize transition",
             mode === m ? "bg-white text-ink-900 shadow-sm dark:bg-ink-950 dark:text-white" : "text-ink-400 hover:text-ink-700 dark:hover:text-ink-200"
           )}
         >
           {t(`mode.${m}`)}
+          {m === "driver" && driving && (
+            <span role="img" aria-label={t("drive.online")} className="inline-flex">
+              <PresenceDot />
+            </span>
+          )}
         </button>
       ))}
     </div>
@@ -187,6 +197,7 @@ export function AppShell() {
         )}
 
         <Notifier />
+        <DriverFeed />
         <ConnectionBanner />
         <main className={clsx("flex-1 lg:px-6 lg:pt-4 lg:pb-12", docked && cards.length > 0 ? "pb-40" : "pb-20")}>
           <AnimatedOutlet />
@@ -209,6 +220,9 @@ const MODES: readonly Mode[] = ["customer", "driver", "merchant"];
 /// The places in the current mode, in the bottom bar or the sidebar.
 function ModeNav({ mode, cartCount, placement }: { mode: Mode; cartCount: number; placement: NavPlacement }) {
   const t = useT();
+  // Orders offered while the driver looked elsewhere -- none once they're back.
+  const onDash = useLocation().pathname === "/driver";
+  const newOffers = useDriverFeed((s) => (onDash ? 0 : s.unseen));
   if (mode === "customer") {
     return (
       <>
@@ -222,7 +236,7 @@ function ModeNav({ mode, cartCount, placement }: { mode: Mode; cartCount: number
   if (mode === "driver") {
     return (
       <>
-        <NavItem to="/driver" icon={Car} label={t("nav.dash")} placement={placement} />
+        <NavItem to="/driver" icon={Car} label={t("nav.dash")} badge={newOffers} placement={placement} />
         <NavItem to="/driver/earnings" icon={DollarSign} label={t("nav.earnings")} placement={placement} />
       </>
     );
