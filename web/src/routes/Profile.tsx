@@ -65,6 +65,7 @@ export function ProfilePage() {
   const [draft, setDraft] = useState({ name: "", bio: "", phone: "", avatar_data_uri: "" });
   const [vehicleDraft, setVehicleDraft] = useState({ vehicle_description: "", license_plate: "", photo_data_uri: "" });
   const action = useAction();
+  const savingVehicle = useAction();
 
   function openStore(hex: string) {
     setActiveStore(hex);
@@ -105,7 +106,7 @@ export function ProfilePage() {
 
   function saveVehicle() {
     if (!profileActionHash) return;
-    return action.run(async () => {
+    return savingVehicle.run(async () => {
       await registerProviderCredential({
         profile_action: profileActionHash,
         vehicle_description: vehicleDraft.vehicle_description,
@@ -155,7 +156,7 @@ export function ProfilePage() {
       <Card className="mb-4 p-4">
         <div className="mb-2 flex items-center justify-between">
           <SectionLabel>{t("profile.about")}</SectionLabel>
-          <button onClick={toggleEditing} aria-label={t("common.edit")} className="text-ink-400 hover:text-handshake-600">
+          <button onClick={toggleEditing} aria-label={t(editing ? "common.cancel" : "common.edit")} aria-expanded={editing} className="text-ink-400 hover:text-handshake-600">
             <Pencil size={14} />
           </button>
         </div>
@@ -189,7 +190,7 @@ export function ProfilePage() {
         <Card className="mb-4 p-4">
           <div className="mb-2 flex items-center justify-between">
             <SectionLabel icon={<Truck size={13} />}>{t("profile.vehicle")}</SectionLabel>
-            <button onClick={toggleEditingVehicle} aria-label={t("common.edit")} className="text-ink-400 hover:text-handshake-600">
+            <button onClick={toggleEditingVehicle} aria-label={t(editingVehicle ? "common.cancel" : "common.edit")} aria-expanded={editingVehicle} className="text-ink-400 hover:text-handshake-600">
               <Pencil size={14} />
             </button>
           </div>
@@ -210,8 +211,8 @@ export function ProfilePage() {
                 placeholder={t("profile.plate")}
                 className="font-mono"
               />
-              {action.error && <Notice>{action.error}</Notice>}
-              <Button loading={action.busy} onClick={saveVehicle} className="py-2 text-xs">
+              {savingVehicle.error && <Notice>{savingVehicle.error}</Notice>}
+              <Button loading={savingVehicle.busy} onClick={saveVehicle} className="py-2 text-xs">
                 {t("common.save")}
               </Button>
             </motion.div>

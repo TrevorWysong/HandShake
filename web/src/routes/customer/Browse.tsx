@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { PackageOpen, Search } from "lucide-react";
+import { PackageOpen, Search, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { AREA_PRECISION, getNearbyListings } from "../../holochain/zomes/catalog";
 import { RecurringDue } from "../../components/orders/RecurringDue";
@@ -171,11 +171,18 @@ export function Browse() {
       <div className="mb-4 flex items-center gap-2 rounded-full border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-900 px-4 py-2.5 transition focus-within:border-handshake-400 focus-within:ring-2 focus-within:ring-handshake-100">
         <Search size={16} className="text-ink-400" />
         <input
+          type="search"
           value={filters.query}
           onChange={(e) => setFilters({ ...filters, query: e.target.value })}
           placeholder={t("browse.search")}
-          className="w-full bg-transparent text-sm outline-none"
+          aria-label={t("browse.search")}
+          className="w-full bg-transparent text-sm outline-none [&::-webkit-search-cancel-button]:hidden"
         />
+        {filters.query && (
+          <button type="button" onClick={() => setFilters({ ...filters, query: "" })} aria-label={t("browse.clearSearch")} className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-ink-100 text-ink-500 transition hover:bg-ink-200 dark:bg-ink-800 dark:text-ink-300">
+            <X size={13} />
+          </button>
+        )}
       </div>
 
       {bags.length > 0 && (
