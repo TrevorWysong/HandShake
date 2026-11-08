@@ -8,6 +8,11 @@ import { spoken, type PolicyChange, type PolicyContent, type PolicySection } fro
 
 const changes: PolicyChange[] = [
   {
+    version: "1.8",
+    date: "2026-11-07",
+    summary: "Deliveries: one its store goes silent on, while it's the store's turn, can be closed with no charge, and the store pays any driver it had checked in. One picked up that never arrives is reported for you a day on. A customer collecting an order has their full window from when it's due ready.",
+  },
+  {
     version: "1.7",
     date: "2026-11-07",
     summary: "Pickups: a customer who can't get their order can report it once, and the store decides. If it says the order is ready, they have the same time again to collect it, and pay for it if they don't. A pickup its store goes silent on can be closed with no charge.",
@@ -150,6 +155,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       summary: "The driver is accountable for the food from the moment they pick it up until the customer has it.",
       points: [
         "Once your driver has picked up your order, and until it's delivered, you can say it never arrived. Your driver can still turn up and hand it over as usual.",
+        `If it still hasn't arrived ${spoken(t.order_lapse_secs)} after pickup, your app says it never arrived for you, so a driver who keeps the food pays for it.`,
         `If they don't, the store decides. Its app does so on its own once your claim has stood for ${spoken(t.claim_grace_secs)}, or the store can decide sooner.`,
         "When the store decides it never arrived, you get back what you paid for the food, the delivery fee and your tip. The store gets back its share of the fee, and the driver's collateral pays the store for the food.",
         "The store is paid for the food either way, by you if it arrived or by the driver if it didn't, so it has nothing to gain from either answer.",
@@ -207,13 +213,14 @@ function sections(t: NetworkTerms): PolicySection[] {
         `A driver can drop an order before picking it up. If the store had started cooking it, they answer for the food: if no other driver takes it on within ${spoken(t.replacement_window_secs)}, the order ends, you're refunded in full, and their collateral pays the store.`,
         `Each store sets how long it may keep a checked-in driver waiting past its ready time (${spoken(t.min_store_wait_secs)} to ${spoken(t.max_store_wait_secs)}; ${spoken(t.store_wait_secs)} if it doesn't), and you see it at checkout. Past that, the driver can call the store late and leave: the store pays their whole fee, your order goes to another driver, and you can cancel for a full refund.`,
         "If your driver is late, or none has your order, you can collect it from the store yourself. The food costs the same, the store's share of the delivery fee comes back to you, and nothing is charged for a driver.",
-        `If you choose to collect it and don't come within ${spoken(t.collection_window_secs)}, the store keeps the price of the food it made. If you cancel while a driver is on the way and nobody's late, you pay for the food and the driver's fee, as on any app.`,
+        `If you choose to collect it and don't come within ${spoken(t.collection_window_secs)} of when it's due ready, the store keeps the price of the food it made. If you cancel while a driver is on the way and nobody's late, you pay for the food and the driver's fee, as on any app.`,
         `If nobody comes to the door, your driver records arriving (your app tells you) and waits ${spoken(t.dropoff_wait_secs)}. Then they can say you weren't there: it's paid as delivered once your report window has passed, and counts against you. If you were there, say so before then: the store decides, and if it sides with you, you're not charged and the driver answers for the food. Until it's decided, you can still take it from your driver.`,
-        `A pickup you don't collect within ${spoken(t.collection_window_secs)} of its being ready lets the store keep the price of the food it made, and counts against you. If the store can't give you your order, tell it: it decides, and either cancels with no charge or says the order is ready, which gives you the same time again to collect it. You can report this once per order, and the store made your food: not being able to get there is still yours to pay for. If a store accepts a pickup and then goes silent on it for ${spoken(t.pickup_lapse_secs)}, you can close it with no charge.`,
+        `A pickup you don't collect within ${spoken(t.collection_window_secs)} of its being ready lets the store keep the price of the food it made, and counts against you. If the store can't give you your order, tell it: it decides, and either cancels with no charge or says the order is ready, which gives you the same time again to collect it. You can report this once per order, and the store made your food: not being able to get there is still yours to pay for. If a store accepts a pickup and then goes silent on it for ${spoken(t.order_lapse_secs)} (counted from when it's due ready, while it's still being made), you can close it with no charge.`,
         "A scheduled order is sent to its store at its time, by your app. If the store is closed then, or your device was offline for more than half an hour past it, it's cancelled instead and nobody pays anything.",
         "Every deadline that costs someone else if it's claimed early (a driver leaving, a store moving a driver on, calling a store late, ending an order no driver came for, keeping the food of a customer who never came, a driver saying nobody came to the door) is proved against a public time source run by independent organisations, so nobody can claim one early.",
         `An order can change drivers at most ${t.max_driver_changes} times. After that you can collect it or cancel it.`,
         "While a driver who left your order cooking answers for it, you can't cancel it: wait for another driver (you're refunded in full if none comes in time) or collect it yourself.",
+        `If it's the store's turn on your delivery (confirming your driver, checking them in, handing it over, or ending it after a driver left) and nobody moves it on for ${spoken(t.order_lapse_secs)}, counted from when it's due ready if that's later, you can close it with no charge. The store pays any driver it had checked in, and it counts against the store.`,
       ],
       effects: [
         { who: "customers", good: "No driver, a no-show, or a slow store never costs you anything.", bad: "If you choose to collect and don't, aren't there for your delivery or pickup, or cancel while it's on its way, you pay for the food." },

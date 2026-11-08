@@ -9,6 +9,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.the-store-still-has-time-to-answer": "La tienda todavía tiene tiempo para responder por este pedido.",
   "refusal.only-the-store-answers-a-customer-who": "Solo la tienda responde a un cliente que dice que no puede recoger su pedido.",
   "refusal.the-store-has-already-answered-that-this": "La tienda ya respondió que este pedido está listo.",
+  "refusal.this-order-isn-t-waiting-on-its": "Este pedido no está esperando a su tienda.",
   "refusal.a-free-order-can-t-be-delivered": "Un pedido gratis no se puede enviar a domicilio: tu repartidor responde de lo que lleva. Elige recoger.",
   "refusal.a-goodie-bag-is-one-to-an": "Una bolsa sorpresa va de una en una por pedido.",
   "refusal.a-pickup-is-confirmed-by-the-store": "La recogida la confirma la tienda, no un código.",

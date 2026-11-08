@@ -47,7 +47,7 @@ export function PickupOrderDetail() {
   const t = useT();
   // One step on the order at a time: no cancelling it while confirming it.
   const action = useAction();
-  const { collection_window_secs: collectionWindowSecs, answer_grace_secs: answerGraceSecs, pickup_lapse_secs: lapseSecs } = useTerms();
+  const { collection_window_secs: collectionWindowSecs, answer_grace_secs: answerGraceSecs, order_lapse_secs: lapseSecs } = useTerms();
   const [askingCantGet, setAskingCantGet] = useState(false);
 
   // `writtenAt` (when its current version was written) and `now` (when it
@@ -110,7 +110,10 @@ export function PickupOrderDetail() {
   const collectBy = (snapshot?.writtenAt ?? 0) + collectionWindowSecs * 1_000_000;
   // A store gone silent on it since its last word: the customer can close it.
   const waitingOnStore = order.status === "MerchantConfirmed" || order.status === "ReadyForPickup" || order.status === "Disputed";
-  const lapsed = waitingOnStore && !!snapshot && now.getTime() * 1000 >= snapshot.writtenAt + lapseSecs * 1_000_000 + PROOF_MARGIN_MICROS;
+  // Counted from its last word -- or, while it's being made, from when it's
+  // due ready -- as the network counts it.
+  const waitsFrom = Math.max(snapshot?.writtenAt ?? 0, order.status === "MerchantConfirmed" ? (order.ready_by ?? 0) : 0);
+  const lapsed = waitingOnStore && !!snapshot && now.getTime() * 1000 >= waitsFrom + lapseSecs * 1_000_000 + PROOF_MARGIN_MICROS;
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-10 pt-4">
@@ -244,7 +247,7 @@ export function PickupOrderDetail() {
         <motion.div variants={fadeSlideUp} className="mt-3 flex flex-col gap-3 rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-700 dark:bg-ink-900">
           <p className="text-sm text-ink-700 dark:text-ink-200">{t("pickup.lapsed")}</p>
           <Button variant="secondary" loading={action.doing === "lapse"} disabled={action.busy} onClick={closeLapsed}>
-            {t("pickup.closeLapsed")}
+            {t("order.closeLapsed")}
           </Button>
         </motion.div>
       )}

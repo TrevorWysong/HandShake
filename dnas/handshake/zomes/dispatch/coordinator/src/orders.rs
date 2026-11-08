@@ -581,7 +581,10 @@ pub struct NetworkTerms {
     /// How long a customer collecting an order -- a pickup once it's
     /// ready, or a delivery they chose to collect -- has to come for it.
     pub collection_window_secs: u64,
-    pub pickup_lapse_secs: u64,
+    /// How long an order may sit with its store silent before its customer
+    /// may close it, and a delivery picked up go without arriving before
+    /// its customer's app says it never did.
+    pub order_lapse_secs: u64,
     /// How long a driver waits at the drop-off before they may say nobody
     /// came to take the order.
     pub dropoff_wait_secs: u64,
@@ -647,7 +650,7 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         time_relays: handshake_governance::time_source().relays,
         time_chain_hash: handshake_governance::time_source().chain_hash,
         collection_window_secs: handshake_governance::collection_window().as_secs(),
-        pickup_lapse_secs: handshake_governance::pickup_lapse().as_secs(),
+        order_lapse_secs: handshake_governance::order_lapse().as_secs(),
         dropoff_wait_secs: handshake_governance::dropoff_wait().as_secs(),
         clean_start_deliveries: crate::matching::CLEAN_START,
         max_code_attempts: handshake_governance::max_code_attempts(),

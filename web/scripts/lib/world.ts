@@ -98,6 +98,9 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
     // A customer with nothing on order yet: the others each have as many
     // waiting on stores as the network allows at once.
     { slug: "ana", name: "Ana Silva", roles: ["Requester"], addresses: [{ label: "Home", at: [0.9, 0.2] }] },
+    // Another, for the walks through what goes wrong with an order
+    // (`e2e/issues.spec.ts`): each places several, so they'd use up Ana's.
+    { slug: "rio", name: "Rio Santos", roles: ["Requester"], addresses: [{ label: "Home", at: [-0.4, 0.8] }] },
   ],
   stores: [
     {

@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { ST_PETE, actionHash, decodeEntry, phraseKey, phraseMessage, retryUntil, setupPlayersWithProperties, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { ST_PETE, actionHash, decodeEntry, phraseKey, phraseMessage, nearbyStores, retryUntil, setupPlayersWithProperties, useTestCoordinators, retryingCaller } from "./helpers.js";
 
 interface View {
   original_action: Uint8Array;
@@ -94,7 +94,7 @@ await runScenario(async (scenario) => {
   await catalog(bob)("reopen_listing", moved);
   await sync();
   const nearby = await retryUntil(
-    () => catalog(carol)<{ catalogs: View[] }>("get_nearby_merchants", { geohash: area, after: null }).then((p) => p.catalogs),
+    () => nearbyStores(carol, area),
     (list) => list.some((c) => same(c.original_action, moved)),
   );
   assert.ok(!nearby.some((c) => same(c.original_action, store)), "only the new store is listed");

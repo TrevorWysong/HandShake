@@ -501,11 +501,37 @@ pub fn mark_not_collected(input: TimedStepInput) -> ExternResult<Record> {
     if order.merchant != me()? || order.status != DeliveryStatus::Collecting {
         return Err(guest("Only the store records an order it was waiting to hand over as uncollected."));
     }
-    let window_ends = Timestamp::from_micros(version.record.action().timestamp().as_micros().saturating_add(handshake_governance::collection_window().as_micros() as i64));
-    if !past(window_ends, true, input.beacon.as_ref())? {
+    if !past(collect_by(&version.record, &order), true, input.beacon.as_ref())? {
         return Err(guest("The customer still has time to collect it."));
     }
     cancel_proved(&version, order, &order_ref, Cancellation::NotCollected, input.beacon)
+}
+
+/// When a customer collecting `order` (at `record`) must come by: the
+/// network's window from when it's due ready, or from the store recording
+/// them collecting it if that's later.
+fn collect_by(record: &Record, order: &DeliveryOrder) -> Timestamp {
+    Timestamp::from_micros(waits_from(record.action().timestamp(), order.ready_by).as_micros().saturating_add(handshake_governance::collection_window().as_micros() as i64))
+}
+
+/// The customer closing an order its store has gone silent on -- one it
+/// owes its next step, unmoved past `handshake_governance::order_lapse` --
+/// with proof of the time, which validation checks: nobody's charged but
+/// the store, which pays a driver it had checked in, and it counts against
+/// the store.
+#[hdk_extern]
+pub fn lapse_delivery_order(input: TimedStepInput) -> ExternResult<Record> {
+    let order_ref = original_action_of(input.order_ref)?;
+    let (version, order) = current(&order_ref)?;
+    if order.requester != me()? {
+        return Err(guest("Only the customer closes an order its store has gone silent on."));
+    }
+    match Version::of(version.record.clone()).map(|v| lineage::lapses_at(&v)).transpose()?.flatten() {
+        Some(lapses) if past(lapses, true, input.beacon.as_ref())? => {}
+        Some(_) => return Err(guest("The store still has time to answer for this order.")),
+        None => return Err(guest("This order isn't waiting on its store.")),
+    }
+    cancel_proved(&version, order, &order_ref, Cancellation::Lapsed, input.beacon)
 }
 
 /// The driver saying nobody came to take the order: at the drop-off, once
@@ -624,6 +650,8 @@ pub struct OrderTiming {
     pub can_collect: bool,
     /// Whether its customer has asked to.
     pub collect_requested: bool,
+    /// When its customer may close it on the store's silence.
+    pub lapses_at: Option<Timestamp>,
 }
 
 #[hdk_extern]
@@ -645,7 +673,7 @@ pub fn get_order_timing(order_ref: ActionHash) -> ExternResult<OrderTiming> {
         }
         DeliveryStatus::Open => timing.no_driver_after = no_driver_after(&version.record)?,
         DeliveryStatus::Collecting => {
-            timing.collect_by = Some(Timestamp::from_micros(version.record.action().timestamp().as_micros().saturating_add(handshake_governance::collection_window().as_micros() as i64)));
+            timing.collect_by = Some(collect_by(&version.record, &order));
         }
         _ => {}
     }
@@ -655,7 +683,10 @@ pub fn get_order_timing(order_ref: ActionHash) -> ExternResult<OrderTiming> {
         _ => false,
     };
     timing.can_collect = driver_late && !timing.collect_requested;
-    timing.store_was_late = Version::of(version.record).map(|v| lineage::store_was_late(&v)).transpose()?.unwrap_or(false);
+    if let Some(version) = Version::of(version.record) {
+        timing.store_was_late = lineage::store_was_late(&version)?;
+        timing.lapses_at = lineage::lapses_at(&version)?;
+    }
     Ok(timing)
 }
 

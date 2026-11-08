@@ -101,6 +101,11 @@ await runScenario(async (scenario) => {
   // --- Anchors and history indexes: nothing to clutter them with. ---
   const nowhere = agentAsLinkBase(attacker.agentPubKey);
   await rejects(rawLink(attacker, "catalog", "GeohashToCatalog", storeA, nowhere), /catalog links must target a record/, "a store anchor links only stores");
+  // A store's listing says where it is -- what Browse ranks stores by -- so
+  // none can list itself nearer than it is, or say nothing.
+  const listedAt = await call(merchant, "catalog")<Uint8Array>("listing_anchor_for_testing", storeA);
+  await rejects(rawLink(merchant, "catalog", "GeohashToCatalog", listedAt, storeA, new TextEncoder().encode("dhvnpz00")), /saying where it is/, "a store can't list itself somewhere it isn't");
+  await rejects(rawLink(merchant, "catalog", "GeohashToCatalog", listedAt, storeA), /saying where it is/, "nor without saying where");
   await rejects(rawLink(attacker, "dispatch", "OpenOrderGeohashAnchor", storeA, nowhere), /an open-order anchor links only orders/, "an open-order anchor links only orders");
   await rejects(rawLink(attacker, "dispatch", "StoreHistoryPath", storeA, storeA), /must name its day and order/, "a history day is indexed only for an order");
   const dayTag = (order: Uint8Array) => new Uint8Array([...new Uint8Array(8), ...order]);

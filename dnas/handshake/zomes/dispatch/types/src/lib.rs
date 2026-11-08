@@ -221,11 +221,22 @@ pub enum Cancellation {
     /// of sending it so late; it never reached the store, and nobody owes
     /// anything.
     ScheduleMissed,
-    /// A pickup the store accepted and then went silent on -- never marked
-    /// ready, never answered a report, never recorded it uncollected -- for
-    /// `handshake_governance::pickup_lapse`. Written by the customer, with
-    /// proof of the time: nobody's charged, and it counts against the store.
+    /// An order its store accepted and then went silent on, for
+    /// `handshake_governance::order_lapse`: a pickup never marked ready,
+    /// handed over or answered; a delivery whose kitchen or counter went
+    /// quiet, or that a driver left cooking and the store never ended.
+    /// Written by the customer, with proof of the time: nobody's charged
+    /// but the store, which pays a driver it had checked in, and it counts
+    /// against the store.
     Lapsed,
+}
+
+/// When a wait on an order's next step starts: when its latest version was
+/// written, or when its food is due ready if that's later -- nobody's late
+/// coming for food that isn't due yet, nor a store whose kitchen is still
+/// within the time it promised.
+pub fn waits_from(written_at: Timestamp, ready_by: Option<Timestamp>) -> Timestamp {
+    ready_by.map_or(written_at, |ready_by| ready_by.max(written_at))
 }
 
 /// What a store tells the customer when it turns an order down.
@@ -873,6 +884,16 @@ pub struct PickupOrder {
     /// `DeliveryOrder::beacon`.
     #[serde(default)]
     pub beacon: Option<Beacon>,
+}
+
+impl PickupOrder {
+    /// When a wait on this version's next step starts (`waits_from`): one
+    /// still being made, from when it's due ready; one the store's said is
+    /// ready, from its saying so.
+    pub fn waits_from(&self, written_at: Timestamp) -> Timestamp {
+        let making = self.status == PickupStatus::MerchantConfirmed;
+        waits_from(written_at, self.ready_by.filter(|_| making))
+    }
 }
 
 /// An order's part in its store's rewards program.

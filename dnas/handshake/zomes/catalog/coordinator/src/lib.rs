@@ -34,14 +34,6 @@ fn geohash_anchor_path(geohash: &str) -> ExternResult<hdi::hash_path::path::Type
     Path::from(catalog_geohash_path(geohash)).typed(LinkTypes::GeohashToCatalog)
 }
 
-/// Unlike open orders, old
-/// catalog entries are *signal*, not noise -- a merchant published a year
-/// ago should still show up in "restaurants near me" today, so this anchor
-/// is deliberately *not* time-bucketed. The real scale concern here is
-/// different: a dense city can legitimately have thousands of real
-/// merchants in one cell, and returning all of them in one call doesn't
-/// bound payload size or per-call cost. Fixed with pagination instead.
-const CATALOG_PAGE_SIZE: usize = 50;
 const MENU_ITEM_PAGE_SIZE: usize = 50;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -108,7 +100,7 @@ pub struct CatalogView {
 
 /// Every store this agent owns, oldest first, via the `OwnerToCatalog`
 /// links created at publish time -- deterministic and independent of
-/// geohash matching, unlike discovering them through `get_nearby_merchants`
+/// geohash matching, unlike discovering them through `get_nearby_listings`
 /// (which only works if the caller's current `location` happens to hash to
 /// the same cell each store did). One owner running several stores is the
 /// normal case, not an edge case -- same as one DoorDash/Uber Eats business
@@ -182,10 +174,10 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
         prices_include_tax: false,
         tax_registration: String::new(),
     };
-    let action_hash = create_entry(&EntryTypes::MerchantCatalog(catalog))?;
+    let action_hash = create_entry(&EntryTypes::MerchantCatalog(catalog.clone()))?;
     create_link(owner, action_hash.clone(), LinkTypes::OwnerToCatalog, ())?;
 
-    list(&action_hash, &geohash)?;
+    list(&action_hash, &catalog)?;
 
     written(action_hash)
 }

@@ -24,6 +24,7 @@ import { distanceKm } from "../../../lib/places/geohash";
 import { ARRIVAL_NEAR_KM } from "../../../lib/orders/arrival";
 import { received } from "../../../lib/orders/orderEntries";
 import { LateOrder } from "../../../components/orders/LateOrder";
+import { StoreSilence } from "../../../components/orders/StoreSilence";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useAction } from "../../../lib/hooks/useAction";
 import { useResource } from "../../../lib/hooks/useResource";
@@ -415,6 +416,10 @@ export function OrderDetail() {
 
           <motion.div variants={fadeSlideUp}>
             <LateOrder orderRef={orderRef} order={order} storeAddress={store?.address ?? ""} onChanged={reloadOrder} />
+          </motion.div>
+
+          <motion.div variants={fadeSlideUp}>
+            <StoreSilence orderRef={orderRef} order={order} onChanged={reloadOrder} />
           </motion.div>
 
           {collecting && (

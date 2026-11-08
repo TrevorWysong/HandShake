@@ -46,7 +46,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const DOOR = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 await runScenario(async (scenario) => {
-  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ dropoff_wait_secs: DOOR_WAIT, collection_window_secs: COLLECT_WAIT, answer_grace_secs: ANSWER_GRACE, pickup_lapse_secs: LAPSE, report_window_secs: 20 }));
+  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ dropoff_wait_secs: DOOR_WAIT, collection_window_secs: COLLECT_WAIT, answer_grace_secs: ANSWER_GRACE, order_lapse_secs: LAPSE, report_window_secs: 20 }));
   const all = [customer, merchant, driver];
   for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);

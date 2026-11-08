@@ -3,64 +3,76 @@
 
 use super::*;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct NearbyMerchantsInput {
+/// A store listed near somewhere: its original action, and where its
+/// listing says it is (`LISTING_PRECISION`, which validation holds to the
+/// store's own location).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct NearbyListing {
+    pub catalog: ActionHash,
     pub geohash: String,
-    /// Page cursor -- pass back the previous call's `next_after` to continue.
-    /// `None` starts from the beginning.
-    pub after: Option<Timestamp>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct NearbyMerchantsPage {
-    pub catalogs: Vec<CatalogView>,
-    pub next_after: Option<Timestamp>,
-}
-
-/// Returns merchant catalogs declared in `geohash`'s cell and its 8
-/// neighbors -- the same discovery pattern drivers use for open orders, so
-/// restaurant browsing and order discovery compose over one grid. Paginated,
-/// not time-bucketed like open-order discovery -- old catalogs are signal here, not noise,
-/// so bucketing would just mean re-linking every merchant forever instead
-/// of fixing anything. `after` filtering happens per-cell before the
-/// cross-cell merge below, so it also reduces per-cell payload size, not
-/// just the final page.
+/// The stores listed in `geohash`'s cell and its 8 neighbors -- the same
+/// grid drivers find open orders on -- read from the listings alone, with
+/// no store's record fetched: a dense area's few thousand cost one link read
+/// per cell. An app ranks them by distance and reads only the ones it shows
+/// (`get_listed_stores`). Old listings are signal here, not noise -- a store
+/// listed a year ago is still near today -- so the anchor isn't
+/// time-bucketed.
 #[hdk_extern]
-pub fn get_nearby_merchants(input: NearbyMerchantsInput) -> ExternResult<NearbyMerchantsPage> {
-    let mut links = Vec::new();
-    for cell in handshake_types::cell_and_neighbors(&input.geohash) {
-        let path = geohash_anchor_path(&cell)?;
-        let path_hash = match path.path_entry_hash() {
-            Ok(hash) => hash,
-            Err(_) => continue,
-        };
-        let mut query = LinkQuery::try_new(path_hash, LinkTypes::GeohashToCatalog)?;
-        query.after = input.after;
-        links.extend(get_links(query, GetStrategy::default())?);
-    }
-    links.sort_by_key(|l| l.timestamp);
-    let next_after = if links.len() > CATALOG_PAGE_SIZE {
-        Some(next_page_cursor(links[CATALOG_PAGE_SIZE - 1].timestamp))
-    } else {
-        None
-    };
-    links.truncate(CATALOG_PAGE_SIZE);
-    let mut catalogs = Vec::new();
-    let mut seen: Vec<ActionHash> = Vec::new();
-    for (original_action, record) in resolve_links_to_records_with_original(links) {
-        // Once each; and a store whose owner moved it to a new key shows as
-        // the new one.
-        if !seen.contains(&original_action) && !moves::has_moved(&original_action)? {
-            seen.push(original_action.clone());
-            catalogs.push(CatalogView { original_action, record });
+pub fn get_nearby_listings(geohash: String) -> ExternResult<Vec<NearbyListing>> {
+    let mut listings: Vec<NearbyListing> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for cell in handshake_types::cell_and_neighbors(&geohash) {
+        let Ok(anchor) = geohash_anchor_path(&cell)?.path_entry_hash() else { continue };
+        for link in get_links(LinkQuery::try_new(anchor, LinkTypes::GeohashToCatalog)?, GetStrategy::default())? {
+            let (Some(catalog), Ok(geohash)) = (link.target.into_action_hash(), String::from_utf8(link.tag.0)) else { continue };
+            if seen.insert(catalog.clone()) {
+                listings.push(NearbyListing { catalog, geohash });
+            }
         }
     }
-    Ok(NearbyMerchantsPage { catalogs, next_after })
+    Ok(listings)
 }
 
-/// Lists a store (its original action) under its area.
-pub(crate) fn list(catalog_ref: &ActionHash, geohash: &str) -> ExternResult<ActionHash> {
-    create_link(geohash_anchor_path(geohash)?.path_entry_hash()?, catalog_ref.clone(), LinkTypes::GeohashToCatalog, ())
+/// The most stores `get_listed_stores` reads at once.
+pub const STORE_BATCH: usize = 50;
+
+/// A store as a list of nearby stores shows it: its current record, and the
+/// goodie bags it has out.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ListedStore {
+    pub original_action: ActionHash,
+    pub record: Record,
+    pub bags: Vec<BagView>,
+}
+
+/// The stores at `catalogs` (original actions), as of now, at most
+/// `STORE_BATCH` at a time -- each one that's still a store, once; one its
+/// owner moved to a new key is left out, the new one being listed itself.
+#[hdk_extern]
+pub fn get_listed_stores(catalogs: Vec<ActionHash>) -> ExternResult<Vec<ListedStore>> {
+    if catalogs.len() > STORE_BATCH {
+        return Err(guest("Ask for fewer stores at once."));
+    }
+    let mut stores: Vec<ListedStore> = Vec::with_capacity(catalogs.len());
+    for original_action in catalogs {
+        if stores.iter().any(|s| s.original_action == original_action) || moves::has_moved(&original_action)? {
+            continue;
+        }
+        let Ok(record) = resolve_latest(original_action.clone()) else { continue };
+        if decode_or::<MerchantCatalog>(&record).is_none() {
+            continue;
+        }
+        let bags = crate::bags::live_bags(&original_action)?;
+        stores.push(ListedStore { original_action, record, bags });
+    }
+    Ok(stores)
+}
+
+/// Lists a store (its original action) under its area, saying where it is.
+pub(crate) fn list(catalog_ref: &ActionHash, catalog: &MerchantCatalog) -> ExternResult<ActionHash> {
+    create_link(geohash_anchor_path(&catalog.geohash)?.path_entry_hash()?, catalog_ref.clone(), LinkTypes::GeohashToCatalog, listing_tag(catalog))
 }
 
 /// The caller's listing of their store, if it's listed.
@@ -95,6 +107,8 @@ pub fn reopen_listing(catalog_ref: ActionHash) -> ExternResult<()> {
     if my_listing(&catalog_ref)?.is_some() {
         return Ok(());
     }
-    let (_, catalog): (_, MerchantCatalog) = resolve_latest_decoded(catalog_ref.clone(), "MerchantCatalog")?;
-    list(&catalog_ref, &catalog.geohash).map(|_| ())
+    // Listed where it was published -- what validation checks it against.
+    let original = get(catalog_ref.clone(), GetOptions::default())?.ok_or(guest("This store can't be found."))?;
+    let catalog = decode_or::<MerchantCatalog>(&original).ok_or(guest("That isn't a store."))?;
+    list(&catalog_ref, &catalog).map(|_| ())
 }

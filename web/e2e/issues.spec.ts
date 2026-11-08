@@ -20,13 +20,13 @@ async function keep(page: Page, name: string) {
   await page.setViewportSize(DESKTOP);
 }
 
-/// Ana's pickup at Mo's Tacos, accepted and ready, with both sides looking at it.
-/// Ana because the seeded world has her placing nothing of her own: the network
-/// caps a customer's orders every few minutes.
+/// Rio's pickup at Mo's Tacos, accepted and ready, with both sides looking at it.
+/// Rio is this file's alone: the network caps a customer's orders every few
+/// minutes, and these place several.
 async function readyPickup(browser: Browser) {
   const tacos = store("tacos");
   const customer = await (await browser.newContext({ viewport: DESKTOP })).newPage();
-  await signInAs(customer, "ana");
+  await signInAs(customer, "rio");
   await customer.locator("main").getByText(tacos.name, { exact: true }).first().click();
   await customer.getByRole("button", { name: `Add ${tacos.menu[0].name}` }).click();
   await customer.getByRole("link", { name: "Cart" }).click();
@@ -108,7 +108,8 @@ test("a report of a missing item waits under Issues until the store answers it",
   await seller.goto("/#/merchant");
   await seller.getByRole("tab", { name: /Issues/ }).click();
   await expect(seller).toHaveURL(/tab=issues/);
-  await expect(seller.getByText("The customer reported a problem").first()).toBeVisible();
+  // The store's list catches up with the report on its poll.
+  await expect(seller.getByText("The customer reported a problem").first()).toBeVisible({ timeout: 90_000 });
   await expect(seller.getByText(/Accept or decline each report by/).first()).toBeVisible();
   await keep(seller, "issues-report");
 

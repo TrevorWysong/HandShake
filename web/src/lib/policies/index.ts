@@ -15,7 +15,7 @@ import { es } from "./es";
 
 export { spoken, type Audience, type Effect, type PolicySection } from "./common";
 
-export const POLICY_VERSION = "1.7";
+export const POLICY_VERSION = "1.8";
 export const POLICY_UPDATED = "2026-11-07";
 
 export const POLICIES: Record<Locale, PolicyContent> = { en, es };

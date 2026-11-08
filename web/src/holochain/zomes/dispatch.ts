@@ -429,6 +429,11 @@ export async function lapsePickupOrder(orderRef: ActionHash, beacon: Beacon): Pr
   return callZome("dispatch", "lapse_pickup_order", { order_ref: orderRef, beacon });
 }
 
+/// The customer closing a delivery its store has gone silent on, with proof of the time.
+export async function lapseDeliveryOrder(orderRef: ActionHash, beacon: Beacon): Promise<HcRecord> {
+  return callZome("dispatch", "lapse_delivery_order", { order_ref: orderRef, beacon });
+}
+
 /// The store answering a customer who says they can't get their pickup: it's ready.
 export async function dismissPickupProblem(orderRef: ActionHash): Promise<unknown> {
   return callZome("dispatch", "dismiss_pickup_problem", orderRef);

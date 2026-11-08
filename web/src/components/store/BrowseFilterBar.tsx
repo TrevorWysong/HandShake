@@ -20,6 +20,9 @@ interface Props {
   hasTimes: boolean;
   /// How many stores the filters would leave, changed by `patch`.
   countWith: (patch: Partial<BrowseFilters>) => number;
+  /// Called as a choice is about to be made, so every store near enough is
+  /// read in time to count.
+  onExplore?: () => void;
 }
 
 function Pill({ icon: Icon, active, label, opens, onClick }: { icon: LucideIcon; active: boolean; label: string; opens?: boolean; onClick: () => void }) {
@@ -93,9 +96,13 @@ function Tiles<T extends number>({ values, selected, label, icon, countOf, onPic
   );
 }
 
-export function BrowseFilterBar({ filters, onChange, cuisines, diets, hasTimes, countWith }: Props) {
+export function BrowseFilterBar({ filters, onChange, cuisines, diets, hasTimes, countWith, onExplore }: Props) {
   const t = useT();
   const [choosing, setChoosing] = useState<Choosing | null>(null);
+  const choose = (sheet: Choosing) => {
+    onExplore?.();
+    setChoosing(sheet);
+  };
   const set = (patch: Partial<BrowseFilters>) => onChange({ ...filters, ...patch });
   const pick = (patch: Partial<BrowseFilters>) => {
     set(patch);
@@ -107,13 +114,13 @@ export function BrowseFilterBar({ filters, onChange, cuisines, diets, hasTimes, 
   return (
     <>
       <div role="toolbar" aria-label={t("browse.filter.label")} className="no-scrollbar -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 py-0.5">
-        <Pill icon={ArrowUpDown} active={filters.sort !== "relevance"} label={filters.sort === "relevance" ? t("browse.filter.sort") : t(`browse.sort.${filters.sort}`)} opens onClick={() => setChoosing("sort")} />
+        <Pill icon={ArrowUpDown} active={filters.sort !== "relevance"} label={filters.sort === "relevance" ? t("browse.filter.sort") : t(`browse.sort.${filters.sort}`)} opens onClick={() => choose("sort")} />
         <Pill icon={Tag} active={filters.deals} label={t("browse.filter.deals")} onClick={() => set({ deals: !filters.deals })} />
-        <Pill icon={Star} active={filters.minRating !== null} label={filters.minRating !== null ? `${filters.minRating.toFixed(1)}+` : t("browse.filter.rating")} opens onClick={() => setChoosing("rating")} />
-        {hasTimes && <Pill icon={Clock} active={filters.maxMinutes !== null} label={filters.maxMinutes !== null ? t("browse.filter.under", { minutes: filters.maxMinutes }) : t("browse.filter.time")} opens onClick={() => setChoosing("time")} />}
+        <Pill icon={Star} active={filters.minRating !== null} label={filters.minRating !== null ? `${filters.minRating.toFixed(1)}+` : t("browse.filter.rating")} opens onClick={() => choose("rating")} />
+        {hasTimes && <Pill icon={Clock} active={filters.maxMinutes !== null} label={filters.maxMinutes !== null ? t("browse.filter.under", { minutes: filters.maxMinutes }) : t("browse.filter.time")} opens onClick={() => choose("time")} />}
         <Pill icon={Clock} active={filters.openNow} label={t("browse.filter.openNow")} onClick={() => set({ openNow: !filters.openNow })} />
-        {cuisines.length > 0 && <Pill icon={Utensils} active={!!filters.cuisine} label={filters.cuisine ?? t("browse.filter.cuisine")} opens onClick={() => setChoosing("cuisine")} />}
-        {diets.length > 0 && <Pill icon={Leaf} active={filters.diets.length > 0} label={filters.diets.length === 0 ? t("browse.filter.diet") : filters.diets.length === 1 ? filters.diets[0] : t("browse.filter.dietCount", { count: filters.diets.length })} opens onClick={() => setChoosing("diet")} />}
+        {cuisines.length > 0 && <Pill icon={Utensils} active={!!filters.cuisine} label={filters.cuisine ?? t("browse.filter.cuisine")} opens onClick={() => choose("cuisine")} />}
+        {diets.length > 0 && <Pill icon={Leaf} active={filters.diets.length > 0} label={filters.diets.length === 0 ? t("browse.filter.diet") : filters.diets.length === 1 ? filters.diets[0] : t("browse.filter.dietCount", { count: filters.diets.length })} opens onClick={() => choose("diet")} />}
         <Pill icon={Heart} active={filters.favorites} label={t("browse.favorites")} onClick={() => set({ favorites: !filters.favorites })} />
         {narrowed && (
           <button type="button" onClick={() => onChange({ ...NO_FILTERS, query: filters.query })} className="inline-flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-3 text-xs font-semibold text-handshake-700 hover:bg-handshake-50 dark:text-handshake-300 dark:hover:bg-handshake-900/20">

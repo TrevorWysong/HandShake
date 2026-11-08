@@ -8,7 +8,6 @@ use catalog_integrity::*;
 use hdk::prelude::*;
 use handshake_coordinator_support::{decode_or, resolve_latest, resolve_links_to_records_with_original, resolve_version, update_version, written};
 
-use crate::NearbyMerchantsInput;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CreateGoodieBagInput {
@@ -101,18 +100,13 @@ fn recent_bags(catalog_ref: &ActionHash) -> ExternResult<Vec<(BagView, GoodieBag
 /// The store's bags that can still be ordered (window not over).
 #[hdk_extern]
 pub fn list_goodie_bags_for_catalog(catalog_ref: ActionHash) -> ExternResult<Vec<BagView>> {
-    let now = sys_time()?;
-    Ok(recent_bags(&catalog_ref)?.into_iter().filter(|(_, bag)| bag.pickup_window_end > now).map(|(view, _)| view).collect())
+    live_bags(&catalog_ref)
 }
 
-#[hdk_extern]
-pub fn get_nearby_goodie_bags(input: NearbyMerchantsInput) -> ExternResult<Vec<BagView>> {
-    let nearby = crate::get_nearby_merchants(input)?;
-    let mut bags = Vec::new();
-    for catalog_view in nearby.catalogs {
-        bags.extend(list_goodie_bags_for_catalog(catalog_view.original_action)?);
-    }
-    Ok(bags)
+/// See `list_goodie_bags_for_catalog`.
+pub(crate) fn live_bags(catalog_ref: &ActionHash) -> ExternResult<Vec<BagView>> {
+    let now = sys_time()?;
+    Ok(recent_bags(catalog_ref)?.into_iter().filter(|(_, bag)| bag.pickup_window_end > now).map(|(view, _)| view).collect())
 }
 
 /// The longest a goodie bag may stay listed, in microseconds.

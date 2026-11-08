@@ -1,24 +1,22 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PackageOpen, Search } from "lucide-react";
 import { motion } from "framer-motion";
-import { getNearbyMerchants, getNearbyGoodieBags } from "../../holochain/zomes/catalog";
+import { getNearbyListings } from "../../holochain/zomes/catalog";
 import { RecurringDue } from "../../components/orders/RecurringDue";
-import { averageRating, getRatingSummary } from "../../holochain/zomes/reputation";
-import { decodeEntry, bytesToHex } from "../../holochain/decode";
+import { bytesToHex } from "../../holochain/decode";
 import { encodeGeohash } from "../../lib/places/geohash";
-import { minutesTo } from "../../lib/driving/routing";
 import { useSession } from "../../store/session";
 import { useFavorites } from "../../lib/hooks/useFavorites";
-import { useResource } from "../../lib/hooks/useResource";
+import { usePolling, useResource } from "../../lib/hooks/useResource";
+import { minutesFrom, useNearbyStores } from "../../store/nearbyStores";
+import { nearestFirst } from "../../lib/storefront/nearby";
 import { formatCents, nowMicros } from "../../lib/ui/format";
-import type { MerchantCatalog, GoodieBag } from "../../holochain/types";
 import { RestaurantCard } from "../../components/store/RestaurantCard";
 import { AddressSwitcher } from "../../components/places/AddressSwitcher";
 import { BrowseFilterBar } from "../../components/store/BrowseFilterBar";
 import { Button, EmptyState, SectionLabel, Skeleton } from "../../components/ui";
 import { applyFilters, isNarrowed, matches, NO_FILTERS, readFilters, writeFilters, type BrowseFilters, type StoreFacts } from "../../lib/storefront/browseFilters";
-import { hasDeal } from "../../lib/storefront/storeDeals";
 import { deliveryEstimate } from "../../lib/driving/eta";
 import { staggerContainer } from "../../lib/ui/motion";
 import { POLL } from "../../lib/network/poll";
@@ -26,26 +24,16 @@ import { useClock } from "../../lib/hooks/useClock";
 import { storeStatus } from "../../lib/storefront/storeHours";
 import { useT } from "../../i18n";
 
-interface Row {
-  hash: Uint8Array;
-  catalog: MerchantCatalog;
-  rating: number;
-  reviewCount: number;
-}
+/// Stores read a page at a time while browsing.
+const PAGE = 24;
+/// How many of the nearest stores a search, filter or sort looks through:
+/// a dense city's every listing could run to thousands.
+const SEARCHED = 300;
 
-interface BagRow {
-  hash: Uint8Array;
-  bag: GoodieBag;
-}
-
-// A restaurant that just published can take a while to become discoverable
-// -- its GeohashToCatalog link has to reach whatever peer answers this
-// read, not just the merchant's own chain (the project's own,
-// long-documented DHT-propagation characteristic, roughly
-// seconds-to-a-minute scale here, not instant). Without a poll, a customer
-// already sitting on Browse when a merchant nearby publishes would see an
-// empty list forever unless they happened to navigate away and back.
-// Polled slowly (`POLL.slow`): stores open and close rarely.
+// A store that just listed can take a while to be found -- its listing has
+// to reach whichever peer answers this read, seconds to a minute here -- so
+// the listings are polled, slowly (`POLL.slow`): stores open and close
+// rarely. Each store shown is refreshed on the same beat.
 
 function CardSkeleton() {
   return (
@@ -70,79 +58,45 @@ export function Browse() {
   const setFilters = (next: BrowseFilters) => setParams(writeFilters(next), { replace: true });
   const { favoritesHex, toggleFavorite } = useFavorites();
 
-  // Keyed by the browsing cell -- changing address drops any in-flight
-  // reply for the old one instead of letting it overwrite the new list.
+  // Every store near here, from its listing alone, nearest first. Keyed by
+  // the browsing cell -- changing address drops any in-flight reply for the
+  // old one instead of letting it overwrite the new list.
   const geohash = encodeGeohash(location.lat, location.lon);
-  const { data: rows } = useResource<Row[]>(
-    `browse-stores:${geohash}`,
-    async () => {
-      const page = await getNearbyMerchants(geohash);
-      // Use `view.original_action`, never `actionHash(view.record)` -- the
-      // record is resolved to this catalog's *latest* state, so its own
-      // action hash drifts on every edit. See `CatalogView`'s own doc
-      // comment. One bounded, checkpointed summary read per card -- this
-      // store's own rating only, never the owner's other stores or their
-      // driving (see `reputation_integrity`'s module doc).
-      return Promise.all(
-        page.catalogs.map(async (view) => {
-          const catalog = decodeEntry<MerchantCatalog>(view.record);
-          const summary = await getRatingSummary({ Store: view.original_action }).catch(() => ({ count: 0, rating_sum: 0, uncounted: 0 }));
-          return { hash: view.original_action, catalog, rating: averageRating(summary) ?? 0, reviewCount: summary.count };
-        }),
-      );
-    },
-    { pollMs: POLL.slow },
-  );
-  // How long each store's food takes to drive here, by road -- one request
-  // for the list, asked again only when the stores or the address change.
-  const storesHex = rows?.map((r) => bytesToHex(r.hash)).join(",");
-  const { data: driveMinutes } = useResource(
-    rows ? `browse-drive:${location.lat},${location.lon}:${storesHex}` : null,
-    async () => {
-      const minutes = await minutesTo(location, rows!.map((r) => r.catalog.location));
-      return new Map(rows!.map((r, i) => [bytesToHex(r.hash), minutes[i]]));
-    },
-  );
-  // Expired bags are already filtered out server-side (and orders after the
-  // window are rejected on-chain); filtering again here drops one that
-  // closed since the last poll. `original_action` is the bag's identity --
-  // what an order's line names.
-  const { data: bags = [] } = useResource<BagRow[]>(
-    `browse-bags:${geohash}`,
-    async () => {
-      const views = await getNearbyGoodieBags(geohash);
-      const now = nowMicros();
-      return views.map((v) => ({ hash: v.original_action, bag: decodeEntry<GoodieBag>(v.record) })).filter((r) => r.bag.pickup_window_end > now);
-    },
-    { pollMs: POLL.slow },
-  );
+  const { data: listings } = useResource(`browse-listings:${geohash}`, () => getNearbyListings(geohash), { pollMs: POLL.slow });
+  const ordered = useMemo(() => listings && nearestFirst(listings, location), [listings, location]);
 
-  const catalogNameByHex = useMemo(() => {
-    const map = new Map<string, string>();
-    rows?.forEach((r) => map.set(bytesToHex(r.hash), r.catalog.business_name));
-    return map;
-  }, [rows]);
+  // Browsing reads a page at a time, as the list scrolls; exploring --
+  // searching, filtering, sorting, or about to -- reads the nearest
+  // `SEARCHED`, so every choice counts what's really near.
+  const [opened, setOpened] = useState(false);
+  const exploring = opened || isNarrowed(filters) || filters.sort !== "relevance";
+  const [paging, setPaging] = useState({ geohash, pages: 1 });
+  const pages = paging.geohash === geohash ? paging.pages : 1;
+  const wanted = Math.min(ordered?.length ?? 0, exploring ? Math.max(pages * PAGE, SEARCHED) : pages * PAGE);
+  const want = useMemo(() => ordered?.slice(0, wanted) ?? [], [ordered, wanted]);
+  const read = useNearbyStores((s) => s.read);
+  usePolling(() => read(want, location, filters.deals), { pollMs: POLL.slow }, !!ordered, `${geohash}:${wanted}:${filters.deals}:${location.lat},${location.lon}`);
+  const known = useNearbyStores((s) => s.stores);
+  const gone = useNearbyStores((s) => s.gone);
+  const driveMinutes = useNearbyStores((s) => minutesFrom(s, location));
+  const deals = useNearbyStores((s) => s.deals);
+  // What's been read of them, nearest first, and how many are still coming.
+  const rows = useMemo(() => want.flatMap((l) => known[l.hex] ?? []), [want, known]);
+  const pending = want.filter((l) => !known[l.hex] && !gone[l.hex]).length;
+  const more = !!ordered && wanted < ordered.length;
+  const found = ordered?.filter((l) => !gone[l.hex]).length ?? 0;
 
-  // Asked only once someone's looking for deals: a read of each store's promos
-  // and menu. A store with a goodie bag out has one already.
-  const storesKeyHex = rows?.map((r) => bytesToHex(r.hash)).join(",");
-  const { data: dealStores } = useResource(
-    filters.deals && rows ? `browse-deals:${storesKeyHex}` : null,
-    async () => {
-      const at = new Date();
-      const found = await Promise.all(rows!.map(async (r) => [bytesToHex(r.hash), await hasDeal(r.hash, r.catalog, at)] as const));
-      return new Set(found.filter(([, deal]) => deal).map(([hex]) => hex));
-    },
-    { pollMs: POLL.slow },
-  );
-  const bagStores = useMemo(() => new Set(bags.map((row) => bytesToHex(row.bag.catalog_ref))), [bags]);
+  // Bags still open to order, from the stores shown: one that closed since
+  // the last read drops off (orders after its window are refused on-chain).
+  const nowUs = nowMicros();
+  const bags = rows.flatMap((r) => r.bags).filter((r) => r.bag.pickup_window_end > nowUs);
+  const catalogNameByHex = new Map(rows.map((r) => [r.hex, r.catalog.business_name]));
 
   const stores = useMemo(
     () =>
-      rows?.map((row) => {
-        const hex = bytesToHex(row.hash);
-        const { catalog } = row;
-        const estimate = deliveryEstimate(catalog, location, driveMinutes?.get(hex) ?? null);
+      rows.map((row) => {
+        const { catalog, hex } = row;
+        const estimate = deliveryEstimate(catalog, location, driveMinutes?.[hex] ?? null);
         const facts: StoreFacts = {
           name: catalog.business_name,
           searchable: [catalog.business_name, catalog.cuisine_type, catalog.description, ...(catalog.dietary_tags ?? [])].join(" "),
@@ -152,18 +106,39 @@ export function Browse() {
           reviewCount: row.reviewCount,
           open: storeStatus(catalog, now).open,
           favorite: favoritesHex.has(hex),
-          deal: bagStores.has(hex) || !!dealStores?.has(hex),
+          deal: row.bags.length > 0 || !!deals[hex]?.deal,
           minutes: estimate.toMinutes,
           km: estimate.km,
         };
         return { row, facts };
       }),
-    [rows, location, driveMinutes, now, favoritesHex, bagStores, dealStores],
+    [rows, location, driveMinutes, now, favoritesHex, deals],
   );
-  const filtered = useMemo(() => stores && applyFilters(stores, (store) => store.facts, filters), [stores, filters]);
-  const options = (pick: (store: StoreFacts) => string[]) => [...new Set(stores?.flatMap((store) => pick(store.facts).filter(Boolean)))].sort();
-  const lookingForDeals = filters.deals && dealStores === undefined;
+  // Exploring orders everything read; browsing orders each page on its own,
+  // so reading the next never moves what's above it.
+  const filtered = useMemo(() => {
+    if (exploring) return applyFilters(stores, (store) => store.facts, filters);
+    const out: typeof stores = [];
+    for (let i = 0; i < stores.length; i += PAGE) out.push(...applyFilters(stores.slice(i, i + PAGE), (store) => store.facts, filters));
+    return out;
+  }, [stores, filters, exploring]);
+  const options = (pick: (store: StoreFacts) => string[]) => [...new Set(stores.flatMap((store) => pick(store.facts).filter(Boolean)))].sort();
+  const lookingForDeals = filters.deals && rows.some((r) => !deals[r.hex] && r.bags.length === 0);
   const narrowed = isNarrowed(filters);
+  const loading = ordered === undefined || (rows.length === 0 && pending > 0);
+
+  // Reaching the end of the list reads the next page. Keyed on what's still
+  // coming, so once a page lands with the end still in view, the next one's
+  // read too.
+  const seeMore = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!node || pending > 0) return;
+      const observer = new IntersectionObserver(([entry]) => entry?.isIntersecting && setPaging({ geohash, pages: pages + 1 }), { rootMargin: "800px 0px" });
+      observer.observe(node);
+      return () => observer.disconnect();
+    },
+    [pending, geohash, pages],
+  );
 
   const openCount = (count: number) => (count === 0 ? t("browse.noneOpen") : t("browse.openCount", { count }));
 
@@ -214,21 +189,28 @@ export function Browse() {
 
       <h1 className="mb-1 text-xl font-black tracking-tight">{t("browse.title")}</h1>
       <p className="mb-3 text-xs text-ink-400">
-        {rows === undefined || filtered === null || filtered === undefined ? "…" : narrowed ? t("browse.matching", { count: filtered.length, total: rows.length }) : openCount(rows.filter((r) => storeStatus(r.catalog, now).open).length)}
+        {loading
+          ? "…"
+          : narrowed
+            ? t("browse.matching", { count: filtered.length, total: rows.length })
+            : more || pending > 0
+              ? t("browse.nearbyCount", { count: found })
+              : openCount(rows.filter((r) => storeStatus(r.catalog, now).open).length)}
       </p>
 
-      {rows !== undefined && rows.length > 0 && (
+      {rows.length > 0 && (
         <BrowseFilterBar
           filters={filters}
           onChange={setFilters}
+          onExplore={() => setOpened(true)}
           cuisines={options((store) => [store.cuisine])}
           diets={options((store) => store.diets)}
-          hasTimes={!!stores?.some((store) => store.facts.minutes !== null)}
-          countWith={(patch) => stores?.filter((store) => matches(store.facts, { ...filters, ...patch })).length ?? 0}
+          hasTimes={stores.some((store) => store.facts.minutes !== null)}
+          countWith={(patch) => stores.filter((store) => matches(store.facts, { ...filters, ...patch })).length}
         />
       )}
 
-      {(rows === undefined || lookingForDeals) && (
+      {(loading || lookingForDeals) && (
         <div className="grid grid-cols-2 gap-3 pb-6 md:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <CardSkeleton key={i} />
@@ -236,34 +218,45 @@ export function Browse() {
         </div>
       )}
 
-      {rows !== undefined && rows.length === 0 && <EmptyState title={t("browse.emptyTitle")} subtitle={t("browse.emptySubtitle")} />}
+      {!loading && rows.length === 0 && <EmptyState title={t("browse.emptyTitle")} subtitle={t("browse.emptySubtitle")} />}
 
-      {rows !== undefined && rows.length > 0 && !lookingForDeals && filtered?.length === 0 && (
+      {!loading && rows.length > 0 && !lookingForDeals && pending === 0 && filtered.length === 0 && (
         <div className="pb-6">
           <EmptyState title={t("browse.noMatchTitle")} subtitle={t("browse.noMatchSubtitle")} />
           <Button variant="ghost" className="mx-auto -mt-8 block" onClick={() => setFilters(NO_FILTERS)}>{t("browse.filter.clear")}</Button>
         </div>
       )}
 
-      {!lookingForDeals && filtered && filtered.length > 0 && (
-        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-3 pb-6 md:grid-cols-3 xl:grid-cols-4">
+      {!loading && !lookingForDeals && filtered.length > 0 && (
+        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
           {filtered.map(({ row: r, facts }) => (
             <RestaurantCard
-              key={bytesToHex(r.hash)}
+              key={r.hex}
               catalogHash={r.hash}
               catalog={r.catalog}
               now={now}
               rating={r.rating}
               reviewCount={r.reviewCount}
               customer={location}
-              driveMinutes={driveMinutes?.get(bytesToHex(r.hash)) ?? null}
+              driveMinutes={driveMinutes?.[r.hex] ?? null}
               favorited={facts.favorite}
               deal={filters.deals && facts.deal}
               onToggleFavorite={() => toggleFavorite(r.hash)}
             />
           ))}
+          {/* The next page on its way, where it'll land. */}
+          {!exploring && pending > 0 && Array.from({ length: Math.min(pending, 4) }).map((_, i) => <CardSkeleton key={`more-${i}`} />)}
         </motion.div>
       )}
+
+      {/* Exploring: what's been looked through, and what's still being. */}
+      {!loading && exploring && found > rows.length && (
+        <p className="mt-4 text-center text-xs text-ink-400">
+          {pending > 0 ? t("browse.searchingMore") : t("browse.searchedNearest", { count: rows.length, total: found })}
+        </p>
+      )}
+      {!exploring && more && <div ref={seeMore} key={`${wanted}:${pending}`} aria-hidden className="h-px" />}
+      <div className="pb-6" />
     </div>
   );
 }

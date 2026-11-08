@@ -342,6 +342,7 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         DeliveryStatus::Collecting => CancelledFrom::Collecting,
         DeliveryStatus::DriverAtStore => CancelledFrom::AtStore,
         DeliveryStatus::Open => CancelledFrom::Open,
+        DeliveryStatus::BidAccepted | DeliveryStatus::DriverEnRouteToMerchant | DeliveryStatus::MerchantConfirmed => CancelledFrom::Assigned,
         _ => CancelledFrom::Elsewhere,
     });
     if let Some(reason) = check_cancellation(&update, cancelled_from, &prior.cancellation, &order.cancellation) {
@@ -436,12 +437,12 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     // store late), the store moving on a driver who's committed (who then
     // answers for the food), ending an order for want of a driver, or
     // keeping the food of a customer who never came, or a driver saying
-    // nobody came to take it. Every other update carries the last one
-    // forward unchanged.
+    // nobody came to take it -- or a customer closing it on the store's
+    // silence. Every other update carries the last one forward unchanged.
     let driver_leaving = step.releasing && is_provider;
     let store_moving_committed = step.releasing && is_merchant && prior.collateral_payment.is_some();
     let ending = |reason: Cancellation| order.cancellation == Some(reason) && cancelled_from.is_some();
-    let needs_time = driver_leaving || store_moving_committed || step.unanswering || ending(Cancellation::NoDriver) || ending(Cancellation::NotCollected);
+    let needs_time = driver_leaving || store_moving_committed || step.unanswering || ending(Cancellation::NoDriver) || ending(Cancellation::NotCollected) || ending(Cancellation::Lapsed);
     let proved_at = if needs_time {
         let Some(beacon) = order.beacon.as_ref().filter(|b| prior.beacon.as_ref() != Some(*b)) else {
             return Ok(Some("this step says when, with fresh proof of the time".into()));
@@ -456,11 +457,16 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         }
         None
     };
-    // A customer who chose to collect it and never came, past the window.
-    if ending(Cancellation::NotCollected) {
-        let window_ends = prior_version.written_at().as_micros().saturating_add(handshake_governance::collection_window().as_micros() as i64);
-        if proved_at.is_none_or(|at| at.as_micros() < window_ends) {
-            return Ok(Some("the store records an order uncollected only once the customer's window has passed".into()));
+    // A customer who chose to collect it and never came, past the window
+    // from its being due ready.
+    let collect_by = waits_from(prior_version.written_at(), prior.ready_by).as_micros().saturating_add(handshake_governance::collection_window().as_micros() as i64);
+    if ending(Cancellation::NotCollected) && proved_at.is_none_or(|at| at.as_micros() < collect_by) {
+        return Ok(Some("the store records an order uncollected only once the customer's window has passed".into()));
+    }
+    // A customer closing it on the store's silence: see `lapse_problem`.
+    if ending(Cancellation::Lapsed) {
+        if let Some(reason) = lapse_problem(&prior_version, author, prev_action, &order_original, proved_at)? {
+            return Ok(Some(reason.into()));
         }
     }
 
@@ -506,7 +512,7 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     // it -- the store would be paid for the food twice, by the customer and
     // by that driver. They wait for another driver (refunded in full if none
     // comes in time), or collect it.
-    if order.status == DeliveryStatus::Cancelled && cancelled_from.is_some() && is_requester && lineage::liable_release(&prior_version)?.is_some() {
+    if order.status == DeliveryStatus::Cancelled && cancelled_from.is_some() && is_requester && order.cancellation != Some(Cancellation::Lapsed) && lineage::liable_release(&prior_version)?.is_some() {
         return Ok(Some("a driver who left this order cooking answers for it until another takes it on or the window ends: wait, or collect it yourself".into()));
     }
     // Confirming a driver, or recording the customer collecting it: never
@@ -683,6 +689,23 @@ fn no_driver_problem(prior: &Version, store: &AgentPubKey, chain_top: &ActionHas
     let checked_in = |v: &Version, _: &Version| v.order.status == DeliveryStatus::DriverAtStore && v.order.accepted_bid.as_ref() == Some(&bid);
     if lineage::wrote(store, chain_top, order_original, checked_in)? {
         return Ok(Some("the store checked that driver in, so they don't answer for the food"));
+    }
+    Ok(None)
+}
+
+/// The customer closing an order on its store's silence: past when it
+/// lapses (`lineage::lapses_at`), which it does only while the store owes
+/// its next step -- and never one they've said they have, on any branch.
+/// `None` if it holds.
+fn lapse_problem(prior: &Version, customer: &AgentPubKey, chain_top: &ActionHash, order_original: &ActionHash, proved_at: Option<Timestamp>) -> ExternResult<Option<&'static str>> {
+    let Some(lapses) = lineage::lapses_at(prior)? else {
+        return Ok(Some("a customer closes an order on its store's silence only while the store owes its next step: one waiting on a driver they cancel at no charge"));
+    };
+    if proved_at.is_none_or(|at| at < lapses) {
+        return Ok(Some("a customer closes an order only once the store has been silent on it long enough"));
+    }
+    if lineage::wrote_any(customer, chain_top, order_original, |v| v.has_it())? {
+        return Ok(Some("a customer who has an order doesn't close it as lapsed"));
     }
     Ok(None)
 }

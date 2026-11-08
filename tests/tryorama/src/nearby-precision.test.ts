@@ -1,6 +1,6 @@
 // Sanity check for the user's own live report: "my address is only 1
 // house away from the restaurant but Browse says 0 restaurants near me."
-// Proves (or disproves) that get_nearby_merchants' own geohash
+// Proves (or disproves) that get_nearby_listings' own geohash
 // cell_and_neighbors walk actually finds a catalog from a customer
 // location genuinely one house-lot away (~20m, not a loose "same city"
 // test) -- isolating whether this is a backend discovery bug or a
@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { decodeEntry, testApp, retryingCaller } from "./helpers.js";
+import { decodeEntry, nearbyStores, testApp, retryingCaller } from "./helpers.js";
 
 // Real coordinates near Taunton, MA (the address mentioned in the bug
 // report), ~20m apart -- a genuine "next house over" delta, not a loose
@@ -62,11 +62,8 @@ await runScenario(async (scenario) => {
   const customerGeohash = encodeGeohash(ONE_HOUSE_AWAY.lat, ONE_HOUSE_AWAY.lon);
   console.log(`[INFO] customer's own precision-6 geohash (~20m away): ${customerGeohash}`);
 
-  const page = await catalogOf(customer)<{ catalogs: { original_action: Uint8Array; record: HcRecord }[] }>("get_nearby_merchants", {
-    geohash: customerGeohash,
-    after: null,
-  });
-  assert.equal(page.catalogs.length, 1, `expected the ~20m-away customer to discover the merchant via cell_and_neighbors, got ${page.catalogs.length} results (merchant cell ${merchantGeohash}, customer cell ${customerGeohash})`);
-  console.log("[PASS] get_nearby_merchants finds a merchant from a customer location genuinely one house-lot away");
+  const found = await nearbyStores(customer, customerGeohash);
+  assert.equal(found.length, 1, `expected the ~20m-away customer to discover the merchant via cell_and_neighbors, got ${found.length} results (merchant cell ${merchantGeohash}, customer cell ${customerGeohash})`);
+  console.log("[PASS] get_nearby_listings finds a merchant from a customer location genuinely one house-lot away");
   console.log(merchantGeohash === customerGeohash ? "[INFO] both landed in the exact same precision-6 cell" : "[INFO] landed in different but presumably-neighboring precision-6 cells");
 });

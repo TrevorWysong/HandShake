@@ -2,10 +2,11 @@
 //! conductor's scheduler (as `settlement` does for store payouts):
 //!
 //! - **A customer's orders.** A recurring order fires when it's due, a
-//!   scheduled order is placed with its store when it's due, and an order
-//!   its store never answers is cancelled once the store's window passes
+//!   scheduled order is placed with its store when it's due, an order its
+//!   store never answers is cancelled once the store's window passes
 //!   (`Cancellation::StoreDidNotRespond`) -- so no customer waits on a
-//!   store that's offline.
+//!   store that's offline -- and a delivery picked up that never arrives is
+//!   said never to have, once `handshake_governance::order_lapse` has run.
 //! - **A store's new orders.** A store set to auto-accept accepts each one
 //!   as it arrives, declining any priced from an outdated menu or with a
 //!   goodie bag it can no longer sell.
@@ -229,6 +230,13 @@ fn tend_order(entry: &OrderEntry, now: DueAt, window: i64) -> ExternResult<Optio
                 }
                 DeliveryStatus::Placed => Ok(Some(written_at + window)),
                 DeliveryStatus::Open if order.auto_match => Ok(crate::matching::auto_match(&order_ref, &order, now)?.map(|due| due.as_micros())),
+                // Picked up and never brought, a day on: it never arrived,
+                // said for a customer whose app was away -- so a driver who
+                // keeps the food answers for it (`issues::decide_order`).
+                DeliveryStatus::PickedUp if now >= written_at.saturating_add(handshake_governance::order_lapse().as_micros() as i64) => {
+                    crate::never_arrived::claim_never_arrived(order_ref)?;
+                    Ok(None)
+                }
                 // The driver committed: they get the address, in a call of its
                 // own (`deliveries::share_address`).
                 _ if crate::deliveries::owed_driver(&order_ref, &order)?.is_some() => {

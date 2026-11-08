@@ -404,10 +404,13 @@ export type Cancellation =
    */
   | "ScheduleMissed"
   /**
-   * A pickup the store accepted and then went silent on -- never marked
-   * ready, never answered a report, never recorded it uncollected -- for
-   * `handshake_governance::pickup_lapse`. Written by the customer, with
-   * proof of the time: nobody's charged, and it counts against the store.
+   * An order its store accepted and then went silent on, for
+   * `handshake_governance::order_lapse`: a pickup never marked ready,
+   * handed over or answered; a delivery whose kitchen or counter went
+   * quiet, or that a driver left cooking and the store never ended.
+   * Written by the customer, with proof of the time: nobody's charged
+   * but the store, which pays a driver it had checked in, and it counts
+   * against the store.
    */
   | "Lapsed";
 
@@ -2257,7 +2260,12 @@ export interface NetworkTerms {
    * ready, or a delivery they chose to collect -- has to come for it.
    */
   collection_window_secs: number;
-  pickup_lapse_secs: number;
+  /**
+   * How long an order may sit with its store silent before its customer
+   * may close it, and a delivery picked up go without arriving before
+   * its customer's app says it never did.
+   */
+  order_lapse_secs: number;
   /**
    * How long a driver waits at the drop-off before they may say nobody
    * came to take the order.
@@ -2567,6 +2575,10 @@ export interface OrderTiming {
    * Whether its customer has asked to.
    */
   collect_requested: boolean;
+  /**
+   * When its customer may close it on the store's silence.
+   */
+  lapses_at: Timestamp | null;
 }
 
 /**

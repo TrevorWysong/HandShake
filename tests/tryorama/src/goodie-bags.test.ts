@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, decodeEntry, retryUntil, retryUntilOk, ST_PETE, testApp, retryingCaller, useTestCoordinators, customerPaid } from "./helpers.js";
+import { actionHash, decodeEntry, nearbyStores, retryUntil, retryUntilOk, ST_PETE, testApp, retryingCaller, useTestCoordinators, customerPaid } from "./helpers.js";
 
 interface Standing {
   left: number;
@@ -59,7 +59,7 @@ await runScenario(async (scenario) => {
   const bread = await listBag("Bread bag", 2, { pickup: true, delivery: true });
   await sync();
   const geohash = decodeEntry<{ geohash: string }>(published).geohash;
-  const nearby = await call(cara, "catalog")<unknown[]>("get_nearby_goodie_bags", { geohash, after: null });
+  const nearby = (await nearbyStores(cara, geohash)).flatMap((s) => s.bags);
   assert.equal(nearby.length, 2, "found through the store's own listing");
   console.log("[PASS] a store's goodie bags are listed and found nearby");
 

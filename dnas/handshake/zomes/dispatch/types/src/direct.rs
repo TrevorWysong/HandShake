@@ -225,9 +225,10 @@ pub fn entitlement(part: &Part, amount: u64, basis: &Basis) -> Entitlement {
                 Portion::Fee if driver_pay => TakesIf(ChainCheck::CustomerTook, amount).filter_zero(),
                 _ => No,
             },
-            // A store calling it off with the driver at its counter pays them
-            // as if it had kept them waiting.
-            Cancellation::ByStore(_) => whole(store_fee && portion != Portion::Collateral && c.from == Stage::AtStore && ours(&c.bid)),
+            // A store calling it off with the driver at its counter -- or
+            // going silent on them there -- pays them as if it had kept them
+            // waiting. Otherwise its silence charges nobody.
+            Cancellation::ByStore(_) | Cancellation::Lapsed => whole(store_fee && portion != Portion::Collateral && c.from == Stage::AtStore && ours(&c.bid)),
             // A customer who chose to collect it and never came owes the food.
             Cancellation::NotCollected => whole(portion == Portion::Food),
             // The store kept a driver waiting: it pays the driver it checked
@@ -241,8 +242,6 @@ pub fn entitlement(part: &Part, amount: u64, basis: &Basis) -> Entitlement {
             Cancellation::StoreDidNotRespond => No,
             // It never reached the store.
             Cancellation::StoreClosed | Cancellation::ScheduleMissed => No,
-            // The store went silent on it: nobody's charged.
-            Cancellation::Lapsed => No,
         },
     }
 }
@@ -465,6 +464,7 @@ mod tests {
             ("store never answered", t.clone(), one, vec![cancelled(Cancellation::StoreDidNotRespond, Stage::Waiting, false, None, None)], false),
             ("store never answered, after the customer saw it start", t.clone(), one, vec![cancelled(Cancellation::StoreDidNotRespond, Stage::Waiting, false, None, None)], true),
             ("customer never came to collect it", t.clone(), one, vec![cancelled(Cancellation::NotCollected, Stage::Accepted, true, None, None)], false),
+            ("store went silent with the driver at its counter", t.clone(), one, vec![cancelled(Cancellation::Lapsed, Stage::AtStore, true, Some(dana.clone()), None)], false),
             ("store kept the driver waiting", t.clone(), one, vec![cancelled(Cancellation::StoreLate, Stage::AtStore, true, Some(dana.clone()), None)], false),
             ("a driver left it cooking and none came", t.clone(), one, vec![Basis::Released { bid: dana.clone(), store_late: false, at_store: false }, cancelled(Cancellation::NoDriver, Stage::Accepted, true, None, Some(dana.clone()))], false),
             ("never arrived", t.clone(), one, vec![Basis::NotDelivered { bid: Some(dana.clone()) }], false),
@@ -483,6 +483,21 @@ mod tests {
     fn a_scheduled_order_its_store_was_closed_for_costs_nobody_anything() {
         let net = direct(&terms(), &[], &[cancelled(Cancellation::StoreClosed, Stage::Waiting, false, None, None)], false);
         assert!(net.values().all(|&n| n == 0), "nobody pays or is paid: {net:?}");
+    }
+
+    #[test]
+    fn a_store_gone_silent_charges_its_customer_nothing_and_pays_a_driver_it_checked_in() {
+        let dana = hash(31);
+        // Quiet on a driver who'd left it cooking: the customer owes nothing,
+        // and that driver no longer answers for the food.
+        let net = direct(&terms(), &bids()[..1], &[Basis::Released { bid: dana.clone(), store_late: false, at_store: false }, cancelled(Cancellation::Lapsed, Stage::Accepted, true, None, None)], true);
+        assert!(net.is_empty(), "nobody pays or is paid: {net:?}");
+        // Quiet with Dana at its counter: it pays her as if it had kept her
+        // waiting, and the customer still owes nothing.
+        let net = direct(&terms(), &bids()[..1], &[cancelled(Cancellation::Lapsed, Stage::AtStore, true, Some(dana), None)], true);
+        assert_eq!(net.get(&agent(1)), None, "the customer pays nothing");
+        assert_eq!(net.get(&agent(3)), Some(&600), "Dana: her whole fee");
+        assert_eq!(net.get(&agent(2)), Some(&-600), "the store pays it");
     }
 
     #[test]

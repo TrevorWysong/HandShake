@@ -16,10 +16,20 @@ export type PromoView = CatalogView;
 export type MenuItemView = CatalogView;
 export type BagView = CatalogView;
 
-export interface NearbyMerchantsPage {
-  catalogs: CatalogView[];
-  next_after: Timestamp | null;
+/// A store listed near somewhere, and where its listing says it is -- to
+/// about 20 metres, checked by the network against the store itself.
+export interface NearbyListing {
+  catalog: ActionHash;
+  geohash: string;
 }
+
+/// A store as a list of nearby stores shows it, with the goodie bags it has out.
+export interface ListedStore extends CatalogView {
+  bags: BagView[];
+}
+
+/// The most stores `getListedStores` reads at once (the Rust `STORE_BATCH`).
+export const STORE_BATCH = 50;
 
 export interface MenuItemsPage {
   items: MenuItemView[];
@@ -107,7 +117,7 @@ export async function publishCatalog(input: { business_name: string; location: G
 // `actionHash(record)`. The record's own action hash reflects whatever
 // this catalog's *latest* state is, which changes on every edit; using it
 // as `catalog_ref` would silently orphan everything already linked under
-// the previous hash. Same `CatalogView` shape `getNearbyMerchants` returns
+// the previous hash. Same `CatalogView` shape `getListedStores` returns
 // per-catalog, for the same reason.
 export async function listMyCatalogs(): Promise<CatalogView[]> {
   return callZome("catalog", "list_my_catalogs", null);
@@ -192,8 +202,15 @@ export async function listMenuItems(catalogRef: ActionHash, after: Timestamp | n
   return callZome("catalog", "list_menu_items", { catalog_ref: catalogRef, after });
 }
 
-export async function getNearbyMerchants(geohash: string, after: Timestamp | null = null): Promise<NearbyMerchantsPage> {
-  return callZome("catalog", "get_nearby_merchants", { geohash, after });
+/// Every store listed in `geohash`'s cell and its neighbors, from the
+/// listings alone: no store is read until it's asked for (`getListedStores`).
+export async function getNearbyListings(geohash: string): Promise<NearbyListing[]> {
+  return callZome("catalog", "get_nearby_listings", geohash);
+}
+
+/// The stores at `catalogs`, up to `STORE_BATCH` of them.
+export async function getListedStores(catalogs: ActionHash[]): Promise<ListedStore[]> {
+  return callZome("catalog", "get_listed_stores", catalogs);
 }
 
 // --- promo codes ---
@@ -273,10 +290,6 @@ export async function getGoodieBag(bagRef: ActionHash): Promise<HcRecord> {
 /// (validation caps it), so this never reads a store's whole bag history.
 export async function listGoodieBagsForCatalog(catalogRef: ActionHash): Promise<BagView[]> {
   return callZome("catalog", "list_goodie_bags_for_catalog", catalogRef);
-}
-
-export async function getNearbyGoodieBags(geohash: string, after: Timestamp | null = null): Promise<BagView[]> {
-  return callZome("catalog", "get_nearby_goodie_bags", { geohash, after });
 }
 
 /// The most an order may cost to be left at the door, in cents -- `null`

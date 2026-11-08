@@ -595,3 +595,20 @@ export async function restoreInPlace(player: PlayerApp, properties: Record<strin
   for (const cell of agentApp.cells) await admin.authorizeSigningCredentials(cell.cell_id);
   return { conductor: player.conductor, appWs, ...agentApp };
 }
+
+/// A store as a nearby list shows it (`catalog::get_listed_stores`).
+export interface ListedStore {
+  original_action: Uint8Array;
+  record: HcRecord;
+  bags: { original_action: Uint8Array; record: HcRecord }[];
+}
+
+/// Every store listed near `geohash`, as `player` finds them: the listings
+/// first, then each store read in batches -- as Browse does.
+export async function nearbyStores(player: PlayerApp, geohash: string): Promise<ListedStore[]> {
+  const call = <T>(fn_name: string, payload: unknown) => player.cells[0].callZome<T>({ zome_name: "catalog", fn_name, payload });
+  const listings = await call<{ catalog: Uint8Array; geohash: string }[]>("get_nearby_listings", geohash);
+  const stores: ListedStore[] = [];
+  for (let i = 0; i < listings.length; i += 50) stores.push(...(await call<ListedStore[]>("get_listed_stores", listings.slice(i, i + 50).map((l) => l.catalog))));
+  return stores;
+}

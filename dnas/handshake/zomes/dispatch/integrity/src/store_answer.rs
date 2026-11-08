@@ -49,6 +49,8 @@ pub(crate) enum CancelledFrom {
     AtStore,
     /// A delivery open to drivers' bids.
     Open,
+    /// A delivery with a driver taken on, before the store checks them in.
+    Assigned,
     Elsewhere,
 }
 
@@ -76,9 +78,10 @@ pub(crate) fn check_cancellation(update: &OrderUpdate<'_>, cancelled_from: Optio
         // Their conditions are checked with the delivery's other rules.
         Cancellation::StoreLate => update.author == update.requester && from != CancelledFrom::Placed && from != CancelledFrom::Collecting,
         Cancellation::NoDriver => update.author == update.merchant && from == CancelledFrom::Open,
+        // Once the store's accepted it and before anyone has it, on proof
+        // of the time -- checked with each order type's other rules.
+        Cancellation::Lapsed => update.author == update.requester && matches!(from, CancelledFrom::Preparing | CancelledFrom::Ready | CancelledFrom::Open | CancelledFrom::Assigned | CancelledFrom::AtStore | CancelledFrom::Collecting),
         // Their times are checked with the delivery's other rules.
-        // Its time is proved with the pickup's other rules.
-        Cancellation::Lapsed => update.author == update.requester && matches!(from, CancelledFrom::Preparing | CancelledFrom::Ready),
         Cancellation::StoreClosed | Cancellation::ScheduleMissed => update.author == update.requester && from == CancelledFrom::Scheduled,
     };
     (!allowed).then(|| format!("{reason:?} isn't a cancellation this author can give here"))

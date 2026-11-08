@@ -721,8 +721,8 @@ function NeverCameForPickup({ row }: { row: QueueRow }) {
 
 /// A delivery no driver brought, which its customer is collecting: the
 /// store scans their code to hand it over -- or, once the collection window
-/// has passed without them, records it uncollected and keeps the food's
-/// price.
+/// from its being due ready has passed without them, records it uncollected
+/// and keeps the food's price.
 function CollectionHandoff({ row }: { row: QueueRow }) {
   const windowSecs = useTerms().collection_window_secs;
   const t = useT();
@@ -730,7 +730,9 @@ function CollectionHandoff({ row }: { row: QueueRow }) {
   const [scanning, setScanning] = useState(false);
   // A scanner reads a held-up code many times a second: one hand-over.
   const handing = useAction();
-  const overdue = now.getTime() * 1000 >= row.writtenAt + windowSecs * 1_000_000;
+  // From when the food's due ready, or the store recorded them coming if
+  // that's later -- as the network counts it.
+  const overdue = now.getTime() * 1000 >= Math.max(row.writtenAt, row.order.ready_by ?? 0) + windowSecs * 1_000_000 + PROOF_MARGIN_MICROS;
   const act = (change: () => Promise<unknown>) => handing.run(async () => {
     await change();
     setScanning(false);

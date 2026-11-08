@@ -85,7 +85,7 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub collection_window_secs: Option<u64>,
     #[serde(default)]
-    pub pickup_lapse_secs: Option<u64>,
+    pub order_lapse_secs: Option<u64>,
     #[serde(default)]
     pub dropoff_wait_secs: Option<u64>,
     #[serde(default)]
@@ -497,14 +497,19 @@ pub fn collection_window() -> Duration {
     Duration::from_secs(setting(|p| p.collection_window_secs, 60 * 60))
 }
 
-/// How long a store may go silent on a pickup it accepted -- not marking it
-/// ready, not answering its customer, not recording it uncollected -- before
-/// its customer may close it with no charge (`Cancellation::Lapsed`): a day.
-/// Never shorter than the store's own time to collect and answer, and never
+/// How long an order may sit with nobody moving it while its store owes the
+/// next word -- a pickup not marked ready, not handed over, its customer
+/// not answered; a delivery its kitchen or counter has gone quiet on, or
+/// that a driver left cooking and the store never ended -- before its
+/// customer may close it with no charge (`Cancellation::Lapsed`); and how
+/// long a delivery its driver picked up may go without arriving before
+/// its customer's app says it never did. Counted from the order's last
+/// word, or from when the food is due ready if that's later. A day: never
+/// shorter than the store's own time to collect and answer, and never
 /// past the few days a card hold lasts.
-pub fn pickup_lapse() -> Duration {
+pub fn order_lapse() -> Duration {
     let floor = collection_window().as_secs() + answer_grace().as_secs();
-    Duration::from_secs(setting(|p| p.pickup_lapse_secs, 86_400).clamp(floor, 3 * 86_400))
+    Duration::from_secs(setting(|p| p.order_lapse_secs, 86_400).clamp(floor, 3 * 86_400))
 }
 
 /// How long a driver waits at the drop-off, from recording that they've

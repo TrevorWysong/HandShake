@@ -206,8 +206,7 @@ pub fn mark_pickup_not_collected(input: crate::deliveries::TimedStepInput) -> Ex
     if order.merchant != agent_info()?.agent_initial_pubkey || order.status != PickupStatus::ReadyForPickup {
         return Err(guest("Only the store records a ready order nobody came for as uncollected."));
     }
-    let window_ends = Timestamp::from_micros(current.record.action().timestamp().as_micros().saturating_add(handshake_governance::collection_window().as_micros() as i64));
-    if handshake_integrity_support::beacon::proves_past(input.beacon.as_ref(), window_ends).is_err() {
+    if handshake_integrity_support::beacon::proves_past(input.beacon.as_ref(), waited(&current.record, &order, handshake_governance::collection_window())).is_err() {
         return Err(guest("The customer still has time to collect it."));
     }
     order.status = PickupStatus::Cancelled;
@@ -221,7 +220,7 @@ pub fn mark_pickup_not_collected(input: crate::deliveries::TimedStepInput) -> Ex
 }
 
 /// The customer closing a pickup its store has gone silent on, past
-/// `handshake_governance::pickup_lapse` from the store's last word -- with
+/// `handshake_governance::order_lapse` from the store's last word -- with
 /// proof of the time, which validation checks: nobody's charged, and it
 /// counts against the store.
 #[hdk_extern]
@@ -232,8 +231,7 @@ pub fn lapse_pickup_order(input: crate::deliveries::TimedStepInput) -> ExternRes
     if order.requester != agent_info()?.agent_initial_pubkey || !waiting_on_store {
         return Err(guest("Only the customer closes an order its store has gone silent on."));
     }
-    let lapses = Timestamp::from_micros(current.record.action().timestamp().as_micros().saturating_add(handshake_governance::pickup_lapse().as_micros() as i64));
-    if handshake_integrity_support::beacon::proves_past(input.beacon.as_ref(), lapses).is_err() {
+    if handshake_integrity_support::beacon::proves_past(input.beacon.as_ref(), waited(&current.record, &order, handshake_governance::order_lapse())).is_err() {
         return Err(guest("The store still has time to answer for this order."));
     }
     order.status = PickupStatus::Cancelled;
@@ -244,6 +242,12 @@ pub fn lapse_pickup_order(input: crate::deliveries::TimedStepInput) -> ExternRes
     let record = written(updated)?;
     crate::orders::record_cancellation(&record, &order_ref)?;
     Ok(record)
+}
+
+/// When a wait of `window` on `order` (at `record`) ends, as validation
+/// counts it (`PickupOrder::waits_from`).
+fn waited(record: &Record, order: &PickupOrder, window: std::time::Duration) -> Timestamp {
+    Timestamp::from_micros(order.waits_from(record.action().timestamp()).as_micros().saturating_add(window.as_micros() as i64))
 }
 
 /// The gated completion path -- `ReadyForPickup -> PickedUp`, called by the

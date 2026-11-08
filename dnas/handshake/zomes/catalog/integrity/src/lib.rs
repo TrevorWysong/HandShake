@@ -10,7 +10,7 @@ use handshake_integrity_support::chain::wrote_since;
 use handshake_integrity_support::{classify, decode, invalid, require, Checked};
 
 mod links;
-pub use links::catalog_geohash_path;
+pub use links::{catalog_geohash_path, listing_tag, LISTING_PRECISION};
 
 // MerchantCatalog/MenuItem/PromoCode now live in catalog_types so
 // dispatch_integrity can decode a PromoCode too, for its own promo-code
@@ -50,7 +50,7 @@ pub enum LinkTypes {
     CatalogToMenuItem,
     GeohashToCatalog,
     CatalogToPromoCode,
-    /// A bag's own catalog -> bag discovery link -- `get_nearby_goodie_bags`
+    /// A bag's own catalog -> bag discovery link -- `get_listed_stores`
     /// joins through the *existing* `GeohashToCatalog` anchor rather than a
     /// parallel geohash anchor for bags: a bag's location *is* its
     /// catalog's location, so there's nothing a second anchor would add.

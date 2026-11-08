@@ -24,18 +24,21 @@ export interface OrderTiming {
   store_late_after: number | null;
   no_driver_after: number | null;
   store_was_late: boolean;
+  collect_by: number | null;
+  lapses_at: number | null;
 }
 
 export const sleepUntil = (micros: number) => new Promise((r) => setTimeout(r, Math.max(0, micros / 1000 - Date.now()) + ROUND_SLACK_MS));
 
 /// The world, set up: its players, the store's stew, and each step an order
-/// takes.
-export async function lateOrderWorld(scenario: Scenario) {
+/// takes -- on the network's waits above, and any `properties` given.
+export async function lateOrderWorld(scenario: Scenario, properties: Record<string, unknown> = {}) {
   const [customer, merchant, first, second] = await setupPlayersWithProperties(scenario, 4, () => ({
     pickup_grace_secs: 1,
     store_wait_secs: 2,
     replacement_window_secs: 20,
     collection_window_secs: 30,
+    ...properties,
   }));
   const all = [customer, merchant, first, second];
   for (const p of all) await useTestCoordinators(p, ["dispatch"]);

@@ -6,6 +6,18 @@
 use crate::*;
 use handshake_integrity_support::{decode, invalid, linked_record, path_hash, require, valid};
 
+/// How finely a store's listing says where it is -- about 20 metres -- so
+/// an app can rank every store near someone from the listings alone, and
+/// read only the ones it shows.
+pub const LISTING_PRECISION: usize = 8;
+
+/// What a store's listing carries: where it is, to `LISTING_PRECISION`,
+/// which the network checks against the store itself -- no store can list
+/// itself nearer than it is.
+pub fn listing_tag(catalog: &MerchantCatalog) -> LinkTag {
+    LinkTag::new(handshake_types::encode(catalog.location, LISTING_PRECISION).into_bytes())
+}
+
 /// The anchor a store is listed under, for the geohash cell it's in --
 /// mirrored by the coordinator's `geohash_anchor_path`.
 pub fn catalog_geohash_path(geohash: &str) -> String {
@@ -88,6 +100,6 @@ pub fn validate_delete_link(original_author: &AgentPubKey, author: &AgentPubKey)
 /// the store behind it (`MAX_STORES_PER_OWNER`).
 fn validate_listing(link: &TypedAction<CreateLinkData>, record: &Record) -> ExternResult<ValidateCallbackResult> {
     let Some(catalog) = decode::<MerchantCatalog>(record) else { return invalid("a listing is of a store") };
-    let own = matches!(record.action().data, ActionData::Create(_)) && link.author() == &catalog.owner && link.base_address == path_hash(catalog_geohash_path(&catalog.geohash))? && link.tag.0.is_empty();
-    require(own, "a store is listed by its owner, under its own area, by its original action")
+    let own = matches!(record.action().data, ActionData::Create(_)) && link.author() == &catalog.owner && link.base_address == path_hash(catalog_geohash_path(&catalog.geohash))? && link.tag == listing_tag(&catalog);
+    require(own, "a store is listed by its owner, under its own area, by its original action, saying where it is")
 }

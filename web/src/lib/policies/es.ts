@@ -6,6 +6,11 @@ import { spoken, type PolicyChange, type PolicyContent, type PolicySection } fro
 
 const changes: PolicyChange[] = [
   {
+    version: "1.8",
+    date: "2026-11-07",
+    summary: "Envíos: uno en el que la tienda deja de responder cuando le toca a ella se puede cerrar sin cobro, y la tienda le paga a cualquier repartidor al que hizo el check-in. Si uno recogido nunca llega, tu app lo reporta por ti al día siguiente. Quien recoge un pedido tiene todo su plazo desde la hora en que debía estar listo.",
+  },
+  {
     version: "1.7",
     date: "2026-11-07",
     summary: "Pedidos para llevar: quien no pueda recoger su pedido puede avisar una vez, y la tienda decide. Si dice que está listo, tiene el mismo tiempo otra vez para recogerlo, y lo paga si no lo hace. Un pedido en el que la tienda deja de responder se puede cerrar sin cobro.",
@@ -148,6 +153,7 @@ function sections(t: NetworkTerms): PolicySection[] {
       summary: "El repartidor responde de la comida desde que la recoge hasta que el cliente la tiene.",
       points: [
         "Desde que tu repartidor recoge tu pedido, y hasta que se entrega, puedes decir que no llegó. Tu repartidor aún puede aparecer y entregarlo como siempre.",
+        `Si aún no ha llegado ${spoken(t.order_lapse_secs)} después de recogerlo, tu app dice por ti que no llegó, así que un repartidor que se queda con la comida la paga.`,
         `Si no lo hace, decide la tienda. Su app lo hace sola cuando tu reclamación lleva ${spoken(t.claim_grace_secs)}, o la tienda puede decidir antes.`,
         "Cuando la tienda decide que no llegó, recuperas lo que pagaste por la comida, el envío y tu propina. La tienda recupera su parte de la tarifa, y la garantía del repartidor paga a la tienda la comida.",
         "La tienda cobra la comida en cualquier caso, de ti si llegó o del repartidor si no, así que no gana nada con ninguna respuesta.",
@@ -208,13 +214,14 @@ function sections(t: NetworkTerms): PolicySection[] {
         `Un repartidor puede dejar un pedido antes de recogerlo. Si la tienda ya había empezado a cocinarlo, responde de la comida: si ningún otro repartidor lo acepta en ${spoken(t.replacement_window_secs)}, el pedido termina, se te reembolsa todo y su garantía paga a la tienda.`,
         `Cada tienda fija cuánto puede hacer esperar a un repartidor con check-in después de su hora de listo (de ${spoken(t.min_store_wait_secs)} a ${spoken(t.max_store_wait_secs)}; ${spoken(t.store_wait_secs)} si no lo fija), y lo ves al pagar. Pasado ese tiempo, el repartidor puede declarar que la tienda se retrasa e irse: la tienda le paga toda su tarifa, tu pedido pasa a otro repartidor y puedes cancelar con reembolso completo.`,
         "Si tu repartidor se retrasa, o nadie tiene tu pedido, puedes recogerlo tú en la tienda. La comida cuesta lo mismo, te devuelven la parte del envío que pagaba la tienda, y no se cobra nada por un repartidor.",
-        `Si eliges recogerlo y no vienes en ${spoken(t.collection_window_secs)}, la tienda se queda con el precio de la comida que preparó. Si cancelas mientras un repartidor está de camino y nadie se ha retrasado, pagas la comida y la tarifa del repartidor, como en cualquier app.`,
+        `Si eliges recogerlo y no vienes en ${spoken(t.collection_window_secs)} desde la hora en que debía estar listo, la tienda se queda con el precio de la comida que preparó. Si cancelas mientras un repartidor está de camino y nadie se ha retrasado, pagas la comida y la tarifa del repartidor, como en cualquier app.`,
         `Si nadie sale a la puerta, tu repartidor registra que llegó (tu app te avisa) y espera ${spoken(t.dropoff_wait_secs)}. Después puede indicar que no estabas: se cobra como entregado cuando pasa tu plazo para reportar, y cuenta en tu contra. Si estabas, dilo antes: la tienda decide, y si te da la razón, no se te cobra y el repartidor responde por la comida. Mientras no se decida, aún puedes recibirlo de tu repartidor.`,
-        `Si no recoges un pedido para llevar en ${spoken(t.collection_window_secs)} desde que está listo, la tienda se queda con el precio de la comida que preparó, y cuenta en tu contra. Si la tienda no puede darte tu pedido, avísala: ella decide, y lo cancela sin cobrarte o dice que está listo, lo que te da el mismo tiempo otra vez para recogerlo. Puedes avisar una vez por pedido, y la tienda ya preparó tu comida: no poder llegar sigue siendo tuyo de pagar. Si una tienda acepta un pedido para llevar y luego no responde durante ${spoken(t.pickup_lapse_secs)}, puedes cerrarlo sin cobro.`,
+        `Si no recoges un pedido para llevar en ${spoken(t.collection_window_secs)} desde que está listo, la tienda se queda con el precio de la comida que preparó, y cuenta en tu contra. Si la tienda no puede darte tu pedido, avísala: ella decide, y lo cancela sin cobrarte o dice que está listo, lo que te da el mismo tiempo otra vez para recogerlo. Puedes avisar una vez por pedido, y la tienda ya preparó tu comida: no poder llegar sigue siendo tuyo de pagar. Si una tienda acepta un pedido para llevar y luego no responde durante ${spoken(t.order_lapse_secs)} (contado desde la hora en que debía estar listo, mientras aún se prepara), puedes cerrarlo sin cobro.`,
         "Un pedido programado se envía a su tienda a su hora, desde tu app. Si la tienda está cerrada entonces, o tu dispositivo estuvo sin conexión más de media hora después, se cancela y nadie paga nada.",
         "Cada plazo que perjudica a otro si se reclama antes de tiempo (un repartidor que se va, una tienda que aparta a un repartidor, declarar que una tienda se retrasa, terminar un pedido al que no vino ningún repartidor, que un repartidor indique que nadie salió a la puerta, quedarse la comida de un cliente que no vino) se demuestra con una fuente pública de tiempo gestionada por organizaciones independientes, así que nadie puede reclamarlo antes.",
         `Un pedido puede cambiar de repartidor como máximo ${t.max_driver_changes} veces. Después puedes recogerlo o cancelarlo.`,
         "Mientras un repartidor que dejó tu pedido ya en preparación responde de él, no puedes cancelarlo: espera a otro repartidor (se te reembolsa todo si no llega ninguno a tiempo) o recógelo tú.",
+        `Si le toca a la tienda en tu envío (confirmar a tu repartidor, hacerle el check-in, entregarlo, o terminarlo después de que un repartidor lo dejó) y nadie lo avanza durante ${spoken(t.order_lapse_secs)}, contado desde la hora en que debía estar listo si es más tarde, puedes cerrarlo sin cobro. La tienda le paga a cualquier repartidor al que ya hizo el check-in, y cuenta en su contra.`,
       ],
       effects: [
         { who: "customers", good: "Que no haya repartidor, que no aparezca, o que la tienda sea lenta nunca te cuesta nada.", bad: "Si eliges recogerlo y no lo haces, no estás para recibir tu envío o recoger tu pedido, o cancelas cuando ya va de camino, pagas la comida." },

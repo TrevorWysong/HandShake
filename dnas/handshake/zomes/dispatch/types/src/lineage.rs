@@ -10,7 +10,7 @@
 //! up, a store can't both move a driver on and check them in, a customer
 //! can't both cancel (owing the driver) and take the driver's pay back.
 
-use super::{Beacon, Bid, Cancellation, CollectRequest, DeliveryOrder, DeliveryStatus, PickupOrder};
+use super::{Beacon, Bid, Cancellation, CollectRequest, DeliveryOrder, DeliveryStatus, PickupOrder, PickupStatus};
 use hdi::prelude::*;
 use handshake_integrity_support::chain::{activity_since, entry_of};
 
@@ -159,6 +159,15 @@ impl AnyVersion {
         match self {
             AnyVersion::Delivery(o) => o.cancellation.as_ref(),
             AnyVersion::Pickup(o) => o.cancellation.as_ref(),
+        }
+    }
+
+    /// Whether this version is its customer having the order: a delivery
+    /// delivered or collected, a pickup picked up.
+    pub fn has_it(&self) -> bool {
+        match self {
+            AnyVersion::Delivery(o) => matches!(o.status, DeliveryStatus::Delivered | DeliveryStatus::Collected),
+            AnyVersion::Pickup(o) => o.status == PickupStatus::PickedUp,
         }
     }
 
@@ -345,6 +354,23 @@ pub fn liable_release(open: &Version) -> ExternResult<Option<(Version, ActionHas
         v.released_liable(p).map(|bid| Some((v.clone(), bid)))
     })?
     .flatten())
+}
+
+/// When the customer may close `version` on its store's silence
+/// (`Cancellation::Lapsed`): the network's lapse from its last word, or from
+/// when its food is due ready if that's later. `None` while the store owes
+/// it nothing -- its next step is confirming the driver who's committed,
+/// checking them in, handing it over, or ending it for a driver who left it
+/// cooking; an order merely open to drivers, with none answering for it,
+/// its customer cancels for nothing.
+pub fn lapses_at(version: &Version) -> ExternResult<Option<Timestamp>> {
+    let owed = match version.order.status {
+        DeliveryStatus::DriverEnRouteToMerchant | DeliveryStatus::MerchantConfirmed | DeliveryStatus::DriverAtStore | DeliveryStatus::Collecting => true,
+        DeliveryStatus::Open | DeliveryStatus::BidAccepted => liable_release(version)?.is_some(),
+        _ => false,
+    };
+    let from = super::waits_from(version.written_at(), version.order.ready_by);
+    Ok(owed.then(|| Timestamp::from_micros(from.as_micros().saturating_add(handshake_governance::order_lapse().as_micros() as i64))))
 }
 
 /// How long the store behind `order` may keep a checked-in driver waiting
