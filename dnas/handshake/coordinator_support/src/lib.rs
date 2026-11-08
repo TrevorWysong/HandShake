@@ -310,17 +310,47 @@ pub fn resolve_latest_decoded<T: TryFrom<SerializedBytes, Error = SerializedByte
     Ok((version.record, decoded))
 }
 
-/// Each link's target at its current state (via `resolve_latest`), skipping
-/// any that don't resolve -- one bad link shouldn't fail a whole list.
-pub fn resolve_links_to_records(links: Vec<Link>) -> Vec<Record> {
-    let mut out = Vec::with_capacity(links.len());
-    for link in links {
-        let Some(hash) = link.target.into_action_hash() else { continue };
-        if let Ok(record) = resolve_latest(hash) {
-            out.push(record);
-        }
+/// Many entries at their current versions, read together: `resolve_latest`
+/// for each of `originals` in three round trips however many there are --
+/// their records, their `Version` links, then the versions those name.
+/// `None` for one that can't be read, so one bad entry never fails a list.
+pub fn resolve_many(originals: &[ActionHash]) -> ExternResult<Vec<Option<Record>>> {
+    if originals.is_empty() {
+        return Ok(Vec::new());
     }
-    out
+    let given = read_records(originals)?;
+    // Each original's version links, by its own zome's link type. An update
+    // given in place of its original is resolved on its own.
+    let mut queries = Vec::new();
+    let mut asked = Vec::with_capacity(originals.len());
+    for (hash, record) in originals.iter().zip(&given) {
+        let query = record.as_ref().filter(|r| !matches!(r.action().data, ActionData::Update(_))).and_then(|r| match r.action().entry_type() {
+            Some(EntryType::App(def)) => Some(LinkQuery::new(hash.clone(), LinkTypeFilter::single_type(def.zome_index, LinkType(handshake_integrity_support::versions::VERSION_LINK_TYPE)))),
+            _ => None,
+        });
+        asked.push(query.is_some());
+        queries.extend(query);
+    }
+    let mut versions = get_links_many(queries)?.into_iter();
+    let tips: Vec<Option<ActionHash>> = asked.iter().map(|&asked| if asked { versions.next().and_then(tip_of).map(|(_, tip)| tip) } else { None }).collect();
+    let mut current = read_records(&tips.iter().flatten().cloned().collect::<Vec<_>>())?.into_iter();
+    Ok(originals
+        .iter()
+        .zip(given)
+        .zip(asked.into_iter().zip(tips))
+        .map(|((hash, given), (asked, tip))| match (asked, tip) {
+            (true, Some(_)) => current.next().flatten(),
+            (true, None) => given,
+            (false, _) => given.and_then(|_| resolve_latest(hash.clone()).ok()),
+        })
+        .collect())
+}
+
+/// Each link's target at its current state, skipping any that don't
+/// resolve -- one bad link shouldn't fail a whole list. Read together
+/// (`resolve_many`).
+pub fn resolve_links_to_records(links: Vec<Link>) -> Vec<Record> {
+    resolve_links_to_records_with_original(links).into_iter().map(|(_, record)| record).collect()
 }
 
 /// Like `resolve_links_to_records`, keeping each link's target -- the
@@ -328,14 +358,9 @@ pub fn resolve_links_to_records(links: Vec<Link>) -> Vec<Record> {
 /// record. The latest record's own hash changes on every update, so it
 /// can never stand in for the identity other entries reference.
 pub fn resolve_links_to_records_with_original(links: Vec<Link>) -> Vec<(ActionHash, Record)> {
-    let mut out = Vec::with_capacity(links.len());
-    for link in links {
-        let Some(hash) = link.target.into_action_hash() else { continue };
-        if let Ok(record) = resolve_latest(hash.clone()) {
-            out.push((hash, record));
-        }
-    }
-    out
+    let targets: Vec<ActionHash> = links.into_iter().filter_map(|link| link.target.into_action_hash()).collect();
+    let Ok(records) = resolve_many(&targets) else { return Vec::new() };
+    targets.into_iter().zip(records).filter_map(|(target, record)| Some((target, record?))).collect()
 }
 
 /// Test-only externs for proving link validation: raw `create_link` /

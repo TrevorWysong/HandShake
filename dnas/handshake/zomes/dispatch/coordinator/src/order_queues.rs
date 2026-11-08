@@ -8,7 +8,7 @@
 use dispatch_integrity::*;
 use hdk::prelude::*;
 use handshake_coordinator_support::chain::mine;
-use handshake_coordinator_support::{decode_or, guest, resolve_latest};
+use handshake_coordinator_support::{decode_or, guest, read_records, resolve_latest, resolve_many};
 use std::cmp::Reverse;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +138,20 @@ pub(crate) fn unqueue_driver(order_ref: &ActionHash, driver: &AgentPubKey) -> Ex
 /// whether it's still in progress. `None` if the target isn't an order.
 pub(crate) fn classify(original_action: ActionHash) -> Option<(OrderEntry, Timestamp, bool)> {
     let record = resolve_latest(original_action.clone()).ok()?;
+    entry_of(original_action, record)
+}
+
+/// `classify` for each of `originals`, read together (`resolve_many`) -- a
+/// page of history costs three round trips, not two an order. One that
+/// can't be read, or isn't an order, is left out.
+pub(crate) fn classify_many(originals: Vec<ActionHash>) -> ExternResult<Vec<(OrderEntry, Timestamp, bool)>> {
+    let records = resolve_many(&originals)?;
+    Ok(originals.into_iter().zip(records).filter_map(|(original, record)| entry_of(original, record?)).collect())
+}
+
+/// An order's entry at `record`, its current version, with when it was
+/// placed and whether it's still in progress.
+fn entry_of(original_action: ActionHash, record: Record) -> Option<(OrderEntry, Timestamp, bool)> {
     let (kind, requested_at, active) = if let Ok(Some(order)) = record.entry().to_app_option::<DeliveryOrder>() {
         (OrderKind::Delivery, order.requested_at, !order.status.is_terminal())
     } else if let Ok(Some(order)) = record.entry().to_app_option::<PickupOrder>() {
@@ -152,7 +166,7 @@ pub(crate) fn classify(original_action: ActionHash) -> Option<(OrderEntry, Times
 /// worked through.
 fn active_orders(owner: QueueOwner<'_>) -> ExternResult<Vec<OrderEntry>> {
     let links = get_links(LinkQuery::try_new(owner.active_base(), owner.active_link_type())?, GetStrategy::default())?;
-    let mut orders: Vec<_> = links.into_iter().filter_map(|l| l.target.into_action_hash()).filter_map(classify).filter(|(_, _, active)| *active).collect();
+    let mut orders: Vec<_> = classify_many(links.into_iter().filter_map(|l| l.target.into_action_hash()).collect())?.into_iter().filter(|(_, _, active)| *active).collect();
     orders.sort_by_key(|(_, requested_at, _)| *requested_at);
     Ok(orders.into_iter().map(|(entry, _, _)| entry).collect())
 }
@@ -209,7 +223,7 @@ fn history_page(owner: QueueOwner<'_>, before: Option<Timestamp>, limit: Option<
         oldest_day_read.filter(|_| days.len() > MAX_DAYS_PER_PAGE).map(|day| Timestamp::from_micros(day * HISTORY_BUCKET_MICROS - 1))
     };
     links.truncate(limit);
-    let orders = links.into_iter().filter_map(|l| l.target.into_action_hash()).filter_map(classify).map(|(entry, _, _)| entry).collect();
+    let orders = classify_many(links.into_iter().filter_map(|l| l.target.into_action_hash()).collect())?.into_iter().map(|(entry, _, _)| entry).collect();
     Ok(OrderHistoryPage { orders, next_before })
 }
 
@@ -423,7 +437,7 @@ pub fn get_driver_load(driver: AgentPubKey) -> ExternResult<InHand> {
     // Only orders that are still theirs: one a driver left reopens, active
     // but no longer theirs, until its customer takes it off their queue.
     let mut load = InHand::default();
-    for (entry, _, active) in orders.into_iter().filter_map(classify) {
+    for (entry, _, active) in classify_many(orders)? {
         let Some(order) = decode_or::<DeliveryOrder>(&entry.record) else { continue };
         if active && driven_by(&order, &driver)? {
             load = InHand { orders: load.orders + 1, priority: load.priority || order.priority };
@@ -438,17 +452,27 @@ pub fn get_driver_load(driver: AgentPubKey) -> ExternResult<InHand> {
 pub fn get_my_active_deliveries(_: ()) -> ExternResult<Vec<ActiveDelivery>> {
     let me = agent_info()?.agent_initial_pubkey;
     let links = get_links(LinkQuery::try_new(me, LinkTypes::DriverToActiveDelivery)?, GetStrategy::default())?;
+    // The tag is the version accepting this driver's bid -- which bid.
+    let queued: Vec<(ActionHash, ActionHash)> = links.into_iter().filter_map(|link| Some((link.target.into_action_hash()?, ActionHash::try_from_raw_39(link.tag.0).ok()?))).collect();
+    let (orders, accepting): (Vec<_>, Vec<_>) = queued.into_iter().unzip();
+    let accepting = read_records(&accepting)?;
+    // Each order now, and the bid the version accepting this driver took --
+    // every order, every accepting version and every bid read together.
+    let mut found = Vec::new();
+    for (original, accepting) in orders.into_iter().zip(accepting) {
+        let Some(bid_ref) = accepting.as_ref().and_then(decode_or::<DeliveryOrder>).and_then(|o| o.accepted_bid) else { continue };
+        found.push((original, bid_ref));
+    }
+    let entries = resolve_many(&found.iter().map(|(order, _)| order.clone()).collect::<Vec<_>>())?;
+    let bids = resolve_many(&found.iter().map(|(_, bid)| bid.clone()).collect::<Vec<_>>())?;
     let mut deliveries = Vec::new();
-    for link in links {
-        // The tag is the version accepting this driver's bid -- which bid.
-        let (Some(order_ref), Ok(accepting)) = (link.target.into_action_hash(), ActionHash::try_from_raw_39(link.tag.0.clone())) else { continue };
-        let Some((order, requested_at, true)) = classify(order_ref) else { continue };
-        let Some(bid_ref) = get(accepting, GetOptions::default())?.and_then(|r| decode_or::<DeliveryOrder>(&r)).and_then(|o| o.accepted_bid) else { continue };
+    for (((original, bid_ref), record), bid) in found.into_iter().zip(entries).zip(bids) {
+        let (Some(record), Some(bid)) = (record, bid) else { continue };
+        let Some((order, requested_at, true)) = entry_of(original, record) else { continue };
         // Still theirs: the order's current driver is still this bid's.
         if decode_or::<DeliveryOrder>(&order.record).and_then(|o| o.accepted_bid).as_ref() != Some(&bid_ref) {
             continue;
         }
-        let Ok(bid) = resolve_latest(bid_ref) else { continue };
         deliveries.push((ActiveDelivery { order, bid }, requested_at));
     }
     deliveries.sort_by_key(|(_, requested_at)| *requested_at);

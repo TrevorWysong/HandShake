@@ -46,7 +46,7 @@ export function StoreSilence({ orderRef, order, onChanged }: { orderRef: Uint8Ar
       <Button variant="secondary" loading={action.busy} onClick={close}>
         {t("order.closeLapsed")}
       </Button>
-      {action.error && <p className="text-xs text-red-600">{action.error}</p>}
+      {action.error && <p className="text-xs text-red-600 dark:text-red-400">{action.error}</p>}
     </div>
   );
 }
