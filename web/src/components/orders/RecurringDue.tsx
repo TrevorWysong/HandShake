@@ -35,9 +35,10 @@ function DueOrder({ order, onPassed }: { order: RecurringOrder; onPassed: () => 
   const action = useAction();
   const missed = order.due === "Missed";
   const Icon = missed ? CalendarX2 : BellRing;
-  // It fills the bag: asked first if the bag holds an order already.
+  // It fills the bag: asked first if the bag holds another store's order.
+  // The same store's is most often this order, just set up.
   const cartSwitch = useCartSwitch();
-  const toCheckout = () => cartSwitch.ask(order.template.catalog_ref, () => void action.run(async () => navigate("/customer/cart", { state: { recurring: await takeToCheckout(order) } }), { as: "checkout" }), true);
+  const toCheckout = () => cartSwitch.ask(order.template.catalog_ref, () => void action.run(async () => navigate("/customer/cart", { state: { recurring: await takeToCheckout(order) } }), { as: "checkout" }));
   const pass = () => action.run(async () => {
     await advanceRecurringTemplate(order.hash);
     await onPassed();
