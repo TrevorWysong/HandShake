@@ -99,6 +99,8 @@ export const en = {
   "common.back": "Back",
   "common.edit": "Edit",
   "common.cancel": "Cancel",
+  "load.failed": "This couldn't be loaded",
+  "load.retry": "Try again",
   "common.remove": "Remove",
   "cart.drop.handToMe": "Hand to me",
   "cart.drop.meetOutside": "Meet outside",

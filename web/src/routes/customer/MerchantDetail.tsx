@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { LoadProblem } from "../../components/LoadProblem";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ChevronRight, Clock, Heart, HeartPulse, Tag } from "lucide-react";
 import { motion } from "framer-motion";
@@ -59,7 +60,7 @@ function StorePage({ hash }: { hash: string }) {
   // Polled for the same reason Browse.tsx's list is -- a menu item added
   // moments ago may not have gossiped to whatever peer answers this read yet,
   // and a customer already on this page shouldn't need to leave and come back.
-  const { data: fresh } = useResource(`store-menu:${hash}`, () => fetchStoreMenu(hash, catalogHash), { pollMs: POLL.slow });
+  const { data: fresh, error: menuError, reload: reloadMenu } = useResource(`store-menu:${hash}`, () => fetchStoreMenu(hash, catalogHash), { pollMs: POLL.slow });
   const menu = fresh ?? rememberedStoreMenu(hash);
   const catalog = menu?.catalog ?? routerState?.catalog ?? null;
   const now = useClock();
@@ -111,6 +112,7 @@ function StorePage({ hash }: { hash: string }) {
   const setFilters = (diet: string[], hide: boolean) => setParams({ ...(diet.length ? { diet } : {}), ...(hide ? { hide: "1" } : {}) }, { replace: true });
 
   if (!catalog || !items) {
+    if (menuError) return <LoadProblem error={menuError} onRetry={reloadMenu} />;
     return (
       <div className="pb-24">
         <Skeleton className="h-44 w-full rounded-none md:h-56 lg:h-64 lg:rounded-3xl" />

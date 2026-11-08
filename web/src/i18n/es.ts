@@ -94,6 +94,8 @@ export const es: Catalog = {
   "common.back": "Atrás",
   "common.edit": "Editar",
   "common.cancel": "Cancelar",
+  "load.failed": "No se pudo cargar",
+  "load.retry": "Reintentar",
   "common.remove": "Quitar",
   "cart.drop.handToMe": "En mano",
   "cart.drop.meetOutside": "Nos vemos fuera",

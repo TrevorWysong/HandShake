@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LoadProblem } from "../../../components/LoadProblem";
 import { useParams } from "react-router-dom";
 import { AlertTriangle, Bike, DoorOpen, Gavel, MapPin, ShieldCheck, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -73,7 +74,7 @@ export function OrderDetail() {
   // once per value and re-read only when that changes (or while polled).
   // `writtenAt` (when its current version was written) and `now` (when it
   // was read) time the store's window to accept it.
-  const { data: snapshot, reload: reloadOrder } = useResource(
+  const { data: snapshot, error: orderError, reload: reloadOrder } = useResource(
     `order:${hash}`,
     async () => {
       const record = await getOrder(orderRef);
@@ -137,6 +138,7 @@ export function OrderDetail() {
   const driverDueAt = wonBid ? wonBid.created_at + wonBid.eta_seconds * 1_000_000 : null;
 
   if (!order) {
+    if (orderError) return <LoadProblem error={orderError} onRetry={reloadOrder} />;
     return (
       <div className="flex flex-col gap-3 px-4 pt-4">
         <Skeleton className="h-7 w-2/5" />

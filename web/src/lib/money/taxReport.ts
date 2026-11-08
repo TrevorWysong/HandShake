@@ -2,9 +2,7 @@
 // net of the tax it refunded on reports of missing items -- computed on the
 // store's own device from its own order history, so its sales are never
 // compiled anywhere else (docs/TAX_REPORTING.md). What it files is its own.
-import type { DeliveryOrder, PickupOrder } from "../../holochain/types";
-import { decodeEntry } from "../../holochain/decode";
-import { getOrderDecisions, getOrderHistoryForStore, type OrderEntry } from "../../holochain/zomes/dispatch";
+import { storeOrdersBetween } from "./storeOrders";
 
 /// One completed order, as the report lists it.
 export interface TaxedOrder {
@@ -26,7 +24,6 @@ export interface TaxReport {
   netTaxCents: number;
 }
 
-const COMPLETED = new Set(["Delivered", "PickedUp"]);
 /// History pages read at most, so a long history can't stall the report.
 const MAX_PAGES = 200;
 
@@ -44,25 +41,12 @@ export function summarize(orders: TaxedOrder[]): TaxReport {
 
 /// The store's completed orders placed in [from, to), and their tax.
 export async function storeTaxReport(catalogRef: Uint8Array, from: Date, to: Date): Promise<TaxReport> {
-  const fromMicros = from.getTime() * 1000;
-  const entries: OrderEntry[] = [];
-  let before: number | null = to.getTime() * 1000 - 1;
-  for (let page = 0; page < MAX_PAGES && before !== null; page++) {
-    const result = await getOrderHistoryForStore(catalogRef, before, 50);
-    entries.push(...result.orders);
-    const oldest = result.orders.at(-1);
-    if (oldest && decodeEntry<{ requested_at: number }>(oldest.record).requested_at < fromMicros) break;
-    before = result.next_before;
-  }
-  const orders: TaxedOrder[] = [];
-  for (const entry of entries) {
-    const order = decodeEntry<DeliveryOrder | PickupOrder>(entry.record);
-    if (order.requested_at < fromMicros || order.requested_at >= to.getTime() * 1000) continue;
-    if (!COMPLETED.has(order.status as string)) continue;
-    const refund = (await getOrderDecisions(entry.original_action).catch(() => null))?.refund ?? 0;
-    const taxCents = order.tax_cents ?? 0;
-    orders.push({ placedAt: new Date(order.requested_at / 1000), totalCents: order.order_total, taxCents, refundedCents: refund, refundedTaxCents: refundedTax(refund, order.order_total, taxCents) });
-  }
+  const orders: TaxedOrder[] = (await storeOrdersBetween(catalogRef, from, to, MAX_PAGES))
+    .filter(({ outcome }) => outcome === "completed")
+    .map(({ order, refundedCents }) => {
+      const taxCents = order.tax_cents ?? 0;
+      return { placedAt: new Date(order.requested_at / 1000), totalCents: order.order_total, taxCents, refundedCents, refundedTaxCents: refundedTax(refundedCents, order.order_total, taxCents) };
+    });
   return summarize(orders.sort((a, b) => a.placedAt.getTime() - b.placedAt.getTime()));
 }
 

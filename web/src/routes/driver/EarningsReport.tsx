@@ -1,6 +1,7 @@
 // A driver's earnings by week or month -- deliveries, fees, tips, what
 // stores paid for keeping them waiting, collateral forfeited -- from their
 // payment history, with a CSV for their records.
+import { downloadText } from "../../lib/ui/download";
 import { useState } from "react";
 import { Download } from "lucide-react";
 import { myPaymentHistory } from "../../holochain/zomes/payments";
@@ -10,6 +11,7 @@ import { earned, earningsByPeriod, earningsCsv, type Grouping } from "../../lib/
 import { formatCents, fromMinorUnits } from "../../lib/ui/format";
 import { appLocale, useT } from "../../i18n";
 import { useResource } from "../../lib/hooks/useResource";
+import { describeError } from "../../lib/ui/errors";
 
 /// A year of history: what a report by month needs.
 const HISTORY_DAYS = 366;
@@ -17,7 +19,7 @@ const HISTORY_DAYS = 366;
 export function EarningsReport({ meHex }: { meHex: string }) {
   const [grouping, setGrouping] = useState<Grouping>("week");
   const t = useT();
-  const { data: items } = useResource(`payment-history:${meHex}`, () => myPaymentHistory(HISTORY_DAYS));
+  const { data: items, error } = useResource(`payment-history:${meHex}`, () => myPaymentHistory(HISTORY_DAYS));
   const periods = items ? earningsByPeriod(items, hexToBytes(meHex), grouping).filter((p) => earned(p) + p.forfeited > 0) : undefined;
   const label = (start: number) =>
     grouping === "week"
@@ -26,9 +28,7 @@ export function EarningsReport({ meHex }: { meHex: string }) {
 
   function download() {
     if (!periods) return;
-    const url = URL.createObjectURL(new Blob([earningsCsv(periods, grouping, (c) => fromMinorUnits(c).toFixed(2))], { type: "text/csv" }));
-    Object.assign(document.createElement("a"), { href: url, download: `handshake-earnings-by-${grouping}.csv` }).click();
-    URL.revokeObjectURL(url);
+    downloadText(`handshake-earnings-by-${grouping}.csv`, earningsCsv(periods, grouping, (c) => fromMinorUnits(c).toFixed(2)));
   }
 
   return (
@@ -37,14 +37,14 @@ export function EarningsReport({ meHex }: { meHex: string }) {
         <p className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("nav.earnings")}</p>
         <div className="flex items-center gap-1 rounded-full bg-ink-100 p-1 text-xs font-semibold dark:bg-ink-800">
           {(["week", "month"] as const).map((g) => (
-            <button key={g} onClick={() => setGrouping(g)} className={`rounded-full px-2.5 py-1 ${grouping === g ? "bg-white shadow-sm dark:bg-ink-950" : "text-ink-400"}`}>
+            <button key={g} aria-pressed={grouping === g} onClick={() => setGrouping(g)} className={`rounded-full px-2.5 py-1 ${grouping === g ? "bg-white shadow-sm dark:bg-ink-950" : "text-ink-400"}`}>
               {g === "week" ? t("earnings.weekly") : t("earnings.monthly")}
             </button>
           ))}
         </div>
       </div>
       {periods === undefined ? (
-        <Skeleton className="h-24" />
+        error ? <p className="text-sm text-red-600 dark:text-red-400">{describeError(error)}</p> : <Skeleton className="h-24" />
       ) : periods.length === 0 ? (
         <p className="text-sm text-ink-400">{t("earnings.empty")}</p>
       ) : (

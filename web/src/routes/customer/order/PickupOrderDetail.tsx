@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LoadProblem } from "../../../components/LoadProblem";
 import { useResource } from "../../../lib/hooks/useResource";
 import { useParams } from "react-router-dom";
 import { AlertTriangle, ChefHat } from "lucide-react";
@@ -52,7 +53,7 @@ export function PickupOrderDetail() {
 
   // `writtenAt` (when its current version was written) and `now` (when it
   // was read) time the store's window to accept it.
-  const { data: snapshot, reload: reloadOrder } = useResource(
+  const { data: snapshot, error: orderError, reload: reloadOrder } = useResource(
     `pickup-order:${hash}`,
     async () => {
       const record = await getPickupOrder(orderRef);
@@ -70,6 +71,7 @@ export function PickupOrderDetail() {
   const { data: decisions } = useResource(order?.status === "ReadyForPickup" ? `pickup-decisions:${hash}:${snapshot?.writtenAt}` : null, () => getOrderDecisions(orderRef));
 
   if (!order) {
+    if (orderError) return <LoadProblem error={orderError} onRetry={reloadOrder} />;
     return (
       <div className="flex flex-col gap-3 px-4 pt-4">
         <Skeleton className="h-7 w-2/5" />

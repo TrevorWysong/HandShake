@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { storeInsights, type InsightOrder } from "../src/lib/money/insights";
+import { outcomeOf, type Outcome } from "../src/lib/money/storeOrders";
 
-const order = (hour: number, status: string, total: number, lines: [string, number][], extra: Partial<InsightOrder> = {}): InsightOrder => ({
+const order = (hour: number, outcome: Outcome, total: number, lines: [string, number][], extra: Partial<InsightOrder> = {}): InsightOrder => ({
   placedAt: new Date(2026, 9, 12, hour, 15),
-  status,
+  outcome,
   delivery: true,
   totalCents: total,
   taxCents: 0,
@@ -15,11 +16,11 @@ const order = (hour: number, status: string, total: number, lines: [string, numb
 
 test("sales net of tax and refunds, best sellers, busy hours, lost orders", () => {
   const insights = storeInsights([
-    order(12, "Delivered", 2000, [["stew", 1], ["bread", 2]]),
-    order(12, "PickedUp", 1100, [["bread", 1]], { taxCents: 100, refundedCents: 550, delivery: false }),
-    order(18, "Delivered", 1000, [["stew", 1]]),
-    order(19, "Cancelled", 900, [["stew", 1]]),
-    order(19, "Placed", 900, [["stew", 1]]),
+    order(12, "completed", 2000, [["stew", 1], ["bread", 2]]),
+    order(12, "completed", 1100, [["bread", 1]], { taxCents: 100, refundedCents: 550, delivery: false }),
+    order(18, "completed", 1000, [["stew", 1]]),
+    order(19, "cancelled", 900, [["stew", 1]]),
+    order(19, "open", 900, [["stew", 1]]),
   ]);
   assert.equal(insights.completed, 3);
   assert.equal(insights.cancelled, 1);
@@ -30,4 +31,15 @@ test("sales net of tax and refunds, best sellers, busy hours, lost orders", () =
   assert.equal(insights.byHour[12], 2);
   assert.equal(insights.byHour[18], 1);
   assert.equal(insights.deliveryShare, 2 / 3);
+});
+
+test("a sale is completed once its food is the customer's", () => {
+  assert.equal(outcomeOf("Pickup", "PickedUp", false), "completed", "a pickup collected");
+  assert.equal(outcomeOf("Delivery", "Delivered", false), "completed");
+  assert.equal(outcomeOf("Delivery", "Collected", false), "completed", "a delivery its customer collected");
+  assert.equal(outcomeOf("Delivery", "PickedUp", false), "open", "a delivery on its way isn't a sale yet");
+  assert.equal(outcomeOf("Delivery", "PickedUp", true), "completed", "one settled as delivered is");
+  assert.equal(outcomeOf("Delivery", "Disputed", false), "open");
+  assert.equal(outcomeOf("Pickup", "Cancelled", false), "cancelled");
+  assert.equal(outcomeOf("Delivery", "Cancelled", false), "cancelled");
 });

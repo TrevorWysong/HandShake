@@ -3,6 +3,7 @@
 // (docs/SALES_TAX.md). Each rate is named for what it applies to; the first is
 // the default, and menu items pick another. Orders placed from here on are
 // taxed at these rates -- and the network checks every one against them.
+import { downloadText } from "../../../lib/ui/download";
 import { useState } from "react";
 import { Download, Plus, Trash2 } from "lucide-react";
 import type { MerchantCatalog, TaxRate } from "../../../holochain/types";
@@ -140,10 +141,7 @@ export function TaxReportCard({ catalogRef }: { catalogRef: Uint8Array }) {
 
   function download() {
     if (!report || !period) return;
-    const url = URL.createObjectURL(new Blob([taxReportCsv(report, minor)], { type: "text/csv" }));
-    const link = Object.assign(document.createElement("a"), { href: url, download: `tax-report-${period}.csv` });
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadText(`tax-report-${period}.csv`, taxReportCsv(report, minor));
   }
 
   return (
