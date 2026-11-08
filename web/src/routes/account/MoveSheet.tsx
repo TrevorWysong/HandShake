@@ -1,5 +1,6 @@
 // Moving the account to a new phone: the new one shows its code, and this
 // one sends its key once the network holds everything it wrote.
+import { wait } from "../../lib/network/retry";
 import { useState } from "react";
 import { readyToMove } from "../../holochain/zomes/account";
 import { canMoveAccount, deviceRuntime } from "../../holochain/device";
@@ -33,7 +34,7 @@ export function MoveSheet({ onClose }: { onClose: () => void }) {
     if (!runtime) throw new Error(t("move.unsupported"));
     let ready = !!runtime.oneNode;
     for (let attempt = 0; attempt < READY_TRIES && !ready; attempt++) {
-      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (attempt > 0) await wait(2000);
       ready = (await readyToMove()).ready;
     }
     if (!ready) throw new Error(t("move.notReady"));

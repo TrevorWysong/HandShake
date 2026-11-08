@@ -27,6 +27,7 @@ import { LateOrder } from "../../../components/orders/LateOrder";
 import { StoreSilence } from "../../../components/orders/StoreSilence";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useAction } from "../../../lib/hooks/useAction";
+import { retrying } from "../../../lib/network/retry";
 import { useResource } from "../../../lib/hooks/useResource";
 import type { Bid, DeliveryOrder, DeliveryStatus, Leg, MerchantCatalog } from "../../../holochain/types";
 import { POLL, isOrderOrBidSignal, isOrderSignal } from "../../../lib/network/poll";
@@ -172,16 +173,7 @@ export function OrderDetail() {
   // here; right after the handoff it may not have arrived yet. Retry a few
   // times before saying so.
   const confirmReceipt = () => action.run(async () => {
-    const RETRY_DELAYS_MS = [1500, 3000, 6000, 10000];
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await confirmDeliveryReceived(orderRef);
-        break;
-      } catch (err) {
-        if (!(err instanceof HandoffNotYetHere) || attempt >= RETRY_DELAYS_MS.length) throw err;
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
-      }
-    }
+    await retrying(() => confirmDeliveryReceived(orderRef), [1500, 3000, 6000, 10000], (err) => err instanceof HandoffNotYetHere);
     await reloadOrder();
   }, { as: "complete" });
 

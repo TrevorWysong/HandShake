@@ -6,6 +6,7 @@
 // `AtTheStore`.) Nobody coming to the door: once the driver has recorded
 // arriving (which tells the customer) and waited the network's wait, they
 // can say so -- see `NobodyCame`.
+import { retrying } from "../../lib/network/retry";
 import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { BellRing, CheckCircle2, DoorOpen, ScanLine, Smartphone } from "lucide-react";
@@ -88,17 +89,7 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
     return hash;
   }
 
-  async function complete() {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await completeDelivery(orderRef);
-        return;
-      } catch (err) {
-        if (attempt >= RETRY_DELAYS_MS.length) throw err;
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
-      }
-    }
-  }
+  const complete = async () => void (await retrying(() => completeDelivery(orderRef), RETRY_DELAYS_MS));
 
   const run = (step: () => Promise<void>) => action.run(async () => {
     await step();

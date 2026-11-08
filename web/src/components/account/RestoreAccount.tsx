@@ -13,6 +13,7 @@
 // development, remembered) first, so the code it shows stays the same
 // across reloads -- guardians may take days. Waiting is polled, not
 // pushed: nothing tells a new device it's been vouched for.
+import { wait } from "../../lib/network/retry";
 import { useState } from "react";
 import { ArrowLeft, HeartHandshake, History, KeyRound, Smartphone } from "lucide-react";
 import type { AgentPubKey, PlanView, VouchView } from "../../holochain/types";
@@ -346,7 +347,7 @@ async function whereItStands(account: AgentPubKey): Promise<Uint8Array> {
   for (let attempt = 0; attempt < STANDING_ATTEMPTS; attempt++) {
     const head = await latestActionOf(account);
     if (head) return head;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await wait(1000);
   }
   throw new Error(translate("restore.unreachable"));
 }

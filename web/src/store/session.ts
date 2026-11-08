@@ -2,6 +2,7 @@
 // agent is this browser tab*, and is it actually connected to a conductor
 // right now. Everything else (cart, UI mode) is disposable; this is not --
 // losing it means losing the ability to reconnect as the same identity.
+import { retrying } from "../lib/network/retry";
 import { create } from "zustand";
 import { connectLauncher, isConnected, myAgentPubKey, setRestorer } from "../holochain/client";
 import { HOST } from "../holochain/host";
@@ -297,15 +298,7 @@ export async function resumeSession(): Promise<void> {
   if (!(hasStoredIdentity() && status === "disconnected" && !needsUnlock())) return;
   useSession.setState({ resuming: true });
   try {
-    for (let i = 0; i < RECONNECT_RETRIES; i++) {
-      try {
-        await reconnect();
-        return;
-      } catch (err) {
-        if (err instanceof Error && FINAL_FAILURES.has(err.name)) return;
-        if (i < RECONNECT_RETRIES - 1) await new Promise((r) => setTimeout(r, RECONNECT_RETRY_DELAY_MS));
-      }
-    }
+    await retrying(reconnect, Array(RECONNECT_RETRIES - 1).fill(RECONNECT_RETRY_DELAY_MS), (err) => !(err instanceof Error && FINAL_FAILURES.has(err.name))).catch(() => undefined);
   } finally {
     useSession.setState({ resuming: false });
   }
