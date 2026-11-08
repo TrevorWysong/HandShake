@@ -12,7 +12,7 @@
 use dispatch_integrity::{open_order_anchor, LinkTypes, OPEN_ORDER_BUCKET_MILLIS};
 use hdi::hash_path::path::Path;
 use hdk::prelude::*;
-use handshake_coordinator_support::{call_local, decode_or, guest, original_action_of, resolve_latest};
+use handshake_coordinator_support::{call_local, decode_or, get_links_many, guest, original_action_of, originals_of, resolve_latest, resolve_many};
 
 pub(crate) fn open_order_anchor_path(geohash: &str, bucket: i64) -> ExternResult<hdi::hash_path::path::TypedPath> {
     Path::from(open_order_anchor(geohash, bucket)).typed(LinkTypes::OpenOrderGeohashAnchor)
@@ -27,34 +27,31 @@ pub fn get_open_orders_near(geohash: String) -> ExternResult<Vec<Record>> {
 
     let now = sys_time()?;
     let current_bucket = handshake_types::time_bucket(now.as_millis(), OPEN_ORDER_BUCKET_MILLIS);
-    let mut orders = Vec::new();
+    // Each cell's anchor in the current bucket and the one before: an order
+    // published just before the bucket turned is still in the last.
+    let mut queries = Vec::new();
     for cell in handshake_types::cell_and_neighbors(&geohash) {
-        // Current bucket and the immediately preceding one: an order
-        // published just before the bucket turned is still in the last.
         for bucket in [current_bucket, current_bucket - 1] {
-            let path = open_order_anchor_path(&cell, bucket)?;
-            let path_hash = match path.path_entry_hash() {
-                Ok(hash) => hash,
-                Err(_) => continue,
-            };
-            let links = get_links(
-                LinkQuery::try_new(path_hash, LinkTypes::OpenOrderGeohashAnchor)?,
-                GetStrategy::default(),
-            )?;
-            for link in links {
-                let Some(action_hash) = link.target.into_action_hash() else { continue };
-                // Anchor links point at the store's acceptance (the version
-                // that opened the order) -- resolve_latest is what makes this
-                // reflect the order's real current status rather than
-                // showing it as forever Open. Bids name that same version.
-                let Ok(record) = resolve_latest(action_hash) else { continue };
-                let Some(order) = decode_or::<DeliveryOrder>(&record) else { continue };
-                if order.status == DeliveryStatus::Open {
-                    orders.push(record);
-                }
-            }
+            let Ok(anchor) = open_order_anchor_path(&cell, bucket)?.path_entry_hash() else { continue };
+            queries.push(LinkQuery::try_new(anchor, LinkTypes::OpenOrderGeohashAnchor)?);
         }
     }
+    // Anchor links point at the store's acceptance (the version that opened
+    // the order); each order is read at its current version, so one that's
+    // moved on stops showing as Open. Every anchor, every order's original
+    // and every current version are read together: a driver's app reads
+    // this every few seconds.
+    let mut opened: Vec<ActionHash> = get_links_many(queries)?.into_iter().flatten().filter_map(|link| link.target.into_action_hash()).collect();
+    opened.sort();
+    opened.dedup();
+    let mut originals: Vec<ActionHash> = originals_of(&opened)?.into_iter().flatten().collect();
+    originals.sort();
+    originals.dedup();
+    let orders = resolve_many(&originals)?
+        .into_iter()
+        .flatten()
+        .filter(|record| decode_or::<DeliveryOrder>(record).is_some_and(|order| order.status == DeliveryStatus::Open))
+        .collect::<Vec<_>>();
     Ok(orders)
 }
 

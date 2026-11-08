@@ -392,15 +392,9 @@ fn review_page(base: AnyLinkableHash, link_type: LinkTypes, before: Option<Times
     let mut query = LinkQuery::try_new(base, link_type)?;
     query.before = before;
     let (links, next_before) = handshake_coordinator_support::links::newest_first_page(query, REVIEW_PAGE_SIZE)?;
-    let mut reviews = Vec::with_capacity(links.len());
-    for link in links {
-        let Some(action_hash) = link.target.into_action_hash() else { continue };
-        if let Some(record) = get(action_hash, GetOptions::default())? {
-            if belongs(&record) {
-                reviews.push(record);
-            }
-        }
-    }
+    // Reviews never change: the page's records, read together.
+    let targets: Vec<ActionHash> = links.into_iter().filter_map(|link| link.target.into_action_hash()).collect();
+    let reviews = read_records(&targets)?.into_iter().flatten().filter(|record| belongs(record)).collect();
     Ok(ReviewsPage { reviews, next_before })
 }
 

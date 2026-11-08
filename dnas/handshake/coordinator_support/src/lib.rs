@@ -35,6 +35,30 @@ pub fn original_action_of(action_hash: ActionHash) -> ExternResult<ActionHash> {
     }
 }
 
+/// `original_action_of` for each of `hashes`, walked back together -- a
+/// read per step back any of them takes, not per hash. `None` for one whose
+/// history can't be read.
+pub fn originals_of(hashes: &[ActionHash]) -> ExternResult<Vec<Option<ActionHash>>> {
+    let mut found: Vec<Option<ActionHash>> = hashes.iter().cloned().map(Some).collect();
+    let mut walking: Vec<(usize, ActionHash)> = hashes.iter().cloned().enumerate().collect();
+    while !walking.is_empty() {
+        let records = read_records(&walking.iter().map(|(_, hash)| hash.clone()).collect::<Vec<_>>())?;
+        let mut still = Vec::new();
+        for ((i, _), record) in walking.into_iter().zip(records) {
+            match record.as_ref().map(|r| &r.action().data) {
+                Some(ActionData::Update(update)) => {
+                    found[i] = Some(update.original_action_address.clone());
+                    still.push((i, update.original_action_address.clone()));
+                }
+                Some(_) => {}
+                None => found[i] = None,
+            }
+        }
+        walking = still;
+    }
+    Ok(found)
+}
+
 /// Resolves an ActionHash to the record's current state, following its
 /// updates. `get()` on an ActionHash is literal -- it returns exactly that
 /// action, never its latest update -- so this is what lets every extern take
