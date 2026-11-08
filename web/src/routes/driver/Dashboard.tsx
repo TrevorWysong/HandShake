@@ -25,6 +25,8 @@ import { VerificationCard } from "./VerificationCard";
 import { useTerms } from "../../store/network";
 import { useSentBids } from "../../store/sentBids";
 import { useDriverOnline } from "../../store/driverOnline";
+import { alertNewOffers, resetOfferAlerts } from "../../lib/driving/offerAlert";
+import { unlockChime } from "../../lib/ui/chime";
 import { useAction } from "../../lib/hooks/useAction";
 import { ActiveDeliveryCard, BidCard, SuggestedRoute } from "./DriverCards";
 import { dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
@@ -108,16 +110,22 @@ export function DriverDashboard() {
       // A requester/merchant can't deliver their own order (validate_new_bid
       // rejects it) -- hidden here so they never see a Bid button for one.
       const offered = rows.filter(({ order }) => !bytesEqual(order.requester, driverKey) && !bytesEqual(order.merchant, driverKey));
+      alertNewOffers(offered.map(({ hash }) => bytesToHex(hash)));
       await bidAutomatically(offered);
       return offered;
     },
     // Drivers find orders by looking, never by announcing where they are
     // (see dispatch `matching`) -- so while online, look often, and keep
-    // looking in the background so a new order still rings.
+    // looking in the background so a new order still rings (`alertNewOffers`).
     { pollMs: POLL.driverFeed, background: true },
   );
 
   function toggleOnline() {
+    // Going online is the tap that lets the page ring for new orders.
+    if (!online) {
+      unlockChime();
+      resetOfferAlerts();
+    }
     useDriverOnline.getState().setOnline(driverHex, !online);
   }
 

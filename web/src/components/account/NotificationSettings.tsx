@@ -13,7 +13,7 @@ const supported = typeof Notification !== "undefined";
 /// notifications, being woken for them while the app is closed (when the
 /// network runs a push relay), and -- on a device running a store -- a
 /// chime for each new order.
-export function NotificationSettings({ runsStore }: { runsStore: boolean }) {
+export function NotificationSettings({ rings }: { rings: boolean }) {
   const t = useT();
   const { notifications, newOrderChime, setNotifications, setNewOrderChime } = usePreferences();
   const [permission, setPermission] = useState(() => (supported ? Notification.permission : "denied"));
@@ -59,7 +59,7 @@ export function NotificationSettings({ runsStore }: { runsStore: boolean }) {
           <Switch checked={wakes} onChange={toggleWakes} disabled={switching.busy} label={t("notifications.closedLabel")} />
         </div>
       )}
-      {runsStore && (
+      {rings && (
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("notifications.chime")}</p>

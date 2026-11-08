@@ -301,7 +301,7 @@ export function ProfilePage() {
       <motion.div variants={fadeSlideUp}>
       {profile?.roles.includes("Requester") && <MyAllergies />}
       <LanguagePicker />
-      <NotificationSettings runsStore={!!profile?.roles.includes("Merchant")} />
+      <NotificationSettings rings={!!profile?.roles.some((role) => role === "Merchant" || role === "Provider")} />
       <Card className="mb-4 p-4">
         <SectionLabel className="mb-1">{t("profile.identity")}</SectionLabel>
         <p className="break-all font-mono text-xs text-ink-500">{agentPubKey ? encodeHashToBase64(agentPubKey) : "–"}</p>
