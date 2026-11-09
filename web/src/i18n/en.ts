@@ -366,6 +366,7 @@ export const en = {
   "menuEditor.allergens": "Allergens",
   "menuEditor.allergensStated": "Say what's in it. Customers rely on this: keep it accurate, and update it when a recipe changes. You're responsible for what you say here.",
   "menuEditor.allergensUnstated": "Not stated. Customers see that you haven't said, and are told to ask you.",
+  "menuEditor.allergensNone": "None of the common allergens",
   "menuEditor.allergensTap": "Tap once for in it, twice for may contain, again to clear.",
   "menuEditor.allergensOther": "Others: Kiwi, Garlic",
   "menuEditor.allergensNote": "Anything else customers should know (fried in shared oil)",

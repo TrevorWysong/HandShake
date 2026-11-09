@@ -361,6 +361,7 @@ export const es: Catalog = {
   "menuEditor.allergens": "Alérgenos",
   "menuEditor.allergensStated": "Di qué lleva. Los clientes confían en esto: mantenlo exacto y actualízalo si cambia una receta. Eres responsable de lo que indiques aquí.",
   "menuEditor.allergensUnstated": "Sin indicar. Los clientes ven que no lo has dicho y se les pide que te pregunten.",
+  "menuEditor.allergensNone": "Ninguno de los alérgenos comunes",
   "menuEditor.allergensTap": "Toca una vez si lo lleva, dos si puede contenerlo, otra más para quitarlo.",
   "menuEditor.allergensOther": "Otros: Kiwi, Ajo",
   "menuEditor.allergensNote": "Algo más que deban saber (frito en aceite compartido)",
