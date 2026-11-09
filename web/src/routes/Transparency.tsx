@@ -1,4 +1,5 @@
 import { ArrowDownCircle, ArrowUpCircle, CircleSlash, Clock, ShieldCheck } from "lucide-react";
+import { LoadProblem } from "../components/LoadProblem";
 import { TimeAgo } from "../components/TimeAgo";
 import { motion } from "framer-motion";
 import { useSession } from "../store/session";
@@ -24,8 +25,10 @@ export function Transparency() {
   const t = useT();
   const agentPubKey = useSession((s) => s.agentPubKey);
   const agentHex = agentPubKey ? bytesToHex(agentPubKey) : null;
-  const { data: items } = useResource(agentHex && `payment-history:${agentHex}`, () => myPaymentHistory(HISTORY_DAYS).catch(() => []));
+  // A failed read says so -- an empty history would say they'd paid nothing.
+  const { data: items, error, reload } = useResource(agentHex && `payment-history:${agentHex}`, () => myPaymentHistory(HISTORY_DAYS));
 
+  if (items === undefined && error) return <LoadProblem error={error} onRetry={reload} />;
   if (!agentPubKey || items === undefined) {
     return (
       <div className="px-4 pb-10 pt-4">

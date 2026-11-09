@@ -46,7 +46,9 @@ export async function storeOrdersBetween(catalogRef: Uint8Array, from: Date, to:
     const result = await getOrderHistoryForStore(catalogRef, before, PAGE);
     const placed = result.orders.map((entry) => ({ entry, order: decodeEntry<DeliveryOrder | PickupOrder>(entry.record) }));
     const inRange = placed.filter(({ order }) => order.requested_at >= fromMicros && order.requested_at < toMicros);
-    const decisions = await eachAtMost(inRange, AT_ONCE, ({ entry, order }) => (needsDecisions(entry.kind, order.status) ? getOrderDecisions(entry.original_action).catch(() => null) : Promise.resolve(null)));
+    // A refund that can't be read fails the read: counting it as none would
+    // overstate what the store sold, and the tax on it.
+    const decisions = await eachAtMost(inRange, AT_ONCE, ({ entry, order }) => (needsDecisions(entry.kind, order.status) ? getOrderDecisions(entry.original_action) : Promise.resolve(null)));
     inRange.forEach(({ entry, order }, i) => {
       const decided: OrderDecisions | null = decisions[i];
       const outcome = outcomeOf(entry.kind, order.status, !!decided?.delivered);

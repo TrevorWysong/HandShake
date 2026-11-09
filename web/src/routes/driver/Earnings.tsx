@@ -1,4 +1,5 @@
 import { ShieldCheck } from "lucide-react";
+import { LoadProblem } from "../../components/LoadProblem";
 import { motion } from "framer-motion";
 import { getReputationSummary } from "../../holochain/zomes/reputation";
 import { myAgentPubKey } from "../../holochain/client";
@@ -19,7 +20,7 @@ export function Earnings() {
   const meHex = bytesToHex(me);
   // Driver-scoped: deliveries only, never completions at a store this
   // agent might also run.
-  const { data: rep } = useResource(`driver-rep:${meHex}`, () => getReputationSummary({ Driver: me }));
+  const { data: rep, error: repError, reload: reloadRep } = useResource(`driver-rep:${meHex}`, () => getReputationSummary({ Driver: me }));
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pt-4 pb-8">
@@ -49,7 +50,9 @@ export function Earnings() {
             <InfoSheet title={t("earnings.repHow")} sections={(["counts", "matching", "seen", "fair"] as const).map((part) => ({ title: t(`earnings.rep.${part}`), body: t(`earnings.rep.${part}Detail`, { clean: terms.clean_start_deliveries }) }))} />
           </div>
           <p className="-mt-2 mb-3 text-xs text-ink-400">{t("reputation.window", { count: terms.reputation_window_days })}</p>
-          {rep === undefined ? (
+          {rep === undefined && repError ? (
+            <LoadProblem compact error={repError} onRetry={reloadRep} />
+          ) : rep === undefined ? (
             <div className="grid grid-cols-2 gap-3">
               <Skeleton className="h-16" />
               <Skeleton className="h-16" />

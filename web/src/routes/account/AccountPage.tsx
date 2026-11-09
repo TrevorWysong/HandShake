@@ -3,6 +3,7 @@
 // phone, and helping the people they guard recover theirs. No company can
 // reset anyone's account here: these are the only ways back in, so this
 // screen says plainly which are set up. See docs/RECOVERY.md.
+import { LoadProblem } from "../../components/LoadProblem";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getMyDocket, getVerificationTerms } from "../../holochain/zomes/dispatch";
@@ -37,7 +38,7 @@ export function AccountPage() {
   const agentPubKey = useSession((s) => s.agentPubKey);
   const t = useT();
   const hex = agentPubKey ? bytesToHex(agentPubKey) : null;
-  const { data: plan, reload } = useResource(hex && `plan:${hex}`, myRecoveryPlan);
+  const { data: plan, error: planError, reload } = useResource(hex && `plan:${hex}`, myRecoveryPlan);
   const { data: wards } = useResource(hex && `wards:${hex}`, myWards, { pollMs: POLL.slow });
   const [open, setOpen] = useState<Open>(null);
   const navigate = useNavigate();
@@ -68,7 +69,9 @@ export function AccountPage() {
 
       <motion.div variants={fadeSlideUp}>
         <Card className="mb-4 p-5">
-          {plan === undefined ? (
+          {plan === undefined && planError ? (
+            <LoadProblem compact error={planError} onRetry={reload} />
+          ) : plan === undefined ? (
             <Skeleton className="h-16 w-full" />
           ) : (
             <div className="flex items-start gap-3">
