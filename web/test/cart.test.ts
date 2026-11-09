@@ -3,7 +3,7 @@
 // the same rules the cart screens show.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cartItems, cartKey, cartView, lineKey, MAX_CARTS, useCarts, type CartLine } from "../src/store/cart.ts";
+import { cartItems, cartKey, cartView, lineKey, MAX_CARTS, MAX_UNITS, useCarts, type CartLine } from "../src/store/cart.ts";
 import { plainRewardLine, rewardDiscount, rewardItem } from "../src/lib/rewards/rewards.ts";
 import type { Reward } from "../src/holochain/types.ts";
 import type { ItemRow } from "../src/lib/storefront/menu.ts";
@@ -92,4 +92,14 @@ test("a cart emptied of its last line goes, and the oldest goes past the limit",
   const kept = useCarts.getState().carts;
   assert.equal(Object.keys(kept).length, MAX_CARTS);
   assert.equal(kept[cartKey(new Uint8Array([100]))], undefined, "the one left longest");
+});
+
+test("a line holds at most so many units, however they're added", () => {
+  empty();
+  const carts = useCarts.getState();
+  carts.addLine(store, owner, "Mo's", line(bread, 400, MAX_UNITS - 1));
+  carts.addLine(store, owner, "Mo's", line(bread, 400, 5));
+  assert.equal(cartOf(store).lines[0].quantity, MAX_UNITS, "adding again stops at the most");
+  cartOf(store).setQuantity(lineKey(line(bread, 400)), MAX_UNITS + 10);
+  assert.equal(cartOf(store).lines[0].quantity, MAX_UNITS, "and so does setting it");
 });

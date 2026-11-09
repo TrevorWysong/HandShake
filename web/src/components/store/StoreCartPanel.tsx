@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
-import { cartKey, lineKey, useCart } from "../../store/cart";
+import { cartKey, lineKey, MAX_UNITS, useCart } from "../../store/cart";
 import { formatCents } from "../../lib/ui/format";
 import { Button, StatNumber } from "../ui";
 import { useT } from "../../i18n";
@@ -40,7 +40,7 @@ export function StoreCartPanel({ catalogRef }: { catalogRef: Uint8Array }) {
                         {line.quantity === 1 ? <Trash2 size={13} /> : <Minus size={13} />}
                       </button>
                       <span className="w-4 text-center text-xs font-bold">{line.quantity}</span>
-                      <button type="button" onClick={() => cart.setQuantity(key, line.quantity + 1)} aria-label={t("item.more")} className="grid h-6 w-6 place-items-center rounded-full text-ink-500 hover:bg-white dark:hover:bg-ink-700">
+                      <button type="button" onClick={() => cart.setQuantity(key, line.quantity + 1)} disabled={line.quantity >= MAX_UNITS} aria-label={t("item.more")} className="grid h-6 w-6 place-items-center rounded-full text-ink-500 hover:bg-white disabled:opacity-30 dark:hover:bg-ink-700">
                         <Plus size={13} />
                       </button>
                     </span>

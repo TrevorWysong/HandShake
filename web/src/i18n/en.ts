@@ -211,6 +211,7 @@ export const en = {
   "cart.deliveryNote": "Placing this order notifies nearby drivers directly. If nobody picks it up right away, it stays visible until one does.",
   "cart.busy": "The store is busy: orders are taking about {minutes} minutes longer than usual.",
   "cart.minimum": "This store's minimum order is {minimum}. Add {more} more to order.",
+  "cart.tooManyLines": "An order holds up to {max} different items. Take some out to order.",
   "cart.freeNoDelivery": "A free order can't be delivered: your driver answers for what they carry. Choose pickup instead.",
   "cart.closedThen": "The store isn't open at that time.",
   "cart.closedSchedule": "{status}. Schedule it for later, under When.",

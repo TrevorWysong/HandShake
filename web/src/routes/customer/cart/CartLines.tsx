@@ -4,7 +4,7 @@
 import { motion } from "framer-motion";
 import { Minus, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Card, StatNumber } from "../../../components/ui";
-import { lineKey, useCart, type CartLine } from "../../../store/cart";
+import { lineKey, MAX_UNITS, useCart, type CartLine } from "../../../store/cart";
 import { bytesEqual } from "../../../holochain/decode";
 import { ACCENTS } from "../../../lib/rewards/rewards";
 import { formatCents, formatClockTime, formatNumber } from "../../../lib/ui/format";
@@ -52,7 +52,7 @@ export function CartLines({ store, menuItems, program, rewardCost, onEdit }: { s
                   {line.quantity === 1 ? <Trash2 size={14} className="text-ink-400" /> : <Minus size={14} className="text-ink-400" />}
                 </motion.button>
                 <span className="w-4 text-center text-sm font-semibold">{line.quantity}</span>
-                <motion.button whileTap={{ scale: 0.85 }} onClick={() => cart.setQuantity(key, line.quantity + 1)} aria-label={t("item.more")} className="grid h-6 w-6 place-items-center rounded-full hover:bg-ink-200 dark:hover:bg-ink-700">
+                <motion.button whileTap={{ scale: 0.85 }} onClick={() => cart.setQuantity(key, line.quantity + 1)} disabled={line.quantity >= MAX_UNITS} aria-label={t("item.more")} className="grid h-6 w-6 place-items-center rounded-full hover:bg-ink-200 disabled:opacity-30 dark:hover:bg-ink-700">
                   <Plus size={14} className="text-ink-400" />
                 </motion.button>
               </div>

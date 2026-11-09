@@ -114,12 +114,16 @@ interface CartsState {
   remove: (key: string) => void;
 }
 
+/// The most units of one line a cart takes -- well within what the network
+/// allows of a line (`MAX_LINE_QUANTITY`).
+export const MAX_UNITS = 99;
+
 /// `lines` with `line` merged in: its units added to the line with the same
-/// key, or appended. A goodie bag is one to an order.
+/// key, or appended, at most `MAX_UNITS`. A goodie bag is one to an order.
 function merged(lines: CartLine[], line: CartLine): CartLine[] {
   const key = lineKey(line);
-  if (!lines.some((l) => lineKey(l) === key)) return [...lines, line];
-  return line.bag ? lines : lines.map((l) => (lineKey(l) === key ? { ...l, quantity: l.quantity + line.quantity } : l));
+  if (!lines.some((l) => lineKey(l) === key)) return [...lines, { ...line, quantity: Math.min(line.quantity, MAX_UNITS) }];
+  return line.bag ? lines : lines.map((l) => (lineKey(l) === key ? { ...l, quantity: Math.min(l.quantity + line.quantity, MAX_UNITS) } : l));
 }
 
 /// Hashes and keys, through JSON and back.
@@ -244,7 +248,7 @@ export function cartView(storeKey: string | null, cart: StoreCart | undefined, p
       if (quantity <= 0) return removeLine(key);
       // A reward's line holds what the reward gives, and a goodie bag's one
       // bag, no more.
-      edit((c) => ({ lines: c.lines.map((l) => (lineKey(l) === key && l.rewardId == null && !l.bag ? { ...l, quantity } : l)) }));
+      edit((c) => ({ lines: c.lines.map((l) => (lineKey(l) === key && l.rewardId == null && !l.bag ? { ...l, quantity: Math.min(quantity, MAX_UNITS) } : l)) }));
     },
     /// Empties it -- its order placed, or the customer's done with it.
     clear: () => storeKey && remove(storeKey),

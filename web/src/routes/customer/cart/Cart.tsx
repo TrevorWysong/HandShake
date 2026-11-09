@@ -42,7 +42,7 @@ import { useCartAllergies } from "./useCartAllergies";
 import { repricedLine, soldRow } from "../../../lib/storefront/sales";
 import { useMyAllergies } from "../../../lib/hooks/useMyAllergies";
 import { hasAllergies, NO_ALLERGIES } from "../../../lib/storefront/allergens";
-import type { AllergySet } from "../../../holochain/types";
+import { MAX_ORDER_LINES, type AllergySet } from "../../../holochain/types";
 import { DeliverToSection, MatchingSection, RepeatSection, SpeedSection, WhenSection } from "./DeliverySections";
 import { PromoSection, RewardsSection } from "./DiscountSections";
 import { fetchCartStoreInfo, NO_ITEMS, validateDropoffRadius } from "./checkout";
@@ -184,6 +184,8 @@ export function Cart() {
   const storeHours = storeInfo?.hours ? storeStatus(storeInfo.hours, orderFor) : null;
   const storeClosed = menu.length > 0 && storeHours !== null && !storeHours.open;
   const takesNoCards = !ownStore && storeProfile === null;
+  // An order holds at most so many lines (the network's rule).
+  const tooManyLines = cartItems(cart.lines).length > MAX_ORDER_LINES;
   const notes = [
     bagIssues.length > 0 && t("cart.bag.blocked"),
     allergiesRefused && t("cart.allergy.blocked"),
@@ -191,11 +193,13 @@ export function Cart() {
     price.shortOfMinimumCents > 0 && storeInfo?.minOrderCents != null && t("cart.minimum", { minimum: formatCents(storeInfo.minOrderCents), more: formatCents(price.shortOfMinimumCents) }),
     delivery && price.discountedSubtotalCents === 0 && t("cart.freeNoDelivery"),
     takesNoCards && t("cart.noCards"),
+    tooManyLines && t("cart.tooManyLines", { max: MAX_ORDER_LINES }),
     delivery && outOfRange && `${outOfRange} ${t("cart.outOfRangeSwitch")}`,
     // Closed now, a delivery can be scheduled for when it opens (bags aside).
     storeClosed && (orderFor !== now ? t("cart.closedThen") : delivery && !hasBags ? t("cart.closedSchedule", { status: storeHours.label }) : storeHours.label),
   ].filter((note): note is string => !!note);
   const blocked =
+    tooManyLines ||
     bagIssues.length > 0 ||
     allergiesRefused ||
     storeClosed ||

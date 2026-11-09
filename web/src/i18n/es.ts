@@ -206,6 +206,7 @@ export const es: Catalog = {
   "cart.deliveryNote": "Al hacer este pedido se avisa directamente a los repartidores cercanos. Si nadie lo coge enseguida, sigue visible hasta que alguien lo haga.",
   "cart.busy": "La tienda está ocupada: los pedidos tardan unos {minutes} minutos más de lo habitual.",
   "cart.minimum": "El pedido mínimo de esta tienda es {minimum}. Añade {more} más para pedir.",
+  "cart.tooManyLines": "Un pedido admite hasta {max} artículos distintos. Quita algunos para pedir.",
   "cart.freeNoDelivery": "Un pedido gratuito no se puede enviar: el repartidor responde de lo que lleva. Elige recogida.",
   "cart.closedThen": "La tienda no está abierta a esa hora.",
   "cart.closedSchedule": "{status}. Prográmalo para más tarde, en Cuándo.",

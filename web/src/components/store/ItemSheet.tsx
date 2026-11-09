@@ -19,7 +19,7 @@ import type { RewardItem } from "../../lib/rewards/rewards";
 import { formatCents } from "../../lib/ui/format";
 import type { ItemRow } from "../../lib/storefront/menu";
 import { useResource } from "../../lib/hooks/useResource";
-import type { CartLine } from "../../store/cart";
+import { MAX_UNITS, type CartLine } from "../../store/cart";
 import { Button, Skeleton, Stepper } from "../ui";
 import { Sheet } from "../Sheet";
 import { useT } from "../../i18n";
@@ -81,7 +81,7 @@ export function ItemSheet({ catalogRef, row, editing, gift, policy, onClose, onD
       title={item.name}
       footer={
         <div className="flex items-center gap-3">
-          {!gift && <Stepper value={quantity} min={1} max={99} onChange={setQuantity} />}
+          {!gift && <Stepper value={quantity} min={1} max={MAX_UNITS} onChange={setQuantity} />}
           <Button className="flex-1" disabled={!groups} onClick={done}>
             {gift ? (charged ? t("item.addRewardCharged", { amount: formatCents(charged * quantity) }) : t("item.addReward")) : `${editing ? t("item.update") : t("item.add")} · ${formatCents(unit * quantity)}`}
           </Button>
