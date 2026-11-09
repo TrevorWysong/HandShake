@@ -5,6 +5,7 @@ import { deviceTimeZone, detailsOf, updateCatalogDetails } from "../../../holoch
 import { describeWeek, fromTimeInput, toTimeInput, WEEK } from "../../../lib/storefront/storeHours";
 import { Button, Card, Field, Input, Notice, SectionLabel, Switch } from "../../../components/ui";
 import type { MerchantCatalog, OpeningPeriod } from "../../../holochain/types";
+import { MAX_OPENING_PERIODS } from "../../../holochain/types";
 import { useT } from "../../../i18n";
 import { weekdayName } from "../../../lib/ui/format";
 import { useAction } from "../../../lib/hooks/useAction";
@@ -68,6 +69,10 @@ type Week = Record<number, { opens: number; closes: number }[]>;
 
 /// A day open around the clock: one period from midnight to midnight.
 const ALL_DAY = { opens: 0, closes: 0 };
+/// Opening periods a day: the network's most a week, spread over its days --
+/// so copying one day to all can never pass it.
+const PERIODS_A_DAY = Math.floor(MAX_OPENING_PERIODS / 7);
+
 const isAllDay = (periods: { opens: number; closes: number }[]) => periods.length === 1 && periods[0].opens === 0 && periods[0].closes === 0;
 
 function weekFrom(schedule: OpeningPeriod[]): Week {
@@ -122,7 +127,7 @@ function HoursEditor({ catalog, onSave }: { catalog: MerchantCatalog; onSave: (w
                       <Clock size={12} /> {t("hoursEditor.allDay")}
                     </button>
                   )}
-                  {!isAllDay(week[day]) && (
+                  {!isAllDay(week[day]) && week[day].length < PERIODS_A_DAY && (
                     <button onClick={() => update(day, [...week[day], week[day].length ? { opens: 17 * 60, closes: 22 * 60 } : DEFAULT_PERIOD])} className="flex items-center gap-0.5 text-handshake-600">
                       <Plus size={12} /> {week[day].length ? t("hoursEditor.addHours") : t("hoursEditor.open")}
                     </button>
