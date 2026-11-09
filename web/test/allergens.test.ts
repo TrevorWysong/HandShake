@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { allergensChosen } from "../src/lib/storefront/choices.ts";
-import { hasMatch, honestTags, matchAllergies, needsALook, parseAllergenWords, tagConflict, NO_ALLERGIES } from "../src/lib/storefront/allergens.ts";
+import { hasMatch, honestTags, matchAllergies, needsALook, parseAllergenWords, parseDietaryTags, tagConflict, NO_ALLERGIES } from "../src/lib/storefront/allergens.ts";
 import { bytesToHex } from "../src/holochain/decode.ts";
 import type { AllergenFacts, AllergyPolicy, ModifierGroup } from "../src/holochain/types.ts";
 
@@ -50,6 +50,10 @@ test("what a choice adds counts as in it", () => {
 test("words as typed are tidied, once each and within the limit", () => {
   assert.deepEqual(parseAllergenWords(" Kiwi, ,garlic, KIWI "), ["Kiwi", "garlic"]);
   assert.equal(parseAllergenWords("a,b,c,d,e,f,g,h,i,j").length, 8);
+  assert.equal(parseAllergenWords("x".repeat(80))[0].length, 60, "each within the network's length for a label");
+  const tags = parseDietaryTags(Array.from({ length: 40 }, (_, i) => `tag${i}`).join(", ") + ", Vegan, vegan");
+  assert.equal(tags.length, 32, "at most the tags an item may carry");
+  assert.equal(parseDietaryTags("Vegan, vegan , Halal").join("|"), "Vegan|Halal", "each once");
 });
 
 test("a tag its own statement contradicts doesn't reach a customer", () => {

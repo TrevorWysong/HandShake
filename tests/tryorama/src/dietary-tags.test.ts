@@ -53,4 +53,14 @@ await runScenario(async (scenario) => {
   });
   assert.deepEqual(await currentTags(), ["Vegan", "Vegetarian"], "removing a tag from one item (with no other item carrying it) must shrink the catalog's dietary_tags");
   console.log("[PASS] removing a tag from one item correctly shrinks the catalog-level union");
+
+  // More tags between its items than a store may list: it keeps its
+  // most-carried, and its menu can still change.
+  const many = Array.from({ length: 31 }, (_, i) => `Tag ${String(i).padStart(2, "0")}`);
+  await catalogOf(merchant)("add_menu_item", { catalog_ref: catalogRef, name: "Sampler", price_cents: 1500, available: true, dietary_tags: many });
+  await catalogOf(merchant)("add_menu_item", { catalog_ref: catalogRef, name: "Green Plate", price_cents: 900, available: true, dietary_tags: ["Vegan"] });
+  const tags = await currentTags();
+  assert.equal(tags.length, 32, "at most the tags a store may list");
+  assert.ok(tags.includes("Vegan"), "the most-carried -- on two items -- kept");
+  console.log("[PASS] a store whose items carry more tags than it may list keeps its most-carried, and can still add items");
 });

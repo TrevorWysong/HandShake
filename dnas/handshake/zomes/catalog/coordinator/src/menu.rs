@@ -4,7 +4,8 @@
 use super::*;
 
 /// Recomputes `MerchantCatalog.dietary_tags` as the sorted, deduplicated
-/// union of every one of this catalog's menu items' own `dietary_tags` --
+/// union of every one of this catalog's menu items' own `dietary_tags` (its
+/// most-carried, past `MAX_DIETARY_TAGS`) --
 /// called after any menu-item create/update so the denormalized field
 /// never drifts from the real per-item data. Walks every page rather than
 /// just the first: a merchant's menu is realistically a few dozen items at
@@ -14,12 +15,21 @@ use super::*;
 /// page would mean an item on page 2 could never contribute its tags.
 pub(crate) fn recompute_dietary_tags(catalog_ref: &ActionHash) -> ExternResult<()> {
     let mut tags: Vec<String> = Vec::new();
+    // How many items carry each tag -- past the most a store may list, its
+    // most-carried are kept: a store whose items name more than that between
+    // them still lists, and can still change its menu.
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut after = None;
     loop {
         let page = list_menu_items(ListMenuItemsInput { catalog_ref: catalog_ref.clone(), after })?;
         for view in &page.items {
             if let Ok(Some(item)) = view.record.entry().to_app_option::<MenuItem>() {
-                tags.extend(item.dietary_tags);
+                let mut own = item.dietary_tags;
+                own.sort();
+                own.dedup();
+                for tag in own {
+                    *counts.entry(tag).or_default() += 1;
+                }
             }
         }
         after = page.next_after;
@@ -27,8 +37,10 @@ pub(crate) fn recompute_dietary_tags(catalog_ref: &ActionHash) -> ExternResult<(
             break;
         }
     }
+    let mut ranked: Vec<(String, usize)> = counts.into_iter().collect();
+    ranked.sort_by(|(a, an), (b, bn)| bn.cmp(an).then_with(|| a.cmp(b)));
+    tags.extend(ranked.into_iter().take(handshake_integrity_support::limits::MAX_DIETARY_TAGS).map(|(tag, _)| tag));
     tags.sort();
-    tags.dedup();
 
     let (catalog_record, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(catalog_ref.clone(), "MerchantCatalog")?;
     if catalog.dietary_tags != tags {

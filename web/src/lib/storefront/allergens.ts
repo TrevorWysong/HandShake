@@ -2,7 +2,7 @@
 // app, on their own device, so the network never learns what they looked for.
 // A store's word is all this has, and silence never reads as safe.
 import type { AllergenFacts, AllergyPolicy, AllergySet } from "../../holochain/types";
-import { MAX_ALLERGEN_LABELS } from "../../holochain/types";
+import { MAX_ALLERGEN_LABELS, MAX_DIETARY_TAGS, MAX_LABEL_CHARS } from "../../holochain/types";
 
 /// An allergen, by its code.
 export type Allergen = string;
@@ -17,17 +17,24 @@ export const NO_ALLERGIES: AllergySet = { allergens: [], other: [] };
 
 export const hasAllergies = (mine: AllergySet): boolean => mine.allergens.length > 0 || mine.other.length > 0;
 
-/// Comma-separated words as typed, tidied, each once and within the limit.
-export function parseAllergenWords(typed: string): string[] {
+/// Comma-separated words as typed, tidied: each once, each within the
+/// network's length for a label, and no more than `limit` of them.
+function parseWords(typed: string, limit: number): string[] {
   const seen = new Set<string>();
   const words: string[] = [];
-  for (const word of typed.split(",").map((w) => w.trim()).filter(Boolean)) {
+  for (const word of typed.split(",").map((w) => w.trim().slice(0, MAX_LABEL_CHARS).trim()).filter(Boolean)) {
     const key = word.toLowerCase();
     if (!seen.has(key)) words.push(word);
     seen.add(key);
   }
-  return words.slice(0, MAX_ALLERGEN_LABELS);
+  return words.slice(0, limit);
 }
+
+/// Allergens of someone's own, as typed (`AllergenFacts::other` and its kin).
+export const parseAllergenWords = (typed: string) => parseWords(typed, MAX_ALLERGEN_LABELS);
+
+/// An item's dietary tags, as typed.
+export const parseDietaryTags = (typed: string) => parseWords(typed, MAX_DIETARY_TAGS);
 
 const sameWord = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 

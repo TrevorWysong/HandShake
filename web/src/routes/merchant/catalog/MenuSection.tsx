@@ -11,7 +11,7 @@ import { useTerms } from "../../../store/network";
 import { percentLabel } from "../../../lib/storefront/tax";
 import { PhotoInput } from "../../../components/PhotoInput";
 import { AllergenFactsEditor } from "../../../components/store/AllergenFactsEditor";
-import { tagConflict } from "../../../lib/storefront/allergens";
+import { parseDietaryTags, tagConflict } from "../../../lib/storefront/allergens";
 import { saleProblem } from "../../../lib/storefront/sales";
 import { SaleEditor } from "./SaleEditor";
 import { MAX_DESCRIPTION_CHARS, MAX_ITEM_GROUPS, MAX_LABEL_CHARS, MAX_NAME_CHARS, type TaxRate } from "../../../holochain/types";
@@ -164,7 +164,7 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
       description: form.description,
       photo_data_uri: form.photo_data_uri,
       category: form.category,
-      dietary_tags: form.dietary_tags.split(",").map((t) => t.trim()).filter(Boolean),
+      dietary_tags: parseDietaryTags(form.dietary_tags),
       sale: form.sale ? { ...form.sale, label: form.sale.label.trim() } : null,
       allergens: form.allergens ? { ...form.allergens, note: form.allergens.note.trim() } : null,
       modifier_groups: form.groups.map(hexToBytes),
@@ -199,7 +199,7 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
         value={form.allergens}
         onChange={(allergens) => set({ allergens })}
         copyFrom={others.flatMap((other) => (other.item.allergens ? [{ name: other.item.name, facts: other.item.allergens }] : []))}
-        conflicts={form.dietary_tags.split(",").map((tag) => tag.trim()).filter((tag) => tag && tagConflict(tag, form.allergens))}
+        conflicts={parseDietaryTags(form.dietary_tags).filter((tag) => tagConflict(tag, form.allergens))}
       />
       {taxRates.length > 1 && (
         <Field label={t("cart.tax")}>
