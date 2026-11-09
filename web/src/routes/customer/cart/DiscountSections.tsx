@@ -83,8 +83,19 @@ export function PromoSection({ discounts }: { discounts: Discounts }) {
           </motion.div>
         ) : (
           <motion.div key="unapplied" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2">
-            <Input maxLength={MAX_PROMO_CODE_CHARS} value={discounts.promoInput} onChange={(e) => discounts.setPromoInput(e.target.value)} placeholder={t("cart.promo.enter")} className="flex-1 font-mono" />
-            <Button variant="ghost" className="px-4 py-2 text-xs" onClick={discounts.applyPromo}>
+            <Input
+              maxLength={MAX_PROMO_CODE_CHARS}
+              value={discounts.promoInput}
+              onChange={(e) => discounts.setPromoInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && discounts.promoInput.trim() && discounts.applyPromo()}
+              placeholder={t("cart.promo.enter")}
+              aria-label={t("cart.promo.enter")}
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              className="flex-1 font-mono"
+            />
+            <Button variant="ghost" className="px-4 py-2 text-xs" disabled={!discounts.promoInput.trim()} onClick={discounts.applyPromo}>
               {t("cart.promo.apply")}
             </Button>
           </motion.div>
