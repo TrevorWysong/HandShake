@@ -1144,6 +1144,7 @@ export const es: Catalog = {
   "late.driverLate": "Tu repartidor se retrasa",
   "late.noDriver": "Ningún repartidor tiene aún tu pedido",
   "late.finding": "La app de la tienda está buscando otro repartidor. Si prefieres no esperar:",
+  "late.findingFirst": "Los repartidores cercanos ya pueden ofertar por él. Si prefieres no esperar:",
   "late.collectMyself": "Recogerlo yo",
   "late.cancelTitle": "¿Cancelar tu pedido?",
   "late.cancelSubtitle": "La tienda se retrasó, así que se te reembolsa todo: la comida, el envío y tu propina.",

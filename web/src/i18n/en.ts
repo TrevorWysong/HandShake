@@ -1149,6 +1149,7 @@ export const en = {
   "late.driverLate": "Your driver is running late",
   "late.noDriver": "No driver has your order yet",
   "late.finding": "The store's app is finding another driver for you. If you'd rather not wait:",
+  "late.findingFirst": "Drivers nearby can bid on it now. If you'd rather not wait:",
   "late.collectMyself": "Collect it myself",
   "late.cancelTitle": "Cancel your order?",
   "late.cancelSubtitle": "The store ran late, so you're refunded everything: the food, the delivery fee and your tip.",

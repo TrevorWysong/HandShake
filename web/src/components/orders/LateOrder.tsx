@@ -80,7 +80,7 @@ export function LateOrder({ orderRef, order, storeAddress, onChanged }: { orderR
       {timing.can_collect && (
         <Card className="mt-4 p-4">
           <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{order.accepted_bid ? t("late.driverLate") : t("late.noDriver")}</p>
-          <p className="mt-1 text-xs leading-relaxed text-ink-400">{t("late.finding")}</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-400">{t(order.accepted_bid ? "late.finding" : "late.findingFirst")}</p>
           <Button variant="secondary" onClick={() => setConfirming(true)} className="mt-3 w-full justify-center py-2.5 text-sm">
             <ShoppingBag size={16} /> {t("late.collectMyself")}
           </Button>
