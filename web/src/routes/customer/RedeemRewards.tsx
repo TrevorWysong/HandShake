@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { LoadProblem } from "../../components/LoadProblem";
 import { formatNumber } from "../../lib/ui/format";
 import { useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -29,7 +30,7 @@ export function RedeemRewards() {
   const navigate = useNavigate();
   const { hash } = useParams<{ hash: string }>();
   const catalogRef = useMemo(() => hexToBytes(hash ?? ""), [hash]);
-  const { data: card } = useResource(hash ? `rewards:card:${hash}` : null, () => myCard(catalogRef));
+  const { data: card, error: cardError, reload: reloadCard } = useResource(hash ? `rewards:card:${hash}` : null, () => myCard(catalogRef));
   const { data: menu = [] } = useResource(hash ? `store-menu-items:${hash}` : null, () => fetchMenu(catalogRef));
   const { data: store } = useResource(hash ? `catalog:${hash}` : null, () => getCatalog(catalogRef).then((r) => decodeEntry<MerchantCatalog>(r)));
   const cart = useCart(hash ?? null);
@@ -44,6 +45,7 @@ export function RedeemRewards() {
   });
 
   if (!card) {
+    if (cardError) return <LoadProblem error={cardError} onRetry={reloadCard} />;
     return (
       <div className="px-4 pt-5">
         <Skeleton className="h-48 w-full rounded-[28px]" />

@@ -1,5 +1,6 @@
 // Everything about a store that isn't its menu, a page of its own: reached by
 // tapping the store's name on its menu.
+import { LoadProblem } from "../../components/LoadProblem";
 import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -35,13 +36,14 @@ function InfoPage({ hash }: { hash: string }) {
   const routerState = useLocation().state as { catalog?: MerchantCatalog } | null;
   const catalogHash = useMemo(() => hexToBytes(hash), [hash]);
   const goBack = useGoBack(`/customer/merchant/${hash}`);
-  const { data: fresh } = useResource(`store-menu:${hash}`, () => fetchStoreMenu(hash, catalogHash), { pollMs: POLL.slow });
+  const { data: fresh, error, reload } = useResource(`store-menu:${hash}`, () => fetchStoreMenu(hash, catalogHash), { pollMs: POLL.slow });
   const catalog = fresh?.catalog ?? rememberedStoreMenu(hash)?.catalog ?? routerState?.catalog ?? null;
   const { rating, record } = useStoreStanding(hash, catalogHash);
   const now = useClock();
   const names = useAllergenNames();
 
   if (!catalog) {
+    if (error) return <LoadProblem error={error} onRetry={reload} />;
     return (
       <div className="px-4 pt-4 lg:px-0">
         <Skeleton className="mb-4 h-36 w-full" />

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { LoadProblem } from "../../components/LoadProblem";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PackageOpen, Search, X } from "lucide-react";
 import { motion } from "framer-motion";
@@ -72,7 +73,7 @@ export function Browse() {
   // old one instead of letting it overwrite the new list.
   const geohash = encodeGeohash(location.lat, location.lon);
   const area = geohash.slice(0, AREA_PRECISION);
-  const { data: nearListings } = useResource(`browse-listings:${geohash}`, () => getNearbyListings(geohash), { pollMs: POLL.slow });
+  const { data: nearListings, error: listingsError, reload: reloadListings } = useResource(`browse-listings:${geohash}`, () => getNearbyListings(geohash), { pollMs: POLL.slow });
   const near = useMemo(() => nearListings && nearestFirst(nearListings, location), [nearListings, location]);
 
   // Browsing reads a page at a time, as the list scrolls; exploring --
@@ -237,7 +238,10 @@ export function Browse() {
         />
       )}
 
-      {(loading || lookingForDeals) && (
+      {/* Nothing near could be read at all: why, and a way to try again. */}
+      {ordered === undefined && listingsError ? <LoadProblem error={listingsError} onRetry={reloadListings} /> : null}
+
+      {((loading && !(ordered === undefined && listingsError)) || lookingForDeals) && (
         <div className="grid grid-cols-2 gap-3 pb-6 md:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <CardSkeleton key={i} />

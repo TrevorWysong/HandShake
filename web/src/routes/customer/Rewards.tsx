@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LoadProblem } from "../../components/LoadProblem";
 import { formatNumber } from "../../lib/ui/format";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -24,7 +25,7 @@ import { useAction } from "../../lib/hooks/useAction";
 export function RewardsPage() {
   const t = useT();
   const navigate = useNavigate();
-  const { data: cards } = useResource("rewards:cards", myCards);
+  const { data: cards, error: cardsError, reload: reloadCards } = useResource("rewards:cards", myCards);
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-28 pt-5">
@@ -33,7 +34,8 @@ export function RewardsPage() {
         <p className="mt-1 text-sm text-ink-500">{t("rewards.subtitle")}</p>
       </motion.div>
 
-      {cards === undefined && (
+      {cards === undefined && cardsError ? <LoadProblem error={cardsError} onRetry={reloadCards} /> : null}
+      {cards === undefined && !cardsError && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Skeleton className="h-44 w-full rounded-[28px]" />
           <Skeleton className="h-44 w-full rounded-[28px]" />
@@ -144,12 +146,13 @@ export function RewardsDetail() {
   const navigate = useNavigate();
   const { hash } = useParams<{ hash: string }>();
   const catalogRef = hexToBytes(hash ?? "");
-  const { data: card } = useResource(hash ? `rewards:card:${hash}` : null, () => myCard(catalogRef));
+  const { data: card, error: cardError, reload: reloadCard } = useResource(hash ? `rewards:card:${hash}` : null, () => myCard(catalogRef));
   const { data: menu = [] } = useResource(hash ? `store-menu-items:${hash}` : null, () => fetchMenu(catalogRef));
   // The reward in this store's cart, whose points are held.
   const bagReward = useCart(hash ?? null).reward;
 
   if (!card) {
+    if (cardError) return <LoadProblem error={cardError} onRetry={reloadCard} />;
     return (
       <div className="px-4 pt-5">
         <Skeleton className="h-60 w-full rounded-[28px]" />
