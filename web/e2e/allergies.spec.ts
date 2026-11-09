@@ -22,10 +22,20 @@ async function setAllergy(page: Page, allergen: string, allergic: boolean) {
   await expect(page.getByRole("button", { name: "Save allergies" })).toHaveCount(0);
 }
 
+// Each test takes its customer's allergy off again, passed or failed: the
+// seeded world carries on between tests, and one left set would open every
+// later test's items to an allergy check.
+let cleanup: (() => Promise<void>) | null = null;
+test.afterEach(async () => {
+  await cleanup?.().catch(() => undefined);
+  cleanup = null;
+});
+
 test("a customer's allergies are flagged on a menu, and it's their call what's shown", async ({ page }) => {
   const kitchen = store("kitchen");
   await signInAs(page, "sam");
   await setAllergy(page, "Milk", true);
+  cleanup = () => setAllergy(page, "Milk", false);
   await keep(page, "allergies-profile");
 
   await page.goto("/#/customer");
@@ -46,8 +56,6 @@ test("a customer's allergies are flagged on a menu, and it's their call what's s
   await page.getByRole("button", { name: "Hide what contains them" }).click();
   await expect(page.getByRole("button", { name: "Add Smash Burger" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Add Pancake Stack" }).first()).toBeVisible();
-
-  await setAllergy(page, "Milk", false);
 });
 
 test("a store sets how it takes allergies, a customer's reach it, and it reads them on the ticket", async ({ page, browser }) => {
@@ -69,6 +77,7 @@ test("a store sets how it takes allergies, a customer's reach it, and it reads t
 
   await signInAs(page, "ana");
   await setAllergy(page, "Sesame", true);
+  cleanup = () => setAllergy(page, "Sesame", false);
   await page.goto("/#/customer");
   await page.locator("main").getByText(kitchen.name, { exact: true }).first().click();
   await expect(page.getByText("Flagging: Sesame")).toBeVisible();
@@ -92,6 +101,4 @@ test("a store sets how it takes allergies, a customer's reach it, and it reads t
   await storeSide.goto("/#/merchant");
   await expect(storeSide.getByText("Allergies: read before accepting").first()).toBeVisible({ timeout: 60_000 });
   await keep(storeSide, "allergies-ticket");
-
-  await setAllergy(page, "Sesame", false);
 });

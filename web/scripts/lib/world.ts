@@ -108,9 +108,10 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
       owner: "mo",
       name: "Mo's Kitchen",
       at: [0.4, 0.3],
+      // No set hours -- open whenever it's taking orders, like the tacos, so
+      // the browser tests that order from it pass at any time of day. The
+      // café keeps hours, for a store that's closed.
       details: { cuisine_type: "American", description: "Burgers, bowls and breakfast all day.", address_street: "120 Central Ave", prep_minutes: 15 },
-      // Every day, in the seed's time zone (see seed.ts).
-      hours: { opens: "08:00", closes: "22:00" },
       // Choice groups, created in order -- a group an option opens comes
       // before it. Items list theirs by key.
       groups: [
