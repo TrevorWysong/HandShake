@@ -30,7 +30,7 @@ export function useCardOrders(pathname: string, owner: string | null): CardOrder
 }
 
 /// The screens with a bar of their own at the bottom, where nothing else fits.
-const OWN_BAR = [/^\/customer\/cart$/, /^\/rewards\/[^/]+\/redeem$/];
+const OWN_BAR = [/^\/customer\/cart\/[^/]+$/, /^\/rewards\/[^/]+\/redeem$/];
 
 export function dockFits(pathname: string): boolean {
   return !OWN_BAR.some((screen) => screen.test(pathname));

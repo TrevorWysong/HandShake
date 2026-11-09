@@ -16,9 +16,9 @@ import { useT } from "../../i18n";
 /// to the cart like an item, and had however the rest of the order is, if
 /// the bag allows it (checkout says when it doesn't). How many are left,
 /// and whether the customer has one already, come from the network.
-export function StoreBags({ bags, onAdd }: { bags: BagRow[]; onAdd: (row: BagRow) => void }) {
+export function StoreBags({ store, bags, onAdd }: { store: string; bags: BagRow[]; onAdd: (row: BagRow) => void }) {
   const t = useT();
-  const lines = useCart((s) => s.lines);
+  const { lines } = useCart(store);
   const refs = bags.map((row) => row.hash);
   const { data: standings } = useResource(bags.length > 0 ? `bag-standings:${refs.map(bytesToHex).join(",")}` : null, () => bagStandings(refs));
 

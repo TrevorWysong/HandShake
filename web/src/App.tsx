@@ -15,6 +15,7 @@ import { TermsAcceptance, TermsOfUse } from "./routes/Terms";
 import { TERMS_VERSION } from "./lib/policies/termsVersion";
 import { useTermsAcceptance } from "./store/termsAcceptance";
 import { Cart } from "./routes/customer/cart/Cart";
+import { Carts } from "./routes/customer/cart/Carts";
 import { Orders } from "./routes/customer/Orders";
 import { OrderDetail } from "./routes/customer/order/OrderDetail";
 import { PickupOrderDetail } from "./routes/customer/order/PickupOrderDetail";
@@ -187,7 +188,8 @@ export default function App() {
           <Route path="/customer" element={<Screen width="wide"><Browse /></Screen>} />
           <Route path="/customer/merchant/:hash" element={<Screen width="wide"><MerchantDetail /></Screen>} />
           <Route path="/customer/merchant/:hash/about" element={<Screen width="reading"><StoreInfo /></Screen>} />
-          <Route path="/customer/cart" element={<Screen width="wide"><Cart /></Screen>} />
+          <Route path="/customer/cart" element={<Screen width="reading"><Carts /></Screen>} />
+          <Route path="/customer/cart/:store" element={<Screen width="wide"><Cart /></Screen>} />
           <Route path="/customer/orders" element={<Screen width="reading"><Orders /></Screen>} />
           <Route path="/customer/orders/:hash" element={<Screen width="wide"><OrderDetail /></Screen>} />
           <Route path="/customer/pickup-orders/:hash" element={<Screen width="reading"><PickupOrderDetail /></Screen>} />

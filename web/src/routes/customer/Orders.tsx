@@ -7,9 +7,9 @@ import clsx from "clsx";
 import { getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
 import { getCatalog } from "../../holochain/zomes/catalog";
 import { decodeEntry, bytesToHex } from "../../holochain/decode";
-import { useCart } from "../../store/cart";
-import { useCartSwitch } from "../../lib/hooks/useCartSwitch";
-import { NewCartSheet } from "../../components/store/NewCartSheet";
+import { cartKey, useCarts } from "../../store/cart";
+import { useCartReplace } from "../../lib/hooks/useCartReplace";
+import { ReplaceCartSheet } from "../../components/store/ReplaceCartSheet";
 import { usePolling, useResource } from "../../lib/hooks/useResource";
 import { useActiveOrders } from "../../store/activeOrders";
 import { customerProgress, type OrderNeed } from "../../lib/orders/progress";
@@ -190,26 +190,25 @@ function OrderCard({ row, showTime, children }: { row: OrderRow; showTime?: bool
 /// rather than failing the whole reorder over one stale line.
 function ReorderButton({ row }: { row: OrderRow }) {
   const t = useT();
-  const cart = useCart();
   const navigate = useNavigate();
   const reordering = useAction();
-  const cartSwitch = useCartSwitch();
+  const replacing = useCartReplace();
 
   const reorder = () => reordering.run(async () => {
     const { order } = row;
     const [catalogRecord, menuItems] = await Promise.all([getCatalog(order.catalog_ref), fetchMenu(order.catalog_ref)]);
     const catalog = decodeEntry<MerchantCatalog>(catalogRecord);
     const lines = await cartLinesFromOrder(order.catalog_ref, order.lines, menuItems);
-    cart.setCart(order.catalog_ref, order.merchant, catalog.business_name, lines);
-    navigate("/customer/cart");
+    useCarts.getState().setCart(order.catalog_ref, order.merchant, catalog.business_name, lines);
+    navigate(`/customer/cart/${cartKey(order.catalog_ref)}`);
   });
 
   return (
     <>
-      <Button variant="ghost" className="px-2.5 py-1.5 text-xs" loading={reordering.busy} onClick={() => cartSwitch.ask(row.order.catalog_ref, reorder, true)} aria-label={reordering.error ?? t("orders.reorder")} title={reordering.error ?? undefined}>
+      <Button variant="ghost" className="px-2.5 py-1.5 text-xs" loading={reordering.busy} onClick={() => replacing.ask(row.order.catalog_ref, reorder)} aria-label={reordering.error ?? t("orders.reorder")} title={reordering.error ?? undefined}>
         <RotateCcw size={13} />
       </Button>
-      <NewCartSheet pending={cartSwitch.pending} onConfirm={cartSwitch.confirm} onCancel={cartSwitch.cancel} />
+      <ReplaceCartSheet pending={replacing.pending} onConfirm={replacing.confirm} onCancel={replacing.cancel} />
     </>
   );
 }

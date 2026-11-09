@@ -6,7 +6,7 @@ import { ArrowLeft, Check, Crown, Lock, ShoppingBag, Sparkles } from "lucide-rea
 import clsx from "clsx";
 import { myCard } from "../../holochain/zomes/rewards";
 import { getCatalog } from "../../holochain/zomes/catalog";
-import { bytesToHex, decodeEntry, hexToBytes } from "../../holochain/decode";
+import { decodeEntry, hexToBytes } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
 import { fetchMenu, itemNamer, type ItemRow } from "../../lib/storefront/menu";
 import { describeReward } from "../../lib/storefront/promotions";
@@ -15,9 +15,7 @@ import { useRewardChooser } from "../../components/rewards/useRewardChooser";
 import { RewardArt } from "../../components/rewards/RewardPieces";
 import { Sheet } from "../../components/Sheet";
 import { Button, Skeleton } from "../../components/ui";
-import { useCart } from "../../store/cart";
-import { useCartSwitch } from "../../lib/hooks/useCartSwitch";
-import { NewCartSheet } from "../../components/store/NewCartSheet";
+import { useCart, useCarts } from "../../store/cart";
 import type { MerchantCatalog, Reward, RewardsProgram } from "../../holochain/types";
 import { useT } from "../../i18n";
 
@@ -34,18 +32,15 @@ export function RedeemRewards() {
   const { data: card } = useResource(hash ? `rewards:card:${hash}` : null, () => myCard(catalogRef));
   const { data: menu = [] } = useResource(hash ? `store-menu-items:${hash}` : null, () => fetchMenu(catalogRef));
   const { data: store } = useResource(hash ? `catalog:${hash}` : null, () => getCatalog(catalogRef).then((r) => decodeEntry<MerchantCatalog>(r)));
-  const cart = useCart();
+  const cart = useCart(hash ?? null);
   const [bucket, setBucket] = useState<number | null>(null);
   const [opening, setOpening] = useState<Reward | null>(null);
   const [added, setAdded] = useState(false);
-  // Into this store's bag -- asked first if it holds another store's order.
-  const cartSwitch = useCartSwitch();
+  // Into this store's cart -- each store has its own.
   const chooser = useRewardChooser(catalogRef, menu, (reward, line) => {
     if (!store) return;
-    cartSwitch.ask(catalogRef, () => {
-      cart.redeem(catalogRef, store.owner, store.business_name, { id: reward.id, name: reward.name, cost: reward.cost }, line);
-      setAdded(true);
-    });
+    useCarts.getState().redeem(catalogRef, store.owner, store.business_name, { id: reward.id, name: reward.name, cost: reward.cost }, line);
+    setAdded(true);
   });
 
   if (!card) {
@@ -66,7 +61,7 @@ export function RedeemRewards() {
   const colors = ACCENTS[program.accent];
   const tier = tierOf(program, card.state);
   // The reward in this store's bag, and the points it holds.
-  const inBag = cart.reward && cart.catalogRef && bytesToHex(cart.catalogRef) === hash ? cart.reward : null;
+  const inBag = cart.reward;
   const held = inBag?.cost ?? 0;
   const available = Math.max(0, card.balance - held);
   // What a reward can draw on: the points not held -- plus its own, if it's the one in the bag.
@@ -145,7 +140,7 @@ export function RedeemRewards() {
       <AnimatePresence>
         {inBag && !opening && (
           <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }} className="fixed inset-x-0 bottom-20 z-30 mx-auto max-w-md px-4 lg:bottom-6 lg:left-sidebar">
-            <button onClick={() => navigate("/customer/cart")} className="flex w-full items-center gap-3 rounded-2xl bg-ink-900 px-4 py-3 text-left text-white shadow-xl dark:bg-white dark:text-ink-900">
+            <button onClick={() => navigate(`/customer/cart/${hash}`)} className="flex w-full items-center gap-3 rounded-2xl bg-ink-900 px-4 py-3 text-left text-white shadow-xl dark:bg-white dark:text-ink-900">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full" style={{ background: colors.to }}>
                 <Check size={15} strokeWidth={3} className="text-white" />
               </span>
@@ -209,7 +204,7 @@ export function RedeemRewards() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: [0, 1, 1] }}
                     transition={{ duration: 0.9, times: [0, 0.25, 1] }}
-                    onAnimationComplete={() => navigate("/customer/cart")}
+                    onAnimationComplete={() => navigate(`/customer/cart/${hash}`)}
                     className="absolute inset-0 grid place-items-center bg-black/35 backdrop-blur-[1px]"
                   >
                     <motion.span initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", damping: 12, stiffness: 260 }} className="grid h-16 w-16 place-items-center rounded-full bg-white" style={{ color: colors.to }}>
@@ -230,7 +225,6 @@ export function RedeemRewards() {
         )}
       </Sheet>
       {chooser.sheet}
-      <NewCartSheet pending={cartSwitch.pending} onConfirm={cartSwitch.confirm} onCancel={cartSwitch.cancel} />
     </div>
   );
 }

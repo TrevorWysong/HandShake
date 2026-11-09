@@ -12,9 +12,7 @@ import { useMyAllergies } from "../../lib/hooks/useMyAllergies";
 import { hasAllergies, honestTags, matchAllergies, needsALook } from "../../lib/storefront/allergens";
 import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
 import { hexToBytes, bytesToHex } from "../../holochain/decode";
-import { useCart, type CartLine } from "../../store/cart";
-import { useCartSwitch } from "../../lib/hooks/useCartSwitch";
-import { NewCartSheet } from "../../components/store/NewCartSheet";
+import { useCarts, type CartLine } from "../../store/cart";
 import { formatCents } from "../../lib/ui/format";
 import { Chip, ChipRow, Skeleton } from "../../components/ui";
 import { useTerms } from "../../store/network";
@@ -55,7 +53,6 @@ function StorePage({ hash }: { hash: string }) {
   // instantly; the fetch below replaces it with the live version (and is
   // the only source when arriving via a direct URL/refresh).
   const routerState = useLocation().state as { catalog?: MerchantCatalog } | null;
-  const cart = useCart();
   const catalogHash = useMemo(() => hexToBytes(hash), [hash]);
   // Polled for the same reason Browse.tsx's list is -- a menu item added
   // moments ago may not have gossiped to whatever peer answers this read yet,
@@ -87,7 +84,6 @@ function StorePage({ hash }: { hash: string }) {
   const toggleDiet = (tag: string) => setFilters(dietaryFilter.includes(tag) ? dietaryFilter.filter((t) => t !== tag) : [...dietaryFilter, tag], hideMatches);
   /// The item whose choices are open, if any.
   const [choosing, setChoosing] = useState<ItemRow | null>(null);
-  const cartSwitch = useCartSwitch();
 
   // Scoped to this one restaurant's own menu, not a union across every
   // nearby restaurant -- a per-merchant menu is naturally small and bounded,
@@ -128,8 +124,8 @@ function StorePage({ hash }: { hash: string }) {
     );
   }
 
-  /// Into the cart -- asked first if it holds another store's order.
-  const addLine = (line: CartLine) => cartSwitch.ask(catalogHash, () => cart.addLine(catalogHash, catalog.owner, catalog.business_name, line));
+  /// Into this store's cart -- each store has its own.
+  const addLine = (line: CartLine) => useCarts.getState().addLine(catalogHash, catalog.owner, catalog.business_name, line);
   /// An item without choices goes straight in the cart; one with choices
   /// opens its sheet.
   const addItem = (row: ItemRow) => {
@@ -204,7 +200,7 @@ function StorePage({ hash }: { hash: string }) {
 
         {hash && <StoreRewardsStrip catalogHex={hash} />}
         {hash && <StoreDeals catalogHex={hash} menu={items ?? []} />}
-        <StoreBags bags={bags} onAdd={(row) => addLine(bagLine(row))} />
+        <StoreBags store={hash} bags={bags} onAdd={(row) => addLine(bagLine(row))} />
 
         {/* The menu: categories beside it and the cart beside that, as the window allows. */}
         <div className={clsx("mt-6 lg:grid lg:gap-8", browsable ? "lg:grid-cols-[11rem_minmax(0,1fr)] 2xl:grid-cols-[11rem_minmax(0,1fr)_18rem]" : "lg:grid-cols-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_18rem]")}>
@@ -296,7 +292,6 @@ function StorePage({ hash }: { hash: string }) {
           }}
         />
       )}
-      <NewCartSheet pending={cartSwitch.pending} onConfirm={cartSwitch.confirm} onCancel={cartSwitch.cancel} />
     </motion.div>
   );
 }

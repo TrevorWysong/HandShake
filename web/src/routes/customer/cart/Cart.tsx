@@ -7,14 +7,14 @@
 // What's sent is checked again by the network: totals, discount, range,
 // hours, and what the store may hold on the card.
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { CheckoutDraft } from "../../../lib/orders/recurring";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { Button, Checkbox, Notice } from "../../../components/ui";
 import { PaySheet } from "../../../components/payments/PaySheet";
 import { ItemSheet } from "../../../components/store/ItemSheet";
-import { cartItems, menuLines, useCart } from "../../../store/cart";
+import { cartItems, menuLines, useCart, useCarts } from "../../../store/cart";
 import { useSession } from "../../../store/session";
 import { useCustomerSettings } from "../../../store/roleSettings";
 import { useTerms } from "../../../store/network";
@@ -53,7 +53,10 @@ import { useDiscounts } from "./useDiscounts";
 
 export function Cart() {
   const t = useT();
-  const cart = useCart();
+  // The store whose cart this is -- each store has its own.
+  const { store = "" } = useParams<{ store: string }>();
+  const cart = useCart(store);
+  const otherCarts = useCarts((s) => Object.keys(s.carts).filter((key) => key !== store).length);
   const navigate = useNavigate();
   const terms = useTerms();
   const now = useClock();
@@ -73,7 +76,7 @@ export function Cart() {
   // A recurring order brought here to confirm starts as it was set up.
   const draft = (useLocation().state as { recurring?: CheckoutDraft } | null)?.recurring;
   const options = useDeliveryOptions(draft);
-  const discounts = useDiscounts(storeInfo, now);
+  const discounts = useDiscounts(store, storeInfo, now);
   // Pickup orders skip the whole driver half of this screen: there's no
   // driver in that vertical at all.
   const [chosenFulfillment, setFulfillment] = useState<"Delivery" | "Pickup" | null>(null);
@@ -164,9 +167,12 @@ export function Cart() {
     return (
       <div className="px-6 py-20 text-center">
         <p className="text-sm text-ink-400">{t("cart.empty")}</p>
-        <Button variant="ghost" className="mt-4" onClick={() => navigate("/customer")}>
-          {t("cart.browse")}
-        </Button>
+        <div className="mt-4 flex justify-center gap-2">
+          <Button variant="ghost" onClick={() => navigate("/customer")}>
+            {t("cart.browse")}
+          </Button>
+          {otherCarts > 0 && <Button onClick={() => navigate("/customer/cart")}>{t("carts.seeAll")}</Button>}
+        </div>
       </div>
     );
   }
@@ -287,8 +293,11 @@ export function Cart() {
       <motion.h1 variants={fadeSlideUp} className="text-xl font-black tracking-tight text-ink-900 dark:text-ink-50">
         {t("cart.title")}
       </motion.h1>
-      <motion.p variants={fadeSlideUp} className="mb-4 text-xs text-ink-400">
+      <motion.p variants={fadeSlideUp} className="mb-4 flex items-center gap-2 text-xs text-ink-400">
         {t("cart.from", { store: cart.merchantName ?? "" })}
+        <Link to={`/customer/merchant/${store}`} className="font-semibold text-handshake-600 hover:underline dark:text-handshake-400">
+          {t("carts.addItems")}
+        </Link>
       </motion.p>
 
       {/* The choices, then the summary that places it -- side by side on a wide screen, the summary kept in view. */}
@@ -311,9 +320,9 @@ export function Cart() {
             </motion.label>
           )}
 
-          <BagNotices problems={bagIssues} delivery={delivery} onSwitch={ageRestricted && !delivery ? null : () => setFulfillment(delivery ? "Pickup" : "Delivery")} />
+          <BagNotices store={store} problems={bagIssues} delivery={delivery} onSwitch={ageRestricted && !delivery ? null : () => setFulfillment(delivery ? "Pickup" : "Delivery")} />
 
-          <CartLines menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} onEdit={setEditing} />
+          <CartLines store={store} menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} onEdit={setEditing} />
 
           {delivery && (
             <>

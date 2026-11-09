@@ -9,7 +9,7 @@ Object.assign(globalThis, {
   localStorage: { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) },
 });
 const { signedIn } = await import("../src/store/identityScope.ts");
-const { useCart } = await import("../src/store/cart.ts");
+const { useCarts } = await import("../src/store/cart.ts");
 const { useGuardianNames } = await import("../src/store/guardianNames.ts");
 
 const store = new Uint8Array([1, 2, 3]);
@@ -19,23 +19,23 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
 test("another identity on this device sees none of the last one's cart or guardian names", async () => {
   signedIn("aa");
   await settle();
-  useCart.getState().addLine(store, new Uint8Array([9]), "Mo's", bread);
+  useCarts.getState().addLine(store, new Uint8Array([9]), "Mo's", bread);
   useGuardianNames.getState().setName("key1", "Mum");
 
   signedIn("bb");
   await settle();
-  assert.equal(useCart.getState().lines.length, 0, "a new identity's cart is empty");
+  assert.deepEqual(useCarts.getState().carts, {}, "a new identity has no carts");
   assert.deepEqual(useGuardianNames.getState().names, {}, "and nobody's guardians are named");
 
   signedIn("aa");
   await settle();
-  assert.equal(useCart.getState().lines.length, 1, "the first finds their cart as they left it");
+  assert.equal(Object.values(useCarts.getState().carts)[0]?.lines.length, 1, "the first finds their cart as they left it");
   assert.equal(useGuardianNames.getState().names.key1, "Mum");
 });
 
 test("nothing is written for nobody, and signing out keeps each identity's copy", async () => {
   signedIn(null);
   await settle();
-  assert.equal(useCart.getState().lines.length, 0, "signed out, nothing shows");
+  assert.deepEqual(useCarts.getState().carts, {}, "signed out, nothing shows");
   assert.ok([...kept.keys()].every((k) => k.endsWith(":aa") || k.endsWith(":bb")), "everything kept is under an identity");
 });

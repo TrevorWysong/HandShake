@@ -35,8 +35,7 @@ async function fetchDeals(catalogHex: string): Promise<Deal[]> {
 export function StoreDeals({ catalogHex, menu }: { catalogHex: string; menu: ItemRow[] }) {
   const t = useT();
   const { data: deals } = useResource(`store-deals:${catalogHex}`, () => fetchDeals(catalogHex));
-  const chosen = useCart((s) => s.promoHex);
-  const choose = useCart((s) => s.choosePromo);
+  const { promoHex: chosen, choosePromo: choose } = useCart(catalogHex);
   const open = deals?.filter((deal) => !blockedForGood(deal.standing?.blocked)) ?? [];
   if (open.length === 0) return null;
   const itemName = itemNamer(menu);

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { base64ToBytes, bytesToBase64 } from "../lib/util/base64";
 import type { ActionHash, OrderItem, SelectionInput } from "../holochain/types";
-import { bytesEqual, bytesToHex } from "../holochain/decode";
+import { bytesToHex } from "../holochain/decode";
 import { selectionsKey, type GroupCharges } from "../lib/storefront/choices";
 import { identityStorage, perIdentity } from "./identityScope";
 
@@ -70,38 +70,48 @@ export function cartItems(lines: CartLine[]): OrderItem[] {
   return items.map(({ key: _key, ...item }) => item);
 }
 
-interface CartState {
-  catalogRef: ActionHash | null;
-  merchant: Uint8Array | null;
-  merchantName: string | null;
+/// One store's cart: what's in it, and the discount it's to take.
+export interface StoreCart {
+  catalogRef: ActionHash;
+  merchant: Uint8Array;
+  merchantName: string;
   lines: CartLine[];
-  /// A promo code the customer chose from the store's deals (its original
-  /// action, hex) -- applied at checkout if it's this cart's store's.
-  promoHex: string | null;
-  choosePromo: (hex: string | null) => void;
-  /// The reward redeemed into the bag, if any -- one an order.
+  /// The reward redeemed into the bag, if any -- one an order. Its points
+  /// are held while it's here.
   reward: CartReward | null;
-  /// Redeems `reward` into the bag at the store: in place of any other
-  /// reward, with `line` (the item it gives, if it gives one). A bag from
-  /// another store is emptied first, as adding an item does.
-  redeem: (catalogRef: ActionHash, merchant: Uint8Array, merchantName: string, reward: CartReward, line: CartLine | null) => void;
-  /// Takes the reward back out of the bag, and its line: the points are free again.
-  releaseReward: () => void;
+  /// When it was last changed, in milliseconds -- the oldest goes first.
+  touchedAt: number;
+}
 
-  /// Adds `line` (its `quantity` units) -- to the line with the same item
-  /// and choices if there is one.
+/// The most carts kept at once: one more drops the one left longest.
+export const MAX_CARTS = 10;
+/// How long a cart nobody's touched is kept, as the big apps keep one.
+export const CART_KEPT_MS = 7 * 24 * 60 * 60 * 1000;
+
+/// The store a cart is keyed by -- its catalog's original action, hex.
+export const cartKey = (catalogRef: ActionHash) => bytesToHex(catalogRef);
+
+interface CartsState {
+  /// Every store's cart, by `cartKey`.
+  carts: Record<string, StoreCart>;
+  /// A promo code the customer chose from a store's deals (its original
+  /// action, hex), by `cartKey` -- chosen before anything's in its cart, as
+  /// it may be, and applied at checkout if it still applies.
+  promos: Record<string, string>;
+  choosePromo: (key: string, promoHex: string | null) => void;
+  /// Adds `line` (its `quantity` units) to its store's cart -- to the line
+  /// with the same item and choices if there is one.
   addLine: (catalogRef: ActionHash, merchant: Uint8Array, merchantName: string, line: CartLine) => void;
-  /// Puts `line` in place of the line keyed `key` -- editing its choices.
-  replaceLine: (key: string, line: CartLine) => void;
-  /// Brings each line to today's price, if it's moved.
-  repriceLines: (update: (line: CartLine) => CartLine) => void;
-  removeLine: (key: string) => void;
-  setQuantity: (key: string, quantity: number) => void;
-  /// Replaces the cart wholesale -- used by "reorder" to repopulate from a
-  /// past order in one shot.
+  /// Redeems `reward` into its store's cart: in place of any other reward,
+  /// with `line` (the item it gives, if it gives one), and no promo with it.
+  redeem: (catalogRef: ActionHash, merchant: Uint8Array, merchantName: string, reward: CartReward, line: CartLine | null) => void;
+  /// Fills a store's cart with `lines`, in place of what was in it -- a
+  /// reorder, or a recurring order brought to checkout.
   setCart: (catalogRef: ActionHash, merchant: Uint8Array, merchantName: string, lines: CartLine[]) => void;
-  clear: () => void;
-  total: () => number;
+  /// Changes the cart keyed `key`, if there is one; one left empty goes.
+  change: (key: string, update: (cart: StoreCart) => Partial<StoreCart>) => void;
+  /// Drops the cart keyed `key`.
+  remove: (key: string) => void;
 }
 
 /// `lines` with `line` merged in: its units added to the line with the same
@@ -118,72 +128,126 @@ const replacer = (_key: string, value: unknown) => (value instanceof Uint8Array 
 const reviver = (_key: string, value: unknown) =>
   value && typeof value === "object" && BYTES in value && typeof (value as Record<string, unknown>)[BYTES] === "string" ? base64ToBytes((value as Record<string, string>)[BYTES]) : value;
 
+let lastTouch = 0;
+/// Now, in milliseconds -- later than any cart touched before, so two
+/// touched in the same moment still have an order.
+const touch = () => (lastTouch = Math.max(Date.now(), lastTouch + 1));
+
+/// `carts` without the ones untouched past `CART_KEPT_MS`, and the oldest
+/// past `MAX_CARTS`.
+function kept(carts: Record<string, StoreCart>, now: number): Record<string, StoreCart> {
+  const fresh = Object.entries(carts).filter(([, cart]) => now - cart.touchedAt < CART_KEPT_MS && (cart.lines.length > 0 || cart.reward !== null));
+  return Object.fromEntries(fresh.sort(([, a], [, b]) => b.touchedAt - a.touchedAt).slice(0, MAX_CARTS));
+}
+
 // Kept on this device, so a cart outlives a reload, a card payment or
 // closing the tab -- as the big apps' do -- and per identity: one person's
-// cart, a reward's held points included, is never another's.
-export const useCart = create<CartState>()(
+// carts, a reward's held points included, are never another's.
+export const useCarts = create<CartsState>()(
   persist(
-    (set, get) => ({
-      catalogRef: null,
-      merchant: null,
-      merchantName: null,
-      lines: [],
-      promoHex: null,
-      reward: null,
-
-      choosePromo: (promoHex) => set({ promoHex }),
-
-      redeem: (catalogRef, merchant, merchantName, reward, line) => {
-        const state = get();
-        const sameCatalog = state.catalogRef && bytesEqual(state.catalogRef, catalogRef);
-        const kept = (sameCatalog ? state.lines : []).filter((l) => l.rewardId == null);
-        set({ catalogRef, merchant, merchantName, reward, promoHex: null, lines: line ? [...kept, { ...line, rewardId: reward.id }] : kept });
-      },
-
-      releaseReward: () => set({ reward: null, lines: get().lines.filter((l) => l.rewardId == null) }),
-
-      addLine: (catalogRef, merchant, merchantName, line) => {
-        const state = get();
-        // Switching restaurants clears the cart -- same rule every real
-        // delivery app enforces, since one order can only reference one
-        // catalog_ref/merchant on the backend.
-        const sameCatalog = state.catalogRef && bytesEqual(state.catalogRef, catalogRef);
-        set({ catalogRef, merchant, merchantName, lines: merged(sameCatalog ? state.lines : [], line), ...(sameCatalog ? {} : { reward: null }) });
-      },
-
-      repriceLines: (update) => {
-        const lines = get().lines.map(update);
-        if (lines.some((line, i) => line !== get().lines[i])) set({ lines });
-      },
-      replaceLine: (key, line) => set({ lines: merged(get().lines.filter((l) => lineKey(l) !== key), line) }),
-
-      removeLine: (key) => {
-        const removed = get().lines.find((l) => lineKey(l) === key);
-        set({ lines: get().lines.filter((l) => lineKey(l) !== key), ...(removed?.rewardId != null ? { reward: null } : {}) });
-      },
-
-      setQuantity: (key, quantity) => {
-        if (quantity <= 0) {
-          get().removeLine(key);
-          return;
-        }
-        // A reward's line holds what the reward gives, and a goodie bag's
-        // one bag, no more.
-        set({ lines: get().lines.map((l) => (lineKey(l) === key && l.rewardId == null && !l.bag ? { ...l, quantity } : l)) });
-      },
-
-      setCart: (catalogRef, merchant, merchantName, lines) => set({ catalogRef, merchant, merchantName, reward: null, lines: lines.reduce(merged, [] as CartLine[]) }),
-
-      clear: () => set({ catalogRef: null, merchant: null, merchantName: null, lines: [], promoHex: null, reward: null }),
-
-      total: () => get().lines.reduce((sum, l) => sum + l.priceCents * l.quantity, 0),
-    }),
+    (set, get) => {
+      /// Puts `cart` in place of its store's, newest, keeping within the limits.
+      const put = (cart: StoreCart) => set({ carts: kept({ ...get().carts, [cartKey(cart.catalogRef)]: { ...cart, touchedAt: touch() } }, Date.now()) });
+      const existing = (catalogRef: ActionHash, merchant: Uint8Array, merchantName: string): StoreCart =>
+        get().carts[cartKey(catalogRef)] ?? { catalogRef, merchant, merchantName, lines: [], reward: null, touchedAt: Date.now() };
+      /// `promos` without `key`'s.
+      const promosWithout = (key: string) => Object.fromEntries(Object.entries(get().promos).filter(([store]) => store !== key));
+      return {
+        carts: {},
+        promos: {},
+        choosePromo: (key, promoHex) => set({ promos: promoHex ? { ...get().promos, [key]: promoHex } : promosWithout(key) }),
+        addLine: (catalogRef, merchant, merchantName, line) => {
+          const cart = existing(catalogRef, merchant, merchantName);
+          put({ ...cart, merchantName, lines: merged(cart.lines, line) });
+        },
+        redeem: (catalogRef, merchant, merchantName, reward, line) => {
+          const cart = existing(catalogRef, merchant, merchantName);
+          const paid = cart.lines.filter((l) => l.rewardId == null);
+          put({ ...cart, merchantName, reward, lines: line ? [...paid, { ...line, rewardId: reward.id }] : paid });
+          set({ promos: promosWithout(cartKey(catalogRef)) });
+        },
+        setCart: (catalogRef, merchant, merchantName, lines) => put({ ...existing(catalogRef, merchant, merchantName), merchantName, reward: null, lines: lines.reduce(merged, [] as CartLine[]) }),
+        change: (key, update) => {
+          const cart = get().carts[key];
+          if (cart) put({ ...cart, ...update(cart) });
+        },
+        remove: (key) => {
+          const { [key]: _gone, ...rest } = get().carts;
+          set({ carts: rest, promos: promosWithout(key) });
+        },
+      };
+    },
     {
-      // v2: lines carry their choices' charges.
+      // v3: a cart per store; v2 kept one, and carries over as its store's.
       name: "handshake.cart.v2",
+      version: 3,
       storage: identityStorage({ replacer, reviver }),
-      partialize: ({ catalogRef, merchant, merchantName, lines, promoHex, reward }) => ({ catalogRef, merchant, merchantName, lines, promoHex, reward }),
+      partialize: ({ carts, promos }) => ({ carts, promos }),
+      migrate: (saved, version) => {
+        if (version >= 3) return saved as CartsState;
+        const old = saved as (Partial<Omit<StoreCart, "touchedAt">> & { promoHex?: string | null }) | null;
+        if (!old?.catalogRef || !old.merchant || !old.lines?.length) return { carts: {}, promos: {} } as unknown as CartsState;
+        const cart: StoreCart = { catalogRef: old.catalogRef, merchant: old.merchant, merchantName: old.merchantName ?? "", lines: old.lines, reward: old.reward ?? null, touchedAt: Date.now() };
+        const key = cartKey(cart.catalogRef);
+        return { carts: { [key]: cart }, promos: old.promoHex ? { [key]: old.promoHex } : {} } as unknown as CartsState;
+      },
+      // What's past keeping goes as it's read back.
+      merge: (saved, current) => {
+        const read = saved as Partial<CartsState> | undefined;
+        return { ...current, carts: kept(read?.carts ?? {}, Date.now()), promos: read?.promos ?? {} };
+      },
     },
   ),
 );
-perIdentity(useCart);
+perIdentity(useCarts);
+
+const NO_LINES: CartLine[] = [];
+
+/// One store's cart, as a screen reads and changes it -- empty until
+/// something's added. `storeKey` is its `cartKey`.
+export function useCart(storeKey: string | null) {
+  const cart = useCarts((s) => (storeKey ? s.carts[storeKey] : undefined));
+  const promoHex = useCarts((s) => (storeKey ? (s.promos[storeKey] ?? null) : null));
+  return cartView(storeKey, cart, promoHex);
+}
+
+/// What `useCart` hands a screen, from a cart read anywhere.
+export function cartView(storeKey: string | null, cart: StoreCart | undefined, promoHex: string | null) {
+  const { change, remove, choosePromo } = useCarts.getState();
+  const lines = cart?.lines ?? NO_LINES;
+  const edit = (update: (cart: StoreCart) => Partial<StoreCart>) => storeKey && change(storeKey, update);
+  const removeLine = (key: string) => edit((c) => {
+    const removed = c.lines.find((l) => lineKey(l) === key);
+    return { lines: c.lines.filter((l) => lineKey(l) !== key), ...(removed?.rewardId != null ? { reward: null } : {}) };
+  });
+  return {
+    catalogRef: cart?.catalogRef ?? null,
+    merchant: cart?.merchant ?? null,
+    merchantName: cart?.merchantName ?? null,
+    lines,
+    promoHex,
+    reward: cart?.reward ?? null,
+    count: lines.reduce((n, l) => n + l.quantity, 0),
+    total: () => lines.reduce((sum, l) => sum + l.priceCents * l.quantity, 0),
+    choosePromo: (promo: string | null) => storeKey && choosePromo(storeKey, promo),
+    releaseReward: () => edit((c) => ({ reward: null, lines: c.lines.filter((l) => l.rewardId == null) })),
+    /// Puts `line` in place of the line keyed `key` -- editing its choices.
+    replaceLine: (key: string, line: CartLine) => edit((c) => ({ lines: merged(c.lines.filter((l) => lineKey(l) !== key), line) })),
+    /// Brings each line to today's price, if it's moved.
+    repriceLines: (update: (line: CartLine) => CartLine) => {
+      if (!cart) return;
+      const repriced = cart.lines.map(update);
+      if (repriced.some((line, i) => line !== cart.lines[i])) edit(() => ({ lines: repriced }));
+    },
+    removeLine,
+    setQuantity: (key: string, quantity: number) => {
+      if (quantity <= 0) return removeLine(key);
+      // A reward's line holds what the reward gives, and a goodie bag's one
+      // bag, no more.
+      edit((c) => ({ lines: c.lines.map((l) => (lineKey(l) === key && l.rewardId == null && !l.bag ? { ...l, quantity } : l)) }));
+    },
+    /// Empties it -- its order placed, or the customer's done with it.
+    clear: () => storeKey && remove(storeKey),
+  };
+}
+

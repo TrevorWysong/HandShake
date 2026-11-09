@@ -7,9 +7,9 @@ import { lineKey, useCart, type CartLine } from "../../../store/cart";
 import { fadeSlideUp } from "../../../lib/ui/motion";
 import { useT } from "../../../i18n";
 
-export function BagNotices({ problems, delivery, onSwitch }: { problems: { line: CartLine; closed: boolean }[]; delivery: boolean; onSwitch: (() => void) | null }) {
+export function BagNotices({ store, problems, delivery, onSwitch }: { store: string; problems: { line: CartLine; closed: boolean }[]; delivery: boolean; onSwitch: (() => void) | null }) {
   const t = useT();
-  const cart = useCart();
+  const cart = useCart(store);
   // Something else to deliver (or collect) once the bag's out.
   const others = cart.lines.length > problems.length;
   return (

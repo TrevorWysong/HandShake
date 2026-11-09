@@ -146,8 +146,8 @@ export function RewardsDetail() {
   const catalogRef = hexToBytes(hash ?? "");
   const { data: card } = useResource(hash ? `rewards:card:${hash}` : null, () => myCard(catalogRef));
   const { data: menu = [] } = useResource(hash ? `store-menu-items:${hash}` : null, () => fetchMenu(catalogRef));
-  const bagReward = useCart((s) => s.reward);
-  const bagStore = useCart((s) => (s.catalogRef ? bytesToHex(s.catalogRef) : null));
+  // The reward in this store's cart, whose points are held.
+  const bagReward = useCart(hash ?? null).reward;
 
   if (!card) {
     return (
@@ -163,7 +163,7 @@ export function RewardsDetail() {
   const program = card.program.program;
   const rewards = [...program.rewards].sort((a, b) => a.cost - b.cost);
   // Points a reward in this store's bag holds, until the order goes in.
-  const held = bagReward && bagStore === hash ? bagReward.cost : 0;
+  const held = bagReward?.cost ?? 0;
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-28 pt-4">

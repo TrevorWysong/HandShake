@@ -20,9 +20,9 @@ export interface LineEdit {
   row: ItemRow;
 }
 
-export function CartLines({ menuItems, program, rewardCost, onEdit }: { menuItems: ItemRow[]; program: RewardsProgram | null; rewardCost: number; onEdit: (edit: LineEdit) => void }) {
+export function CartLines({ store, menuItems, program, rewardCost, onEdit }: { store: string; menuItems: ItemRow[]; program: RewardsProgram | null; rewardCost: number; onEdit: (edit: LineEdit) => void }) {
   const t = useT();
-  const cart = useCart();
+  const cart = useCart(store);
   return (
     <motion.div variants={fadeSlideUp}>
       <Card className="flex flex-col divide-y divide-ink-100 dark:divide-ink-800">

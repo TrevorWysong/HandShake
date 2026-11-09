@@ -3,7 +3,7 @@
 // (dispatch_integrity::checks::bag_line_problem), told first.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { lineKey, menuLines, useCart } from "../src/store/cart.ts";
+import { cartKey, cartView, lineKey, menuLines, useCarts } from "../src/store/cart.ts";
 import { bagLine, bagProblems } from "../src/lib/storefront/bags.ts";
 import type { GoodieBag } from "../src/holochain/types.ts";
 
@@ -15,13 +15,14 @@ const bag = (pickup: boolean, delivery: boolean): GoodieBag =>
 const pastries = bagLine({ hash: new Uint8Array([5]), bag: bag(true, false) });
 
 test("a goodie bag is one to an order, and isn't a menu line", () => {
-  const cart = useCart.getState();
-  cart.clear();
-  cart.addLine(store, owner, "Cara's", pastries);
-  cart.addLine(store, owner, "Cara's", pastries);
-  useCart.getState().setQuantity(lineKey(pastries), 3);
-  assert.deepEqual(useCart.getState().lines.map((l) => l.quantity), [1], "adding again, or more, keeps one");
-  assert.equal(menuLines(useCart.getState().lines).length, 0, "promos, rewards and the minimum don't count it");
+  useCarts.setState({ carts: {}, promos: {} });
+  const key = cartKey(store);
+  const cart = () => cartView(key, useCarts.getState().carts[key], null);
+  useCarts.getState().addLine(store, owner, "Cara's", pastries);
+  useCarts.getState().addLine(store, owner, "Cara's", pastries);
+  cart().setQuantity(lineKey(pastries), 3);
+  assert.deepEqual(cart().lines.map((l) => l.quantity), [1], "adding again, or more, keeps one");
+  assert.equal(menuLines(cart().lines).length, 0, "promos, rewards and the minimum don't count it");
 });
 
 test("checkout names a bag the order can't have", () => {

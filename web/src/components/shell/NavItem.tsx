@@ -7,9 +7,11 @@ import type { Home } from "lucide-react";
 export type NavPlacement = "bar" | "side";
 
 /// One place in the navigation, with an optional count badge -- shown as
-/// where you are on `to`, or on any of the pages it also covers (`also`).
-export function NavItem({ to, also = [], icon: Icon, label, badge, placement }: { to: string; also?: readonly string[]; icon: typeof Home; label: string; badge?: number; placement: NavPlacement }) {
-  const here = also.includes(useLocation().pathname);
+/// where you are on `to`, on any of the pages it also covers (`also`), and
+/// -- with `nested` -- on the pages under it.
+export function NavItem({ to, also = [], nested = false, icon: Icon, label, badge, placement }: { to: string; also?: readonly string[]; nested?: boolean; icon: typeof Home; label: string; badge?: number; placement: NavPlacement }) {
+  const pathname = useLocation().pathname;
+  const here = also.includes(pathname) || (nested && pathname.startsWith(`${to}/`));
   const count = !!badge && (
     <span
       className={clsx(

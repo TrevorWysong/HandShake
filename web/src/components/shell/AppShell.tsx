@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import clsx from "clsx";
 import { Home, ClipboardList, ShoppingCart, User, Car, DollarSign, Gift } from "lucide-react";
 import { useSession, type Mode } from "../../store/session";
-import { useCart } from "../../store/cart";
+import { useCarts } from "../../store/cart";
 import { pageVariants } from "../../lib/ui/motion";
 import { bytesToHex } from "../../holochain/decode";
 import { PresenceDot } from "../ui";
@@ -95,7 +95,8 @@ function AnimatedOutlet() {
 export function AppShell() {
   const { mode: chosenMode, setMode, profile, agentPubKey } = useSession();
   const { pathname } = useLocation();
-  const cartCount = useCart((s) => s.lines.reduce((n, l) => n + l.quantity, 0));
+  // What's in every store's cart, together.
+  const cartCount = useCarts((s) => Object.values(s.carts).reduce((n, cart) => n + cart.lines.reduce((m, l) => m + l.quantity, 0), 0));
   const navigate = useNavigate();
   const wide = useWideScreen();
   const t = useT();
@@ -229,7 +230,7 @@ function ModeNav({ mode, cartCount, placement }: { mode: Mode; cartCount: number
     return (
       <>
         <NavItem to="/customer" icon={Home} label={t("nav.browse")} placement={placement} />
-        <NavItem to="/customer/cart" icon={ShoppingCart} label={t("nav.cart")} badge={cartCount} placement={placement} />
+        <NavItem to="/customer/cart" nested icon={ShoppingCart} label={t("nav.cart")} badge={cartCount} placement={placement} />
         <NavItem to="/customer/orders" icon={ClipboardList} label={t("nav.orders")} placement={placement} />
         <NavItem to="/rewards" icon={Gift} label={t("nav.rewards")} placement={placement} />
       </>

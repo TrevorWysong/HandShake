@@ -6,7 +6,7 @@ import { getCatalog } from "../../holochain/zomes/catalog";
 import { bytesToHex, decodeEntry } from "../../holochain/decode";
 import type { DropoffPreference, GeoPoint, MerchantCatalog, RecurringDue, RecurringOrderTemplate, TemplateDetails } from "../../holochain/types";
 import { t } from "../../i18n";
-import { useCart } from "../../store/cart";
+import { cartKey, useCarts } from "../../store/cart";
 import { cartLinesFromItems, fetchMenu } from "../storefront/menu";
 
 export interface RecurringOrder {
@@ -50,9 +50,9 @@ export async function takeToCheckout(order: RecurringOrder): Promise<CheckoutDra
   const lines = await cartLinesFromItems(template.catalog_ref, template.items, await fetchMenu(template.catalog_ref));
   if (lines.length === 0) throw new Error(t("recurring.nothingLeft", { store: order.storeName }));
   await advanceRecurringTemplate(order.hash);
-  const cart = useCart.getState();
-  cart.setCart(template.catalog_ref, template.merchant, order.storeName, lines);
-  cart.choosePromo(template.promo_code_ref ? bytesToHex(template.promo_code_ref) : null);
+  const carts = useCarts.getState();
+  carts.setCart(template.catalog_ref, template.merchant, order.storeName, lines);
+  carts.choosePromo(cartKey(template.catalog_ref), template.promo_code_ref ? bytesToHex(template.promo_code_ref) : null);
   return {
     dropoff: details?.dropoff ?? null,
     dropoffLine2: details?.dropoff_line2 ?? "",

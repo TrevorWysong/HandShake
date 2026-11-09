@@ -4,7 +4,7 @@
 // Each is re-checked against the live cart every render, so adding or
 // removing items changes what applies, and what it takes off.
 import { useMemo, useState } from "react";
-import { menuLines, useCart } from "../../../store/cart";
+import { menuLines, useCart, useCarts } from "../../../store/cart";
 import { myCard } from "../../../holochain/zomes/rewards";
 import { bytesToHex, hexToBytes } from "../../../holochain/decode";
 import { describeBlock, describeRequirement, evaluatePromo, isPromoEligible } from "../../../lib/storefront/promotions";
@@ -17,9 +17,9 @@ import { useT } from "../../../i18n";
 import type { Reward } from "../../../holochain/types";
 import { bestAutoApplyPromo, NO_ITEMS, NO_PROMOS, type CartStoreInfo, type PromoRow } from "./checkout";
 
-export function useDiscounts(storeInfo: CartStoreInfo | undefined, now: Date) {
+export function useDiscounts(store: string, storeInfo: CartStoreInfo | undefined, now: Date) {
   const t = useT();
-  const cart = useCart();
+  const cart = useCart(store);
   const promoCodes = storeInfo?.promoCodes ?? NO_PROMOS;
   const menuItems = storeInfo?.menuItems ?? NO_ITEMS;
   const completedOrderCount = storeInfo?.completedOrderCount ?? 0;
@@ -37,7 +37,7 @@ export function useDiscounts(storeInfo: CartStoreInfo | undefined, now: Date) {
 
   /// Puts a reward in the bag -- or takes it out, tapped again. A free item
   /// with choices is chosen first (`rewardSheet`).
-  const chooser = useRewardChooser(cart.catalogRef, menuItems, (reward, line) => cart.redeem(cart.catalogRef!, cart.merchant!, cart.merchantName ?? "", { id: reward.id, name: reward.name, cost: reward.cost }, line));
+  const chooser = useRewardChooser(cart.catalogRef, menuItems, (reward, line) => useCarts.getState().redeem(cart.catalogRef!, cart.merchant!, cart.merchantName ?? "", { id: reward.id, name: reward.name, cost: reward.cost }, line));
   const toggleReward = (reward: Reward) => (chosenReward?.id === reward.id ? cart.releaseReward() : chooser.redeem(reward));
 
   // A code the customer typed wins; then a deal chosen on the store's page,

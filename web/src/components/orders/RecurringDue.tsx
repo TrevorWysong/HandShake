@@ -7,8 +7,7 @@ import clsx from "clsx";
 import { advanceRecurringTemplate } from "../../holochain/zomes/dispatch";
 import { useResource } from "../../lib/hooks/useResource";
 import { useAction } from "../../lib/hooks/useAction";
-import { useCartSwitch } from "../../lib/hooks/useCartSwitch";
-import { NewCartSheet } from "../store/NewCartSheet";
+import { cartKey } from "../../store/cart";
 import { describeRecurrence } from "../../lib/orders/recurrence";
 import { fetchRecurringOrders, takeToCheckout, type RecurringOrder } from "../../lib/orders/recurring";
 import { POLL } from "../../lib/network/poll";
@@ -35,10 +34,9 @@ function DueOrder({ order, onPassed }: { order: RecurringOrder; onPassed: () => 
   const action = useAction();
   const missed = order.due === "Missed";
   const Icon = missed ? CalendarX2 : BellRing;
-  // It fills the bag: asked first if the bag holds another store's order.
-  // The same store's is most often this order, just set up.
-  const cartSwitch = useCartSwitch();
-  const toCheckout = () => cartSwitch.ask(order.template.catalog_ref, () => void action.run(async () => navigate("/customer/cart", { state: { recurring: await takeToCheckout(order) } }), { as: "checkout" }));
+  // It fills its store's cart -- most often with this order, just set up --
+  // and no other.
+  const toCheckout = () => action.run(async () => navigate(`/customer/cart/${cartKey(order.template.catalog_ref)}`, { state: { recurring: await takeToCheckout(order) } }), { as: "checkout" });
   const pass = () => action.run(async () => {
     await advanceRecurringTemplate(order.hash);
     await onPassed();
@@ -65,7 +63,6 @@ function DueOrder({ order, onPassed }: { order: RecurringOrder; onPassed: () => 
         </Button>
       </div>
       {action.error && <Notice className="mt-2">{action.error}</Notice>}
-      <NewCartSheet pending={cartSwitch.pending} onConfirm={cartSwitch.confirm} onCancel={cartSwitch.cancel} />
     </div>
   );
 }
