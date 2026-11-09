@@ -22,6 +22,7 @@ import { VerificationCard } from "./VerificationCard";
 import { useTerms } from "../../store/network";
 import { useSentBids } from "../../store/sentBids";
 import { resetFeed, useDriverFeed } from "../../store/driverFeed";
+import { useDriverLocation, useDriverPosition } from "../../store/driverPosition";
 import { sendBid } from "../../lib/driving/feed";
 import { refreshCarrying, useCarrying } from "../../store/carrying";
 import { unlockChime } from "../../lib/ui/chime";
@@ -32,7 +33,9 @@ import { dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
 const NO_ROWS: OrderRow[] = [];
 
 export function DriverDashboard() {
-  const location = useSession((s) => s.location);
+  // Where they are while online (`DriverFeed` follows it), or their saved address.
+  const location = useDriverLocation(useSession((s) => s.location));
+  const locationRefused = useDriverPosition((s) => s.refused);
   const t = useT();
   const me = useSession((s) => s.agentPubKey);
   const driverKey = myAgentPubKey();
@@ -150,6 +153,7 @@ export function DriverDashboard() {
               {online ? t("drive.online") : t("drive.offline")}
             </p>
             <p className="text-xs text-ink-400">{online ? t("drive.onlineDetail") : t("drive.offlineDetail")}</p>
+            {online && locationRefused && <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">{t("drive.savedAddress")}</p>}
             {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} size={11} />}
           </div>
           <motion.button

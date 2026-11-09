@@ -1423,6 +1423,7 @@ export const es: Catalog = {
   "drive.online": "Estás conectado",
   "drive.offline": "Estás desconectado",
   "drive.onlineDetail": "Los pedidos nuevos cerca de ti sonarán. Mientras buscas, nadie sabe dónde estás.",
+  "drive.savedAddress": "Mostrando pedidos cerca de tu dirección guardada. Permite la ubicación para ver pedidos donde estás.",
   "drive.offlineDetail": "Conéctate para empezar a recibir pedidos",
   "drive.goOffline": "Desconectarse",
   "drive.goOnline": "Conectarse",

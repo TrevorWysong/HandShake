@@ -1428,6 +1428,7 @@ export const en = {
   "drive.online": "You're online",
   "drive.offline": "You're offline",
   "drive.onlineDetail": "New orders near you will ring. While you look, nobody is told where you are.",
+  "drive.savedAddress": "Showing orders near your saved address. Allow location for orders where you are.",
   "drive.offlineDetail": "Go online to start receiving orders",
   "drive.goOffline": "Go offline",
   "drive.goOnline": "Go online",

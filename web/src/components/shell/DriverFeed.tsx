@@ -1,7 +1,10 @@
 // A driver's feed while they're online, on whichever screen they're on:
 // open orders near them read as often as a driver app reads them, a ring
 // for each new one, and their bid-for-me rule answered -- not only while
-// their dashboard is open. Offline, it reads nothing.
+// their dashboard is open. It looks where they are (their device's location,
+// kept on it), or round their saved address without it. Offline, it reads
+// nothing, and follows no location.
+import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { myAgentPubKey } from "../../holochain/client";
 import { bytesToHex } from "../../holochain/decode";
@@ -13,6 +16,7 @@ import { POLL } from "../../lib/network/poll";
 import { feedRead, useDriverFeed } from "../../store/driverFeed";
 import { useTerms } from "../../store/network";
 import { useSession } from "../../store/session";
+import { useDriverLocation, watchDriverPosition } from "../../store/driverPosition";
 import { useCarrying } from "../../store/carrying";
 
 export function DriverFeed() {
@@ -23,7 +27,9 @@ export function DriverFeed() {
 }
 
 function OnlineFeed({ driverHex }: { driverHex: string }) {
-  const location = useSession((s) => s.location);
+  // Where they are while they're online, or their saved address.
+  useEffect(() => watchDriverPosition(), []);
+  const location = useDriverLocation(useSession((s) => s.location));
   const geohash = encodeGeohash(location.lat, location.lon);
   const terms = useTerms();
   const looking = useLocation().pathname === "/driver";
