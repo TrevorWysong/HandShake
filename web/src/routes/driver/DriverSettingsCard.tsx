@@ -84,7 +84,7 @@ export function DriverSettingsCard() {
                   min={0}
                   step={0.5}
                   value={fromMinorUnits(limits.minFeeCents)}
-                  onChange={(e) => setLimits({ minFeeCents: Math.max(0, toMinorUnits(Number(e.target.value))) })}
+                  onChange={(e) => setLimits({ minFeeCents: centsTyped(e.target.value) })}
                   prefix={currencySymbol()}
                   className="mt-1 py-1.5 text-sm"
                 />
@@ -116,14 +116,14 @@ export function DriverSettingsCard() {
                       min={0}
                       step={0.1}
                       value={fromMinorUnits(autoBid.perKmCents)}
-                      onChange={(e) => setAutoBid({ perKmCents: Math.max(0, toMinorUnits(Number(e.target.value))) })}
+                      onChange={(e) => setAutoBid({ perKmCents: centsTyped(e.target.value) })}
                       prefix={currencySymbol()}
                       className="mt-1 py-1.5 text-sm"
                     />
                   </label>
                   <label className="flex-1 text-xs font-semibold text-ink-500">
                     {t("driverSettings.skip")}
-                    <Input type="number" min={1} step={1} value={autoBid.skipRefusals} onChange={(e) => setAutoBid({ skipRefusals: Math.max(1, Math.round(Number(e.target.value))) })} suffix={t("driverSettings.times")} className="mt-1 py-1.5 text-sm" />
+                    <Input type="number" min={1} step={1} value={autoBid.skipRefusals} onChange={(e) => setAutoBid({ skipRefusals: Math.max(1, Math.round(Number(e.target.value)) || 1) })} suffix={t("driverSettings.times")} className="mt-1 py-1.5 text-sm" />
                   </label>
                 </div>
               )}
@@ -134,4 +134,11 @@ export function DriverSettingsCard() {
       </AnimatePresence>
     </Card>
   );
+}
+
+/// An amount typed in, in cents -- none below zero, and nothing for what
+/// isn't a number, so a stray keystroke never leaves a setting unreadable.
+function centsTyped(value: string): number {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.max(0, toMinorUnits(amount)) : 0;
 }
