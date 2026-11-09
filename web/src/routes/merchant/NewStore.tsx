@@ -34,6 +34,8 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
   const [addressDraft, setAddressDraft] = useState(EMPTY_SPLIT_ADDRESS);
   const action = useAction();
 
+  // Published once: it stays busy as the page moves on, so a second tap
+  // can't publish a second store.
   function publish() {
     if (!businessName.trim()) return;
     return action.run(async () => {
@@ -50,7 +52,7 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
       // and a pin, so this reads as one continuous setup flow. Names the
       // store so only *it* opens in edit mode (see Catalog.tsx).
       navigate("/merchant/store", { state: { editDetails: hex } });
-    });
+    }, { stayBusy: true });
   }
 
   return (

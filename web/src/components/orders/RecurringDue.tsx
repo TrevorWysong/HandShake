@@ -35,8 +35,9 @@ function DueOrder({ order, onPassed }: { order: RecurringOrder; onPassed: () => 
   const missed = order.due === "Missed";
   const Icon = missed ? CalendarX2 : BellRing;
   // It fills its store's cart -- most often with this order, just set up --
-  // and no other.
-  const toCheckout = () => action.run(async () => navigate(`/customer/cart/${cartKey(order.template.catalog_ref)}`, { state: { recurring: await takeToCheckout(order) } }), { as: "checkout" });
+  // and no other. It moves the order on to its next time, so it stays busy
+  // as the page moves on: a second tap would skip the next.
+  const toCheckout = () => action.run(async () => navigate(`/customer/cart/${cartKey(order.template.catalog_ref)}`, { state: { recurring: await takeToCheckout(order) } }), { as: "checkout", stayBusy: true });
   const pass = () => action.run(async () => {
     await advanceRecurringTemplate(order.hash);
     await onPassed();
