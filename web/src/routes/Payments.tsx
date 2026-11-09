@@ -3,6 +3,7 @@
 // (`paymentsAgent`), which checks them with the processor and asks the
 // person to confirm outside the page -- and, for everyone, the record of what
 // they paid and were paid (Transparency).
+import { LoadProblem } from "../components/LoadProblem";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -120,11 +121,13 @@ export function Payments() {
 function GettingPaid() {
   const t = useT();
   const { data: agent } = useResource("payments-agent", paymentsAgent);
-  const { data: connection, reload } = useResource(agent ? "payments-connection" : null, () => agent!.status());
+  const { data: connection, error: connectionError, reload } = useResource(agent ? "payments-connection" : null, () => agent!.status());
 
   return (
     <motion.div variants={fadeSlideUp} className="mb-4">
-      {agent === undefined || (agent && connection === undefined) ? (
+      {agent && connection === undefined && connectionError ? (
+        <LoadProblem error={connectionError} onRetry={reload} />
+      ) : agent === undefined || (agent && connection === undefined) ? (
         <Skeleton className="h-40 w-full rounded-2xl" />
       ) : agent === null ? (
         <Card className="p-5">
@@ -155,6 +158,8 @@ function Heading({ icon, title, detail, tone = "brand" }: { icon: ReactNode; tit
 function Connected({ connection, agent, onChange }: { connection: PaymentsConnection; agent: PaymentsAgent; onChange: () => void }) {
   const t = useT();
   const action = useAction();
+  // Disconnecting stops this device collecting what's held for orders: asked.
+  const [confirming, setConfirming] = useState(false);
   return (
     <Card className="p-5">
       <Heading tone="success" icon={<CheckCircle2 size={20} />} title={t("payments.paidInto", { processor: connection.processor })} detail={t("payments.connectedDetail")} />
@@ -163,19 +168,34 @@ function Connected({ connection, agent, onChange }: { connection: PaymentsConnec
         <Badge tone={connection.live ? "success" : "warn"}>{connection.live ? t("payments.live") : t("payments.test")}</Badge>
       </div>
       {action.error && <Notice className="mt-3">{action.error}</Notice>}
-      <Button
-        variant="ghost"
-        className="mt-3 w-full text-xs"
-        loading={action.busy}
-        onClick={() =>
-          action.run(async () => {
-            await agent.disconnect();
-            onChange();
-          })
-        }
-      >
-        {t("payments.disconnect")}
-      </Button>
+      {confirming ? (
+        <div className="mt-3 rounded-xl bg-amber-50 p-3 dark:bg-amber-900/20">
+          <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">{t("payments.disconnectWarning")}</p>
+          <div className="mt-2 flex gap-2">
+            <Button variant="ghost" className="flex-1 py-2 text-xs" disabled={action.busy} onClick={() => setConfirming(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="danger"
+              className="flex-1 py-2 text-xs"
+              loading={action.busy}
+              onClick={() =>
+                action.run(async () => {
+                  await agent.disconnect();
+                  setConfirming(false);
+                  onChange();
+                })
+              }
+            >
+              {t("payments.disconnect")}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="ghost" className="mt-3 w-full text-xs" onClick={() => setConfirming(true)}>
+          {t("payments.disconnect")}
+        </Button>
+      )}
     </Card>
   );
 }

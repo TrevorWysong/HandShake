@@ -54,6 +54,9 @@ test("a store sees where it's paid, and connects again", async ({ page }) => {
   await page.goto("/#/payments");
   await expect(page.getByText(/Paid into your Test account/)).toBeVisible();
   await shoot(page, "payments-connected");
+  // Disconnecting asks first: collecting what's held stops with it.
+  await page.getByRole("button", { name: "Disconnect" }).click();
+  await expect(page.getByText(/collect what's already held/)).toBeVisible();
   await page.getByRole("button", { name: "Disconnect" }).click();
   await expect(page.getByRole("radio", { name: /Stripe/ })).toBeVisible();
   await page.getByRole("radio", { name: /Stripe/ }).click();
