@@ -13,6 +13,7 @@
 // protect against a determined attacker with devtools/JS execution already
 // running on this origin -- naming both limits rather than letting the
 // name "WebAuthn" imply more than this actually buys.
+import { t } from "../../i18n";
 import { bytesToBase64, base64ToBytes } from "../util/base64";
 
 const RP_NAME = "HandShake";
@@ -84,7 +85,7 @@ export async function registerPasskey(displayName: string, userHandle: Uint8Arra
       timeout: timeoutMs,
     },
   })) as PublicKeyCredential | null;
-  if (!credential) throw new Error("passkey registration was cancelled or failed");
+  if (!credential) throw new Error(t("error.passkeyNotMade"));
   return bufferToBase64(credential.rawId);
 }
 
@@ -102,5 +103,5 @@ export async function verifyPasskey(credentialIdB64: string): Promise<void> {
       timeout: CEREMONY_TIMEOUT_MS,
     },
   });
-  if (!assertion) throw new Error("passkey verification was cancelled or failed");
+  if (!assertion) throw new Error(t("error.passkeyNotChecked"));
 }

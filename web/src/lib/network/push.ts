@@ -69,14 +69,14 @@ async function post<T>(url: string, body: unknown, method = "POST"): Promise<T> 
 /// (the runtime's, or the browser's), then where the relay reaches it.
 export async function startWakingWhileClosed(): Promise<void> {
   const relay = relayUrl();
-  if (!relay) throw new Error("This network doesn't run a push relay.");
+  if (!relay) throw new Error(t("error.pushNoRelay"));
   let target: { channel: string; address: string };
   if (window.__HANDSHAKE_PUSH__) {
     target = await window.__HANDSHAKE_PUSH__.register();
   } else {
     const { vapidPublicKey } = (await (await fetch(`${relay}/config`)).json()) as { vapidPublicKey: string | null };
-    if (!vapidPublicKey) throw new Error("This network's push relay doesn't reach browsers.");
-    if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked for this site.");
+    if (!vapidPublicKey) throw new Error(t("error.pushNoBrowsers"));
+    if ((await Notification.requestPermission()) !== "granted") throw new Error(t("error.pushBlocked"));
     const worker = await navigator.serviceWorker.ready;
     const subscription = (await worker.pushManager.getSubscription()) ?? (await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytesFromBase64Url(vapidPublicKey) }));
     target = { channel: "webpush", address: JSON.stringify(subscription) };

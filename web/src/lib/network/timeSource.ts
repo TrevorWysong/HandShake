@@ -5,6 +5,7 @@
 // current round: nobody could know it before it was published, so the step
 // wasn't written earlier. Validation checks its signature against the
 // network's key; this only fetches it, from the relays the network names.
+import { t } from "../../i18n";
 import type { Beacon } from "../../holochain/types";
 import { currentTerms } from "../../store/network";
 import { withTimeout } from "../util/timeout";
@@ -36,7 +37,7 @@ export async function currentBeacon(): Promise<Beacon> {
       // The next relay.
     }
   }
-  throw new Error("Couldn't reach the network's time source. Check your connection and try again.");
+  throw new Error(t("error.noTimeSource"));
 }
 
 function parseHex(hex: string): Uint8Array | null {
