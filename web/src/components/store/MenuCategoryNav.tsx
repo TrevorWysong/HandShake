@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { scrollMotion } from "../../lib/ui/motion";
 import { useScrollSpy } from "../../lib/hooks/useScrollSpy";
 
 export interface MenuCategory {
@@ -8,7 +9,7 @@ export interface MenuCategory {
 }
 
 function goTo(id: string) {
-  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById(id)?.scrollIntoView({ behavior: scrollMotion(), block: "start" });
 }
 
 /// A menu's categories, marking the one being read: a bar of chips that

@@ -6,6 +6,7 @@
 // under the option that leads to them. Adding before every required group
 // is answered scrolls to the first one that isn't and marks it. The running
 // price is the network's own (`lib/storefront/choices`), so it's what the order costs.
+import { scrollMotion } from "../../lib/ui/motion";
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Minus, Plus } from "lucide-react";
@@ -68,7 +69,7 @@ export function ItemSheet({ catalogRef, row, editing, gift, policy, onClose, onD
     if (!priced?.ok) {
       setAttempted(true);
       // The first group still waiting for an answer, nested ones included.
-      event.currentTarget.closest("[role=dialog]")?.querySelector("[data-unanswered=true]")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      event.currentTarget.closest("[role=dialog]")?.querySelector("[data-unanswered=true]")?.scrollIntoView({ behavior: scrollMotion(), block: "center" });
       return;
     }
     onDone({ itemRef: row.hash, name: item.name, basePriceCents: item.price_cents, priceCents: priced.price, choiceCharges: priced.choices, quantity, selections, choiceLabels: choiceLabels(selections, groups) });

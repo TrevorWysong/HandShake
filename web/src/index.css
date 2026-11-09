@@ -219,6 +219,18 @@
 }
 
 /* Printing a receipt prints just the receipt (components/orders/OrderReceipt.tsx). */
+/* Asked for less motion: no pulsing or pinging. A spinner still turns -- it
+   says something's under way. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-ping,
+  .animate-pulse {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 @media print {
   body * {
     visibility: hidden;

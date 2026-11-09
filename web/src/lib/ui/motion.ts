@@ -22,3 +22,7 @@ export const pageVariants: Variants = {
   initial: { opacity: 0, y: 6 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE } },
 };
+
+/// How a scroll the app makes moves: smoothly, unless the person's asked
+/// their system for less motion.
+export const scrollMotion = (): ScrollBehavior => (typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");

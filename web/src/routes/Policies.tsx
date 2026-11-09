@@ -9,7 +9,7 @@ import { Link, useNavigate } from "react-router-dom";
 import type { NetworkTerms } from "../holochain/types";
 import { POLICY_UPDATED, POLICY_VERSION, policyChanges, policyRisks, policySections, spoken, type Audience, type PolicySection } from "../lib/policies";
 import { appLocale, useT, type MessageKey } from "../i18n";
-import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
+import { fadeSlideUp, staggerContainer, scrollMotion } from "../lib/ui/motion";
 import { useTerms } from "../store/network";
 
 const AUDIENCE: Record<Audience, { label: MessageKey; Icon: typeof Bike }> = {
@@ -57,7 +57,7 @@ function PolicyBody({ terms }: { terms: NetworkTerms }) {
             <li key={s.id}>
               {/* Scrolls in place: the app's router owns the URL's hash. */}
               <button
-                onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: scrollMotion(), block: "start" })}
                 className="group flex items-baseline gap-3 text-left text-ink-600 hover:text-ink-900 dark:text-ink-300 dark:hover:text-ink-50"
               >
                 <span className="w-4 text-right text-xs tabular-nums text-ink-300 dark:text-ink-600">{i + 1}</span>
