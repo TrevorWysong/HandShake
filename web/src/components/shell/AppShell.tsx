@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo } from "react";
+import { usePageTitle } from "../../lib/hooks/usePageTitle";
 import { NavigationType, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { motion } from "framer-motion";
 import clsx from "clsx";
@@ -95,6 +96,7 @@ function AnimatedOutlet() {
 export function AppShell() {
   const { mode: chosenMode, setMode, profile, agentPubKey } = useSession();
   const { pathname } = useLocation();
+  usePageTitle();
   // What's in every store's cart, together.
   const cartCount = useCarts((s) => Object.values(s.carts).reduce((n, cart) => n + cart.lines.reduce((m, l) => m + l.quantity, 0), 0));
   const navigate = useNavigate();
