@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Dark when the page is: <html class="dark">, set from the person's choice --
+   their device's theme, or always light or dark (lib/ui/theme.ts). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* The wide-screen sidebar's width: the shell's `w-sidebar`, and
      `lg:left-sidebar` on bars that float over the content beside it. */
@@ -11,9 +15,9 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
 
   /* Ink -- a full neutral warm-gray scale (surfaces + text), used with
-     dark: variants throughout components/ui.tsx and AppShell. Tailwind v4's
-     default dark: strategy follows prefers-color-scheme, so this app's dark
-     mode is automatic, not a manual toggle. */
+     dark: variants throughout components/ui.tsx and AppShell. Dark follows the
+     page's `dark` class (see the custom variant above), set from Appearance
+     in Profile: the device's theme, or always light or dark. */
   --color-ink-50: #f7f6f5;
   --color-ink-100: #ece9e6;
   --color-ink-200: #d8d3cc;
@@ -86,12 +90,17 @@
     appearance: none;
     margin: 0;
   }
+  /* Before the app has said which (lib/ui/theme.ts), the device's theme: a
+     dark device's page doesn't flash white as it loads. */
   @media (prefers-color-scheme: dark) {
-    body {
+    html:not(.light):not(.dark) body {
+      background-color: var(--color-ink-950);
+    }
+  }
+  .dark body {
       background-color: var(--color-ink-950);
       color: var(--color-ink-50);
     }
-  }
 }
 
 @layer utilities {
@@ -137,11 +146,9 @@
     overflow: hidden;
     background-color: var(--color-ink-100);
   }
-  @media (prefers-color-scheme: dark) {
-    .skeleton {
+  .dark .skeleton {
       background-color: var(--color-ink-800);
     }
-  }
   .skeleton::after {
     content: "";
     position: absolute;
@@ -150,11 +157,9 @@
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
     animation: shimmer 1.6s infinite;
   }
-  @media (prefers-color-scheme: dark) {
-    .skeleton::after {
+  .dark .skeleton::after {
       background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
     }
-  }
 
   /* Leaflet theming (components/places/LiveMap.tsx) -- the library ships its own
      gray chrome and a white popup by default, which clashes with this
@@ -166,11 +171,9 @@
   .leaflet-tile-pane {
     filter: grayscale(0.25) saturate(0.85) brightness(1.03);
   }
-  @media (prefers-color-scheme: dark) {
-    .leaflet-tile-pane {
+  .dark .leaflet-tile-pane {
       filter: grayscale(0.4) invert(0.92) hue-rotate(180deg) brightness(0.95) contrast(0.92);
     }
-  }
   .leaflet-popup-content-wrapper {
     border-radius: 0.75rem;
     background: var(--color-cream);
@@ -189,24 +192,19 @@
   .leaflet-container a.leaflet-popup-close-button {
     color: var(--color-ink-400);
   }
-  @media (prefers-color-scheme: dark) {
-    .leaflet-popup-content-wrapper,
-    .leaflet-popup-tip {
+  .dark .leaflet-popup-content-wrapper, .dark .leaflet-popup-tip {
       background: var(--color-ink-900);
       color: var(--color-ink-50);
     }
-  }
   .leaflet-control-attribution {
     background: color-mix(in srgb, var(--color-cream) 85%, transparent) !important;
     color: var(--color-ink-400) !important;
     font-size: 9px !important;
   }
-  @media (prefers-color-scheme: dark) {
-    .leaflet-control-attribution {
+  .dark .leaflet-control-attribution {
       background: color-mix(in srgb, var(--color-ink-900) 85%, transparent) !important;
       color: var(--color-ink-500) !important;
     }
-  }
 
   /* A soft, brand-tinted radial mesh for hero sections (Onboarding,
      Transparency) -- an alternative to a flat color fill that still reads
@@ -250,10 +248,21 @@
   }
 }
 
+/* Switching theme happens at once (lib/ui/theme.ts). */
+.theme-switching,
+.theme-switching * {
+  transition: none !important;
+}
+
 /* The picker icons native date and time fields draw, legible in either theme.
    Only these: a page-wide color-scheme would paint card forms' frames white. */
 input[type="time"],
 input[type="date"],
 input[type="datetime-local"] {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+.dark input[type="time"],
+.dark input[type="date"],
+.dark input[type="datetime-local"] {
+  color-scheme: dark;
 }

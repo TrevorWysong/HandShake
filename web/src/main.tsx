@@ -8,7 +8,10 @@ import { HOST } from "./holochain/host";
 import { loadLocale } from "./i18n";
 import { resumeSession } from "./store/session";
 import { teachServiceWorker } from "./lib/network/push";
+import { followTheme } from "./lib/ui/theme";
 
+// Light or dark, as they chose, before anything's drawn.
+followTheme();
 // The person's language first, so the first screen is already in it.
 await loadLocale();
 // Then, without waiting on it, the session this device remembers.

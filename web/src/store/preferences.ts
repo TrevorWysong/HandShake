@@ -4,7 +4,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+/// How the app looks: as the device does, or always light or dark.
+export type Theme = "system" | "light" | "dark";
+
 interface Preferences {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
   /// System notifications for order updates (needs the browser's permission).
   notifications: boolean;
   /// A chime for each new order waiting on one of this device's stores.
@@ -16,6 +21,8 @@ interface Preferences {
 export const usePreferences = create<Preferences>()(
   persist(
     (set) => ({
+      theme: "system",
+      setTheme: (theme) => set({ theme }),
       notifications: false,
       newOrderChime: true,
       setNotifications: (notifications) => set({ notifications }),

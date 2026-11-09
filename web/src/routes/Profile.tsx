@@ -17,6 +17,7 @@ import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
 import type { ProviderCredential, RatingSummary, Review } from "../holochain/types";
 import { HOST } from "../holochain/host";
 import { NotificationSettings } from "../components/account/NotificationSettings";
+import { AppearanceSettings } from "../components/account/AppearanceSettings";
 import { LanguagePicker } from "../components/shell/LanguagePicker";
 import { DevIdentityPicker } from "../components/account/DevIdentityPicker";
 import { DEV_ADMIN_URL } from "../lib/network/devNode";
@@ -301,6 +302,7 @@ export function ProfilePage() {
       <motion.div variants={fadeSlideUp}>
       {profile?.roles.includes("Requester") && <MyAllergies />}
       <LanguagePicker />
+      <AppearanceSettings />
       <NotificationSettings rings={!!profile?.roles.some((role) => role === "Merchant" || role === "Provider")} />
       <Card className="mb-4 p-4">
         <SectionLabel className="mb-1">{t("profile.identity")}</SectionLabel>
