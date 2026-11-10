@@ -28,6 +28,7 @@ import { refreshCarrying, useCarrying } from "../../store/carrying";
 import { unlockChime } from "../../lib/ui/chime";
 import { useAction } from "../../lib/hooks/useAction";
 import { ActiveDeliveryCard, BidCard, SuggestedRoute } from "./DriverCards";
+import { PhotoNeeded } from "./PhotoNeeded";
 import { commitmentOf, dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
 
 const NO_ROWS: OrderRow[] = [];
@@ -68,12 +69,20 @@ export function DriverDashboard() {
   const carryingHex = new Set(activeOrders.map((row) => bytesToHex(row.hash)));
   const offersOut = (nearby ?? []).map(({ hash }) => bytesToHex(hash)).filter((hex) => !carryingHex.has(hex) && sentBids[`${driverHex}:${hex}`]);
   const [confirmingOffline, setConfirmingOffline] = useState(false);
+  // Customers see a driver's photo: one without is asked for it first.
+  const hasPhoto = !!useSession((s) => s.profile?.avatar_data_uri);
+  const [askingPhoto, setAskingPhoto] = useState(false);
+
+  function goOnline() {
+    unlockChime();
+    resetFeed(driverHex);
+  }
 
   function toggleOnline() {
     // Going online is the tap that lets the page ring for new orders.
-    if (!online) {
-      unlockChime();
-      resetFeed(driverHex);
+    if (!online && !hasPhoto) setAskingPhoto(true);
+    else if (!online) {
+      goOnline();
     } else if (offersOut.length > 0 || activeOrders.length > 0) setConfirmingOffline(true);
     else resetFeed(null);
   }
@@ -168,6 +177,14 @@ export function DriverDashboard() {
             <Power size={20} />
           </motion.button>
         </Card>
+        <PhotoNeeded
+          open={askingPhoto}
+          onClose={() => setAskingPhoto(false)}
+          onSaved={() => {
+            setAskingPhoto(false);
+            goOnline();
+          }}
+        />
         {me && (
           <div className="lg:order-3 lg:col-span-2">
             <VerificationCard me={me} />

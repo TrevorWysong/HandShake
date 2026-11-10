@@ -65,6 +65,7 @@ export function Onboarding() {
   const [vehicleDetail, setVehicleDetail] = useState("");
   const [licensePlate, setLicensePlate] = useState("");
   const [vehiclePhoto, setVehiclePhoto] = useState("");
+  const driving = roles.includes("Provider");
 
   function toggleRole(role: RoleTag) {
     setRoles((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
@@ -84,7 +85,7 @@ export function Onboarding() {
   }, { stayBusy: true });
 
   function goToDetailsNext() {
-    if (!displayName.trim() || phoneNumber === null) return;
+    if (!displayName.trim() || phoneNumber === null || (driving && !avatarDataUri)) return;
     if (roles.includes("Provider")) {
       setStep("vehicle");
     } else {
@@ -204,9 +205,16 @@ export function Onboarding() {
                 <h2 className="text-lg font-bold mb-1">{t("onboarding.create")}</h2>
                 <p className="text-sm text-ink-500 mb-4">{t("onboarding.createDetail")}</p>
 
-                <div className="mb-4 flex justify-center">
-                  <PhotoInput value={avatarDataUri} onChange={setAvatarDataUri} shape="circle" />
-                </div>
+                {/* A driver's photo, as the delivery apps ask for it: customers
+                    see it with their first name, so they know who's at the
+                    door. A customer publishes no photo, so isn't asked. */}
+                {driving && (
+                  <div className="mb-5 flex flex-col items-center gap-2 text-center">
+                    <PhotoInput value={avatarDataUri} onChange={setAvatarDataUri} shape="circle" camera="user" />
+                    <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("onboarding.driverPhoto")}</p>
+                    <p className="max-w-xs text-[11px] leading-relaxed text-ink-400">{t("onboarding.driverPhotoDetail")}</p>
+                  </div>
+                )}
 
                 <Field label={t("onboarding.name")} className="mb-4">
                   <Input maxLength={MAX_LABEL_CHARS} autoFocus value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={t("onboarding.namePlaceholder")} />
@@ -253,7 +261,7 @@ export function Onboarding() {
                   <Button variant="ghost" onClick={() => setStep("roles")} disabled={connecting}>
                     {t("common.back")}
                   </Button>
-                  <Button className="flex-1" onClick={goToDetailsNext} disabled={connecting || !displayName.trim() || phoneNumber === null || (devHost && !adminUrl.trim())}>
+                  <Button className="flex-1" onClick={goToDetailsNext} disabled={connecting || !displayName.trim() || phoneNumber === null || (driving && !avatarDataUri) || (devHost && !adminUrl.trim())}>
                     {connecting ? <Spinner className="h-4 w-4" /> : roles.includes("Provider") ? t("onboarding.nextVehicle") : t("onboarding.enter")}
                   </Button>
                 </div>
@@ -266,7 +274,7 @@ export function Onboarding() {
                 <p className="text-sm text-ink-500 mb-4">{t("onboarding.vehicleDetail")}</p>
 
                 <div className="mb-4">
-                  <PhotoInput value={vehiclePhoto} onChange={setVehiclePhoto} shape="banner" />
+                  <PhotoInput value={vehiclePhoto} onChange={setVehiclePhoto} shape="banner" camera="environment" />
                 </div>
 
                 <label className="block text-xs font-semibold text-ink-500 mb-1">{t("onboarding.vehicleType")}</label>

@@ -22,6 +22,8 @@ interface Details {
   customer_name: string | null;
 }
 
+const PHOTO = "data:image/jpeg;base64,face";
+
 await runScenario(async (scenario) => {
   const [customer, merchant, driver, stranger] = await scenario.addPlayersWithApps([
     testApp,
@@ -36,8 +38,8 @@ await runScenario(async (scenario) => {
 
   const now = Date.now() * 1000;
   const profiles = new Map<typeof customer, Uint8Array>();
-  for (const [p, name, roles] of [[customer, "Cara", ["Requester"]], [merchant, "Mo", ["Merchant"]], [driver, "Dana", ["Provider"]], [stranger, "Sly", ["Requester"]]] as const) {
-    profiles.set(p, actionHash(await call(p, "profiles")<HcRecord>("create_profile", { display_name: name, roles, created_at: now })));
+  for (const [p, name, roles] of [[customer, "Cara", ["Requester"]], [merchant, "Mo", ["Merchant"]], [driver, "Dana Reyes", ["Provider"]], [stranger, "Sly", ["Requester"]]] as const) {
+    profiles.set(p, actionHash(await call(p, "profiles")<HcRecord>("create_profile", { display_name: name, roles, created_at: now, avatar_data_uri: PHOTO })));
   }
   // A driver's vehicle is kept on their own device.
   const vehicle = { vehicle_description: "Blue Honda Civic", license_plate: "DANA1", photo_data_uri: "" };
@@ -45,14 +47,19 @@ await runScenario(async (scenario) => {
   assert.equal(decodeEntry<{ license_plate: string }>((await call(driver, "profiles")<HcRecord | null>("get_my_vehicle", null))!).license_plate, "DANA1", "the driver reads it back");
   assert.equal(await call(stranger, "profiles")<HcRecord | null>("get_my_vehicle", null), null, "and it's only ever their own");
   // A customer publishes no name; a store's is public.
-  const profileOf = async (p: typeof customer) => decodeEntry<{ display_name: string; sealed_name: unknown }>((await call(p, "profiles")<HcRecord | null>("get_profile_for_agent", p.agentPubKey))!);
+  const profileOf = async (p: typeof customer) => decodeEntry<{ display_name: string; sealed_name: unknown; avatar_data_uri: string }>((await call(p, "profiles")<HcRecord | null>("get_profile_for_agent", p.agentPubKey))!);
   const customerProfile = await profileOf(customer);
   assert.equal(customerProfile.display_name, "", "a customer's profile carries no name");
   assert.ok(customerProfile.sealed_name, "it's sealed to them");
   assert.ok(!Buffer.from(JSON.stringify(customerProfile)).includes("Cara"), "nowhere in the clear");
   assert.equal(await call(customer, "profiles")<string | null>("get_my_name", null), "Cara", "they read it back");
   assert.equal((await profileOf(merchant)).display_name, "Mo", "a store's name is public");
-  console.log("[PASS] a customer's name isn't published; a store's is");
+  assert.equal(customerProfile.avatar_data_uri, "", "nor their photo");
+  const driverProfile = await profileOf(driver);
+  assert.equal(driverProfile.display_name, "Dana", "a driver publishes their first name");
+  assert.equal(driverProfile.avatar_data_uri, PHOTO, "and their photo, so a customer knows who's at the door");
+  assert.equal(await call(driver, "profiles")<string | null>("get_my_name", null), "Dana Reyes", "the whole of it stays theirs");
+  console.log("[PASS] a customer's name and photo aren't published; a store's or driver's first name and photo are");
 
   const store = actionHash(await call(merchant, "catalog")<HcRecord>("publish_catalog", { business_name: "Mo's", location: ST_PETE }));
   const item = actionHash(await call(merchant, "catalog")<HcRecord>("add_menu_item", { catalog_ref: store, name: "Soup", price_cents: 800, available: true }));

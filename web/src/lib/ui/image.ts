@@ -15,16 +15,26 @@ const JPEG_QUALITY = 0.72;
 
 export async function fileToResizedDataUri(file: File): Promise<string> {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
-  const width = Math.round(bitmap.width * scale);
-  const height = Math.round(bitmap.height * scale);
+  return imageToDataUri(bitmap, bitmap.width, bitmap.height);
+}
+
+/// An image -- a picked file, or a camera's frame -- resized and compressed
+/// the same way. `mirror` flips it, as a selfie camera's preview shows it.
+export function imageToDataUri(image: CanvasImageSource, sourceWidth: number, sourceHeight: number, mirror = false): string {
+  const scale = Math.min(1, MAX_DIMENSION / Math.max(sourceWidth, sourceHeight));
+  const width = Math.round(sourceWidth * scale);
+  const height = Math.round(sourceHeight * scale);
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas 2d context unavailable");
-  ctx.drawImage(bitmap, 0, 0, width, height);
+  if (mirror) {
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(image, 0, 0, width, height);
 
   const dataUri = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
   // The network's ceiling (`max_image_bytes`) -- validation refuses more.

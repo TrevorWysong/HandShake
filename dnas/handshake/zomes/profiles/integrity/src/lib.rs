@@ -22,7 +22,7 @@ pub enum RoleTag {
 // happens to share these can never pass for this one.
 #[serde(deny_unknown_fields)]
 pub struct Profile {
-    /// The name everyone sees -- published only for the roles that face the
+    /// The first name everyone sees -- published only for the roles that face the
     /// public: a store and a driver. A customer publishes none: their name
     /// is `sealed_name`, shared only with the store and driver of each of
     /// their orders (sealed into the order), so nobody else can put a name

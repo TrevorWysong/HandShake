@@ -11,9 +11,9 @@ use handshake_coordinator_support::{guest, open, open_padded, seal_padded, resol
 /// sealed before it's stored (`Profile::sealed_phone`).
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProfileInput {
-    /// The person's name. Always kept sealed to themselves; published as
-    /// the profile's `display_name` only for a store or a driver (see
-    /// `Profile::display_name`).
+    /// The person's name. Always kept sealed to themselves; its first word
+    /// is published as the profile's `display_name` only for a store or a
+    /// driver (see `Profile::display_name`).
     pub display_name: String,
     pub roles: Vec<RoleTag>,
     pub created_at: Timestamp,
@@ -37,13 +37,23 @@ impl ProfileInput {
             roles: self.roles,
             created_at: self.created_at,
             bio: self.bio,
-            avatar_data_uri: self.avatar_data_uri,
+            avatar_data_uri: String::new(),
         };
+        // A store's or driver's first name and photo are public, so customers
+        // know who they're dealing with; a customer publishes neither.
         if profile.is_public() {
-            profile.display_name = name;
+            profile.display_name = first_name(&name).to_string();
+            profile.avatar_data_uri = self.avatar_data_uri;
         }
         Ok(profile)
     }
+}
+
+/// The name others see: the first word of the person's own -- "Dana", not
+/// "Dana Reyes" -- as Uber Eats and DoorDash show a driver to a customer.
+/// The whole of it stays sealed to them (`Profile::sealed_name`).
+fn first_name(name: &str) -> &str {
+    name.split_whitespace().next().unwrap_or("")
 }
 
 #[hdk_extern]

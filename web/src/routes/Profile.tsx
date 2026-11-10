@@ -126,8 +126,10 @@ export function ProfilePage() {
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pt-6 pb-8">
       <motion.div variants={fadeSlideUp} className="mb-6 flex flex-col items-center gap-3">
         <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}>
-          {editing ? (
-            <PhotoInput value={draft.avatar_data_uri} onChange={(v) => setDraft((d) => ({ ...d, avatar_data_uri: v }))} shape="circle" />
+          {/* A photo is a store's or driver's, shown with their first name; a
+              customer publishes none. */}
+          {editing && publicFacing ? (
+            <PhotoInput value={draft.avatar_data_uri} onChange={(v) => setDraft((d) => ({ ...d, avatar_data_uri: v }))} shape="circle" camera="user" />
           ) : profile?.avatar_data_uri ? (
             <img src={profile.avatar_data_uri} alt="" className="h-20 w-20 rounded-3xl object-cover shadow-xl" />
           ) : (

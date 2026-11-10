@@ -1,21 +1,33 @@
-import { useRef } from "react";
-import { Camera, Loader2 } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+import { Camera, ImageIcon, Loader2 } from "lucide-react";
 import clsx from "clsx";
 import { fileToResizedDataUri } from "../lib/ui/image";
 import { useT } from "../i18n";
 import { useAction } from "../lib/hooks/useAction";
+import { Sheet } from "./Sheet";
+import { CameraCapture } from "./CameraCapture";
 
 interface Props {
   value: string;
   onChange: (dataUri: string) => void;
   shape?: "circle" | "banner";
   className?: string;
+  /// Offer the camera too, as the delivery apps' sign-up does: "user" for a
+  /// selfie, "environment" for a photo of something.
+  camera?: "user" | "environment";
 }
 
-export function PhotoInput({ value, onChange, shape = "circle", className }: Props) {
+export function PhotoInput({ value, onChange, shape = "circle", className, camera }: Props) {
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const action = useAction();
+  // With a camera: choosing how, then the camera itself.
+  const [sheet, setSheet] = useState<"choose" | "camera" | null>(null);
+
+  function pickFile() {
+    setSheet(null);
+    inputRef.current?.click();
+  }
 
   function handleFile(file: File | undefined) {
     if (!file) return;
@@ -30,7 +42,7 @@ export function PhotoInput({ value, onChange, shape = "circle", className }: Pro
     <div className={clsx(isBanner && "w-full", className)}>
       <button
         type="button"
-        onClick={() => inputRef.current?.click()}
+        onClick={() => (camera ? setSheet("choose") : inputRef.current?.click())}
         className={clsx(
           "group relative flex items-center justify-center overflow-hidden transition",
           isBanner
@@ -49,7 +61,7 @@ export function PhotoInput({ value, onChange, shape = "circle", className }: Pro
           <span className="flex flex-col items-center gap-1.5 text-ink-400 dark:text-ink-500">
             <Camera size={26} />
             <span className="text-xs font-semibold">{t("photo.add")}</span>
-            <span className="text-[11px]">{t("photo.tap")}</span>
+            <span className="text-[11px]">{t(camera ? "photo.tapCamera" : "photo.tap")}</span>
           </span>
         ) : (
           <Camera size={22} className="text-ink-400" />
@@ -66,7 +78,35 @@ export function PhotoInput({ value, onChange, shape = "circle", className }: Pro
         )}
       </button>
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
+      {camera && (
+        <Sheet open={sheet !== null} onClose={() => setSheet(null)} title={t(sheet === "camera" ? (camera === "user" ? "camera.selfieTitle" : "camera.title") : "photo.add")}>
+          {sheet === "camera" ? (
+            <CameraCapture
+              facing={camera}
+              onPickInstead={pickFile}
+              onUse={(dataUri) => {
+                onChange(dataUri);
+                setSheet(null);
+              }}
+            />
+          ) : (
+            <div className="flex flex-col gap-2">
+              <ChoiceRow icon={<Camera size={18} />} label={t("photo.take")} onClick={() => setSheet("camera")} />
+              <ChoiceRow icon={<ImageIcon size={18} />} label={t("photo.library")} onClick={pickFile} />
+            </div>
+          )}
+        </Sheet>
+      )}
       {action.error && <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{action.error}</p>}
     </div>
+  );
+}
+
+function ChoiceRow({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="flex items-center gap-3 rounded-2xl bg-ink-50 px-4 py-3.5 text-left text-sm font-semibold text-ink-900 transition hover:bg-ink-100 active:scale-[0.99] dark:bg-ink-800/60 dark:text-ink-50 dark:hover:bg-ink-800">
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-handshake-600 shadow-sm dark:bg-ink-900 dark:text-handshake-400">{icon}</span>
+      {label}
+    </button>
   );
 }
