@@ -945,6 +945,9 @@ pub struct OrderRewards {
 }
 
 #[cfg(test)]
+mod lifecycle_tests;
+
+#[cfg(test)]
 mod type_confusion_tests {
     use super::*;
 

@@ -232,6 +232,70 @@ test("a processor refusing an authorization for good is the payer's to hear abou
   assert.deepEqual(z.recorded("record_declined").map((d) => d.code), ["Unavailable"]);
 });
 
+test("a processor down mid-round leaves nothing recorded it didn't do, and the next round does it once", async () => {
+  const z = zome();
+  const real = testProcessor("USD");
+  let down = true;
+  const flaky = {
+    ...real,
+    capture: async (...args: Parameters<typeof real.capture>) => {
+      if (down) throw new Retry("processor unreachable");
+      return real.capture(...args);
+    },
+    refund: async (...args: Parameters<typeof real.refund>) => {
+      if (down) throw new Retry("processor unreachable");
+      return real.refund(...args);
+    },
+  };
+  const engine = new Engine({ dispatch: z.dispatch, processor: flaky, state: memoryStore(), currency: "USD" });
+  z.due = [authorize(10, 50)];
+  await engine.round();
+  const reference = z.recorded("record_hold")[0].reference as string;
+
+  z.due = [{ Settle: { hold: h(60), reference, held: 2500, captured: 2000, claims: [] } }];
+  await engine.round();
+  assert.equal(z.recorded("record_settlement").length, 0, "nothing captured, so nothing recorded");
+  assert.equal(real.held.get(reference)?.captured, null);
+  down = false;
+  await engine.round();
+  assert.equal(real.held.get(reference)?.captured, 2000);
+  assert.equal(z.recorded("record_settlement").length, 1);
+
+  down = true;
+  z.due = [{ Refund: { settlement: h(70), reference, ruling: h(71), amount: 500 } }];
+  await engine.round();
+  assert.equal(z.recorded("record_refund").length, 0, "nothing refunded, so nothing recorded");
+  down = false;
+  await engine.round();
+  await engine.round();
+  assert.equal(real.held.get(reference)?.refunded, 500, "refunded once");
+  assert.equal(z.recorded("record_refund").length, 1);
+});
+
+test("one payment failing never holds up the others in its round", async () => {
+  const z = zome();
+  const real = testProcessor("USD");
+  const problems: string[] = [];
+  let broken = "";
+  const picky = { ...real, capture: async (...args: Parameters<typeof real.capture>) => {
+    if (args[0] === broken) throw new Refused("this authorization has expired");
+    return real.capture(...args);
+  } };
+  const engine = new Engine({ dispatch: z.dispatch, processor: picky, state: memoryStore(), currency: "USD", onProblem: (what) => problems.push(what) });
+  z.due = [authorize(10, 50), authorize(11, 51)];
+  await engine.round();
+  const [a, b] = z.recorded("record_hold").map((r) => r.reference as string);
+  broken = a;
+  z.due = [
+    { Settle: { hold: h(60), reference: a, held: 2500, captured: 2500, claims: [] } },
+    { Settle: { hold: h(61), reference: b, held: 2500, captured: 2500, claims: [] } },
+  ];
+  await engine.round();
+  assert.equal(real.held.get(b)?.captured, 2500, "the other is settled");
+  assert.deepEqual(z.recorded("record_settlement").map((r) => r.hold), [h(61)]);
+  assert.deepEqual(problems, ["Settle"], "and the failed one is the payee's to hear about");
+});
+
 test("rounds never overlap", async () => {
   const { z, engine } = setup();
   z.due = [authorize(10, 50)];
