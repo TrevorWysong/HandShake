@@ -256,6 +256,20 @@ No modified app can cost anyone else once a store has handed an order over: the 
 | A customer and the driver they chose, in league, could keep the food unpaid: a modified app never said it never arrived, so it stayed picked up and the store was never paid (listed under What remains before) | High (food lost) | A delivery picked up that nobody says more of is settled as delivered once the customer's lapse and report window from the pickup have run, proved against the time source (`OrderOutcome::beacon`): the customer pays as for any delivery and the driver is paid. An honest customer's app has said it never arrived by then, so the driver's collateral pays instead; one whose never came appeals to an arbiter. The store has nothing to gain by settling a disputed order this way: deciding it never arrived costs it less |
 | A store's decision that a picked-up order was delivered freed nothing for its driver, whose carry stayed counted | Low (driver capacity) | Any outcome the store decides ends the driver's carry |
 
+## 2026-11-09 review: who sees whom
+
+Delivery now shows each side who to expect, as Uber Eats and DoorDash do, and nothing beyond it. Each fix is proved in `privacy.test.ts` and `store-move.test.ts`.
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Every driver's car, plate and photo were readable by anyone on the network, and shown to no customer | Medium (privacy) | A driver's vehicle is kept on their own device (a private record) and shared, sealed, only with the customer of an order they've committed to (`VehicleShare`): one share per order, from the driver the order shows committed, no larger than a photo |
+| A store's and driver's full name was public, and a customer's full name went to each store and driver | Low (privacy) | Others see a store owner's or driver's first name, and an order names its customer by first name and last initial ("Lee C."). A customer publishes no photo; a driver's photo is shown with their first name |
+| A sealed photo -- a driver's car, an appeal's evidence -- was shown as sealed, so a modified app could seal a link to a tracker for the other side's app to fetch | Medium (privacy) | Checked as it's opened, as every other sealed photo already was: only an inline raster image is shown (`checked_photo`) |
+| A store moved to a new key could unlink its move, keeping the old store's customers coming while leaving its ratings behind | Medium (reputation) | A store's move is a permanent record |
+| A party could give a store any number of photo-sized evidence records for one order, each stored by every peer holding it | Low (storage) | Once per party and order |
+| A dispatch link type the delete rules didn't name would have been deletable by anyone | Low (defence in depth) | Refused unless named |
+| Anyone could make an app check any number of live signals, each costing a read, and an order's driver could make its customer's map ask for routes without pause | Low (load) | Signals checked per sender are capped, and the map asks for a route at most every 15 seconds |
+
 ## Store contact details and pickup chat
 
 - **Contact links can only be what they say.** A store's email must be a plain address (letters, digits and `._+-'`, so a `mailto:` link can't carry `?cc=` or anything else), and its website an `http(s)://` address with a real host. No `user@` before the host, which could dress one site up as another. No characters that could break out of a link. Validation holds every peer to this (`handshake_integrity_support::contact`). The app builds every link only from details that pass (`web/src/lib/storefront/contact.ts`), a phone link from its digits alone, and directions from the store's coordinates.

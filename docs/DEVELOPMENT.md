@@ -69,12 +69,13 @@ Every entry on the DHT is readable by every peer, forever. So anything personal 
 | --- | --- |
 | A delivery's exact drop-off and drop-off notes | the customer; the driver, once their bid is accepted |
 | An order's note for the kitchen | the customer and the store |
-| A customer's name | the customer; the store of each of their orders; its driver, once assigned |
+| A customer's name | the customer; the store and driver of each of their orders see their first name and last initial ("Lee C."), the driver once assigned |
+| A driver's vehicle (car, plate, photo) | the driver, on their own device; the customer of each order they commit to |
 | Saved addresses, recurring orders, a delivery claim's drop-off, a profile's phone | their owner |
 
-**Customers are pseudonymous.** A customer publishes no name: their profile holds it sealed, and each order carries it sealed to the store (and, inside the drop-off, to the driver). Someone reading the DHT sees an agent key place an order with a store, and nothing that names the person behind it. A store's and a driver's names are public, as their business.
+**Customers are pseudonymous.** A customer publishes no name: their profile holds it sealed, and each order carries it sealed to the store (and, inside the drop-off, to the driver). Someone reading the DHT sees an agent key place an order with a store, and nothing that names the person behind it. A store owner's and a driver's first names are public, with a driver's photo, so customers know who to expect; the rest of the name stays sealed to them. A customer publishes no photo.
 
-Public on purpose: a delivery's drop-off *area* (a ~1.2 km geohash cell, so a driver can judge the trip -- drivers find open orders by their store's cell), a store's own address and phone, a store's and driver's names.
+Public on purpose: a delivery's drop-off *area* (a ~1.2 km geohash cell, so a driver can judge the trip -- drivers find open orders by their store's cell), a store's own address and phone, a store owner's and driver's first names, and a driver's photo.
 
 Not hidden, and why:
 - **Which key orders from which store.** Every action's author is public on a DHT, and so is each payment's payer and payee. Hiding the link itself would need a different authorship model. What's hidden is who the key is.
