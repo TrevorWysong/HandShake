@@ -12,7 +12,7 @@
 // screen's dev identity picker lists them so you can sign in as anyone.
 // Stores and drivers are paid on the test processor, each by their own
 // payment agent (payments/), which `npm run dev:payments` keeps running.
-import { avatarDataUri } from "./lib/avatar.ts";
+import { avatarDataUri, carDataUri } from "./lib/avatar.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { AppWebsocket, encodeHashToBase64, type ActionHash, type AdminWebsocket, type AgentPubKey, type CellId, type Record as HcRecord } from "@holochain/client";
 import { decode } from "@msgpack/msgpack";
@@ -395,7 +395,7 @@ async function main() {
       }
       const profile = await agent.call<{ signed_action: { hashed: { hash: Uint8Array } } }>("profiles", "create_profile", { display_name: person.name, roles: person.roles, created_at: now(), bio: person.bio ?? "", phone: "", avatar_data_uri: person.photo ? avatarDataUri(...person.photo) : "" });
       if (person.vehicle) {
-        await agent.call("profiles", "register_provider_credential", { profile_action: profile.signed_action.hashed.hash, vehicle_description: person.vehicle.description, license_plate: person.vehicle.plate, photo_data_uri: "", capabilities: ["Food"], verified: false });
+        await agent.call("profiles", "register_provider_credential", { profile_action: profile.signed_action.hashed.hash, vehicle_description: person.vehicle.description, license_plate: person.vehicle.plate, photo_data_uri: carDataUri(person.vehicle.paint), capabilities: ["Food"], verified: false });
       }
       const addresses = (person.addresses ?? []).map((a) => ({ ...a, point: near(center, a.at) }));
       for (const address of addresses) {

@@ -4,6 +4,8 @@ import { Clock } from "lucide-react";
 import { baseMap } from "../../lib/places/baseMap";
 import { DRIVER_PIN, HOME_PIN, STORE_PIN } from "../../lib/places/mapPins";
 import { distanceKm } from "../../lib/places/geohash";
+import { pointAlong, roadBetween } from "../../lib/places/alongPath";
+import { SHARE_EVERY_MS } from "../../lib/driving/locationShare";
 import { routePath } from "../../lib/driving/routing";
 import { t as translate, useT } from "../../i18n";
 import "leaflet/dist/leaflet.css";
@@ -14,8 +16,8 @@ import { useLatest, useLiveSignal } from "../../lib/hooks/useResource";
 
 // A delivery on its way, as the big apps map it: the way by road from the
 // driver -- through the store, until they've collected it -- to the door,
-// only what's still ahead, under a pin that glides as the driver moves, and
-// how long that's likely to take.
+// only what's still ahead, under a pin that travels the road between the
+// positions the driver shares, and how long that's likely to take.
 //
 // Vanilla Leaflet, not react-leaflet: a thin, ref-based component, with the
 // network's map tiles (`baseMap`) and road routes from the network's routing
@@ -28,8 +30,11 @@ import { useLatest, useLiveSignal } from "../../lib/hooks/useResource";
 /// pace isn't this one's to trust.
 const REROUTE_KM = 0.15;
 const REROUTE_MS = 15_000;
-/// How long the pin takes to glide to each new position.
-const GLIDE_MS = 1_000;
+/// How long the pin takes to travel to each new position: about as long as
+/// the last one took to come, so it keeps moving steadily between them, as
+/// the big apps' pins do -- within bounds, for a driver whose app went quiet.
+const GLIDE_MIN_MS = 1_000;
+const GLIDE_MAX_MS = SHARE_EVERY_MS + 2_000;
 
 const ROUTE_COLOR = "#ff5a2b";
 
@@ -50,7 +55,9 @@ export function LiveMap({ orderRef, pickup, dropoff, collected, className }: Pro
   const t = useT();
   const mapRef = useRef<L.Map | null>(null);
   const routeRef = useRef<L.Layer[]>([]);
-  const driverRef = useRef<{ marker: L.Marker; at: GeoPoint; frame: number } | null>(null);
+  const driverRef = useRef<Driver | null>(null);
+  // The road drawn, for the pin to follow: none for a dashed line.
+  const pathRef = useRef<GeoPoint[] | null>(null);
   // Where the way ahead was last asked from, for which stage -- and which
   // ask is the latest, so a slow answer never draws over a newer one.
   const routedRef = useRef<{ from: GeoPoint; collected: boolean; at: number } | null>(null);
@@ -67,6 +74,7 @@ export function LiveMap({ orderRef, pickup, dropoff, collected, className }: Pro
     const map = mapRef.current;
     if (!map || ask !== askRef.current) return;
     for (const layer of routeRef.current) layer.remove();
+    pathRef.current = found?.path ?? null;
     const line: L.LatLngTuple[] = (found?.path ?? points).map((p) => [p.lat, p.lon]);
     routeRef.current = found
       ? [L.polyline(line, { color: "#fff", weight: 9, opacity: 0.95, lineCap: "round", lineJoin: "round" }), L.polyline(line, { color: ROUTE_COLOR, weight: 5, lineCap: "round", lineJoin: "round" })]
@@ -95,21 +103,23 @@ export function LiveMap({ orderRef, pickup, dropoff, collected, className }: Pro
         driverRef.current = null;
         routeRef.current = [];
         routedRef.current = null;
+        pathRef.current = null;
       };
     },
     [fromLat, fromLon, toLat, toLon, route],
   );
 
-  // Each position the driver shares: the pin glides there, and the way
-  // ahead is asked for again once they've moved on enough, or collected it.
+  // Each position the driver shares: the pin travels there by the road
+  // drawn, and the way ahead is asked for again once they've moved on
+  // enough, or collected it.
   useLiveSignal((signal) => {
     if (!("LocationUpdate" in signal) || !bytesEqual(signal.LocationUpdate.order_ref, orderRef)) return;
     const map = mapRef.current;
     if (!map) return;
     const to: GeoPoint = { lat: signal.LocationUpdate.lat, lon: signal.LocationUpdate.lon };
     const first = !driverRef.current;
-    if (driverRef.current) glide(driverRef.current, to);
-    else driverRef.current = { marker: L.marker([to.lat, to.lon], { icon: DRIVER_PIN, zIndexOffset: 1000 }).addTo(map), at: to, frame: 0 };
+    if (driverRef.current) glide(driverRef.current, pathRef.current, to);
+    else driverRef.current = { marker: L.marker([to.lat, to.lon], { icon: DRIVER_PIN, zIndexOffset: 1000 }).addTo(map), frame: 0, heard: performance.now() };
     setLive(true);
     const routed = routedRef.current;
     const stage = collectedRef.current;
@@ -142,18 +152,28 @@ export function LiveMap({ orderRef, pickup, dropoff, collected, className }: Pro
   );
 }
 
-/// Moves `driver`'s pin to `to` over `GLIDE_MS`, from wherever it is now.
-function glide(driver: { marker: L.Marker; at: GeoPoint; frame: number }, to: GeoPoint): void {
+interface Driver {
+  marker: L.Marker;
+  frame: number;
+  /// When their last position came.
+  heard: number;
+}
+
+/// Moves `driver`'s pin from wherever it is now to `to`, along `path`'s
+/// road where they're on it, at a steady pace.
+function glide(driver: Driver, path: GeoPoint[] | null, to: GeoPoint): void {
   cancelAnimationFrame(driver.frame);
-  driver.at = to;
-  // Asked for less motion: it's simply there.
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return void driver.marker.setLatLng([to.lat, to.lon]);
-  const from = driver.marker.getLatLng();
   const start = performance.now();
+  const ms = Math.min(GLIDE_MAX_MS, Math.max(GLIDE_MIN_MS, start - driver.heard));
+  driver.heard = start;
+  const from = driver.marker.getLatLng();
+  const way = roadBetween(path, { lat: from.lat, lon: from.lng }, to);
+  const place = (p: GeoPoint) => void driver.marker.setLatLng([p.lat, p.lon]);
+  // Asked for less motion: it's simply there.
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return place(way[way.length - 1]);
   const step = (now: number) => {
-    const done = Math.min(1, (now - start) / GLIDE_MS);
-    const eased = 1 - (1 - done) ** 3;
-    driver.marker.setLatLng([from.lat + (to.lat - from.lat) * eased, from.lng + (to.lon - from.lng) * eased]);
+    const done = Math.min(1, (now - start) / ms);
+    place(pointAlong(way, done));
     if (done < 1) driver.frame = requestAnimationFrame(step);
   };
   driver.frame = requestAnimationFrame(step);
