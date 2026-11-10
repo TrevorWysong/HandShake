@@ -28,7 +28,7 @@ import { refreshCarrying, useCarrying } from "../../store/carrying";
 import { unlockChime } from "../../lib/ui/chime";
 import { useAction } from "../../lib/hooks/useAction";
 import { ActiveDeliveryCard, BidCard, SuggestedRoute } from "./DriverCards";
-import { dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
+import { commitmentOf, dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
 
 const NO_ROWS: OrderRow[] = [];
 
@@ -127,7 +127,7 @@ export function DriverDashboard() {
   // their way while they're delivering, nothing past their limit.
   const ownLimits = useDriverSettings((s) => s.limits);
   const rules = offerRules(terms, ownLimits);
-  const commitments: Commitment[] = activeOrders.map((row) => ({ order: row.order, dropoff: dropoffPoint(row) }));
+  const commitments: Commitment[] = activeOrders.map(commitmentOf);
   const refusal = offerRefusal(commitments, rules);
   const sortedNearby = online && nearby
     ? offerable(nearby, commitments, rules).sort((a, b) => {

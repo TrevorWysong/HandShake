@@ -25,7 +25,7 @@ function order(fields: { store?: Uint8Array; to?: GeoPoint; priority?: boolean; 
   } as DeliveryOrder;
 }
 const open = (o: DeliveryOrder) => ({ order: o });
-const carrying = (o: DeliveryOrder, dropoff: GeoPoint = HOME): Commitment => ({ order: o, dropoff });
+const carrying = (o: DeliveryOrder, dropoff: GeoPoint = HOME, store: GeoPoint | null = null): Commitment => ({ order: o, dropoff, store });
 
 test("a driver with nothing on is offered every order, priority included", () => {
   const orders = [open(order({ to: FAR })), open(order({ priority: true }))];
@@ -84,4 +84,18 @@ test("a driver's own add-on distance narrows or widens what's on their way", () 
   assert.equal(offerable(nearby, delivering, TERMS).length, 1, "1 km is within the network's 2 km");
   assert.equal(offerable(nearby, delivering, offerRules(NETWORK, { maxAtOnce: null, takePriority: true, minFeeCents: 0, detourKm: 0.5 })).length, 0, "but not within their own half a km");
   assert.equal(offerable([open(order({ store: STORE_B, to: FAR }))], delivering, offerRules(NETWORK, { maxAtOnce: null, takePriority: true, minFeeCents: 0, detourKm: 5 })).length, 0, "and 20 km is beyond any");
+});
+
+test("a store near one still to collect from batches, as DoorDash does; one far off, or already collected from, doesn't", () => {
+  // Collecting from store A, at HOME, for a drop-off far away.
+  const collecting = carrying(order({ store: STORE_A, to: FAR, status: "MerchantConfirmed" }), FAR, HOME);
+  const fromNearStore = { order: order({ store: STORE_B, to: { lat: 27.5, lon: -82.9 } }), store: NEAR };
+  const fromFarStore = { order: order({ store: STORE_B, to: { lat: 27.5, lon: -82.9 } }), store: FAR };
+  assert.equal(offerable([fromNearStore], [collecting], TERMS).length, 1, "about 1 km from the pickup, within the 2 km add-on distance");
+  assert.equal(offerable([fromFarStore], [collecting], TERMS).length, 0, "20 km off isn't on the way");
+  assert.equal(offerable([{ ...fromNearStore, store: null }], [collecting], TERMS).length, 0, "a store not yet located isn't assumed near");
+  const collected = carrying(order({ store: STORE_A, to: FAR, status: "PickedUp" }), FAR, HOME);
+  assert.equal(offerable([fromNearStore], [collected], TERMS).length, 0, "once collected, its store's neighbourhood isn't on the way");
+  const tight = offerRules(NETWORK, { maxAtOnce: null, takePriority: true, minFeeCents: 0, detourKm: 0.5 });
+  assert.equal(offerable([fromNearStore], [collecting], tight).length, 0, "and the driver's own add-on distance holds for stores too");
 });

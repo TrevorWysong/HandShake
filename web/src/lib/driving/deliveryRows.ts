@@ -21,7 +21,13 @@ export interface OrderRow {
   /// The exact drop-off -- opened only for the driver whose bid was
   /// accepted; an open order has just its area (`dropoff_geohash`).
   dropoff?: DropoffDetails | null;
+  /// Where its store is, if it's been read (`storeLocations`).
+  store?: GeoPoint | null;
 }
+
+/// What an order counts as for what else a driver's offered: where it's
+/// collected from, and where it's going.
+export const commitmentOf = (row: OrderRow) => ({ order: row.order, dropoff: dropoffPoint(row), store: row.store ?? null });
 
 /// Where an order's drop-off is, as precisely as this driver may know it.
 export function dropoffPoint(row: OrderRow): GeoPoint {

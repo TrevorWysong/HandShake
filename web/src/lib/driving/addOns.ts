@@ -1,8 +1,8 @@
 // Which open orders a driver is offered, as the big delivery apps do it:
 // everything nearby while they have nothing on; while they're delivering,
-// only add-ons -- orders from a store they've still to collect from, or
-// going near one of their remaining drop-offs -- and never more than the
-// network allows at once, nor anything alongside a priority order. The
+// only add-ons -- orders from a store they've still to collect from, or one
+// near it, or going near one of their remaining drop-offs -- and never more
+// than the network allows at once, nor anything alongside a priority order. The
 // network enforces the limits (`dispatch_types::InHand`); the add-on rule
 // keeps what's offered on the driver's way.
 import type { DeliveryOrder, GeoPoint, InHand } from "../../holochain/types";
@@ -15,6 +15,8 @@ export interface Commitment {
   order: DeliveryOrder;
   /// Where it's going, as precisely as the driver knows it.
   dropoff: GeoPoint;
+  /// Where it's collected from, if that's been read.
+  store: GeoPoint | null;
 }
 
 /// The statuses before a driver has collected an order.
@@ -30,7 +32,8 @@ function loadOf(commitments: Commitment[]): InHand {
 export interface OfferRules {
   /// The most orders at once: the network's, or the driver's own if lower.
   maxAtOnce: number;
-  /// How near a remaining drop-off an add-on may go: the driver's own
+  /// How near a remaining drop-off an add-on may go, or how near a store
+  /// they've still to collect from it may be collected: the driver's own
   /// choice, or the network's suggestion.
   detourKm: number;
   /// Whether the driver takes priority orders.
@@ -58,15 +61,19 @@ export function offerRefusal(commitments: Commitment[], rules: OfferRules): Carr
   return carryRefusal(loadOf(commitments), false, rules.maxAtOnce);
 }
 
-/// Whether `order` is on the way for a driver already delivering
-/// `commitments`: from a store they've still to collect from, or going
-/// within `detourKm` of one of their drop-offs.
-function onTheWay(order: DeliveryOrder, commitments: Commitment[], detourKm: number): boolean {
+/// Whether `order` (collected at `at`, if that's known) is on the way for a
+/// driver already delivering `commitments`: from a store they've still to
+/// collect from, or one within `detourKm` of it -- batched, as DoorDash does
+/// -- or going within `detourKm` of one of their drop-offs.
+function onTheWay(order: DeliveryOrder, at: GeoPoint | null, commitments: Commitment[], detourKm: number): boolean {
   const store = bytesToHex(order.catalog_ref);
   const area = geohashCenter(order.dropoff_geohash);
-  return commitments.some(
-    (c) => (NOT_YET_COLLECTED.includes(c.order.status) && bytesToHex(c.order.catalog_ref) === store) || distanceKm(area, c.dropoff) <= detourKm,
-  );
+  return commitments.some((c) => {
+    const collecting = NOT_YET_COLLECTED.includes(c.order.status);
+    const sameStore = collecting && bytesToHex(c.order.catalog_ref) === store;
+    const nearStore = collecting && at !== null && c.store !== null && distanceKm(at, c.store) <= detourKm;
+    return sameStore || nearStore || distanceKm(area, c.dropoff) <= detourKm;
+  });
 }
 
 /// Whether an order pays enough for the driver: its fee cap, if it has one,
@@ -76,13 +83,13 @@ function paysEnough(order: DeliveryOrder, minFeeCents: number): boolean {
 }
 
 /// The open orders a driver with `commitments` is offered.
-export function offerable<T extends { order: DeliveryOrder }>(open: T[], commitments: Commitment[], rules: OfferRules): T[] {
+export function offerable<T extends { order: DeliveryOrder; store?: GeoPoint | null }>(open: T[], commitments: Commitment[], rules: OfferRules): T[] {
   const load = loadOf(commitments);
   return open.filter(
-    ({ order }) =>
+    ({ order, store }) =>
       (rules.takePriority || !order.priority) &&
       paysEnough(order, rules.minFeeCents) &&
       carryRefusal(load, order.priority, rules.maxAtOnce) === null &&
-      (commitments.length === 0 || onTheWay(order, commitments, rules.detourKm)),
+      (commitments.length === 0 || onTheWay(order, store ?? null, commitments, rules.detourKm)),
   );
 }

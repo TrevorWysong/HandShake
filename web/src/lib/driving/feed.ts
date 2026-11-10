@@ -13,13 +13,14 @@ import { offerable, offerRules, type Commitment } from "./addOns";
 import { autoBidPrice, skipsStore } from "./autoBid";
 import { estimateTrip } from "./eta";
 import { legMinutes } from "./routing";
-import { dropoffPoint, type OrderRow } from "./deliveryRows";
+import { commitmentOf, type OrderRow } from "./deliveryRows";
+import { storeLocations } from "./storeLocations";
 
 /// The deliveries this driver is carrying, from their own active-delivery
 /// queue -- bounded by what they carry now, never by every bid they've
 /// placed -- each with its exact drop-off, opened for them.
 export async function fetchActiveDeliveries(): Promise<OrderRow[]> {
-  return Promise.all(
+  const rows: OrderRow[] = await Promise.all(
     (await getMyActiveDeliveries()).map(async ({ order, bid }) => ({
       hash: order.original_action,
       order: decodeEntry<DeliveryOrder>(order.record),
@@ -27,6 +28,13 @@ export async function fetchActiveDeliveries(): Promise<OrderRow[]> {
       dropoff: (await getOrderPrivateDetails(order.original_action).catch(() => null))?.dropoff ?? null,
     })),
   );
+  return withStores(rows);
+}
+
+/// `rows`, each with where its store is -- read together, and kept.
+async function withStores(rows: OrderRow[]): Promise<OrderRow[]> {
+  const located = await storeLocations(rows.map(({ order }) => order.catalog_ref));
+  return rows.map((row) => ({ ...row, store: located.get(bytesToHex(row.order.catalog_ref)) ?? null }));
 }
 
 /// The orders open near `geohash` that `driver` may bid on. A customer or
@@ -34,7 +42,7 @@ export async function fetchActiveDeliveries(): Promise<OrderRow[]> {
 /// they're never offered one.
 export async function fetchOffered(geohash: string, driver: Uint8Array): Promise<OrderRow[]> {
   const rows = (await getOpenOrdersNear(geohash)).map((record) => ({ hash: actionHash(record), order: decodeEntry<DeliveryOrder>(record) }));
-  return rows.filter(({ order }) => !bytesEqual(order.requester, driver) && !bytesEqual(order.merchant, driver));
+  return withStores(rows.filter(({ order }) => !bytesEqual(order.requester, driver) && !bytesEqual(order.merchant, driver)));
 }
 
 /// Sends a bid, kept as this device's to take back.
@@ -62,7 +70,7 @@ export async function bidAutomatically(driverHex: string, offered: OrderRow[], c
   const keyOf = (orderRef: Uint8Array) => `${driverHex}:${bytesToHex(orderRef)}`;
   const untried = offered.filter(({ hash }) => !autoBidOn.has(keyOf(hash)));
   if (!autoBid.on || untried.length === 0) return;
-  const carrying: Commitment[] = (carried ?? (await fetchActiveDeliveries())).map((row) => ({ order: row.order, dropoff: dropoffPoint(row) }));
+  const carrying: Commitment[] = (carried ?? (await fetchActiveDeliveries())).map(commitmentOf);
   for (const { hash: orderRef, order } of offerable(untried, carrying, offerRules(terms, limits))) {
     autoBidOn.add(keyOf(orderRef));
     try {
