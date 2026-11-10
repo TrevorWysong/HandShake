@@ -276,8 +276,10 @@ export const useSession = create<SessionState>((set, get) => ({
   refreshProfile: async () => {
     if (!isConnected()) return;
     const profileRecord = await getProfileForAgent(myAgentPubKey());
-    const profile = profileRecord ? decodeEntry<Profile>(profileRecord) : null;
-    set({ profile, profileActionHash: profileRecord ? actionHash(profileRecord) : null });
+    // A profile is never taken away: a read that finds none, while one's
+    // shown, is the network being slow -- not the person having no account.
+    if (!profileRecord) return;
+    set({ profile: decodeEntry<Profile>(profileRecord), profileActionHash: actionHash(profileRecord) });
   },
 
   /// Development only: forgets this browser's identity. In a launcher the

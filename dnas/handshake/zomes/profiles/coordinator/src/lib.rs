@@ -72,6 +72,15 @@ pub fn create_profile(input: ProfileInput) -> ExternResult<Record> {
 
 #[hdk_extern]
 pub fn get_profile_for_agent(agent: AgentPubKey) -> ExternResult<Option<Record>> {
+    // The caller's own is on their own chain: read there, it's never missed
+    // while the network is slow to answer -- which would read as having no
+    // account, and send them back to sign-up.
+    if agent == agent_info()?.agent_initial_pubkey {
+        let types = [EntryType::try_from(UnitEntryTypes::Profile)?];
+        if let Some(own) = mine(&types).creates().latest()? {
+            return resolve_latest(own.action_address().clone()).map(Some);
+        }
+    }
     let links = get_links(
         LinkQuery::try_new(agent, LinkTypes::AgentToProfile)?,
         GetStrategy::default(),
