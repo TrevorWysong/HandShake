@@ -44,6 +44,27 @@ export interface EngineOptions {
 
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
 
+/// A write that met another on the payee's chain -- their app writing at
+/// the same moment -- wrote nothing, so it's tried again at once rather than
+/// a round later: a driver waiting on a hold to commit has under a minute.
+const COLLIDED = /source chain head has moved/i;
+const COLLISION_RETRIES = 4;
+const COLLISION_PAUSE_MS = 250;
+
+/// `dispatch`, trying a call again when it only collided with another write.
+export function retryingCollisions(dispatch: Dispatch, pause = (ms: number) => new Promise((done) => setTimeout(done, ms))): Dispatch {
+  return async <T>(fn: string, payload: unknown): Promise<T> => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await dispatch<T>(fn, payload);
+      } catch (err) {
+        if (attempt >= COLLISION_RETRIES || !COLLIDED.test(err instanceof Error ? err.message : String(err))) throw err;
+        await pause(COLLISION_PAUSE_MS * (attempt + 1));
+      }
+    }
+  };
+}
+
 /// A processor's idempotency key for `what` done to the network record
 /// `about` -- 40 characters, within every processor's limit.
 export function idempotencyKey(what: string, about: Uint8Array, ...more: (string | number)[]): string {
@@ -70,7 +91,7 @@ export class Engine {
   readonly #o: Required<EngineOptions>;
 
   constructor(options: EngineOptions) {
-    this.#o = { now: Date.now, onProblem: () => {}, ...options };
+    this.#o = { now: Date.now, onProblem: () => {}, ...options, dispatch: retryingCollisions(options.dispatch) };
   }
 
   /// One round; a round asked for while one runs is that round. Returns

@@ -4,7 +4,7 @@
 // payer shouldn't get (card testing, a first-order deal twice on one card).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Engine, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, SAVED_CARD_MS, idempotencyKey } from "../src/engine.ts";
+import { Engine, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, SAVED_CARD_MS, idempotencyKey, retryingCollisions, type Dispatch } from "../src/engine.ts";
 import { testProcessor } from "../src/adapters/test.ts";
 import { memoryStore } from "../src/state.ts";
 import type { PaymentDue } from "../src/types.ts";
@@ -313,4 +313,32 @@ test("a withdrawal outranks an offer still waiting; a card replaced isn't left a
   z.due = [authorize(13, 53, { save: true, token: "tok_test_5555", offered_at: at(clock) })];
   await engine.round();
   assert.equal(forgotten.length, 2, "the card it replaced is deleted");
+});
+
+test("a write that only collided with another on the payee's chain is tried again at once; a refusal isn't", async () => {
+  let calls = 0;
+  const collidingTwice: Dispatch = async <T>() => {
+    calls += 1;
+    if (calls <= 2) throw new Error("Source chain error: Attempted to commit a bundle to the source chain, but the source chain head has moved since the bundle began.");
+    return "recorded" as T;
+  };
+  const noPause = async () => {};
+  assert.equal(await retryingCollisions(collidingTwice, noPause)("record_hold", {}), "recorded");
+  assert.equal(calls, 3, "two collisions, then the write");
+
+  calls = 0;
+  const refusing: Dispatch = async () => {
+    calls += 1;
+    throw new Error("The store hasn't held your collateral yet.");
+  };
+  await assert.rejects(retryingCollisions(refusing, noPause)("record_hold", {}), /held your collateral/);
+  assert.equal(calls, 1, "a refusal is never retried");
+
+  calls = 0;
+  const alwaysColliding: Dispatch = async () => {
+    calls += 1;
+    throw new Error("the source chain head has moved");
+  };
+  await assert.rejects(retryingCollisions(alwaysColliding, noPause)("record_hold", {}), /head has moved/);
+  assert.equal(calls, 5, "and collisions only so many times");
 });
