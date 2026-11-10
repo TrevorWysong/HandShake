@@ -187,7 +187,9 @@ pub fn validate_queue_link_delete(link: OpLinkFields<'_>) -> ExternResult<Valida
         LinkTypes::StoreHistoryToOrder | LinkTypes::StoreHistoryPath | LinkTypes::CustomerHistoryToOrder | LinkTypes::CustomerHistoryPath => {
             invalid("order history is permanent")
         }
-        _ => Ok(ValidateCallbackResult::Valid),
+        // Every other link type is ruled on before it gets here; one that
+        // wasn't is refused, never let through.
+        _ => invalid("this dispatch link type can't be deleted"),
     }
 }
 

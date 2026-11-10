@@ -100,6 +100,16 @@ await runScenario(async (scenario) => {
   assert.ok(!nearby.some((c) => same(c.original_action, store)), "only the new store is listed");
   console.log("[PASS] customers find the new store, and the old one leads to it");
 
+  // Its line is permanent: unlinked, the store could keep the old one's
+  // customers coming and leave its ratings behind.
+  for (const [base, link_type] of [[moved, "CatalogToPredecessor"], [store, "CatalogToSuccessor"]] as const) {
+    const [link] = await catalog(bob)<Uint8Array[]>("test_get_link_hashes", { link_type, base });
+    assert.ok(link, `the move is linked (${link_type})`);
+    await assert.rejects(catalog(bob)("test_delete_link", link), /a store's move is a permanent record/, `nor can its owner unlink it (${link_type})`);
+  }
+  assert.equal((await catalog(carol)<Uint8Array[]>("store_line", moved)).length, line.length, "and its ratings follow it");
+  console.log("[PASS] a store can't unlink its move to shed its old ratings");
+
   // ===== Forgeries =====
   const bobsSuccession = (await account(bob)<{ succession: Uint8Array }>("my_succession", null)).succession;
   const carolsStore = actionHash(await catalog(carol)<HcRecord>("publish_catalog", { business_name: "Carol's", location: ST_PETE }));

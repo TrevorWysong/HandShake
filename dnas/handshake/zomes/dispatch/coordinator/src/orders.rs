@@ -98,11 +98,37 @@ pub(crate) fn publish_to_open_anchor(opened: &ActionHash, order: &DeliveryOrder,
     Ok(())
 }
 
-/// The caller's own name, from their profile (where it's sealed to them);
-/// empty if they haven't given one.
+/// The caller's name as an order gives it (`short_name`), from their
+/// profile, where it's sealed to them; empty if they haven't given one.
 pub(crate) fn my_name() -> ExternResult<String> {
     let name: Option<String> = call_local("profiles", "get_my_name", ())?.map_err(|_| guest("reading your name failed"))?;
-    Ok(name.unwrap_or_default())
+    Ok(short_name(&name.unwrap_or_default()))
+}
+
+/// How an order names its customer to its store and driver, as Uber Eats
+/// and DoorDash do: their first name and last initial -- "Lee C." -- enough
+/// to hand it to the right person, and no more.
+fn short_name(name: &str) -> String {
+    let mut words = name.split_whitespace();
+    let first = words.next().unwrap_or_default();
+    match words.last().and_then(|last| last.chars().next()) {
+        Some(initial) => format!("{first} {}.", initial.to_uppercase()),
+        None => first.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::short_name;
+
+    #[test]
+    fn a_customer_is_named_by_first_name_and_last_initial() {
+        assert_eq!(short_name("Lee Chen"), "Lee C.");
+        assert_eq!(short_name("  Mary Ann  de la cruz "), "Mary C.");
+        assert_eq!(short_name("Cara"), "Cara");
+        assert_eq!(short_name(""), "");
+        assert_eq!(short_name("Zoë émile"), "Zoë É.");
+    }
 }
 
 /// A note sealed to `recipient`, or `None` if there's nothing to say.
@@ -201,7 +227,7 @@ pub fn get_order_private_details(order_original_action: ActionHash) -> ExternRes
         } else if is_current_driver(&order, &me)? {
             // The order's driver, once they've committed and the customer's
             // app has shared it with them; anyone else gets None.
-            match crate::deliveries::dropoff_share_for(&original_action_of(record.action_address().clone())?, &me)? {
+            match crate::shares::dropoff_share_for(&original_action_of(record.action_address().clone())?, &me)? {
                 Some(share) => open(&order.requester, &share.sealed)?,
                 None => None,
             }

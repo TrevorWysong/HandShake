@@ -218,8 +218,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::PaymentRefund(refund) => payments::validate_refund(&refund, action.author(), action.prev_action()),
             EntryTypes::CarryEnded(ended) => carry::validate_carry_ended(&ended, action.author(), action.prev_action()),
             EntryTypes::SavedCardForgotten(forgotten) => require(&forgotten.payee != action.author(), "a card is kept with someone else, and forgotten by its payer"),
-            EntryTypes::ArrivalEvidence(evidence) => delivery::validate_arrival_evidence(&evidence, action.author()),
-            EntryTypes::VehicleShare(share) => delivery::validate_vehicle_share(&share, action.author()),
+            EntryTypes::ArrivalEvidence(evidence) => delivery::validate_arrival_evidence(&evidence, action.author(), action.prev_action()),
+            EntryTypes::VehicleShare(share) => delivery::validate_vehicle_share(&share, action.author(), action.prev_action()),
         },
         Checked::Update { entry, action } => match entry {
             EntryTypes::DeliveryOrder(order) => validate_order_transition(&order, action.author(), &action.original_action_address, action.timestamp(), action.prev_action()),

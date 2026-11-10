@@ -297,11 +297,18 @@ pub fn descends_from(version: &Version, ancestor: &ActionHash) -> ExternResult<b
 /// Whether `author` asked to collect `order` themselves (`CollectRequest`),
 /// between `chain_top` and the order's placement.
 pub fn asked_to_collect(author: &AgentPubKey, chain_top: &ActionHash, order: &ActionHash) -> ExternResult<bool> {
+    wrote_for_order::<CollectRequest>(author, chain_top, order, |request| &request.order)
+}
+
+/// Whether `author` wrote a `T` about `order` (`about` says which order one
+/// is about), between `chain_top` and the order's placement -- for what a
+/// party writes once an order.
+pub fn wrote_for_order<T: TryFrom<SerializedBytes>>(author: &AgentPubKey, chain_top: &ActionHash, order: &ActionHash, about: impl Fn(&T) -> &ActionHash) -> ExternResult<bool> {
     let placed = must_get_action(order.clone())?.hashed.content.header.timestamp;
     for item in activity_since(author, chain_top, placed)? {
         let ActionData::Create(create) = &item.action.hashed.content.data else { continue };
         let Entry::App(bytes) = entry_of(&item, &create.entry_hash)? else { continue };
-        if CollectRequest::try_from(SerializedBytes::from(bytes)).is_ok_and(|request| &request.order == order) {
+        if T::try_from(SerializedBytes::from(bytes)).is_ok_and(|entry| about(&entry) == order) {
             return Ok(true);
         }
     }

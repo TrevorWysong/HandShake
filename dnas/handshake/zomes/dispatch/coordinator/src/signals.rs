@@ -388,7 +388,7 @@ fn wake_customer(record: &Record, order_hash: &ActionHash, me: &AgentPubKey) -> 
         if &order.merchant == me {
             order.sealed_wake.as_ref().map(|sealed| open::<String>(&order.requester, sealed)).transpose()?.flatten()
         } else {
-            match crate::deliveries::dropoff_share_for(order_hash, me)? {
+            match crate::shares::dropoff_share_for(order_hash, me)? {
                 Some(share) => open::<DropoffDetails>(&order.requester, &share.sealed)?.and_then(|dropoff| dropoff.wake),
                 None => None,
             }

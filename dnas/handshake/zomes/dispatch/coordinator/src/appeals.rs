@@ -189,13 +189,15 @@ fn view(hash: ActionHash) -> ExternResult<Option<AppealView>> {
     // Sealed to the arbiter: they open it with its writer's key; the
     // writer, with the arbiter's.
     let open = |sealed: &handshake_integrity_support::SealedChunks, writer: &AgentPubKey| -> ExternResult<Option<IssueEvidence>> {
-        if me == appeal.arbiter {
-            open_chunked(writer, sealed)
+        let opened: Option<IssueEvidence> = if me == appeal.arbiter {
+            open_chunked(writer, sealed)?
         } else if &me == writer {
-            open_chunked(&appeal.arbiter, sealed)
+            open_chunked(&appeal.arbiter, sealed)?
         } else {
-            Ok(None)
-        }
+            None
+        };
+        // Checked on the way out: a modified client could seal anything.
+        Ok(opened.map(|e| IssueEvidence { photo_data_uri: handshake_coordinator_support::checked_photo(e.photo_data_uri), ..e }))
     };
     let customer_evidence = open(&appeal.sealed_for_arbiter, &customer)?;
     let store_evidence = match &answer {

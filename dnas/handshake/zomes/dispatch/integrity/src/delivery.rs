@@ -803,7 +803,8 @@ pub(crate) fn validate_collect_request(request: &CollectRequest, author: &AgentP
 /// Evidence for a no-show's store, from the order's customer or its driver
 /// -- named as such by a version of the order -- no larger than a photo.
 /// Sealed, so what it says is checked by the store's app as it opens it.
-pub(crate) fn validate_arrival_evidence(evidence: &ArrivalEvidence, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+pub(crate) fn validate_arrival_evidence(evidence: &ArrivalEvidence, author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
+    let Some(prev_action) = prev_action else { return Ok(ValidateCallbackResult::Invalid("evidence can't open a chain".into())) };
     if handshake_integrity_support::original_creation(evidence.order.clone())? != evidence.order || handshake_integrity_support::original_creation(evidence.version.clone())? != evidence.order {
         return Ok(ValidateCallbackResult::Invalid("evidence names an order by its original action, and one of its versions".into()));
     }
@@ -820,12 +821,17 @@ pub(crate) fn validate_arrival_evidence(evidence: &ArrivalEvidence, author: &Age
     if handshake_integrity_support::sealed_chunks_problem("evidence", &evidence.sealed, handshake_integrity_support::max_sealed_image_bytes()).is_some() {
         return Ok(ValidateCallbackResult::Invalid("evidence may hold at most one photo, within the network's image limit".into()));
     }
+    // Each party's say, once: every peer holding the order holds it too.
+    if lineage::wrote_for_order::<ArrivalEvidence>(author, prev_action, &evidence.order, |e| &e.order)? {
+        return Ok(ValidateCallbackResult::Invalid("each party gives a store its evidence once an order".into()));
+    }
     Ok(ValidateCallbackResult::Valid)
 }
 
 /// A driver sharing their vehicle with a customer: the driver the order
 /// shows committed, sealed, and no larger than a photo and a few words.
-pub(crate) fn validate_vehicle_share(share: &VehicleShare, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+pub(crate) fn validate_vehicle_share(share: &VehicleShare, author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
+    let Some(prev_action) = prev_action else { return Ok(ValidateCallbackResult::Invalid("a share can't open a chain".into())) };
     if handshake_integrity_support::original_creation(share.order.clone())? != share.order || handshake_integrity_support::original_creation(share.committed.clone())? != share.order {
         return Ok(ValidateCallbackResult::Invalid("a share names an order by its original action, and one of its versions".into()));
     }
@@ -841,6 +847,9 @@ pub(crate) fn validate_vehicle_share(share: &VehicleShare, author: &AgentPubKey)
     }
     if handshake_integrity_support::sealed_chunks_problem("sealed", &share.sealed, handshake_integrity_support::max_sealed_image_bytes()).is_some() {
         return Ok(ValidateCallbackResult::Invalid("a vehicle holds at most one photo, within the network's image limit".into()));
+    }
+    if lineage::wrote_for_order::<VehicleShare>(author, prev_action, &share.order, |s| &s.order)? {
+        return Ok(ValidateCallbackResult::Invalid("a driver shares their vehicle once an order".into()));
     }
     Ok(ValidateCallbackResult::Valid)
 }

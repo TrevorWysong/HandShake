@@ -169,7 +169,7 @@ pub fn accept_bid(input: AcceptBidInput) -> ExternResult<Record> {
     }
 
     // The driver learns the exact drop-off only once they've committed (see
-    // `deliveries::share_address`); accepting them needs the customer's own
+    // `shares::share_address`); accepting them needs the customer's own
     // copy, which only the customer can open.
     let me = agent_info()?.agent_initial_pubkey;
     if order.requester != me {

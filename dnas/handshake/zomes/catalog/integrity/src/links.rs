@@ -101,7 +101,13 @@ pub fn validate_create_link(link_type: LinkTypes, link: &TypedAction<CreateLinkD
 }
 
 /// Only whoever created a link may remove it.
-pub fn validate_delete_link(original_author: &AgentPubKey, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+pub fn validate_delete_link(link_type: LinkTypes, original_author: &AgentPubKey, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    // A store's line is how its ratings follow it to a new key or network
+    // (`store_line`): unlinked, a store could carry its customers on and
+    // leave its record behind.
+    if matches!(link_type, LinkTypes::CatalogToSuccessor | LinkTypes::CatalogToPredecessor | LinkTypes::CatalogToImport) {
+        return invalid("a store's move is a permanent record");
+    }
     if original_author == author {
         valid()
     } else {

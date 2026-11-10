@@ -103,7 +103,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         Checked::CreateLink { link_type: LinkTypes::Version, action } => handshake_integrity_support::versions::validate_version_link(&action.base_address, &action.target_address, &action.tag, action.author()),
         Checked::DeleteLink { link_type: LinkTypes::Version, .. } => Ok(ValidateCallbackResult::Invalid("an entry's versions stay linked".into())),
         Checked::CreateLink { link_type, action } => links::validate_create_link(link_type, &action),
-        Checked::DeleteLink { original, action, .. } => links::validate_delete_link(original.author(), action.author()),
+        Checked::DeleteLink { link_type, original, action } => links::validate_delete_link(link_type, original.author(), action.author()),
         Checked::Other => Ok(ValidateCallbackResult::Valid),
     }
 }

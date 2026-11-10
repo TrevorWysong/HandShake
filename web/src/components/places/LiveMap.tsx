@@ -23,8 +23,11 @@ import { useLatest, useLiveSignal } from "../../lib/hooks/useResource";
 // service, or no answer, the way is drawn as a plain dashed line -- not
 // passed off as a route.
 
-/// How far the driver moves before the way ahead is asked for again.
+/// How far the driver moves before the way ahead is asked for again -- and
+/// how soon, at the soonest: positions come from the driver's app, so their
+/// pace isn't this one's to trust.
 const REROUTE_KM = 0.15;
+const REROUTE_MS = 15_000;
 /// How long the pin takes to glide to each new position.
 const GLIDE_MS = 1_000;
 
@@ -50,7 +53,7 @@ export function LiveMap({ orderRef, pickup, dropoff, collected, className }: Pro
   const driverRef = useRef<{ marker: L.Marker; at: GeoPoint; frame: number } | null>(null);
   // Where the way ahead was last asked from, for which stage -- and which
   // ask is the latest, so a slow answer never draws over a newer one.
-  const routedRef = useRef<{ from: GeoPoint; collected: boolean } | null>(null);
+  const routedRef = useRef<{ from: GeoPoint; collected: boolean; at: number } | null>(null);
   const askRef = useRef(0);
   const collectedRef = useLatest(collected);
   const [live, setLive] = useState(false);
@@ -110,8 +113,9 @@ export function LiveMap({ orderRef, pickup, dropoff, collected, className }: Pro
     setLive(true);
     const routed = routedRef.current;
     const stage = collectedRef.current;
-    if (!routed || routed.collected !== stage || distanceKm(routed.from, to) >= REROUTE_KM) {
-      routedRef.current = { from: to, collected: stage };
+    const now = Date.now();
+    if (!routed || routed.collected !== stage || (distanceKm(routed.from, to) >= REROUTE_KM && now - routed.at >= REROUTE_MS)) {
+      routedRef.current = { from: to, collected: stage, at: now };
       void route(stage ? [to, dropoff] : [to, pickup, dropoff], first);
     }
   });

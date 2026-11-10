@@ -108,10 +108,32 @@ async function allowed(wire: Wire, from: AgentPubKey): Promise<boolean> {
   }
 }
 
+/// Signals checked from any one sender, at most, per window: anyone can
+/// send this app anything, and checking one can cost a read. A driver's
+/// location every few seconds and a chat are well under it.
+const PER_SENDER = 30;
+const WINDOW_MS = 60_000;
+const SENDERS_KEPT = 256;
+const heard = new Map<string, { since: number; count: number }>();
+
+/// Whether `from` is still within its share -- counting this one.
+function withinShare(from: AgentPubKey): boolean {
+  const key = bytesToHex(from);
+  const now = Date.now();
+  const seen = heard.get(key);
+  const current = seen && now - seen.since < WINDOW_MS ? seen : { since: now, count: 0 };
+  current.count++;
+  heard.delete(key);
+  heard.set(key, current);
+  if (heard.size > SENDERS_KEPT) heard.delete(heard.keys().next().value!);
+  return current.count <= PER_SENDER;
+}
+
 const listeners = new Set<(signal: LiveSignal) => void>();
 let stopListening: (() => void) | null = null;
 
 async function receive({ from_agent: from, signal }: DirectSignal) {
+  if (!withinShare(from)) return;
   const wire = parse(signal);
   if (!wire || !(await allowed(wire, from))) return;
   const sent_at = nowMicros();

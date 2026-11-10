@@ -296,6 +296,22 @@ pub fn open_chunked<T: for<'de> Deserialize<'de> + std::fmt::Debug>(counterpart:
     Ok(ExternIO(bytes).decode().ok())
 }
 
+/// A photo opened from a sealed field, if it's one the network would have
+/// taken in the clear -- an inline raster image -- else none. Validation
+/// can't see inside what's sealed, so a modified client could seal a link
+/// to a tracker there instead, and every app that showed it would fetch it.
+pub fn checked_photo(uri: String) -> String {
+    if handshake_integrity_support::image_problem(&uri).is_some() { String::new() } else { uri }
+}
+
+/// `text`, cut to `max` characters: sealed text is bounded only by its box.
+pub fn at_most(text: String, max: usize) -> String {
+    match text.char_indices().nth(max) {
+        Some((cut, _)) => text[..cut].to_string(),
+        None => text,
+    }
+}
+
 /// Opens a box exchanged between the caller and `counterpart`, sealed in
 /// either direction (`counterpart` is the caller themselves for something
 /// they sealed to themselves). `None` when the caller isn't one of its two

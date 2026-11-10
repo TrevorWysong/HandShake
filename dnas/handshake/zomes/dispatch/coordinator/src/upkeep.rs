@@ -238,8 +238,8 @@ fn tend_order(entry: &OrderEntry, now: DueAt, window: i64) -> ExternResult<Optio
                     Ok(None)
                 }
                 // The driver committed: they get the address, in a call of its
-                // own (`deliveries::share_address`).
-                _ if crate::deliveries::owed_driver(&order_ref, &order)?.is_some() => {
+                // own (`shares::share_address`).
+                _ if crate::shares::owed_driver(&order_ref, &order)?.is_some() => {
                     let zome = zome_info()?.name;
                     call(CallTargetCell::Local, zome, "share_address".into(), None, order_ref)?;
                     Ok(None)
