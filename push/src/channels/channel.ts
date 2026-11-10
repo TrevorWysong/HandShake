@@ -10,6 +10,9 @@ import { createPrivateKey, sign, type KeyObject } from "node:crypto";
 export type Outcome = "sent" | "gone" | "failed";
 
 export interface Sender {
+  /// Whether `address` is one this channel delivers to -- asked when a
+  /// device registers, and again before every wake.
+  accepts(address: string): boolean;
   send(address: string): Promise<Outcome>;
 }
 

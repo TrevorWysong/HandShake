@@ -85,9 +85,10 @@ export async function migrationsToMeOnPrevious(): Promise<{ account: AgentPubKey
   return callPrevious("account", "migrations_to_me", null);
 }
 
-/// What the old account sealed to the caller's key, opened on the previous network.
-export async function openParcelsOnPrevious(): Promise<string[]> {
-  return callPrevious("account", "open_parcels", null);
+/// What the old account (`account`) sealed to the caller's key, opened on
+/// the previous network -- only its own.
+export async function openParcelsOnPrevious(account: AgentPubKey): Promise<string[]> {
+  return callPrevious("account", "open_parcels", account);
 }
 
 /// Records the caller's arrival from the previous network; returns the

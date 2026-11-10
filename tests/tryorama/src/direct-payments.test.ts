@@ -62,6 +62,7 @@ await runScenario(async (scenario) => {
   assert.equal(due.find((d) => d.Authorize)?.Authorize?.amount, FOOD + CAP / 2 + TIP, "the store's agent authorizes the food, half the capped fee, and the tip");
   await assert.rejects(call(store, "dispatch")("accept_delivery_order", { order_original_action: order }), /isn't held yet/, "no store accepts an order it isn't paid for");
   await acceptOrder(store, order, all);
+  await assert.rejects(raw(store, { Declined: { offer: waiting.offer, code: "Declined" } }), /answered once/, "an offer held is never also declined");
   console.log("[PASS] the customer's card is held on the store's account before it accepts, for exactly what the order needs");
 
   // A customer pays with a card they have with them: no store keeps it, so
@@ -91,6 +92,7 @@ await runScenario(async (scenario) => {
   assert.equal((await call(stranger, "dispatch")<unknown[]>("my_saved_cards", null)).length, 0, "another account keeps none");
   await assert.rejects(call(stranger, "dispatch")("forget_saved_card", driver.agentPubKey), /no card kept with them/, "nobody forgets a card they never kept");
   await assert.rejects(raw(stranger, { Forgotten: { payee: stranger.agentPubKey } }), /kept with someone else/, "a card is withdrawn from someone else");
+  await assert.rejects(raw(stranger, { Forgotten: { payee: driver.agentPubKey } }), /only by a payer who has one/, "and only by a payer who has one kept with them: nobody floods a payee's agent");
   await call(store, "dispatch")("forget_saved_card", driver.agentPubKey);
   assert.equal((await call(store, "dispatch")<unknown[]>("my_saved_cards", null)).length, 0, "withdrawn, it's listed no more");
   await assert.rejects(raw(store, { Offer: { order, leg: { DriverPay: { bid } }, payee: driver.agentPubKey, sealed_token: null, save: false, resumes: null } }), /no card kept with this payee/, "and the network refuses it");

@@ -270,6 +270,21 @@ Delivery now shows each side who to expect, as Uber Eats and DoorDash do, and no
 | A dispatch link type the delete rules didn't name would have been deletable by anyone | Low (defence in depth) | Refused unless named |
 | Anyone could make an app check any number of live signals, each costing a read, and an order's driver could make its customer's map ask for routes without pause | Low (load) | Signals checked per sender are capped, and the map asks for a route at most every 15 seconds |
 
+## 2026-11-10 review: what strangers can make others do
+
+A pass over every record and service anyone can aim at someone else: what it costs them, and what it makes the other side's app or server do. Each fix is proved in `direct-payments.test.ts`, `attestation.test.ts`, `migration.test.ts` or the push relay's own tests.
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| The push relay posted to any address a device registered as its Web Push subscription -- `localhost`, the relay's own network (the bootstrap server beside it), a cloud's metadata service -- each time it was woken | High (SSRF) | A subscription is accepted, and a wake sent, only to the browsers' own push services over https (`WEB_PUSH_HOSTS`); APNs and FCM addresses are checked for their form too |
+| An account arriving on a new network version took the newest parcel sealed to its key, from anyone -- so a stranger could set its name, phone, delivery addresses and allergies | High (integrity) | Only the parcel from the account that moved is opened |
+| Anyone could write any number of card withdrawals under any store's or driver's key, and their payment agent read every one each round | Medium (denial of service on payments) | A withdrawal is valid only from a payer who has a card kept with that payee |
+| A delivery could be completed on a handoff recorded by a driver the order had already moved on from | Low (integrity) | Proof of delivery is the current driver's handoff |
+| A payee could write any number of challenges and declines for one card offer, or decline an offer it had held | Low (storage, consistency) | Each offer is answered once: held, challenged or declined |
+| A driver could record any number of photo-sized handoffs for one order, each stored by every peer holding it | Low (storage) | At most five of each kind per driver and order -- room for retries -- and the app reuses its recorded arrival after it's reopened |
+| A customer could tell a store their birthday any number of times | Low (storage) | Once per store |
+| Push relay registrations were limited per address, which an IPv6 client rotates through freely | Low (abuse) | Limited per IPv4 address, or per IPv6 /64 |
+
 ## Store contact details and pickup chat
 
 - **Contact links can only be what they say.** A store's email must be a plain address (letters, digits and `._+-'`, so a `mailto:` link can't carry `?cc=` or anything else), and its website an `http(s)://` address with a real host. No `user@` before the host, which could dress one site up as another. No characters that could break out of a link. Validation holds every peer to this (`handshake_integrity_support::contact`). The app builds every link only from details that pass (`web/src/lib/storefront/contact.ts`), a phone link from its digits alone, and directions from the store's coordinates.

@@ -10,6 +10,26 @@ import { jwt, type Fetch, type Outcome, type Sender } from "./channel.ts";
 const TTL_SECS = 60 * 60;
 const VAPID_LIFETIME_SECS = 12 * 60 * 60;
 
+/// The browsers' push services: Chrome's, Firefox's, Edge's and Safari's. A
+/// subscription's endpoint is the client's to write, and the relay posts to
+/// it -- so only to these, over https, never to an address of the client's
+/// choosing (the relay's own network, a cloud's metadata service).
+export const WEB_PUSH_HOSTS = ["fcm.googleapis.com", "updates.push.services.mozilla.com", ".notify.windows.com", ".push.apple.com"];
+
+/// A subscription's endpoint, if it's one of `hosts`' over https. A host
+/// starting with "." stands for any under it.
+export function pushEndpoint(address: string, hosts: readonly string[] = WEB_PUSH_HOSTS): URL | null {
+  let endpoint: URL;
+  try {
+    endpoint = new URL((JSON.parse(address) as { endpoint: unknown }).endpoint as string);
+  } catch {
+    return null;
+  }
+  const host = endpoint.hostname.toLowerCase();
+  const known = hosts.some((h) => (h.startsWith(".") ? host.endsWith(h) : host === h));
+  return endpoint.protocol === "https:" && !endpoint.port && !endpoint.username && !endpoint.password && known ? endpoint : null;
+}
+
 export interface Vapid {
   /// The private key, PKCS#8 PEM (P-256).
   privateKey: string;
@@ -24,17 +44,14 @@ export function vapidPublicKey(privateKey: string): string {
   return Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x!, "base64url"), Buffer.from(jwk.y!, "base64url")]).toString("base64url");
 }
 
-export function webPushSender(vapid: Vapid, fetch: Fetch): Sender {
+export function webPushSender(vapid: Vapid, fetch: Fetch, hosts: readonly string[] = WEB_PUSH_HOSTS): Sender {
   const key: KeyObject = createPrivateKey(vapid.privateKey);
   const publicKey = vapidPublicKey(vapid.privateKey);
   return {
+    accepts: (address) => pushEndpoint(address, hosts) !== null,
     async send(address: string): Promise<Outcome> {
-      let endpoint: URL;
-      try {
-        endpoint = new URL((JSON.parse(address) as { endpoint: string }).endpoint);
-      } catch {
-        return "gone";
-      }
+      const endpoint = pushEndpoint(address, hosts);
+      if (!endpoint) return "gone";
       const token = jwt("ES256", {}, { aud: endpoint.origin, exp: Math.floor(Date.now() / 1000) + VAPID_LIFETIME_SECS, sub: vapid.subject }, key);
       const response = await fetch(endpoint.href, {
         method: "POST",

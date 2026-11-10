@@ -205,15 +205,17 @@ pub fn arrived_from(agent: AgentPubKey) -> ExternResult<Option<AgentPubKey>> {
     Ok(genuine.then_some(arrival.previous_account))
 }
 
-/// What the caller's account on the previous network sealed to them as it
-/// moved here, opened -- read there, through the app's `previous` role.
+/// What `account` -- the caller's account on the previous network --
+/// sealed to them as it moved here, opened: read there, through the app's
+/// `previous` role. Only that account's: anyone can seal something to a
+/// key, and none of it is taken for theirs.
 #[hdk_extern]
-pub fn open_parcels(_: ()) -> ExternResult<Vec<String>> {
+pub fn open_parcels(account: AgentPubKey) -> ExternResult<Vec<String>> {
     let me = me()?;
     let mut parcels = Vec::new();
-    for record in linked_records(LinkQuery::try_new(me.clone(), LinkTypes::SuccessorToParcel)?, GetStrategy::default())? {
+    for record in linked_records(LinkQuery::try_new(me.clone(), LinkTypes::SuccessorToParcel)?.author(account.clone()), GetStrategy::default())? {
         let Some(parcel) = decoded::<Parcel>(&record) else { continue };
-        if parcel.successor != me {
+        if parcel.successor != me || record.action().author() != &account {
             continue;
         }
         if let Some(contents) = open_chunked::<String>(record.action().author(), &parcel.sealed)? {

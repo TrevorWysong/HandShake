@@ -160,8 +160,9 @@ pub(crate) fn sealed_fields_problem(order: &DeliveryOrder) -> Option<String> {
 /// chose to have left at the door, accepting the risk) the driver's
 /// drop-off left there. The attestation zome's validation already holds
 /// each to its author and order version; this checks they're for *this*
-/// order and include one such proof. `Err(reason)` if not.
-pub(crate) fn validate_delivery_receipts(order_original_creation: &ActionHash, receipts: &[ActionHash]) -> ExternResult<Result<(), String>> {
+/// order and its driver now (`driver`) -- never a driver it was moved on
+/// from -- and include one such proof. `Err(reason)` if not.
+pub(crate) fn validate_delivery_receipts(order_original_creation: &ActionHash, receipts: &[ActionHash], driver: Option<&AgentPubKey>) -> ExternResult<Result<(), String>> {
     for proof_ref in receipts {
         let record = must_get_valid_record(proof_ref.clone())?;
         let leg = if let Some(leg) = decode::<Leg>(&record) {
@@ -176,6 +177,9 @@ pub(crate) fn validate_delivery_receipts(order_original_creation: &ActionHash, r
         };
         if &resolve_original_creation(leg.order_ref.clone())? != order_original_creation {
             return Ok(Err("a delivery receipt belongs to a different order".into()));
+        }
+        if Some(&leg.from) != driver {
+            return Ok(Err("a delivery receipt is the order's own driver's handoff".into()));
         }
     }
     match dropoff_proof(receipts)? {
@@ -665,7 +669,7 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         if !carried_forward {
             return Ok(Some("delivery_receipts are set once, by the update completing the order".into()));
         }
-        if let Err(reason) = validate_delivery_receipts(&order_original, &order.delivery_receipts)? {
+        if let Err(reason) = validate_delivery_receipts(&order_original, &order.delivery_receipts, provider)? {
             return Ok(Some(reason));
         }
     } else if prior.delivery_receipts != order.delivery_receipts {

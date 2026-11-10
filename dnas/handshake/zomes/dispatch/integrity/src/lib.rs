@@ -212,12 +212,17 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::PaymentProfile(profile) => payments::validate_profile(&profile),
             EntryTypes::PaymentOffer(offer) => payments::validate_offer(&offer, action.author(), action.timestamp(), action.prev_action()),
             EntryTypes::PaymentHold(hold) => payments::validate_hold(&hold, action.author(), action.prev_action()),
-            EntryTypes::PaymentAction(a) => payments::validate_action(&a, action.author()),
-            EntryTypes::PaymentDeclined(d) => payments::validate_declined(&d, action.author()),
+            EntryTypes::PaymentAction(a) => payments::validate_action(&a, action.author(), action.prev_action()),
+            EntryTypes::PaymentDeclined(d) => payments::validate_declined(&d, action.author(), action.prev_action()),
             EntryTypes::PaymentSettlement(settlement) => payments::validate_settlement(&settlement, action.author(), action.prev_action()),
             EntryTypes::PaymentRefund(refund) => payments::validate_refund(&refund, action.author(), action.prev_action()),
             EntryTypes::CarryEnded(ended) => carry::validate_carry_ended(&ended, action.author(), action.prev_action()),
-            EntryTypes::SavedCardForgotten(forgotten) => require(&forgotten.payee != action.author(), "a card is kept with someone else, and forgotten by its payer"),
+            // Only by a payer who has a card kept with them: nobody piles
+            // withdrawals on a payee whose agent reads each one.
+            EntryTypes::SavedCardForgotten(forgotten) => match action.prev_action() {
+                Some(prev) if &forgotten.payee != action.author() => require(payments::saved_card_with(action.author(), prev, action.timestamp(), &forgotten.payee)?.is_some(), "a card is forgotten only by a payer who has one kept with that payee"),
+                _ => Ok(ValidateCallbackResult::Invalid("a card is kept with someone else, and forgotten by its payer".into())),
+            },
             EntryTypes::ArrivalEvidence(evidence) => delivery::validate_arrival_evidence(&evidence, action.author(), action.prev_action()),
             EntryTypes::VehicleShare(share) => delivery::validate_vehicle_share(&share, action.author(), action.prev_action()),
         },

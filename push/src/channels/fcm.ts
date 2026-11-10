@@ -34,8 +34,12 @@ export function fcmSender(account: ServiceAccount, fetch: Fetch): Sender {
     return access_token;
   }
 
+  // A registration token: letters, digits and a few separators.
+  const accepts = (registrationToken: string) => /^[A-Za-z0-9_:-]{1,4096}$/.test(registrationToken);
   return {
+    accepts,
     async send(registrationToken: string): Promise<Outcome> {
+      if (!accepts(registrationToken)) return "gone";
       const response = await fetch(`https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`, {
         method: "POST",
         headers: { Authorization: `Bearer ${await accessToken()}`, "Content-Type": "application/json" },

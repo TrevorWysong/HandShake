@@ -59,13 +59,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                 },
                 _ => invalid("only a store's owner grants its points"),
             },
-            EntryTypes::BirthdayShare(share) => match store_owner(&share.catalog_ref)? {
-                Some(_) => match ordered_there(&share.order, action.author(), &share.catalog_ref)? {
-                    true => sealed_problem("a birthday", &share.sealed_month),
-                    false => invalid("a birthday is shared only with a store one has ordered from, citing the order"),
-                },
-                None => invalid("a birthday is shared with a store, by its original action"),
-            },
+            EntryTypes::BirthdayShare(share) => validate_birthday_share(&share, action.author(), action.prev_action()),
             // Private to their author's device: checked as they write them.
             EntryTypes::BirthMonth(month) => require((1..=12).contains(&month.month), "a birth month is between 1 and 12"),
             EntryTypes::MemberOrder(_) => valid(),
@@ -97,6 +91,22 @@ fn ordered_there(order: &ActionHash, customer: &AgentPubKey, catalog_ref: &Actio
     }
     let record = must_get_valid_record(order.clone())?;
     Ok(rewards_types::OrderForRewards::of(&record).is_some_and(|o| &o.requester == customer && &o.catalog_ref == catalog_ref && record.action().author() == customer))
+}
+
+/// A member tells a store their birth month once -- only the first is ever
+/// read -- and only a store they've ordered from, citing the order.
+fn validate_birthday_share(share: &BirthdayShare, author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
+    let Some((_, opened)) = store_owner(&share.catalog_ref)? else { return invalid("a birthday is shared with a store, by its original action") };
+    if !ordered_there(&share.order, author, &share.catalog_ref)? {
+        return invalid("a birthday is shared only with a store one has ordered from, citing the order");
+    }
+    let sealed = sealed_problem("a birthday", &share.sealed_month)?;
+    if !matches!(sealed, ValidateCallbackResult::Valid) {
+        return Ok(sealed);
+    }
+    let Some(prev) = prev_action else { return invalid("a birthday can't open a chain") };
+    let again = handshake_integrity_support::chain::wrote_since(author, prev, opened, UnitEntryTypes::BirthdayShare.try_into()?, |b: &BirthdayShare| b.catalog_ref == share.catalog_ref)?;
+    require(!again, "a birthday is told to a store once")
 }
 
 // --- programs ---

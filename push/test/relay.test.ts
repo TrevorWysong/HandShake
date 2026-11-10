@@ -10,8 +10,8 @@ import { test } from "node:test";
 import { apnsSender, WAKE_PAYLOAD } from "../src/channels/apns.ts";
 import type { Fetch, Outcome, Sender } from "../src/channels/channel.ts";
 import { fcmSender } from "../src/channels/fcm.ts";
-import { vapidPublicKey, webPushSender } from "../src/channels/webpush.ts";
-import { serve, type Deps } from "../src/server.ts";
+import { pushEndpoint, vapidPublicKey, webPushSender } from "../src/channels/webpush.ts";
+import { requester, serve, type Deps } from "../src/server.ts";
 import { Store } from "../src/store.ts";
 import { mintToken, openToken } from "../src/tokens.ts";
 
@@ -42,7 +42,7 @@ test("a token is its device and expiry, readable only with the relay's key", () 
 /// each was asked to deliver, and a promise for each wake's outcome.
 async function relay(overrides: Partial<Deps> = {}, outcome: Outcome = "sent") {
   const sent: string[] = [];
-  const sender: Sender = { send: async (address) => (sent.push(address), outcome) };
+  const sender: Sender = { accepts: (address) => address !== "nowhere", send: async (address) => (sent.push(address), outcome) };
   const outcomes: (Outcome | "dropped")[] = [];
   const waiters: (() => void)[] = [];
   const store = new Store(":memory:");
@@ -103,6 +103,7 @@ test("a device registers, hands out tokens, and is woken through any of them", a
   const stranger = await r.call("POST", "/devices/tokens", { device: registered.body.device, secret: "guessed" });
   assert.equal(stranger.status, 404, "but nobody else's");
   assert.equal((await r.call("POST", "/devices", { channel: "apns", address: "x" })).status, 400, "only on a channel the relay delivers on");
+  assert.equal((await r.call("POST", "/devices", { channel: "webpush", address: "nowhere" })).status, 400, "only to an address its channel delivers to");
 });
 
 test("every wake is answered alike, and only a live token from this relay wakes anyone", async (t) => {
@@ -161,7 +162,7 @@ test("Web Push: an empty push, authorised by the relay's VAPID key for the push 
   const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
   const pem = privateKey.export({ format: "pem", type: "pkcs8" }).toString();
   const { fetch, requests } = fakeFetch((url) => ({ status: url.includes("gone") ? 410 : 201 }));
-  const sender = webPushSender({ privateKey: pem, subject: "mailto:ops@handshake.test" }, fetch);
+  const sender = webPushSender({ privateKey: pem, subject: "mailto:ops@handshake.test" }, fetch, ["push.example.net"]);
   const subscription = JSON.stringify({ endpoint: "https://push.example.net/send/abc", keys: { p256dh: "x", auth: "y" } });
 
   assert.equal(await sender.send(subscription), "sent");
@@ -177,6 +178,28 @@ test("Web Push: an empty push, authorised by the relay's VAPID key for the push 
 
   assert.equal(await sender.send(JSON.stringify({ endpoint: "https://push.example.net/gone" })), "gone");
   assert.equal(await sender.send("not json"), "gone");
+  assert.equal(await sender.send(JSON.stringify({ endpoint: "http://169.254.169.254/latest/meta-data" })), "gone", "never anywhere else");
+  assert.equal(requests.length, 2);
+});
+
+test("Web Push goes only to the browsers' push services, over https", () => {
+  const at = (endpoint: string) => pushEndpoint(JSON.stringify({ endpoint }))?.href ?? null;
+  for (const endpoint of ["https://fcm.googleapis.com/fcm/send/abc", "https://updates.push.services.mozilla.com/wpush/v2/abc", "https://wns2-by3p.notify.windows.com/w/?token=abc", "https://web.push.apple.com/abc"]) {
+    assert.equal(at(endpoint), endpoint);
+  }
+  for (const endpoint of ["http://fcm.googleapis.com/fcm/send/abc", "https://fcm.googleapis.com:8443/x", "https://user@fcm.googleapis.com/x", "https://localhost/x", "https://169.254.169.254/latest", "https://evil.example/x", "https://fcm.googleapis.com.evil.example/x", "https://notify.windows.com.evil.example/x"]) {
+    assert.equal(at(endpoint), null, endpoint);
+  }
+  assert.equal(pushEndpoint("not json"), null);
+});
+
+test("requests count against an IPv4 address, or an IPv6 address's /64", () => {
+  assert.equal(requester("203.0.113.9"), "203.0.113.9");
+  assert.equal(requester("::ffff:203.0.113.9"), "203.0.113.9");
+  assert.equal(requester("2001:db8:85a3:0042:1000:8a2e:370:7334"), "2001:db8:85a3:42::/64");
+  assert.equal(requester("2001:db8:85a3:42::1"), requester("2001:db8:85a3:42:ffff::2"));
+  assert.equal(requester("2001:db8::1"), "2001:db8:0:0::/64");
+  assert.equal(requester("::1"), "0:0:0:0::/64");
 });
 
 test("APNs: a wake in the app's own words, authorised by the relay's token key", async () => {

@@ -93,7 +93,8 @@ await runScenario(async (scenario) => {
   assert.ok(Buffer.from(request.network).equals(Buffer.from(newNetwork)), "the move names the new network");
 
   // ===== Arriving: the parcel, the store, the history =====
-  assert.deepEqual(await on(bobPrevious, "account")<string[]>("open_parcels", null), [JSON.stringify({ name: "Alice" })], "the new key opens what only the old one could read");
+  assert.deepEqual(await on(bobPrevious, "account")<string[]>("open_parcels", aliceKey), [JSON.stringify({ name: "Alice" })], "the new key opens what only the old one could read");
+  assert.deepEqual(await on(bobPrevious, "account")<string[]>("open_parcels", peerKey), [], "and only from the account that moved");
   assert.ok(Buffer.from(await on(bobHere, "account")<Uint8Array>("arrive", null)).equals(Buffer.from(aliceKey)), "it arrives as the account it was");
   const was = await on(bobHere, "account")<Uint8Array | null>("arrived_from", bobKey);
   assert.ok(was && Buffer.from(was).equals(Buffer.from(aliceKey)), "checked on the previous network");

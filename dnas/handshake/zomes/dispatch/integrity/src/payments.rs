@@ -256,6 +256,9 @@ pub fn validate_hold(hold: &PaymentHold, author: &AgentPubKey, prev_action: Opti
     if !processor_id(&hold.reference, MAX_REFERENCE_CHARS) {
         return invalid("a hold's reference is its processor's id: letters, digits, '_' and '-'");
     }
+    if answered_before(author, prev_action, &hold.offer, context.placed_at)? {
+        return invalid("an offer is answered once");
+    }
     // One hold per leg: every earlier one is on the payee's own chain.
     for earlier in written_since::<PaymentHold>(author, prev_action, context.placed_at, UnitEntryTypes::PaymentHold)? {
         if let Ok((o, _, _)) = offer_of(&earlier.offer)? {
@@ -267,7 +270,8 @@ pub fn validate_hold(hold: &PaymentHold, author: &AgentPubKey, prev_action: Opti
     valid()
 }
 
-pub fn validate_action(action: &PaymentAction, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+pub fn validate_action(action: &PaymentAction, author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
+    let Some(prev_action) = prev_action else { return invalid("a payment record can't open a chain") };
     let context = match offer_of(&action.offer)? {
         Ok((_, _, context)) => context,
         Err(reason) => return invalid(reason),
@@ -275,18 +279,32 @@ pub fn validate_action(action: &PaymentAction, author: &AgentPubKey) -> ExternRe
     if author != &context.payee {
         return invalid("only an offer's payee asks its payer for more");
     }
-    match sealed_problem("sealed", &action.sealed, MAX_SEALED_BYTES) {
-        Some(problem) => Ok(ValidateCallbackResult::Invalid(problem)),
-        None => valid(),
+    if let Some(problem) = sealed_problem("sealed", &action.sealed, MAX_SEALED_BYTES) {
+        return Ok(ValidateCallbackResult::Invalid(problem));
     }
+    require(!answered_before(author, prev_action, &action.offer, context.placed_at)?, "an offer is answered once")
 }
 
-pub fn validate_declined(declined: &PaymentDeclined, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+pub fn validate_declined(declined: &PaymentDeclined, author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
+    let Some(prev_action) = prev_action else { return invalid("a payment record can't open a chain") };
     let context = match offer_of(&declined.offer)? {
         Ok((_, _, context)) => context,
         Err(reason) => return invalid(reason),
     };
-    require(author == &context.payee, "only an offer's payee declines it")
+    if author != &context.payee {
+        return invalid("only an offer's payee declines it");
+    }
+    require(!answered_before(author, prev_action, &declined.offer, context.placed_at)?, "an offer is answered once")
+}
+
+/// Whether the payee already answered `offer` -- held it, asked for more,
+/// or declined it: each offer has one answer, so none contradicts another
+/// and nobody piles records onto one.
+fn answered_before(author: &AgentPubKey, chain_top: &ActionHash, offer: &ActionHash, since: Timestamp) -> ExternResult<bool> {
+    let types = [entry_type(UnitEntryTypes::PaymentHold)?, entry_type(UnitEntryTypes::PaymentAction)?, entry_type(UnitEntryTypes::PaymentDeclined)?];
+    Ok(entries_since(author, chain_top, since, &types)?.into_iter().any(|bytes| {
+        PaymentHold::try_from(bytes.clone()).is_ok_and(|h| &h.offer == offer) || PaymentAction::try_from(bytes.clone()).is_ok_and(|a| &a.offer == offer) || PaymentDeclined::try_from(bytes).is_ok_and(|d| &d.offer == offer)
+    }))
 }
 
 /// The order a payment record is about (its original action) -- `None` if

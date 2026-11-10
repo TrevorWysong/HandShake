@@ -109,7 +109,7 @@ export async function readPredecessor(predecessor: AgentPubKey, where: AccountPl
   const call = where === "here" ? callZome : callPrevious;
   const [profileRecord, parcels] = await Promise.all([
     call<HcRecord | null>("profiles", "get_profile_for_agent", predecessor),
-    where === "previous" ? openParcelsOnPrevious() : Promise.resolve([] as string[]),
+    where === "previous" ? openParcelsOnPrevious(predecessor) : Promise.resolve([] as string[]),
   ]);
   const profile = profileRecord ? decodeEntry<Profile>(profileRecord) : null;
   // A driver's vehicle is kept on their own device: it comes along when this

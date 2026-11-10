@@ -38,9 +38,11 @@ export function apnsSender(config: ApnsConfig, request: ApnsRequest = http2Reque
     }
     return token.value;
   };
+  const accepts = (deviceToken: string) => /^[0-9a-f]{32,200}$/i.test(deviceToken);
   return {
+    accepts,
     async send(deviceToken: string): Promise<Outcome> {
-      if (!/^[0-9a-f]{32,200}$/i.test(deviceToken)) return "gone";
+      if (!accepts(deviceToken)) return "gone";
       const { status, reason } = await request(
         `/3/device/${deviceToken}`,
         {

@@ -10,7 +10,8 @@
 
 use dispatch_types::{Bid, DeliveryOrder, DropoffPreference};
 use hdi::prelude::*;
-use handshake_integrity_support::{classify, decode, invalid, require, valid, Checked};
+use handshake_integrity_support::chain::entries_since;
+use handshake_integrity_support::{classify, decode, invalid, original_creation, require, valid, Checked};
 
 mod links;
 
@@ -63,7 +64,7 @@ const _: () = assert!(UnitEntryTypes::Leg as u8 == attestation_types::LEG_INDEX 
 pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     match classify(op.flattened::<EntryTypes, LinkTypes>()?)? {
         Checked::Create { entry, action } => match entry {
-            EntryTypes::Leg(leg) => validate_leg(&leg, action.author()),
+            EntryTypes::Leg(leg) => validate_leg(&leg, action.author(), action.prev_action()),
             EntryTypes::ReceiptAttestation(receipt) => validate_receipt(&receipt, action.author()),
             // Private, and only ever its author's own count.
             EntryTypes::CodeAttempt(_) => valid(),
@@ -79,11 +80,16 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     }
 }
 
+/// The most handoffs of one kind a driver records for one order: room for a
+/// retry or two (arriving, then a scan), never an unbounded pile of photos
+/// every peer holding the order must keep.
+pub const MAX_LEGS_PER_KIND: usize = 5;
+
 /// A handoff, recorded by the driver who made it: the order's assigned
 /// driver, handing over to (or collecting from) that order's own store or
 /// customer. `order_ref` is the version of the order the driver recorded
 /// it against, which names them as its driver.
-fn validate_leg(leg: &Leg, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+fn validate_leg(leg: &Leg, author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
     // Sealed, so its content can't be checked here (the parties' apps check
     // the photo when they open it) -- but its size can.
     if handshake_integrity_support::sealed_chunks_problem("a handoff's evidence", &leg.sealed_evidence, handshake_integrity_support::max_sealed_image_bytes()).is_some() {
@@ -133,7 +139,22 @@ fn validate_leg(leg: &Leg, author: &AgentPubKey) -> ExternResult<ValidateCallbac
             return invalid("only a drop-off the customer chose to have left at the door is left there");
         }
     }
-    valid()
+    let Some(prev) = prev_action else { return invalid("a handoff can't open a chain") };
+    require(legs_before(author, prev, &original_creation(leg.order_ref.clone())?, &leg.kind)? < MAX_LEGS_PER_KIND, "a driver records only a few handoffs of each kind for an order")
+}
+
+/// How many handoffs of `kind` `author` recorded for `order` (its original
+/// action) before `chain_top`: read back to when it was placed.
+fn legs_before(author: &AgentPubKey, chain_top: &ActionHash, order: &ActionHash, kind: &LegKind) -> ExternResult<usize> {
+    let placed = must_get_action(order.clone())?.action().timestamp();
+    let mut count = 0;
+    for bytes in entries_since(author, chain_top, placed, &[UnitEntryTypes::Leg.try_into()?])? {
+        let Ok(earlier) = Leg::try_from(bytes) else { continue };
+        if &earlier.kind == kind && &original_creation(earlier.order_ref)? == order {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 /// Whether `revealed` opens `commitment` (see `PinSecret::opens`).

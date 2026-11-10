@@ -14,7 +14,7 @@ Then set the network's `services.push_relay_url` to where the app reaches it (do
 
 ## What it does
 
-- `POST /devices {channel, address}` registers a device: where its channel reaches it, a Web Push subscription, an APNs device token or an FCM registration token. It answers with the device's id, its secret, and twenty wake tokens.
+- `POST /devices {channel, address}` registers a device: where its channel reaches it, a Web Push subscription, an APNs device token or an FCM registration token. It answers with the device's id, its secret, and twenty wake tokens. A Web Push subscription is accepted only for the browsers' own push services, over https (`WEB_PUSH_HOSTS`): the relay posts to it, so never to an address of the client's choosing. Registrations are limited per IPv4 address, or per IPv6 /64.
 - `POST /devices/tokens {device, secret}` answers with twenty more.
 - `DELETE /devices {device, secret}` forgets the device: every token it handed out stops working.
 - `POST /wake {token}` wakes the device the token names, if it's this relay's, unexpired, and under the device's limits. Always answered alike.

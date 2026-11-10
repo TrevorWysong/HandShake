@@ -87,4 +87,11 @@ await runScenario(async (scenario) => {
   const theirs = await call(customer, "attestation")<HcRecord | null>("get_receipt_for_leg", dropoff);
   assert.ok(proof && theirs && Buffer.from(proof).equals(Buffer.from(actionHash(theirs))), "a delivery's proof is the customer's acknowledgment");
   console.log("[PASS] a delivery's proof is the customer's acknowledgment");
+
+  // A driver records a few handoffs of a kind for an order -- retries --
+  // never an unbounded pile every peer holding it must keep.
+  const dropoffLeg = { order_ref: order, sequence: 1, kind: "CustomerHandoff", to: customer.agentPubKey, geo_at_completion: ST_PETE };
+  for (let more = 0; more < 4; more++) await call(driver, "attestation")("record_leg", dropoffLeg);
+  await assert.rejects(call(driver, "attestation")("record_leg", dropoffLeg), /only a few handoffs/, "the sixth is refused");
+  console.log("[PASS] a driver records only a few handoffs of each kind for an order");
 });

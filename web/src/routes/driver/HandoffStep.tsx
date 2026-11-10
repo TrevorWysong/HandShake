@@ -44,13 +44,15 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
   const [scanning, setScanning] = useState(false);
   const [scanProblem, setScanProblem] = useState<string | null>(null);
   // The handoff, once recorded -- reused for a typed code or the giver's
-  // own confirmation.
-  const [leg, setLeg] = useState<Uint8Array | null>(null);
+  // own confirmation: this visit's, or the arrival read back below.
+  const [recorded, setLeg] = useState<Uint8Array | null>(null);
   const [waitingForGiver, setWaitingForGiver] = useState(false);
   const action = useAction();
   // When this driver recorded arriving: read back from the network, so the
-  // wait survives the app closing.
-  const { data: arrivedAt = null, reload: reloadArrival } = useResource(`arrival:${bytesToHex(orderRef)}`, () => arrivalOf(orderRef));
+  // wait -- and the handoff it recorded -- survive the app closing.
+  const { data: arrival = null, reload: reloadArrival } = useResource(`arrival:${bytesToHex(orderRef)}`, () => arrivalOf(orderRef));
+  const arrivedAt = arrival?.at ?? null;
+  const leg = recorded ?? arrival?.leg ?? null;
 
   const copy = COPY;
   const leftAtDoor = order.dropoff_preference === "LeaveAtDoor";
@@ -238,15 +240,17 @@ export function HandoffStep({ orderRef, order, location, onDone }: { orderRef: U
 
 /// When this driver recorded arriving at `orderRef`'s drop-off (µs): their
 /// latest handoff there no code or door completes -- `null` before one.
-async function arrivalOf(orderRef: Uint8Array): Promise<number | null> {
+/// This driver's latest record of arriving at the drop-off -- a handoff no
+/// code or door completes -- and when.
+async function arrivalOf(orderRef: Uint8Array): Promise<{ leg: Uint8Array; at: number } | null> {
   const me = myAgentPubKey();
   const arrivals = (await getLegsForOrder(orderRef))
     .filter((record) => {
       const leg = decodeEntry<Leg>(record);
       return leg.kind === "CustomerHandoff" && bytesEqual(leg.from, me) && leg.revealed_pin === null && !leg.left_at_door;
     })
-    .map(timestampOf);
-  return arrivals.length ? Math.max(...arrivals) : null;
+    .map((record) => ({ leg: actionHash(record), at: timestampOf(record) }));
+  return arrivals.reduce<{ leg: Uint8Array; at: number } | null>((latest, a) => (!latest || a.at > latest.at ? a : latest), null);
 }
 
 /// The driver at the door, nobody coming: the customer's been told they're

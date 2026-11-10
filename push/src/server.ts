@@ -76,6 +76,20 @@ function text(value: unknown, what: string, max = 200): string {
   return value;
 }
 
+/// Whom a request counts against: an IPv4 address, or an IPv6 address's
+/// /64 -- a subscriber's whole allocation, which they can rotate through at
+/// will.
+export function requester(ip: string): string {
+  const v4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+  if (v4) return v4[1];
+  if (!ip.includes(":")) return ip;
+  const [head, tail = ""] = ip.split("%")[0].split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  return `${groups.slice(0, 4).map((g) => g.toLowerCase().replace(/^0+(?=.)/, "")).join(":")}::/64`;
+}
+
 export function handler(deps: Deps) {
   const { store, tokenKey, senders, log = () => {}, onWake = () => {} } = deps;
   const channels = Object.keys(senders) as Channel[];
@@ -103,7 +117,7 @@ export function handler(deps: Deps) {
     // The address the trusted proxy saw -- the last it added. Anything
     // before it came from the client, who can write what they like.
     const forwarded = deps.trustProxy ? (String(req.headers["x-forwarded-for"] ?? "").split(",").pop() ?? "").trim() : "";
-    const address = forwarded || req.socket.remoteAddress || "unknown";
+    const address = requester(forwarded || req.socket.remoteAddress || "unknown");
     const recent = (requestsByAddress.get(address) ?? []).filter((at) => at > now - HOUR_MS);
     if (recent.length >= deps.requestsPerIpPerHour) throw new HttpError(429, "Too many requests from here. Try again later.");
     requestsByAddress.set(address, [...recent, now]);
@@ -146,7 +160,9 @@ export function handler(deps: Deps) {
       const body = await json(req);
       const channel = text(body.channel, "channel") as Channel;
       if (!channels.includes(channel)) throw new HttpError(400, "This relay doesn't deliver that way.");
-      const { id, secret } = store.register(channel, text(body.address, "address", MAX_ADDRESS_CHARS));
+      const address = text(body.address, "address", MAX_ADDRESS_CHARS);
+      if (!senders[channel]!.accepts(address)) throw new HttpError(400, "That isn't an address this relay delivers to.");
+      const { id, secret } = store.register(channel, address);
       return { device: id, secret, tokens: batch(id) };
     },
     "POST /devices/tokens": async (req) => {
