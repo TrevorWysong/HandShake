@@ -392,7 +392,10 @@ async function main() {
         network.dnaHash = encodeHashToBase64(agent.cellId[0]);
         writeFileSync(DEV_NETWORK, `${JSON.stringify(network, null, 2)}\n`);
       }
-      await agent.call("profiles", "create_profile", { display_name: person.name, roles: person.roles, created_at: now(), bio: person.bio ?? "", phone: "", avatar_data_uri: "" });
+      const profile = await agent.call<{ signed_action: { hashed: { hash: Uint8Array } } }>("profiles", "create_profile", { display_name: person.name, roles: person.roles, created_at: now(), bio: person.bio ?? "", phone: "", avatar_data_uri: "" });
+      if (person.vehicle) {
+        await agent.call("profiles", "register_provider_credential", { profile_action: profile.signed_action.hashed.hash, vehicle_description: person.vehicle.description, license_plate: person.vehicle.plate, photo_data_uri: "", capabilities: ["Food"], verified: false });
+      }
       const addresses = (person.addresses ?? []).map((a) => ({ ...a, point: near(center, a.at) }));
       for (const address of addresses) {
         await agent.call("profiles", "save_address", { label: address.label, location: address.point, street: "", city: "", state: "", zip: "" });

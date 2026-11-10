@@ -80,6 +80,15 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
             let ours = record.action().author() == link.author && decode::<ArrivalEvidence>(&record).is_some_and(|e| link.base == &AnyLinkableHash::from(e.order));
             require(ours, "evidence is linked by whoever gave it, under its order")
         }
+        // A driver's vehicle, by that driver, under its order, tagged with
+        // their key -- how the customer finds their current driver's.
+        LinkTypes::OrderToVehicleShare => {
+            let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
+            let ours = record.action().author() == link.author
+                && link.tag.0 == link.author.get_raw_39()
+                && decode::<VehicleShare>(&record).is_some_and(|s| link.base == &AnyLinkableHash::from(s.order));
+            require(ours, "a vehicle is linked by its driver, under its order, tagged with their key")
+        }
         // How an agent is paid, under their own key.
         LinkTypes::AgentToPaymentProfile => {
             let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
@@ -152,7 +161,7 @@ fn validate_open_order_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCal
 
 pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
     match link.link_type {
-        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder | LinkTypes::BagToOrder | LinkTypes::OrderToConfirmation | LinkTypes::OrderToPayment | LinkTypes::AgentToForgottenCard | LinkTypes::OrderToArrivalEvidence => invalid("this dispatch link type can't be deleted"),
+        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder | LinkTypes::BagToOrder | LinkTypes::OrderToConfirmation | LinkTypes::OrderToPayment | LinkTypes::AgentToForgottenCard | LinkTypes::OrderToArrivalEvidence | LinkTypes::OrderToVehicleShare => invalid("this dispatch link type can't be deleted"),
         // Disconnecting a processor.
         LinkTypes::AgentToPaymentProfile => require(link.base == &AnyLinkableHash::from(link.author.clone()), "only its own agent unlinks how they're paid"),
         LinkTypes::DriverToVerification => {

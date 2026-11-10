@@ -1,10 +1,10 @@
 //! Coordinator zome for agent identity: `Profile` (roles, display name) and
-//! `ProviderCredential` (vehicle/verification, kept separate since it
-//! churns independently of identity -- see the integrity crate).
+//! `ProviderCredential` (a driver's vehicle, kept on their own device).
 
 use hdk::prelude::*;
 use handshake_integrity_support::allergens::AllergySet;
 use profiles_integrity::*;
+use handshake_coordinator_support::chain::mine;
 use handshake_coordinator_support::{guest, open, open_padded, seal_padded, resolve_latest, resolve_links_to_records_with_original, resolve_version, seal, update_version, written};
 
 /// A profile as the person's own client sends it: the phone in the clear,
@@ -114,37 +114,19 @@ pub fn get_my_phone(_: ()) -> ExternResult<Option<String>> {
     }
 }
 
+/// Saves the caller's vehicle, on this device only -- the latest replaces
+/// any before it. Nobody else reads it: it goes, sealed, only to the
+/// customer of an order they've committed to (`dispatch::share_vehicle`).
 #[hdk_extern]
 pub fn register_provider_credential(credential: ProviderCredential) -> ExternResult<Record> {
-    let profile_action = credential.profile_action.clone();
-    let action_hash = create_entry(&EntryTypes::ProviderCredential(credential))?;
-    create_link(profile_action, action_hash.clone(), LinkTypes::ProfileToProviderCredential, ())?;
-    let record = written(action_hash)?;
-    Ok(record)
+    written(create_entry(&EntryTypes::ProviderCredential(credential))?)
 }
 
+/// The caller's vehicle, as they last saved it.
 #[hdk_extern]
-pub fn get_provider_credential(action_hash: ActionHash) -> ExternResult<Option<Record>> {
-    get(action_hash, GetOptions::local())
-}
-
-/// Starts from a driver's Profile action (what every other part of the
-/// system actually has on hand -- a bid, an order, a browse listing) rather
-/// than requiring the caller to already know the credential's own hash.
-#[hdk_extern]
-pub fn get_provider_credential_for_profile(profile_action: ActionHash) -> ExternResult<Option<Record>> {
-    let links = get_links(
-        LinkQuery::try_new(profile_action, LinkTypes::ProfileToProviderCredential)?,
-        GetStrategy::default(),
-    )?;
-    let Some(link) = links.into_iter().max_by_key(|l| l.timestamp) else {
-        return Ok(None);
-    };
-    let action_hash = link
-        .target
-        .into_action_hash()
-        .ok_or(guest("malformed provider credential link target"))?;
-    get(action_hash, GetOptions::default())
+pub fn get_my_vehicle(_: ()) -> ExternResult<Option<Record>> {
+    let types = [EntryType::try_from(UnitEntryTypes::ProviderCredential)?];
+    mine(&types).latest()
 }
 
 // --- favorite restaurants --- a customer's own saved-restaurant list.
@@ -325,7 +307,7 @@ pub fn my_sealed_allergies_length_for_testing(_: ()) -> ExternResult<Option<usiz
 mod test_utils {
     use hdk::prelude::*;
     use profiles_integrity::LinkTypes;
-    handshake_coordinator_support::raw_link_test_externs!(AgentToProfile, ProfileToProviderCredential, AgentToFavorite, OwnerToSavedAddress);
+    handshake_coordinator_support::raw_link_test_externs!(AgentToProfile, AgentToFavorite, OwnerToSavedAddress);
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct PadInput {

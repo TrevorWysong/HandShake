@@ -377,6 +377,34 @@ pub struct DropoffShare {
     pub sealed: XSalsa20Poly1305EncryptedData,
 }
 
+/// The car a committed driver is coming in, as Uber Eats and DoorDash show
+/// their customer: what it is, its plate, and its photo -- the driver's own
+/// words, sealed to the order's customer alone (`VehicleShare`).
+#[derive(Serialize, Deserialize, SerializedBytes, Debug, Clone, PartialEq, Eq)]
+pub struct VehicleDetails {
+    pub vehicle_description: String,
+    pub license_plate: String,
+    pub photo_data_uri: String,
+}
+
+/// A driver's vehicle, shared with the customer of an order they've
+/// committed to -- so the customer knows who to look for. Sealed: nobody
+/// else learns what any driver drives, or their plate. A record of its own,
+/// linked from the order, like `DropoffShare` the other way.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+// Decodes only from its own fields: a record of another type that
+// happens to share these can never pass for this one.
+#[serde(deny_unknown_fields)]
+pub struct VehicleShare {
+    /// The order's original action.
+    pub order: ActionHash,
+    /// A version of the order showing its author committed to it.
+    pub committed: ActionHash,
+    /// `VehicleDetails`, sealed to the order's customer.
+    pub sealed: handshake_integrity_support::SealedChunks,
+}
+
 /// What a party to a no-show tells the order's store, sealed to it, so it
 /// can decide a dispute on more than each side's word: the driver's photo
 /// of the door, as they say nobody came; how far from the drop-off point

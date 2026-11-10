@@ -4,51 +4,19 @@
 import { AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { listBidsForOrder, checkWarrants, getDriverLoad, rankBids } from "../../../holochain/zomes/dispatch";
-import { averageRating, getRatingSummary, getReputationSummary } from "../../../holochain/zomes/reputation";
-import { getProfileForAgent } from "../../../holochain/zomes/profiles";
+import { fetchDriverStats, type DriverStats } from "../../../lib/driving/driverStats";
 import { decodeEntry, actionHash, bytesEqual, bytesToHex, timestampOf } from "../../../holochain/decode";
 import { Button, Card, Skeleton } from "../../../components/ui";
 import { StarRating } from "../../../components/StarRating";
 import { formatCents, formatEta, shortAgentId, formatClockTime } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useResource } from "../../../lib/hooks/useResource";
-import type { ActionHash, Bid, DeliveryOrder, InHand, Profile, WarrantSummary } from "../../../holochain/types";
+import type { ActionHash, Bid, DeliveryOrder, InHand, WarrantSummary } from "../../../holochain/types";
 import { carryRefusal, customerRefusal, describeLoad } from "../../../lib/driving/driverLoad";
 import { useTerms } from "../../../store/network";
 import { POLL, isOrderOrBidSignal } from "../../../lib/network/poll";
 import { useT } from "../../../i18n";
 import { BidWeightBreakdown, HowBidsCompare } from "../../../components/orders/BidWeights";
-
-interface DriverStats {
-  completedCount: number;
-  /// Deliveries they left before picking them up.
-  droppedCount: number;
-  /// Offers they let lapse, or turned down, without committing.
-  lapsedCount: number;
-  avgRating: number;
-  reviewCount: number;
-  displayName: string | null;
-}
-
-
-/// The customer is the one who accepts a bid, so this is the one place
-/// that choice should actually be informed by the bidder's track record,
-/// not just price/ETA/warrants. The restaurant doesn't get a separate
-/// veto: shared visibility
-/// into the same trust signal covers that interest too. Driver-scoped
-/// only: a bidder who also runs a restaurant is judged on their deliveries
-/// here, never their store's food. Also resolves a real display name
-/// instead of showing the bidder's raw identity hash -- `null` (falling
-/// back to `shortAgentId`) just means they haven't set one.
-async function fetchDriverStats(agent: Uint8Array): Promise<DriverStats> {
-  const [summary, rating, profileRecord] = await Promise.all([
-    getReputationSummary({ Driver: agent }),
-    getRatingSummary({ Driver: agent }),
-    getProfileForAgent(agent),
-  ]);
-  const displayName = profileRecord ? decodeEntry<Profile>(profileRecord).display_name : null;
-  return { completedCount: summary.completed_count, droppedCount: summary.dropped_count, lapsedCount: summary.lapsed_count, avgRating: averageRating(rating) ?? 0, reviewCount: rating.count, displayName: displayName || null };
-}
 
 /// A bid's bidder, with their warrant count and driver track record.
 interface BidRow {

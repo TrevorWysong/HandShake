@@ -12,6 +12,8 @@ export interface WorldPerson {
   roles: ("Requester" | "Merchant" | "Provider")[];
   bio?: string;
   addresses?: { label: string; at: Offset }[];
+  /// A driver's car: what it is, and its plate.
+  vehicle?: { description: string; plate: string };
 }
 
 /// A store's choice group; `opens` names a group an option leads on to.
@@ -90,9 +92,9 @@ export type WorldOrder = (OrderCommon & { kind: "delivery"; until: DeliveryStep;
 
 export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: WorldOrder[] } = {
   people: [
-    { slug: "mo", name: "Mo Haddad", roles: ["Requester", "Merchant", "Provider"], bio: "Runs Mo's Kitchen and Mo's Tacos, and drives on slow nights." },
+    { slug: "mo", name: "Mo Haddad", roles: ["Requester", "Merchant", "Provider"], bio: "Runs Mo's Kitchen and Mo's Tacos, and drives on slow nights.", vehicle: { description: "Silver Toyota Corolla", plate: "MOH 418" } },
     { slug: "cara", name: "Cara Okafor", roles: ["Merchant"], bio: "Owner of Cara's Café." },
-    { slug: "dana", name: "Dana Reyes", roles: ["Provider"], bio: "Full-time courier." },
+    { slug: "dana", name: "Dana Reyes", roles: ["Provider"], bio: "Full-time courier.", vehicle: { description: "Blue Honda Civic", plate: "DRV 2207" } },
     { slug: "sam", name: "Sam Patel", roles: ["Requester"], addresses: [{ label: "Home", at: [0.6, -0.9] }, { label: "Work", at: [-1.8, 1.1] }] },
     { slug: "lee", name: "Lee Chen", roles: ["Requester"], addresses: [{ label: "Home", at: [1.4, 0.7] }] },
     // A customer with nothing on order yet: the others each have as many

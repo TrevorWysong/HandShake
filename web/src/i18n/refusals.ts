@@ -46,6 +46,7 @@ export const REFUSALS = {
   "refusal.only-the-driver-the-store-checked-in": "Only the driver the store checked in can call it late.",
   "refusal.only-the-driver-who-made-a-handoff": "Only the driver who made a handoff can prove it.",
   "refusal.only-the-network-s-verifiers-verify-drivers": "Only the network's verifiers verify drivers.",
+  "refusal.only-the-order-s-committed-driver-shares": "Only the order's committed driver shares their vehicle, once.",
   "refusal.only-the-order-s-customer-appeals-it": "Only the order's customer appeals it.",
   "refusal.only-the-order-s-customer-can-accept": "Only the order's customer can accept an offer on it.",
   "refusal.only-the-order-s-customer-can-collect": "Only the order's customer can collect it.",

@@ -7,7 +7,7 @@ import { useSession } from "../store/session";
 import { useMerchantStores, useMyStores } from "../store/merchantStores";
 import { useResource } from "../lib/hooks/useResource";
 import { averageRating, getRatingSummary, getReviewsFor } from "../holochain/zomes/reputation";
-import { updateProfile, getMyName, getMyPhone, getProviderCredentialForProfile, registerProviderCredential } from "../holochain/zomes/profiles";
+import { updateProfile, getMyName, getMyPhone, getMyVehicle, registerProviderCredential } from "../holochain/zomes/profiles";
 import { bytesToHex, decodeEntry } from "../holochain/decode";
 import { Button, Card, Input, Notice, SectionLabel, Textarea } from "../components/ui";
 import { MyAllergies } from "../components/account/MyAllergies";
@@ -57,9 +57,8 @@ export function ProfilePage() {
     const entries = await Promise.all((stores ?? []).map(async (store) => [store.hex, await getRatingSummary({ Store: store.hash })] as const));
     return Object.fromEntries(entries);
   });
-  const credentialKey = profileActionHash && isDriver ? `credential:${bytesToHex(profileActionHash)}` : null;
-  const { data: credential, mutate: setCredential } = useResource<ProviderCredential | null>(credentialKey, () =>
-    getProviderCredentialForProfile(profileActionHash!).then((record) => (record ? decodeEntry<ProviderCredential>(record) : null)),
+  const { data: credential, mutate: setCredential } = useResource<ProviderCredential | null>(isDriver ? "my-vehicle" : null, () =>
+    getMyVehicle().then((record) => (record ? decodeEntry<ProviderCredential>(record) : null)),
   );
   const [editing, setEditing] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(false);
@@ -229,6 +228,7 @@ export function ProfilePage() {
             <motion.p key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-ink-400">{t("profile.noVehicle")}</motion.p>
           )}
           </AnimatePresence>
+          <p className="mt-2 text-[11px] text-ink-400">{t("onboarding.vehicleDetail")}</p>
         </Card>
         </motion.div>
       )}

@@ -4298,6 +4298,38 @@ export interface Tier {
 }
 
 /**
+ * The car a committed driver is coming in, as Uber Eats and DoorDash show
+ * their customer: what it is, its plate, and its photo -- the driver's own
+ * words, sealed to the order's customer alone (`VehicleShare`).
+ */
+export interface VehicleDetails {
+  vehicle_description: string;
+  license_plate: string;
+  photo_data_uri: string;
+}
+
+/**
+ * A driver's vehicle, shared with the customer of an order they've
+ * committed to -- so the customer knows who to look for. Sealed: nobody
+ * else learns what any driver drives, or their plate. A record of its own,
+ * linked from the order, like `DropoffShare` the other way.
+ */
+export interface VehicleShare {
+  /**
+   * The order's original action.
+   */
+  order: ActionHash;
+  /**
+   * A version of the order showing its author committed to it.
+   */
+  committed: ActionHash;
+  /**
+   * `VehicleDetails`, sealed to the order's customer.
+   */
+  sealed: SealedChunks;
+}
+
+/**
  * What a verifier checked about a driver.
  */
 export type VerificationCheck =

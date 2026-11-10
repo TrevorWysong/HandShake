@@ -19,6 +19,7 @@ import { Button, Card, Notice, SectionLabel, Skeleton, StatNumber } from "../../
 import { ChatPanel } from "../../../components/orders/ChatPanel";
 import { NetworkReach } from "../../../components/orders/NetworkReach";
 import { LiveMap } from "../../../components/places/LiveMap";
+import { YourDriver } from "../../../components/orders/YourDriver";
 import { WaitingForStore } from "../../../components/orders/WaitingForStore";
 import { formatCatalogAddress, formatCents, formatClockTime, formatDeadline, formatDistance } from "../../../lib/ui/format";
 import { distanceKm } from "../../../lib/places/geohash";
@@ -229,6 +230,12 @@ export function OrderDetail() {
           )}
         </div>
         <div className="lg:sticky lg:top-6 lg:col-start-2 lg:row-span-3 lg:row-start-1">
+          {driver && ACTIVE_DELIVERY_STATUSES.includes(order.status) && (
+            <motion.div variants={fadeSlideUp} className="mt-4 mb-3 lg:mt-0">
+              <YourDriver orderRef={orderRef} driver={driver} status={order.status} />
+            </motion.div>
+          )}
+
           {live && pickup && details?.dropoff && (
             <motion.div variants={fadeSlideUp} className="mt-4 lg:mt-0">
               <LiveMap orderRef={orderRef} pickup={pickup} dropoff={details.dropoff.point} collected={["PickedUp", "Unanswered", "Disputed"].includes(order.status)} />

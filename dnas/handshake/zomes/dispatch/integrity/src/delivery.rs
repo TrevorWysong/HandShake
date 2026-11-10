@@ -823,6 +823,28 @@ pub(crate) fn validate_arrival_evidence(evidence: &ArrivalEvidence, author: &Age
     Ok(ValidateCallbackResult::Valid)
 }
 
+/// A driver sharing their vehicle with a customer: the driver the order
+/// shows committed, sealed, and no larger than a photo and a few words.
+pub(crate) fn validate_vehicle_share(share: &VehicleShare, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    if handshake_integrity_support::original_creation(share.order.clone())? != share.order || handshake_integrity_support::original_creation(share.committed.clone())? != share.order {
+        return Ok(ValidateCallbackResult::Invalid("a share names an order by its original action, and one of its versions".into()));
+    }
+    let Some(order) = decode::<DeliveryOrder>(&must_get_valid_record(share.committed.clone())?) else {
+        return Ok(ValidateCallbackResult::Invalid("a share is for a delivery".into()));
+    };
+    let committed = match (&order.accepted_bid, order.collateral_payment.is_some()) {
+        (Some(bid), true) => decode::<Bid>(&must_get_valid_record(bid.clone())?).is_some_and(|bid| &bid.bidder == author),
+        _ => false,
+    };
+    if !committed {
+        return Ok(ValidateCallbackResult::Invalid("only a driver the order shows committed shares their vehicle".into()));
+    }
+    if handshake_integrity_support::sealed_chunks_problem("sealed", &share.sealed, handshake_integrity_support::max_sealed_image_bytes()).is_some() {
+        return Ok(ValidateCallbackResult::Invalid("a vehicle holds at most one photo, within the network's image limit".into()));
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
 /// A customer sharing their address with a driver: theirs to share, with a
 /// driver the order shows committed, and no larger than an address.
 pub(crate) fn validate_dropoff_share(share: &DropoffShare, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {

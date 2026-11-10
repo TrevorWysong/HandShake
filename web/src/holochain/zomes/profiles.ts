@@ -57,8 +57,9 @@ export async function registerProviderCredential(credential: ProviderCredential)
   return callZome("profiles", "register_provider_credential", credential);
 }
 
-export async function getProviderCredentialForProfile(profileAction: ActionHash): Promise<HcRecord | null> {
-  return callZome("profiles", "get_provider_credential_for_profile", profileAction);
+/// The caller's own vehicle, kept on this device.
+export async function getMyVehicle(): Promise<HcRecord | null> {
+  return callZome("profiles", "get_my_vehicle", null);
 }
 
 // --- favorite restaurants -- a customer's own saved-restaurant list, a

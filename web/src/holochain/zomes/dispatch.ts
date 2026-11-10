@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { AllergySet, ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
+import type { AllergySet, ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VehicleDetails, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
 
 // --- orders ---
 
@@ -306,6 +306,12 @@ export interface OrderPrivateDetails {
 
 export async function getOrderPrivateDetails(orderOriginalAction: ActionHash): Promise<OrderPrivateDetails> {
   return callZome("dispatch", "get_order_private_details", orderOriginalAction);
+}
+
+/// The car the order's driver is coming in -- for its customer, once the
+/// driver's committed and shared it.
+export async function getDriverVehicle(orderRef: ActionHash): Promise<VehicleDetails | null> {
+  return callZome("dispatch", "get_driver_vehicle", orderRef);
 }
 
 export async function listMyRecurringTemplates(): Promise<RecurringTemplateView[]> {

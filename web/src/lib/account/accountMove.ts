@@ -112,7 +112,13 @@ export async function readPredecessor(predecessor: AgentPubKey, where: AccountPl
     where === "previous" ? openParcelsOnPrevious() : Promise.resolve([] as string[]),
   ]);
   const profile = profileRecord ? decodeEntry<Profile>(profileRecord) : null;
-  const vehicleRecord = profileRecord ? await call<HcRecord | null>("profiles", "get_provider_credential_for_profile", actionHash(profileRecord)).catch(() => null) : null;
+  // A driver's vehicle is kept on their own device: it comes along when this
+  // device moves to a new version (an older one published it), never in a
+  // recovery from elsewhere -- they add it again.
+  const vehicleRecord =
+    where === "previous" && profileRecord
+      ? await call<HcRecord | null>("profiles", "get_my_vehicle", null).catch(() => call<HcRecord | null>("profiles", "get_provider_credential_for_profile", actionHash(profileRecord)).catch(() => null))
+      : null;
   const parcel = parcels.map(parcelContents).findLast((p) => p !== null) ?? null;
   return { profile, vehicle: vehicleRecord ? decodeEntry<ProviderCredential>(vehicleRecord) : null, name: parcel?.name || profile?.display_name || "", phone: parcel?.phone ?? "", parcel };
 }

@@ -59,13 +59,13 @@ await runScenario(async (scenario) => {
     license_plate: "ABC-123",
     photo_data_uri: "data:image/jpeg;base64,car",
   });
-  await dhtSync(both, customer.cells[0].cell_id[0]);
-  const fetchedCredential = await profilesOf(customer)<HcRecord | null>("get_provider_credential_for_profile", driverProfileHash);
-  assert.ok(fetchedCredential, "expected the driver's own vehicle credential to be discoverable from just their profile action");
-  const credential = decodeEntry<{ license_plate: string; vehicle_description: string }>(fetchedCredential!);
-  assert.equal(credential.license_plate, "ABC-123");
-  assert.equal(credential.vehicle_description, "Blue Honda Civic");
-  console.log("[PASS] register_provider_credential + get_provider_credential_for_profile round-trip correctly");
+  const ownVehicle = async () => decodeEntry<{ license_plate: string; vehicle_description: string }>((await profilesOf(driver)<HcRecord | null>("get_my_vehicle", null))!);
+  assert.equal((await ownVehicle()).license_plate, "ABC-123");
+  assert.equal((await ownVehicle()).vehicle_description, "Blue Honda Civic");
+  // A change is a new one; the latest counts.
+  await profilesOf(driver)("register_provider_credential", { profile_action: driverProfileHash, vehicle_description: "Red Honda Civic", capabilities: ["Food"], verified: false, license_plate: "ABC-123", photo_data_uri: "" });
+  assert.equal((await ownVehicle()).vehicle_description, "Red Honda Civic");
+  console.log("[PASS] a driver's vehicle is kept on their device, and the latest replaces it");
 
   // --- Catalog with full storefront details, then update ---
   const catalogRecord = await catalogOf(customer)<HcRecord>("publish_catalog", {

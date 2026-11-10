@@ -140,6 +140,10 @@ pub struct SealedAllergies {
 #[unit_enum(UnitEntryTypes)]
 pub enum EntryTypes {
     Profile(Profile),
+    /// Kept on the driver's own device: shared, sealed, only with the
+    /// customer of an order they've committed to (`dispatch`'s
+    /// `VehicleShare`). A change is a new one; the latest counts.
+    #[entry_type(visibility = "private")]
     ProviderCredential(ProviderCredential),
     SavedAddress(SavedAddress),
     SealedAllergies(SealedAllergies),
@@ -152,11 +156,6 @@ pub enum LinkTypes {
     /// (`handshake_integrity_support::versions`). First in every zome.
     Version,
     AgentToProfile,
-    /// Lets any peer find a driver's vehicle info starting only from the
-    /// driver's Profile action -- without this, `get_provider_credential`
-    /// requires already knowing the credential's own action hash, which
-    /// nothing else in the system would ever have handed you.
-    ProfileToProviderCredential,
     /// An agent's own saved-restaurant list -- base is always their own
     /// `agent_initial_pubkey`, target is a `MerchantCatalog`'s action hash.
     /// No entry type needed: "I favorited X at time T" is exactly what a
@@ -194,7 +193,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         },
         Checked::Update { entry, action } => match entry {
             EntryTypes::Profile(profile) => validate_profile_update(&profile, action.author(), &action.original_action_address),
-            EntryTypes::ProviderCredential(credential) => validate_provider_credential_update(&credential, action.author(), &action.original_action_address),
+            EntryTypes::ProviderCredential(_) => handshake_integrity_support::invalid("a driver's vehicle is replaced with a new one, not changed"),
             EntryTypes::SavedAddress(address) => validate_saved_address_update(&address, action.author(), &action.original_action_address),
             EntryTypes::SealedAllergies(allergies) => validate_sealed_allergies_update(&allergies, action.author(), &action.original_action_address),
         },
@@ -311,7 +310,7 @@ fn validate_favorite_removal(
     Ok(ValidateCallbackResult::Valid)
 }
 
-/// A driver's vehicle details, published by that driver about their own
+/// A driver's vehicle details, saved by that driver about their own
 /// profile. `verified` is reserved for a verification service the network
 /// doesn't have yet -- until it does, nobody can claim it.
 fn validate_provider_credential(credential: &ProviderCredential, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
@@ -347,19 +346,6 @@ fn validate_provider_credential(credential: &ProviderCredential, author: &AgentP
         ));
     }
     Ok(ValidateCallbackResult::Valid)
-}
-
-/// The same rules, and only the driver who published the details may
-/// change them, for the same profile.
-fn validate_provider_credential_update(credential: &ProviderCredential, author: &AgentPubKey, original: &ActionHash) -> ExternResult<ValidateCallbackResult> {
-    let prior_record = must_get_valid_record(original.clone())?;
-    let Ok(Some(prior)) = prior_record.entry().to_app_option::<ProviderCredential>() else {
-        return Ok(ValidateCallbackResult::Invalid("original_action_hash does not point at a ProviderCredential".into()));
-    };
-    if prior_record.action().author() != author || prior.profile_action != credential.profile_action {
-        return Ok(ValidateCallbackResult::Invalid("only the driver may change their own vehicle details".into()));
-    }
-    validate_provider_credential(credential, author)
 }
 
 /// The content is sealed, so there's nothing validation can read; the
@@ -444,10 +430,6 @@ fn validate_identity_link(link_type: LinkTypes, base: &AnyLinkableHash, target: 
     match link_type {
         LinkTypes::AgentToProfile => {
             require(decode::<Profile>(&record).is_some() && base == &AnyLinkableHash::from(author.clone()), "a profile may only be linked under its own author")
-        }
-        LinkTypes::ProfileToProviderCredential => {
-            let Some(credential) = decode::<ProviderCredential>(&record) else { return invalid("target is not a ProviderCredential") };
-            require(base == &AnyLinkableHash::from(credential.profile_action), "a credential may only be linked under the profile it names")
         }
         // Handled by their own rules above.
         LinkTypes::OwnerToAllergies | LinkTypes::Version | LinkTypes::AgentToFavorite | LinkTypes::OwnerToSavedAddress => Ok(ValidateCallbackResult::Valid),

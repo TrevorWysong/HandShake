@@ -35,9 +35,15 @@ await runScenario(async (scenario) => {
   const call = (p: typeof customer, zome: string) => retryingCaller(p.cells[0], zome);
 
   const now = Date.now() * 1000;
+  const profiles = new Map<typeof customer, Uint8Array>();
   for (const [p, name, roles] of [[customer, "Cara", ["Requester"]], [merchant, "Mo", ["Merchant"]], [driver, "Dana", ["Provider"]], [stranger, "Sly", ["Requester"]]] as const) {
-    await call(p, "profiles")("create_profile", { display_name: name, roles, created_at: now });
+    profiles.set(p, actionHash(await call(p, "profiles")<HcRecord>("create_profile", { display_name: name, roles, created_at: now })));
   }
+  // A driver's vehicle is kept on their own device.
+  const vehicle = { vehicle_description: "Blue Honda Civic", license_plate: "DANA1", photo_data_uri: "" };
+  await call(driver, "profiles")("register_provider_credential", { ...vehicle, profile_action: profiles.get(driver), capabilities: ["Food"], verified: false });
+  assert.equal(decodeEntry<{ license_plate: string }>((await call(driver, "profiles")<HcRecord | null>("get_my_vehicle", null))!).license_plate, "DANA1", "the driver reads it back");
+  assert.equal(await call(stranger, "profiles")<HcRecord | null>("get_my_vehicle", null), null, "and it's only ever their own");
   // A customer publishes no name; a store's is public.
   const profileOf = async (p: typeof customer) => decodeEntry<{ display_name: string; sealed_name: unknown }>((await call(p, "profiles")<HcRecord | null>("get_profile_for_agent", p.agentPubKey))!);
   const customerProfile = await profileOf(customer);
@@ -85,6 +91,7 @@ await runScenario(async (scenario) => {
   console.log("[PASS] the customer reads everything, the store only its note, a stranger nothing");
 
   await acceptOrder(merchant, order, all);
+  const vehicleFor = (p: typeof customer) => call(p, "dispatch")<typeof vehicle | null>("get_driver_vehicle", order);
   const bid = actionHash(await call(driver, "dispatch")<HcRecord>("submit_bid", { order_ref: order, eta_seconds: 600, price_offer: 400 }));
   await sync();
   assert.equal((await detailsFor(driver)).dropoff, null, "a bidding driver doesn't get the address");
@@ -107,6 +114,16 @@ await runScenario(async (scenario) => {
   const accepted = publishedBytes(await call(stranger, "dispatch")<HcRecord>("get_order", order));
   assert.ok(!accepted.includes("Gate code 4417"), "the accepted order still publishes nothing in the clear");
   console.log("[PASS] only the driver who has committed learns the address, and only then");
+
+  // The other way: the committed driver's app shares their vehicle with the
+  // customer alone, so they know who to look for.
+  const shared = await retryUntil(() => vehicleFor(customer), (v) => v !== null, 60, 1000);
+  assert.deepEqual(shared, vehicle, "the customer sees the car, its plate and photo");
+  assert.equal(await vehicleFor(stranger), null, "a stranger doesn't");
+  assert.equal(await vehicleFor(merchant), null, "nor does the store");
+  await assert.rejects(call(stranger, "dispatch")("share_vehicle", order), /Only the order's committed driver/, "only the order's driver shares a vehicle for it");
+  await assert.rejects(call(driver, "dispatch")("share_vehicle", order), /Only the order's committed driver shares their vehicle, once/, "and only once");
+  console.log("[PASS] the committed driver's vehicle reaches its customer, sealed, and nobody else");
 
   // A standing order keeps its address sealed too.
   const template = await call(customer, "dispatch")<HcRecord>("create_recurring_template", {
