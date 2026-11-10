@@ -29,7 +29,7 @@ test("connecting checks the account, keeps the keys, and publishes only their pu
   const { agent, calls, credentials } = setup();
   assert.equal(await agent.status(), null);
   const status = await agent.connect("Test", {});
-  assert.deepEqual(status, { processor: "Test", account: "Test account", live: false });
+  assert.deepEqual(status, { processor: "Test", account: "Test account", live: false, trouble: null });
   const published = calls.find((c) => c.fn === "set_payment_profile")!.payload;
   assert.deepEqual(published, { processor: "Test", public_key: "test", account: "", live: false, country: "" });
   assert.equal((await credentials.load())?.processor, "Test");
@@ -68,4 +68,24 @@ test("what the app passes is checked as untrusted", () => {
   assert.throws(() => checkKeysInput("Stripe", { restricted_key: "x".repeat(501) }), Refused);
   assert.throws(() => checkKeysInput("Stripe", { restricted_key: 1 }), Refused);
   assert.deepEqual(checkKeysInput("Stripe", { publishable_key: " pk_test_x " }), { processor: "Stripe", keys: { publishable_key: "pk_test_x" } });
+});
+
+test("a payment the agent couldn't carry out shows in its status -- what kind, never the processor's words -- until a round goes cleanly", async () => {
+  let failing = true;
+  const dispatch = async <T,>(fn: string): Promise<T> => {
+    if (fn === "get_network_terms") return { currency: "USD", live_payments: false } as T;
+    if (fn === "payments_due") return (failing ? [{ Settle: { hold: new Uint8Array(39), reference: "nowhere", held: 100, captured: 100, claims: [] } }] : []) as T;
+    if (fn === "record_settlement") throw new Error("internal detail the app mustn't see");
+    return null as T;
+  };
+  const agent = createAgent({ dispatch, credentials: memoryCredentials(), state: memoryStore(), processorFor, confirm: async () => true, roundMs: 60_000 });
+  await agent.connect("Test", {});
+  await agent.round();
+  const troubled = await agent.status();
+  assert.equal(troubled?.trouble?.what, "Settle");
+  assert.deepEqual(Object.keys(troubled!.trouble!).sort(), ["at", "what"], "nothing of the processor's error");
+  failing = false;
+  await agent.round();
+  assert.equal((await agent.status())?.trouble, null, "cleared by a clean round");
+  agent.stop();
 });

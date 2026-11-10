@@ -20,6 +20,7 @@ import { useTerms } from "../store/network";
 import { useT, type MessageKey } from "../i18n";
 import { SavedCards } from "../components/payments/SavedCards";
 import { PaymentHistory } from "../components/payments/PaymentHistory";
+import { PaymentTrouble } from "../components/payments/PaymentTrouble";
 
 /// One step of connecting a processor: what to do, and where, if there's
 /// a page to open.
@@ -159,6 +160,7 @@ function Connected({ connection, agent, onChange }: { connection: PaymentsConnec
         <span className="min-w-0 truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{connection.account}</span>
         <Badge tone={connection.live ? "success" : "warn"}>{connection.live ? t("payments.live") : t("payments.test")}</Badge>
       </div>
+      {connection.trouble && <PaymentTrouble trouble={connection.trouble} className="mt-3" />}
       {action.error && <Notice className="mt-3">{action.error}</Notice>}
       {confirming ? (
         <div className="mt-3 rounded-xl bg-amber-50 p-3 dark:bg-amber-900/20">

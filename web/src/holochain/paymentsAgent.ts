@@ -5,7 +5,8 @@
 // UI four commands, as `window.__HANDSHAKE_PAYMENTS__`:
 //
 //   status()                  what's connected: the processor, its account,
-//                             live or test -- or nothing
+//                             live or test, and a payment it couldn't carry
+//                             out lately (only its kind) -- or nothing
 //   connect(processor, keys)  checks the keys with the processor, keeps them,
 //                             and publishes the public half as this agent's
 //                             payment profile
@@ -24,6 +25,10 @@ export interface PaymentsConnection {
   /// The processor's name for the account, as its dashboard shows it.
   account: string;
   live: boolean;
+  /// A payment due that it couldn't carry out, until a round goes cleanly:
+  /// its kind and when (ms). Not the processor's words: those are in its
+  /// own dashboard.
+  trouble: { what: string; at: number } | null;
 }
 
 export interface PaymentsAgent {

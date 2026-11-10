@@ -23,6 +23,12 @@ export interface Status {
   processor: ProcessorName;
   account: string;
   live: boolean;
+  /// The last round that couldn't carry out a payment due, if no round
+  /// has gone cleanly since: what kind (`Authorize`, `Settle`, `Refund`,
+  /// `Forget`, or `round` for the round itself), and when (ms). Never the
+  /// processor's own words -- they're the payee's to read in its dashboard,
+  /// not the app's pages'.
+  trouble: { what: string; at: number } | null;
 }
 
 export interface AgentOptions {
@@ -52,11 +58,27 @@ export function checkKeysInput(processor: unknown, keys: unknown): { processor: 
 }
 
 export function createAgent(options: AgentOptions) {
-  const { dispatch, credentials, state, processorFor, confirm, roundMs = ROUND_MS, onProblem = () => {} } = options;
+  const { dispatch, credentials, state, processorFor, confirm, roundMs = ROUND_MS, onProblem: report = () => {} } = options;
   let engine: Engine | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
+  // What last went wrong, kept until a round goes cleanly.
+  let trouble: Status["trouble"] = null;
+  let troubledThisRound = false;
+  const onProblem = (what: string, err: unknown) => {
+    troubledThisRound = true;
+    trouble = { what, at: Date.now() };
+    report(what, err);
+  };
   const terms = () => dispatch<NetworkTerms>("get_network_terms", null);
-  const round = () => void engine?.round().catch((err) => onProblem("round", err));
+  /// A round, its trouble noted -- or cleared, when it went cleanly.
+  async function rounded(): Promise<number> {
+    if (!engine) return 0;
+    troubledThisRound = false;
+    const done = await engine.round();
+    if (!troubledThisRound) trouble = null;
+    return done;
+  }
+  const round = () => void rounded().catch((err) => onProblem("round", err));
 
   async function run(processor: ProcessorName, keys: Record<string, string>) {
     const { currency } = await terms();
@@ -79,7 +101,7 @@ export function createAgent(options: AgentOptions) {
 
     async status(): Promise<Status | null> {
       const kept = await credentials.load();
-      return kept && { processor: kept.processor, account: kept.connection.account, live: kept.connection.live };
+      return kept && { processor: kept.processor, account: kept.connection.account, live: kept.connection.live, trouble };
     },
 
     /// Checks the keys with the processor, keeps them, and publishes their
@@ -97,8 +119,9 @@ export function createAgent(options: AgentOptions) {
       if (!(await confirm({ processor, connection }))) throw new Refused("Not connected: you didn't confirm it.");
       await dispatch("set_payment_profile", { processor, public_key: connection.publicKey, account: connection.publicAccount, live: connection.live, country: connection.country });
       await credentials.save({ processor, keys, connection });
+      trouble = null;
       await run(processor, keys);
-      return { processor, account: connection.account, live: connection.live };
+      return { processor, account: connection.account, live: connection.live, trouble: null };
     },
 
     /// Withdraws the payment profile and forgets the keys. Payments already
@@ -108,6 +131,7 @@ export function createAgent(options: AgentOptions) {
       await dispatch("clear_payment_profile", null);
       await credentials.clear();
       engine = null;
+      trouble = null;
     },
 
     /// Looks for payments due now, not at the next round.
@@ -117,7 +141,7 @@ export function createAgent(options: AgentOptions) {
 
     /// A round, awaited: how many payments it carried out.
     async round(): Promise<number> {
-      return (await engine?.round()) ?? 0;
+      return rounded();
     },
   };
 }
