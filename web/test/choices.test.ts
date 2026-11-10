@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { choiceLabels, choose, groupProblem, linePrice, missingGroups, type Groups } from "../src/lib/storefront/choices.ts";
+import { choiceLabels, choose, groupProblem, linePrice, missingGroups, runningPrice, type Groups } from "../src/lib/storefront/choices.ts";
 import { bytesToHex } from "../src/holochain/decode.ts";
 import type { MenuItem, ModifierGroup, ModifierOption, SelectionInput } from "../src/holochain/types.ts";
 
@@ -86,4 +86,17 @@ test("a group must make sense", () => {
   assert.notEqual(groupProblem(group("Size", 3, null, 0, [option(1, 0), option(2, 0)])), null);
   assert.notEqual(groupProblem(group("Size", 0, 1, 2, [option(1, 0), option(2, 0)])), null);
   assert.notEqual(groupProblem(group("Size", 0, null, 0, [])), null);
+});
+
+test("while choosing, the price shown counts what's chosen so far -- never what's charged", () => {
+  const groups = menu([
+    [1, group("Combo", 0, 1, 0, [option(1, 350, hash(2))])],
+    [2, group("Fries size", 1, 1, 0, [option(1, 0), option(2, 100)])],
+  ]);
+  const fries: SelectionInput = { group: hash(1), options: [{ option: 1, quantity: 1, nested: [pick(2, [])] }] };
+  // Fries chosen, their size not yet: the combo's price shows, but it can't be ordered.
+  assert.equal(price(runningPrice(item(1150, [1]), [fries], groups)), 1500);
+  assert.equal(linePrice(item(1150, [1]), [fries], groups).ok, false);
+  // Too many is still too many.
+  assert.equal(runningPrice(item(400, [1]), [pick(1, [[1, 1], [2, 1]])], menu([[1, group("Size", 1, 1, 0, [option(1, 0), option(2, 75)])]])).ok, false);
 });

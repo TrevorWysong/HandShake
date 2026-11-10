@@ -1,16 +1,16 @@
 import { ArrowDownCircle, ArrowUpCircle, CircleSlash, Clock, ShieldCheck } from "lucide-react";
-import { LoadProblem } from "../components/LoadProblem";
-import { TimeAgo } from "../components/TimeAgo";
+import { LoadProblem } from "../LoadProblem";
+import { TimeAgo } from "../TimeAgo";
 import { motion } from "framer-motion";
-import { useSession } from "../store/session";
-import { myPaymentHistory } from "../holochain/zomes/payments";
-import { bytesToHex } from "../holochain/decode";
-import { Card, Skeleton, StatNumber } from "../components/ui";
-import { formatCents } from "../lib/ui/format";
-import { fadeSlideUp, staggerContainer } from "../lib/ui/motion";
-import { useResource } from "../lib/hooks/useResource";
-import { describePayment } from "../lib/money/payments";
-import { useT } from "../i18n";
+import { useSession } from "../../store/session";
+import { myPaymentHistory } from "../../holochain/zomes/payments";
+import { bytesToHex } from "../../holochain/decode";
+import { Card, Skeleton, StatNumber } from "../ui";
+import { formatCents } from "../../lib/ui/format";
+import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
+import { useResource } from "../../lib/hooks/useResource";
+import { describePayment } from "../../lib/money/payments";
+import { useT } from "../../i18n";
 
 /// How far back the page reads.
 const HISTORY_DAYS = 90;
@@ -21,7 +21,7 @@ const HISTORY_DAYS = 90;
 /// owed. Every one is a signed record its order's parties can check. There
 /// is no operator account anywhere in this system for a platform cut to go
 /// to: each payment goes straight to the party it pays.
-export function Transparency() {
+export function PaymentHistory() {
   const t = useT();
   const agentPubKey = useSession((s) => s.agentPubKey);
   const agentHex = agentPubKey ? bytesToHex(agentPubKey) : null;
@@ -31,7 +31,7 @@ export function Transparency() {
   if (items === undefined && error) return <LoadProblem error={error} onRetry={reload} />;
   if (!agentPubKey || items === undefined) {
     return (
-      <div className="px-4 pb-10 pt-4">
+      <div>
         <Skeleton className="h-44 w-full rounded-3xl mb-5" />
         <div className="mb-5 grid grid-cols-3 gap-2">
           <Skeleton className="h-16" />
@@ -53,10 +53,10 @@ export function Transparency() {
   const receivedShare = flowTotal > 0 ? (totalReceived / flowTotal) * 100 : 50;
 
   return (
-    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pb-10 pt-4">
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible">
       <motion.div
         variants={fadeSlideUp}
-        className="relative mb-5 flex flex-col items-center gap-2 overflow-hidden rounded-3xl bg-gradient-to-br from-handshake-500 to-presence-500 p-6 text-center text-white shadow-[var(--shadow-float)]"
+        className="relative mb-5 flex flex-col items-center gap-2 overflow-hidden rounded-3xl bg-gradient-to-br from-handshake-500 to-handshake-700 p-6 text-center text-white shadow-[var(--shadow-float)]"
       >
         <div
           className="pointer-events-none absolute inset-0 opacity-50"

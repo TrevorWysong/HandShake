@@ -72,11 +72,15 @@ export function writeFilters(filters: BrowseFilters): URLSearchParams {
 /// Whether anything narrows the list: the order it's in doesn't.
 export const isNarrowed = (filters: BrowseFilters) => !!filters.query || !!filters.cuisine || filters.diets.length > 0 || filters.deals || filters.openNow || filters.favorites || filters.minRating !== null || filters.maxMinutes !== null;
 
+/// Whether `text` has every word searched for.
+export function matchesQuery(text: string, query: string): boolean {
+  const searchable = text.toLowerCase();
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every((word) => searchable.includes(word));
+}
+
 export function matches(store: StoreFacts, filters: BrowseFilters): boolean {
-  const words = filters.query.toLowerCase().split(/\s+/).filter(Boolean);
-  const searchable = store.searchable.toLowerCase();
   return (
-    words.every((word) => searchable.includes(word)) &&
+    matchesQuery(store.searchable, filters.query) &&
     (!filters.cuisine || store.cuisine === filters.cuisine) &&
     filters.diets.every((diet) => store.diets.includes(diet)) &&
     (!filters.deals || store.deal) &&

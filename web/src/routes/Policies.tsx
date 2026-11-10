@@ -79,7 +79,7 @@ function PolicyBody({ terms }: { terms: NetworkTerms }) {
 
       <motion.footer variants={fadeSlideUp} className="mt-14 border-t border-ink-100 pt-6 text-xs leading-relaxed text-ink-400 dark:border-ink-800">
         {t("policies.ledger")}{" "}
-        <Link to="/transparency" className="inline-flex items-center gap-0.5 font-medium text-ink-600 underline-offset-4 hover:underline dark:text-ink-300">
+        <Link to="/payments" className="inline-flex items-center gap-0.5 font-medium text-ink-600 underline-offset-4 hover:underline dark:text-ink-300">
           {t("policies.seeLedger")} <ArrowUpRight size={12} />
         </Link>
       </motion.footer>

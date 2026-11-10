@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Gift, PackageOpen, Pencil } from "lucide-react";
+import { Gift, PackageOpen, Pencil, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createGoodieBag, listGoodieBagsForCatalog, updateGoodieBag } from "../../../holochain/zomes/catalog";
 import { bagStandings } from "../../../holochain/zomes/dispatch";
@@ -46,7 +46,7 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
           className="mb-3"
           action={
             <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setShowForm((v) => !v)}>
-              <PackageOpen size={14} /> {showForm ? t("common.cancel") : t("bags.add")}
+              {showForm ? <X size={14} /> : <PackageOpen size={14} />} {showForm ? t("common.cancel") : t("bags.add")}
             </Button>
           }
         />

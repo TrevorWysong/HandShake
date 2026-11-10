@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil, Plus, UtensilsCrossed } from "lucide-react";
+import { Pencil, Plus, UtensilsCrossed, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { addMenuItem, removeMenuItem, updateMenuItem } from "../../../holochain/zomes/catalog";
 import { bytesEqual, bytesToHex, hexToBytes } from "../../../holochain/decode";
@@ -49,7 +49,7 @@ export function MenuSection({ catalogRef, items, groups, taxRates, onChanged }: 
           className="mb-3"
           action={
             <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setEditing(editing ? null : { kind: "new" })}>
-              <Plus size={14} /> {editing ? t("common.cancel") : t("menuEditor.add")}
+              {editing ? <X size={14} /> : <Plus size={14} />} {editing ? t("common.cancel") : t("menuEditor.add")}
             </Button>
           }
         />

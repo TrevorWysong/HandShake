@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { TimeAgo } from "../../components/TimeAgo";
 import { Link, useNavigate } from "react-router-dom";
-import { Bike, ChevronRight, ClipboardList, Pause, Play, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
+import { Bike, ChevronRight, ClipboardList, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
@@ -18,7 +18,7 @@ import { OrderToneIcon } from "../../components/orders/OrderHero";
 import { useSession } from "../../store/session";
 import { cartLinesFromOrder, fetchMenu } from "../../lib/storefront/menu";
 import { customerOrderPath, isFinished, itemCount, mergeNewestFirst, toOrderRow, type OrderRow } from "../../lib/orders/orderEntries";
-import { Button, Card, EmptyState, Notice, SectionLabel, SegmentedTabs, Skeleton, StatNumber } from "../../components/ui";
+import { Button, Card, EmptyState, Notice, SectionLabel, SegmentedTabs, Skeleton, StatNumber, Switch } from "../../components/ui";
 import { OrderRowBadge } from "../../components/orders/OrderRowBadge";
 import { formatCents } from "../../lib/ui/format";
 import { describeRecurrence } from "../../lib/orders/recurrence";
@@ -74,7 +74,7 @@ function ActiveOrders() {
   return (
     <>
       {rows.length === 0 ? (
-        <EmptyState icon={<ClipboardList size={32} />} title={t("orders.emptyActive")} subtitle={t("orders.emptyActiveDetail")} />
+        <EmptyState icon={<ClipboardList size={32} />} title={t("orders.emptyActive")} subtitle={t("orders.emptyActiveDetail")} action={{ label: t("cart.browse"), to: "/customer" }} />
       ) : (
         <div className="flex flex-col gap-3">
           <AnimatePresence initial={false}>
@@ -240,11 +240,13 @@ function RecurringOrders() {
               <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{storeName}</p>
               <p className="text-xs text-ink-400">{describeRecurrence(template.recurrence)}</p>
             </div>
-            <Button variant={template.active ? "secondary" : "ghost"} className="px-3 py-1.5 text-xs" loading={toggling.doing === hex} disabled={toggling.busy} onClick={() => toggle(hash, hex, template.active)}>
-              {template.active ? <Pause size={13} /> : <Play size={13} />} {template.active ? t("orders.active") : t("orders.paused")}
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-xs text-ink-400">{template.active ? t("orders.active") : t("orders.paused")}</span>
+              <Switch checked={template.active} label={t("orders.recurringSwitch", { store: storeName })} disabled={toggling.busy} onChange={() => toggle(hash, hex, template.active)} />
+            </div>
           </Card>
         ))}
+        {toggling.error && <Notice>{toggling.error}</Notice>}
       </div>
       {toggling.error && <Notice className="mt-2">{toggling.error}</Notice>}
     </div>

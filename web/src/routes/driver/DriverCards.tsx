@@ -34,7 +34,7 @@ import { useDriverSettings } from "../../store/roleSettings";
 import { useTerms } from "../../store/network";
 import type { SentBid } from "../../store/sentBids";
 import { useAction } from "../../lib/hooks/useAction";
-import { DROPOFF_PREFERENCE_LABEL } from "../../lib/orders/handoffs";
+import { DROPOFF_FOR_DRIVER } from "../../lib/orders/handoffs";
 import { BEFORE_PICKUP, ON_THE_WAY, dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
 
 /// The order to make this driver's stops in -- see `planRoute`. Stores'
@@ -68,7 +68,7 @@ export function SuggestedRoute({ orders, location }: { orders: OrderRow[]; locat
       <ol className="flex flex-col gap-1.5">
         {stops.map((stop, i) => {
           const order = byHex.get(stop.id)!.order;
-          const label = stop.kind === "pickup" ? t("drive.pickUpAt", { store: stores[bytesToHex(order.catalog_ref)]?.name ?? t("order.theStore") }) : t("drive.dropOffAs", { how: t(DROPOFF_PREFERENCE_LABEL[order.dropoff_preference]) });
+          const label = stop.kind === "pickup" ? t("drive.pickUpAt", { store: stores[bytesToHex(order.catalog_ref)]?.name ?? t("order.theStore") }) : t("drive.dropOffAs", { how: t(DROPOFF_FOR_DRIVER[order.dropoff_preference]) });
           return (
             <li key={`${stop.id}-${stop.kind}`} className="flex items-center gap-2 text-sm">
               <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-handshake-500/15 text-[11px] font-bold text-handshake-600">{i + 1}</span>
@@ -113,7 +113,7 @@ export function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRo
       {row.order.ready_by !== null && BEFORE_PICKUP.includes(row.order.status) && <p className="mt-2 text-xs text-ink-500">{t("drive.readyBy", { time: formatClockTime(row.order.ready_by) })}</p>}
       {row.dropoff?.recipient && <p className="mt-2 text-sm font-semibold text-ink-900 dark:text-ink-50">{t("drive.deliverTo", { name: row.dropoff.recipient })}</p>}
       {!row.dropoff && row.order.status === "BidAccepted" && <p className="mt-2 text-xs text-ink-400">{t("drive.addressAfterCommit")}</p>}
-      <p className="mt-2 text-xs font-semibold text-handshake-600">{t("order.dropoffLabel")} {t(DROPOFF_PREFERENCE_LABEL[row.order.dropoff_preference])}</p>
+      <p className="mt-2 text-xs font-semibold text-handshake-600">{t("order.dropoffLabel")} {t(DROPOFF_FOR_DRIVER[row.order.dropoff_preference])}</p>
       {row.dropoff?.line2 && <p className="mt-1 text-sm text-ink-700 dark:text-ink-200">{row.dropoff.line2}</p>}
       {row.dropoff?.notes && (
         <p className="mt-3 rounded-lg bg-ink-100/60 dark:bg-ink-800/60 p-2.5 text-xs text-ink-500">

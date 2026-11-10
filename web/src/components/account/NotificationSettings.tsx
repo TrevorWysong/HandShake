@@ -11,9 +11,9 @@ const supported = typeof Notification !== "undefined";
 
 /// This device's notification settings: order updates as system
 /// notifications, being woken for them while the app is closed (when the
-/// network runs a push relay), and -- on a device running a store -- a
-/// chime for each new order.
-export function NotificationSettings({ rings }: { rings: boolean }) {
+/// network runs a push relay), and -- for a store or a driver -- a chime
+/// for each new order, described for what `rings` for.
+export function NotificationSettings({ rings }: { rings: "store" | "drive" | "both" | null }) {
   const t = useT();
   const { notifications, newOrderChime, setNotifications, setNewOrderChime } = usePreferences();
   const [permission, setPermission] = useState(() => (supported ? Notification.permission : "denied"));
@@ -63,7 +63,7 @@ export function NotificationSettings({ rings }: { rings: boolean }) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("notifications.chime")}</p>
-            <p className="text-xs text-ink-400">{t("notifications.chimeDetail")}</p>
+            <p className="text-xs text-ink-400">{t(rings === "store" ? "notifications.chimeDetailStore" : rings === "drive" ? "notifications.chimeDetailDrive" : "notifications.chimeDetail")}</p>
           </div>
           <Switch
             checked={newOrderChime}

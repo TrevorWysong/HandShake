@@ -257,12 +257,12 @@
       color: var(--color-ink-500) !important;
     }
 
-  /* A soft, brand-tinted radial mesh for hero sections (Onboarding,
-     Transparency) -- an alternative to a flat color fill that still reads
-     as calm/premium rather than "loud gradient." */
+  /* A soft, brand-tinted radial mesh for full-screen moments (onboarding,
+     starting up, moving away) -- an alternative to a flat color fill that
+     still reads as calm/premium rather than "loud gradient." */
   .mesh-hero {
     background-image: radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--color-handshake-400) 55%, transparent) 0%, transparent 45%),
-      radial-gradient(circle at 85% 0%, color-mix(in srgb, var(--color-presence-400) 35%, transparent) 0%, transparent 40%),
+      radial-gradient(circle at 85% 0%, color-mix(in srgb, var(--color-handshake-300) 45%, transparent) 0%, transparent 40%),
       linear-gradient(180deg, var(--color-handshake-500), var(--color-handshake-700));
   }
 }

@@ -305,7 +305,7 @@ export function ProfilePage() {
       {profile?.roles.includes("Requester") && <MyAllergies />}
       <LanguagePicker />
       <AppearanceSettings />
-      <NotificationSettings rings={!!profile?.roles.some((role) => role === "Merchant" || role === "Provider")} />
+      <NotificationSettings rings={chimeFor(profile?.roles ?? [])} />
       <Card className="mb-4 p-4">
         <SectionLabel className="mb-1">{t("profile.identity")}</SectionLabel>
         <p className="break-all font-mono text-xs text-ink-500">{agentPubKey ? encodeHashToBase64(agentPubKey) : "–"}</p>
@@ -358,4 +358,11 @@ export function ProfilePage() {
 /// A name's first two initials: "Sam Patel" is "SP".
 function initialsOf(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join("");
+}
+
+/// What the new-order chime rings for, for someone with `roles`.
+function chimeFor(roles: readonly string[]): "store" | "drive" | "both" | null {
+  const store = roles.includes("Merchant");
+  const drive = roles.includes("Provider");
+  return store && drive ? "both" : store ? "store" : drive ? "drive" : null;
 }

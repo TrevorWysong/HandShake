@@ -20,6 +20,7 @@ import { useGoBack } from "../../lib/hooks/useGoBack";
 import { useResource } from "../../lib/hooks/useResource";
 import { POLL } from "../../lib/network/poll";
 import { storeStatus } from "../../lib/storefront/storeHours";
+import { StoreArt } from "../../components/store/StoreArt";
 import { fetchStoreMenu, rememberedStoreMenu } from "../../lib/storefront/storePage";
 import { formatCents } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
@@ -71,7 +72,7 @@ function InfoPage({ hash }: { hash: string }) {
         {catalog.banner_data_uri ? (
           <img src={catalog.banner_data_uri} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center bg-gradient-to-br from-handshake-400 to-handshake-600 text-5xl">🍽️</div>
+          <StoreArt storeHex={hash} cuisine={catalog.cuisine_type} className="h-full text-5xl" />
         )}
         <div aria-hidden className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/25 to-transparent" />
         <motion.button whileTap={{ scale: 0.9 }} onClick={goBack} aria-label={t("common.back")} className="absolute top-3 left-3 grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow backdrop-blur-sm transition hover:bg-white lg:top-4 lg:left-4">

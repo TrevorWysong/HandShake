@@ -3,6 +3,7 @@ import { motion, type HTMLMotionProps } from "framer-motion";
 import { ChevronDown, Minus, Plus, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import clsx from "clsx";
+import { Link } from "react-router-dom";
 import { useT } from "../i18n";
 
 export function Card({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
@@ -63,10 +64,12 @@ export function ChipRow({ children }: { children: ReactNode }) {
 }
 
 export function Chip({ active, onClick, children, tone = "default" }: { active: boolean; onClick: () => void; children: ReactNode; tone?: "default" | "danger" | "brand" }) {
-  const activeClasses = tone === "danger" ? "bg-red-500 text-white" : tone === "brand" ? "bg-presence-500 text-white" : "bg-ink-900 text-white dark:bg-white dark:text-ink-900";
+  const activeClasses = tone === "danger" ? "bg-red-500 text-white" : tone === "brand" ? "bg-handshake-500 text-white" : "bg-ink-900 text-white dark:bg-white dark:text-ink-900";
   return (
     <button
+      type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={clsx(
         "shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition",
         active ? activeClasses : "bg-ink-100 dark:bg-ink-800 text-ink-500 hover:bg-ink-200 dark:hover:bg-ink-700"
@@ -118,12 +121,18 @@ export function Spinner({ className }: { className?: string }) {
   );
 }
 
-export function EmptyState({ icon, title, subtitle }: { icon?: ReactNode; title: string; subtitle?: string }) {
+/// Nothing here yet, and -- with `action` -- the way to get something.
+export function EmptyState({ icon, title, subtitle, action }: { icon?: ReactNode; title: string; subtitle?: string; action?: { label: string; to: string } }) {
   return (
     <div className="flex flex-col items-center justify-center text-center py-16 px-6 text-ink-400 dark:text-ink-500">
       {icon && <div className="mb-4 opacity-60">{icon}</div>}
       <p className="font-semibold text-ink-600 dark:text-ink-300">{title}</p>
       {subtitle && <p className="text-sm mt-1 max-w-xs">{subtitle}</p>}
+      {action && (
+        <Link to={action.to} className="mt-5 rounded-full bg-handshake-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-glow)] transition hover:bg-handshake-600">
+          {action.label}
+        </Link>
+      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ import { getModifierGroups } from "../../holochain/zomes/catalog";
 import { bytesToHex, decodeEntry } from "../../holochain/decode";
 import type { ActionHash, AllergyPolicy, ModifierGroup, SelectionInput } from "../../holochain/types";
 import { MAX_CHOICE_DEPTH } from "../../holochain/types";
-import { choiceLabels, choose, emptySelections, isSingleChoice, linePrice, missingGroups, rangeLabel, within, withNested, type Groups } from "../../lib/storefront/choices";
+import { choiceLabels, choose, emptySelections, isSingleChoice, linePrice, missingGroups, runningPrice, rangeLabel, within, withNested, type Groups } from "../../lib/storefront/choices";
 import { covered } from "../../lib/storefront/promotions";
 import type { RewardItem } from "../../lib/rewards/rewards";
 import { formatCents } from "../../lib/ui/format";
@@ -60,7 +60,9 @@ export function ItemSheet({ catalogRef, row, editing, gift, policy, onClose, onD
 
   const priced = groups ? linePrice(item, selections, groups) : null;
   const chosenAdds = groups ? allergensChosen(selections, groups) : { contains: [], other: [] };
-  const unit = priced?.ok ? priced.price : item.price_cents;
+  // Until every group's answered, what's chosen so far.
+  const running = groups && !priced?.ok ? runningPrice(item, selections, groups) : null;
+  const unit = priced?.ok ? priced.price : running?.ok ? running.price : item.price_cents;
   // What a gift leaves charged: whatever its terms don't cover.
   const charged = gift && priced?.ok ? unit - (covered({ basePriceCents: item.price_cents, priceCents: unit, choiceCharges: priced.choices }, gift.choices) ?? 0) : null;
 

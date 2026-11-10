@@ -58,7 +58,7 @@ function LeadCard({ card }: { card: CardOrder }) {
       <span className="flex items-center gap-3">
         <OrderToneIcon tone={progress.tone} size={16} className="h-9 w-9" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-bold text-ink-900 dark:text-ink-50">{t(progress.headline)}</span>
+          <span className="line-clamp-2 text-sm font-bold leading-snug text-ink-900 dark:text-ink-50">{t(progress.headline)}</span>
           <span className="block truncate text-xs text-ink-500 dark:text-ink-400">{[storeName, detail].filter(Boolean).join(" · ")}</span>
         </span>
         {!card.finished && <ChevronRight size={16} className="shrink-0 text-ink-300" />}

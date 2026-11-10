@@ -176,6 +176,7 @@ export function AddressSwitcher({
           onSelectComponents={(components) => setPicked((prev) => (prev ? { ...prev, components } : null))}
           label={t("address.searchNew")}
           placeholder={t("address.enterStreet")}
+          startBlank
         />
 
         {picked && (

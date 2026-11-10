@@ -2,12 +2,12 @@
 // processor account, connected by pasting its keys into the payment agent
 // (`paymentsAgent`), which checks them with the processor and asks the
 // person to confirm outside the page -- and, for everyone, the record of what
-// they paid and were paid (Transparency).
+// they paid and were paid (`PaymentHistory`).
 import { LoadProblem } from "../components/LoadProblem";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, CheckCircle2, ChevronRight, CreditCard, ExternalLink, Eye, EyeOff, Lock, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, CreditCard, ExternalLink, Eye, EyeOff, Lock } from "lucide-react";
 import clsx from "clsx";
 import type { Processor } from "../holochain/types";
 import { paymentsAgent, type PaymentsAgent, type PaymentsConnection } from "../holochain/paymentsAgent";
@@ -19,6 +19,7 @@ import { useSession } from "../store/session";
 import { useTerms } from "../store/network";
 import { useT, type MessageKey } from "../i18n";
 import { SavedCards } from "../components/payments/SavedCards";
+import { PaymentHistory } from "../components/payments/PaymentHistory";
 
 /// One step of connecting a processor: what to do, and where, if there's
 /// a page to open.
@@ -102,16 +103,7 @@ export function Payments() {
       </motion.div>
 
       <motion.div variants={fadeSlideUp}>
-        <Link to="/transparency" className="flex items-center gap-3 rounded-2xl border border-ink-100 bg-white p-4 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 dark:border-ink-800 dark:bg-ink-900">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-presence-500/10 text-presence-600">
-            <ShieldCheck size={18} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-ink-900 dark:text-ink-50">{t("payments.history")}</span>
-            <span className="block text-xs text-ink-400">{t("payments.historyDetail")}</span>
-          </span>
-          <ChevronRight size={18} className="shrink-0 text-ink-300" />
-        </Link>
+        <PaymentHistory />
       </motion.div>
     </motion.div>
   );

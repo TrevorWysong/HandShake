@@ -35,6 +35,7 @@ import type { MerchantCatalog } from "../../holochain/types";
 import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
 import { storeStatus } from "../../lib/storefront/storeHours";
+import { StoreArt } from "../../components/store/StoreArt";
 import { StoreRoute } from "./StoreRoute";
 import { useStoreStanding } from "../../lib/hooks/useStoreStanding";
 
@@ -152,7 +153,7 @@ function StorePage({ hash }: { hash: string }) {
         {catalog.banner_data_uri ? (
           <img src={catalog.banner_data_uri} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center bg-gradient-to-br from-handshake-400 to-handshake-600 text-6xl">🍽️</div>
+          <StoreArt storeHex={hash} cuisine={catalog.cuisine_type} className="h-full text-6xl" />
         )}
         <div aria-hidden className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/25 to-transparent" />
         <motion.button whileTap={{ scale: 0.9 }} onClick={goBack} aria-label={t("common.back")} className="absolute top-3 left-3 grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow backdrop-blur-sm transition hover:bg-white lg:top-4 lg:left-4">

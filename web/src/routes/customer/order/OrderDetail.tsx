@@ -220,13 +220,14 @@ export function OrderDetail() {
           </motion.div>
 
           {/* What it is and comes to. */}
-          <motion.div variants={fadeSlideUp} className="mt-3 flex items-baseline justify-between gap-3 px-1">
-            <h2 className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("order.heading")}<StatNumber className="ml-1.5 text-sm">{formatCents(order.order_total)}</StatNumber></h2>
-          </motion.div>
-          {order.status !== "Delivered" && (
-            <motion.div variants={fadeSlideUp} className="mt-1 mb-1">
-              <OrderSummary orderRef={orderRef} count={order.lines.reduce((n, l) => n + l.quantity, 0)} />
+          {order.status !== "Delivered" ? (
+            <motion.div variants={fadeSlideUp} className="mt-3">
+              <OrderSummary orderRef={orderRef} count={order.lines.reduce((n, l) => n + l.quantity, 0)} total={order.order_total} />
             </motion.div>
+          ) : (
+            <motion.h2 variants={fadeSlideUp} className="mt-3 flex items-baseline gap-1.5 px-1 text-sm font-bold text-ink-900 dark:text-ink-50">
+              {t("order.heading")}<StatNumber className="text-sm">{formatCents(order.order_total)}</StatNumber>
+            </motion.h2>
           )}
         </div>
         <div className="lg:sticky lg:top-6 lg:col-start-2 lg:row-span-3 lg:row-start-1">

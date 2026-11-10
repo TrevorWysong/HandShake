@@ -31,7 +31,6 @@ import { RewardsDetail, RewardsPage } from "./routes/customer/Rewards";
 import { RedeemRewards } from "./routes/customer/RedeemRewards";
 import { NewStore } from "./routes/merchant/NewStore";
 import { ProfilePage } from "./routes/Profile";
-import { Transparency } from "./routes/Transparency";
 import { Policies } from "./routes/Policies";
 import { AccountPage } from "./routes/account/AccountPage";
 import VerifyPage from "./routes/Verify";
@@ -205,7 +204,7 @@ export default function App() {
           <Route path="/rewards/:hash/redeem" element={<Screen width="reading"><RedeemRewards /></Screen>} />
           <Route path="/merchant/stores/new" element={<Screen width="reading"><NewStore /></Screen>} />
           <Route path="/profile" element={<Screen width="reading"><ProfilePage /></Screen>} />
-          <Route path="/transparency" element={<Screen width="reading"><Transparency /></Screen>} />
+          <Route path="/transparency" element={<Navigate to="/payments" replace />} />
           <Route path="/payments" element={<Screen width="reading"><Payments /></Screen>} />
           <Route path="/policies" element={<Screen width="reading"><Policies /></Screen>} />
           <Route path="/terms" element={<Screen width="reading"><TermsOfUse /></Screen>} />

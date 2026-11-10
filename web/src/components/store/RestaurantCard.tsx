@@ -10,25 +10,8 @@ import { StarRating } from "../StarRating";
 import { fadeSlideUp } from "../../lib/ui/motion";
 import clsx from "clsx";
 import { storeStatus } from "../../lib/storefront/storeHours";
+import { StoreArt } from "./StoreArt";
 import { useT } from "../../i18n";
-
-// Purely-cosmetic fallback for a merchant with no banner photo set yet --
-// deterministic per catalog action hash so the same restaurant always
-// looks the same without needing a real photo uploaded.
-const GRADIENTS = [
-  "from-orange-400 to-rose-500",
-  "from-amber-400 to-orange-500",
-  "from-lime-400 to-emerald-500",
-  "from-sky-400 to-indigo-500",
-  "from-fuchsia-400 to-purple-500",
-  "from-teal-400 to-cyan-500",
-];
-const EMOJI = ["🍔", "🍕", "🍜", "🌮", "🍣", "🥗", "🍱", "🥪", "🍩", "🍛"];
-
-function pick<T>(arr: T[], seed: Uint8Array): T {
-  const n = seed.reduce((a, b) => a + b, 0);
-  return arr[n % arr.length];
-}
 
 interface Props {
   catalogHash: Uint8Array;
@@ -58,8 +41,6 @@ export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount,
   const estimate = customer ? deliveryEstimate(catalog, customer, driveMinutes) : null;
   // Farther than the store delivers: it's there to collect from.
   const pickupOnly = !!estimate && estimate.km > catalog.max_delivery_radius_km;
-  const gradient = pick(GRADIENTS, catalogHash);
-  const emoji = pick(EMOJI, catalogHash.slice().reverse());
   const hex = bytesToHex(catalogHash);
 
   return (
@@ -77,9 +58,7 @@ export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount,
               className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
           ) : (
-            <div className={`flex h-full items-center justify-center bg-gradient-to-br ${gradient} text-5xl transition duration-300 group-hover:scale-105`}>
-              {emoji}
-            </div>
+            <StoreArt storeHex={hex} cuisine={catalog.cuisine_type} className="h-full text-5xl transition duration-300 group-hover:scale-105" />
           )}
           {!status.open && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -110,11 +89,8 @@ export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount,
         <div className="rounded-b-2xl border border-t-0 border-ink-100 dark:border-ink-800 bg-white dark:bg-ink-900 p-3">
           <p className="truncate font-bold text-sm">{catalog.business_name}</p>
           <div className="mt-1 flex items-center gap-3 text-xs text-ink-400">
-            {rating !== undefined && reviewCount ? (
-              <StarRating value={rating} count={reviewCount} size={11} />
-            ) : (
-              <span>{catalog.cuisine_type || t("card.new")}</span>
-            )}
+            {rating !== undefined && reviewCount ? <StarRating value={rating} count={reviewCount} size={11} /> : !catalog.cuisine_type && <span>{t("card.new")}</span>}
+            {catalog.cuisine_type && <span className="truncate">{catalog.cuisine_type}</span>}
           </div>
           <p className={clsx("mt-1 flex min-w-0 items-center gap-1 truncate text-xs", status.open ? "text-presence-600" : "text-ink-400")}>
             <Clock size={11} className="shrink-0" />

@@ -29,14 +29,25 @@ type Failed = { ok: false; reason: string };
 /// group's count within its bounds, nested groups answered, the cheapest
 /// `free_selections` of each group free.
 export function linePrice(item: MenuItem, selections: SelectionInput[], groups: Groups): Priced {
+  return priceLine(item, selections, groups, false);
+}
+
+/// What one unit costs with what's chosen so far -- a group still short of
+/// its minimum counts what's in it -- for the price shown while choosing.
+/// Never what's charged: that's `linePrice`, once every group's answered.
+export function runningPrice(item: MenuItem, selections: SelectionInput[], groups: Groups): Priced {
+  return priceLine(item, selections, groups, true);
+}
+
+function priceLine(item: MenuItem, selections: SelectionInput[], groups: Groups, soFar: boolean): Priced {
   const budget = { left: MAX_LINE_CHOICES };
-  const choices = priceSelections(item.modifier_groups, selections, groups, 1, budget);
+  const choices = priceSelections(item.modifier_groups, selections, groups, 1, budget, soFar);
   return choices.ok ? { ok: true, price: item.price_cents + costOf(choices.groups), choices: choices.groups } : choices;
 }
 
 const costOf = (groups: GroupCharges[]) => groups.reduce((sum, g) => sum + g.units.reduce((n, u) => n + u.cents, 0), 0);
 
-function priceSelections(refs: ActionHash[], selections: SelectionInput[], groups: Groups, depth: number, budget: { left: number }): { ok: true; groups: GroupCharges[] } | Failed {
+function priceSelections(refs: ActionHash[], selections: SelectionInput[], groups: Groups, depth: number, budget: { left: number }, soFar: boolean): { ok: true; groups: GroupCharges[] } | Failed {
   if (selections.length !== refs.length || selections.some((s, i) => !bytesEqual(s.group, refs[i]))) {
     return { ok: false, reason: t("choices.chooseEach") };
   }
@@ -45,14 +56,14 @@ function priceSelections(refs: ActionHash[], selections: SelectionInput[], group
     const key = bytesToHex(selection.group);
     const group = groups.get(key);
     if (!group) return { ok: false, reason: t("choices.changed") };
-    const priced = priceGroup(group, selection, groups, depth, budget);
+    const priced = priceGroup(group, selection, groups, depth, budget, soFar);
     if (!priced.ok) return priced;
     charges.push({ group: key, units: priced.units });
   }
   return { ok: true, groups: charges };
 }
 
-function priceGroup(group: ModifierGroup, selection: SelectionInput, groups: Groups, depth: number, budget: { left: number }): { ok: true; units: GroupCharges["units"] } | Failed {
+function priceGroup(group: ModifierGroup, selection: SelectionInput, groups: Groups, depth: number, budget: { left: number }, soFar: boolean): { ok: true; units: GroupCharges["units"] } | Failed {
   // Each unit chosen: its option, its price, and what it opened.
   const units: { option: number; price: number; opened: number }[] = [];
   let previous = -1;
@@ -67,7 +78,7 @@ function priceGroup(group: ModifierGroup, selection: SelectionInput, groups: Gro
     let opened = 0;
     if (option.nested_group) {
       if (depth >= MAX_CHOICE_DEPTH) return { ok: false, reason: t("choices.tooDeep") };
-      const nested = priceSelections([option.nested_group], chosen.nested, groups, depth + 1, budget);
+      const nested = priceSelections([option.nested_group], chosen.nested, groups, depth + 1, budget, soFar);
       if (!nested.ok) return nested;
       opened = costOf(nested.groups);
     } else if (chosen.nested.length > 0) {
@@ -76,7 +87,7 @@ function priceGroup(group: ModifierGroup, selection: SelectionInput, groups: Gro
     for (let i = 0; i < chosen.quantity; i++) units.push({ option: option.id, price: option.price_cents, opened });
   }
   const count = units.length;
-  if (count < group.min_selections || (group.max_selections !== null && count > group.max_selections)) {
+  if ((count < group.min_selections && !soFar) || (group.max_selections !== null && count > group.max_selections)) {
     return { ok: false, reason: t("choices.range", { group: group.name, range: rangeLabel(group) }) };
   }
   // The cheapest free -- by price, then option, as validation picks them.

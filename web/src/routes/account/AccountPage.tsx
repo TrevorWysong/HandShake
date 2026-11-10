@@ -105,13 +105,6 @@ export function AccountPage() {
         </motion.div>
       )}
 
-      {/* Moving to a new version: started from the code it shows. */}
-      <motion.div variants={fadeSlideUp}>
-        <CardSection divided title={t("account.newVersion")}>
-          <Row icon={<Sparkles size={18} />} title={t("account.upgrade")} detail={t("account.upgradeDetail")} onClick={() => setOpen("upgrade")} />
-        </CardSection>
-      </motion.div>
-
       <motion.div variants={fadeSlideUp}>
         <CardSection divided title={t("account.waysBack")}>
           <Row
@@ -139,6 +132,8 @@ export function AccountPage() {
         <CardSection divided title={t("account.thisDevice")}>
           <Row icon={<Smartphone size={18} />} title={t("account.move")} detail={t("account.moveDetail")} onClick={() => setOpen("move")} />
           <Row icon={<QrCode size={18} />} title={t("account.code")} detail={t("account.codeDetail")} onClick={() => setOpen("code")} />
+          {/* Moving to a new version: started from the code it shows. */}
+          <Row icon={<Sparkles size={18} />} title={t("account.upgrade")} detail={t("account.upgradeDetail")} onClick={() => setOpen("upgrade")} />
         </CardSection>
       </motion.div>
 

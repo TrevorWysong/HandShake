@@ -17,7 +17,7 @@ import { RestaurantCard } from "../../components/store/RestaurantCard";
 import { AddressSwitcher } from "../../components/places/AddressSwitcher";
 import { BrowseFilterBar } from "../../components/store/BrowseFilterBar";
 import { Button, EmptyState, SectionLabel, Skeleton } from "../../components/ui";
-import { applyFilters, isNarrowed, matches, NO_FILTERS, readFilters, writeFilters, type BrowseFilters, type StoreFacts } from "../../lib/storefront/browseFilters";
+import { applyFilters, isNarrowed, matches, matchesQuery, NO_FILTERS, readFilters, writeFilters, type BrowseFilters, type StoreFacts } from "../../lib/storefront/browseFilters";
 import { deliveryEstimate } from "../../lib/driving/eta";
 import { staggerContainer } from "../../lib/ui/motion";
 import { POLL } from "../../lib/network/poll";
@@ -108,8 +108,11 @@ export function Browse() {
   // Bags still open to order, from the stores shown: one that closed since
   // the last read drops off (orders after its window are refused on-chain).
   const nowUs = nowMicros();
-  const bags = rows.flatMap((r) => r.bags).filter((r) => r.bag.pickup_window_end > nowUs);
+  // A search narrows them as it does stores: by what's in them, and whose.
   const catalogNameByHex = new Map(rows.map((r) => [r.hex, r.catalog.business_name]));
+  const bags = rows
+    .flatMap((r) => r.bags)
+    .filter((r) => r.bag.pickup_window_end > nowUs && matchesQuery([r.bag.title, r.bag.description, catalogNameByHex.get(bytesToHex(r.bag.catalog_ref)) ?? ""].join(" "), filters.query));
 
   const stores = useMemo(
     () =>
@@ -253,8 +256,10 @@ export function Browse() {
 
       {!loading && rows.length > 0 && !lookingForDeals && pending === 0 && filtered.length === 0 && (
         <div className="pb-6">
-          <EmptyState title={t("browse.noMatchTitle")} subtitle={t("browse.noMatchSubtitle")} />
-          <Button variant="ghost" className="mx-auto -mt-8 block" onClick={() => setFilters(NO_FILTERS)}>{t("browse.filter.clear")}</Button>
+          <EmptyState title={t("browse.noMatchTitle")} subtitle={filters.query.trim() ? t("browse.noMatchSearch", { query: filters.query.trim() }) : t("browse.noMatchSubtitle")} />
+          <div className="-mt-10 flex justify-center">
+            <Button variant="ghost" onClick={() => setFilters(NO_FILTERS)}>{t("browse.filter.clear")}</Button>
+          </div>
         </div>
       )}
 

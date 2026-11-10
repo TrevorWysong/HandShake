@@ -87,11 +87,10 @@ test("everyone's record of what they paid and were paid", async ({ page, browser
   await shoot(page, "driver-earnings");
   const customer = await (await browser.newContext()).newPage();
   await signInAs(customer, "sam");
+  // The record is on Payments itself; its old address still leads there.
   await customer.goto("/#/transparency");
+  await expect(customer).toHaveURL(/#\/payments$/);
   await expect(customer.getByText("Every payment, newest first")).toBeVisible();
-  await shoot(customer, "transparency");
-  await customer.goto("/#/payments");
-  await expect(customer.getByText("Your payments")).toBeVisible();
   await expect(customer.getByText("Getting paid")).toHaveCount(0);
   await shoot(customer, "payments-customer");
 });

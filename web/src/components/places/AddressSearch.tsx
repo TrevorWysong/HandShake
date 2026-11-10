@@ -25,6 +25,7 @@ export function AddressSearch({
   allowManualCoordinates = true,
   showLocationWarning = true,
   initialQuery,
+  startBlank = false,
 }: {
   value: GeoPoint;
   onChange: (v: GeoPoint) => void;
@@ -63,6 +64,9 @@ export function AddressSearch({
   /// once, on mount -- this is a seed for the box's own internal typing
   /// state, not a controlled value kept in sync on every render.
   initialQuery?: string;
+  /// Starts empty rather than showing where `value` is: a box for finding
+  /// a new address, beside the current one already shown.
+  startBlank?: boolean;
 }) {
   const t = useT();
   const label = labelProp ?? t("store.deliveryLocation");
@@ -91,7 +95,7 @@ export function AddressSearch({
   // storefront's own immutable pickup point), not something this
   // particular box represents, so reverse-geocoding it into a full address
   // label would show the wrong thing before anyone's even touched the box.
-  const lookUp = displayAfterSelect === "label" && !initialQuery && typed === null;
+  const lookUp = displayAfterSelect === "label" && !initialQuery && !startBlank && typed === null;
   const { data: lookedUp } = useResource(lookUp ? `reverse:${value.lat},${value.lon}` : null, () => reverseGeocode(value));
   const query = typed ?? lookedUp?.label ?? "";
   const { data: results, error: searchError } = useResource(searched && `address-search:${searched.attempt}:${searched.text}`, () => searchAddress(searched!.text));

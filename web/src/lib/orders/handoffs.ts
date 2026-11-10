@@ -7,11 +7,18 @@ import { actionHash, decodeEntry } from "../../holochain/decode";
 import type { DropoffPreference, Leg, LegKind } from "../../holochain/types";
 import { t, type MessageKey } from "../../i18n";
 
-/// How a delivery's handed over, as everyone's screens name it.
+/// How a delivery's handed over, in the customer's words.
 export const DROPOFF_PREFERENCE_LABEL: Record<DropoffPreference, MessageKey> = {
   HandToMe: "cart.drop.handToMe",
   MeetOutside: "cart.drop.meetOutside",
   LeaveAtDoor: "cart.drop.leaveAtDoor",
+};
+
+/// And as the driver reads it: "Hand to me" is about someone else to them.
+export const DROPOFF_FOR_DRIVER: Record<DropoffPreference, MessageKey> = {
+  HandToMe: "drive.drop.handToThem",
+  MeetOutside: "drive.drop.meetOutside",
+  LeaveAtDoor: "drive.drop.leaveAtDoor",
 };
 
 /// The driver's most recent handoff of `kind` on an order, if it's reached

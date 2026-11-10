@@ -195,7 +195,9 @@ export function DriverDashboard() {
         </div>
       </div>
 
-      <div className={clsx(carrying && online && "lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-5")}>
+      {/* Carrying: beside what else is near, or -- offline, with nothing
+          beside it -- at a width its codes and sums read at. */}
+      <div className={clsx(carrying && (online ? "lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-5" : "lg:max-w-2xl"))}>
         <AnimatePresence initial={false}>
           {carrying && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-5 flex flex-col gap-4">

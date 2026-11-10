@@ -13,6 +13,7 @@ import type { MerchantCatalog } from "../../../holochain/types";
 import { cartKey, cartView, useCarts, type StoreCart } from "../../../store/cart";
 import { fetchMenu } from "../../../lib/storefront/menu";
 import { storeStatus } from "../../../lib/storefront/storeHours";
+import { StoreArt } from "../../../components/store/StoreArt";
 import { useResource } from "../../../lib/hooks/useResource";
 import { useClock } from "../../../lib/hooks/useClock";
 import { formatCents } from "../../../lib/ui/format";
@@ -32,12 +33,7 @@ export function Carts() {
       </motion.h1>
       {ordered.length === 0 ? (
         <motion.div variants={fadeSlideUp}>
-          <EmptyState icon={<ShoppingBag size={32} />} title={t("carts.empty")} subtitle={t("carts.emptyDetail")} />
-          <div className="mt-2 flex justify-center">
-            <Link to="/customer" className="text-sm font-semibold text-handshake-600 dark:text-handshake-400">
-              {t("cart.browse")}
-            </Link>
-          </div>
+          <EmptyState icon={<ShoppingBag size={32} />} title={t("carts.empty")} subtitle={t("carts.emptyDetail")} action={{ label: t("cart.browse"), to: "/customer" }} />
         </motion.div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -76,7 +72,7 @@ function CartCard({ cart }: { cart: StoreCart }) {
           {store?.banner_data_uri ? (
             <img src={store.banner_data_uri} alt="" className="h-14 w-14 rounded-2xl object-cover" />
           ) : (
-            <span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-handshake-400 to-handshake-600 text-2xl">🍽️</span>
+            <StoreArt storeHex={key} cuisine={store?.cuisine_type} className="h-14 w-14 rounded-2xl text-2xl" />
           )}
         </Link>
         <div className="min-w-0 flex-1">

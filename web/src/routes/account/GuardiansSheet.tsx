@@ -44,6 +44,10 @@ export function GuardiansSheet({ plan, me, onClose, onSaved }: { plan: PlanView 
     setNewName("");
   }
 
+  // Nothing to save until they're not what's saved.
+  const before = plan?.guardians ?? [];
+  const unchanged = guardians.length === before.length && guardians.every((g, i) => bytesEqual(g, before[i])) && threshold === (plan?.threshold || 1);
+
   const save = () => saving.run(async () => {
     await setRecoveryPlan(planWith(plan, { guardians, threshold }));
     await onSaved();
@@ -86,7 +90,7 @@ export function GuardiansSheet({ plan, me, onClose, onSaved }: { plan: PlanView 
       footer={
         <>
           {saving.error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{saving.error}</p>}
-          <Button className="w-full" loading={saving.busy} onClick={save}>
+          <Button className="w-full" loading={saving.busy} disabled={unchanged} onClick={save}>
             {t("account.saveGuardians")}
           </Button>
         </>

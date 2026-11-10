@@ -1,6 +1,7 @@
 // What an order is -- each line's quantity, item and choices ("Large, Oat
 // milk, 2 x Extra shot") -- for the kitchen making it and the customer
 // checking it. An order's lines never change, so they're read once.
+import { ChevronDown } from "lucide-react";
 import { getOrderLines } from "../../holochain/zomes/dispatch";
 import { bytesToHex } from "../../holochain/decode";
 import { formatCents } from "../../lib/ui/format";
@@ -45,16 +46,19 @@ export function OrderLines({ orderRef, prices = false, allergens = false, classN
   );
 }
 
-/// The order's lines in a card that opens on tap -- "Your order (3 items)".
-export function OrderSummary({ orderRef, count }: { orderRef: Uint8Array; count: number }) {
+/// The order's lines in a card that opens on tap -- "Your order (3 items)",
+/// and what they come to.
+export function OrderSummary({ orderRef, count, total }: { orderRef: Uint8Array; count: number; total: number }) {
   const t = useT();
   return (
-    <Card className="mt-4 p-4">
+    <Card className="p-4">
       <details className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-ink-900 dark:text-ink-50">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-ink-900 dark:text-ink-50">
           {t("lines.summary", { count })}
-          <span className="text-xs font-normal text-ink-400 group-open:hidden">{t("common.show")}</span>
-          <span className="hidden text-xs font-normal text-ink-400 group-open:inline">{t("common.hide")}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="tabular-nums">{formatCents(total)}</span>
+            <ChevronDown size={16} aria-hidden className="text-ink-400 transition-transform group-open:rotate-180" />
+          </span>
         </summary>
         <OrderLines orderRef={orderRef} prices allergens className="mt-3" />
       </details>

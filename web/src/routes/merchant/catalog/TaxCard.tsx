@@ -36,8 +36,12 @@ export function TaxCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCat
   const action = useAction();
 
   const parsed: TaxRate[] = rates.map((r) => ({ category: r.name.trim(), label: r.name.trim(), basis_points: Math.round(Number(r.percent) * 100) }));
+  // A rate just added, still empty, isn't a mistake yet: saving waits on it
+  // without saying so.
+  const blank = (r: DraftRate) => !r.name.trim() && !r.percent.trim();
   const problem =
-    parsed.some((r) => !r.category) ? t("taxEditor.problem.name") :
+    rates.some((r) => !r.name.trim() && !blank(r)) ? t("taxEditor.problem.name") :
+    rates.some((r) => r.name.trim() && !r.percent.trim()) ? t("taxEditor.problem.percent") :
     parsed.some((r) => !Number.isFinite(r.basis_points) || r.basis_points < 0 || r.basis_points > MAX_PERCENT * 100) ? t("taxEditor.problem.range", { max: MAX_PERCENT }) :
     new Set(parsed.map((r) => r.category)).size !== parsed.length ? t("taxEditor.problem.unique") :
     null;
@@ -49,7 +53,7 @@ export function TaxCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCat
     parsed.every((r, i) => r.category === saved[i].category && r.basis_points === saved[i].basis_points);
 
   function save() {
-    if (problem) return;
+    if (problem || rates.some(blank)) return;
     return action.run(async () => {
       await setTaxSettings(catalogRef, { tax_rates: parsed, prices_include_tax: included, tax_registration: registration });
       await onSaved();
@@ -92,7 +96,7 @@ export function TaxCard({ catalog, catalogRef, onSaved }: { catalog: MerchantCat
         </>
       )}
       {(problem || action.error) && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{action.error ?? problem}</p>}
-      <Button className="mt-3 w-full py-2 text-xs" loading={action.busy} disabled={!!problem || unchanged} onClick={save}>
+      <Button className="mt-3 w-full py-2 text-xs" loading={action.busy} disabled={!!problem || rates.some(blank) || unchanged} onClick={save}>
         {t("taxEditor.save")}
       </Button>
       <p className="mt-2 text-[11px] leading-relaxed text-ink-400">{t("taxEditor.advice")}</p>

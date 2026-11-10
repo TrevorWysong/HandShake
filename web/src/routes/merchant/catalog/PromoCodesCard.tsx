@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useClock } from "../../../lib/hooks/useClock";
-import { Gift, ListChecks, Plus, Sparkles, Tag, Users } from "lucide-react";
+import { Gift, ListChecks, Plus, Sparkles, Tag, Users, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPromoCode, listPromoCodesForCatalog, setPromoCodeActive } from "../../../holochain/zomes/catalog";
 import { bytesToHex, decodeEntry } from "../../../holochain/decode";
@@ -68,7 +68,7 @@ export function PromoCodesCard({ storeHex, catalogRef, items }: { storeHex: stri
       <div className="mb-2 flex items-center justify-between">
         <SectionLabel icon={<Tag size={13} />}>{t("promoEditor.title")}</SectionLabel>
         <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setShowForm((v) => !v)}>
-          <Plus size={14} /> {showForm ? t("common.cancel") : t("promoEditor.new")}
+          {showForm ? <X size={14} /> : <Plus size={14} />} {showForm ? t("common.cancel") : t("promoEditor.new")}
         </Button>
       </div>
       <AnimatePresence initial={false}>
@@ -100,9 +100,10 @@ export function PromoCodesCard({ storeHex, catalogRef, items }: { storeHex: stri
                 </p>
                 <PromoTerms row={row} />
               </div>
-              <Button variant={row.promo.active ? "secondary" : "ghost"} className="px-3 py-1.5 text-xs" loading={action.doing === row.hex} disabled={action.busy} onClick={() => toggle(row)}>
-                {row.promo.active ? t("orders.active") : t("promoEditor.inactive")}
-              </Button>
+              <div className="flex shrink-0 items-center gap-2 pl-3">
+                <span className="text-xs text-ink-400">{row.promo.active ? t("orders.active") : t("promoEditor.inactive")}</span>
+                <Switch checked={row.promo.active} label={t("promoEditor.switch", { code: row.promo.code })} disabled={action.busy} onChange={() => toggle(row)} />
+              </div>
             </div>
           ))}
           {data?.nextBefore && (
