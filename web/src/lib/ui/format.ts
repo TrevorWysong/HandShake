@@ -41,6 +41,12 @@ export function toMinorUnits(amount: number): number {
   return Math.round(amount * minorUnitsPerUnit());
 }
 
+/// A number field's text as a whole number between `min` and `max`: what
+/// it holds, rounded down, or `min` for nothing a number.
+export function wholeNumberIn(value: string, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.floor(Number(value) || 0)));
+}
+
 /// Minor units as a typed amount -- what a money field shows.
 export function fromMinorUnits(minorUnits: number): number {
   return minorUnits / minorUnitsPerUnit();
