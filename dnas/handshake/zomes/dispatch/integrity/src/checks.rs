@@ -51,6 +51,13 @@ pub(crate) fn store_version(catalog_ref: &ActionHash, catalog_version: &ActionHa
     Ok(decode::<MerchantCatalog>(&must_get_valid_record(catalog_version.clone())?).ok_or_else(|| "catalog_version must be a store".into()))
 }
 
+/// Where an open delivery is listed for drivers (`OpenOrderGeohashAnchor`):
+/// its store's cell, as of the store version the order cites -- or why that
+/// can't be read.
+pub fn open_order_cell(order: &DeliveryOrder) -> ExternResult<Result<String, String>> {
+    Ok(store_version(&order.catalog_ref, &order.catalog_version)?.map(|store| store.geohash.chars().take(OPEN_ORDER_PRECISION).collect()))
+}
+
 /// `order_total` must be exactly what the order's lines cost at the item
 /// versions they name, less any promo discount, plus the store's tax when
 /// it adds it -- and `tax_cents` exactly that tax, at the rates of the

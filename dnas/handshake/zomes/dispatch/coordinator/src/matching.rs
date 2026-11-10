@@ -1,7 +1,8 @@
-//! How drivers find work: every open order is indexed under its drop-off's
-//! geohash cell (and a time bucket, so a read is bounded by recent orders,
-//! never all of history), and a driver who's online reads the cells around
-//! them (`get_open_orders_near`).
+//! How drivers find work: every open order is indexed under its store's
+//! geohash cell -- the restaurant's, where a driver goes first, as the big
+//! delivery apps offer orders to drivers near it -- and a time bucket, so a
+//! read is bounded by recent orders, never all of history. A driver who's
+//! online reads the cells around them (`get_open_orders_near`).
 //!
 //! Drivers pull; they never announce where they are. Anything a driver
 //! published -- a presence beacon, say -- would be signed with their key,

@@ -45,10 +45,10 @@ await runScenario(async (scenario) => {
   const orderRef = actionHash(orderRecord);
   await dhtSync(both, customer.cells[0].cell_id[0]);
 
-  // get_open_orders_near takes a geohash directly --
-  // decode the order's own dropoff_geohash field rather than re-implementing
-  // geohash encoding in the test, so this is guaranteed to be the exact
-  // anchor cell the coordinator itself used.
+  // get_open_orders_near takes a geohash directly. An open order is listed
+  // under its store's cell; here the store and the drop-off share a spot, so
+  // the order's own dropoff_geohash is that cell -- no geohash encoding
+  // re-implemented in the test.
   const order = decodeEntry<{ dropoff_geohash: string }>(orderRecord);
 
   const accepted = await acceptOrder(customer, orderRef, both);

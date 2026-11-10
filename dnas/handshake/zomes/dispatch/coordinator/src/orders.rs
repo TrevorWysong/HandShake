@@ -85,13 +85,16 @@ pub struct RequestDeliveryInput {
     pub payment: Option<crate::payments::PaymentInput>,
 }
 
-/// Once the store accepts a delivery, it's listed under its drop-off's cell
-/// for drivers nearby to find (`matching::get_open_orders_near`) -- nothing
-/// before the store's acceptance is ever discoverable. The listing links the
-/// accepting version (validation checks it's Open).
-pub(crate) fn publish_to_open_anchor(opened: &ActionHash, dropoff_geohash: &str, now: Timestamp) -> ExternResult<()> {
+/// Once the store accepts a delivery, it's listed under its store's cell
+/// (`open_order_cell`) for drivers near the restaurant to find
+/// (`matching::get_open_orders_near`) -- where they'd go first, as the big
+/// delivery apps match them. Nothing before the store's acceptance is ever
+/// discoverable. The listing links the opened version (validation checks
+/// it's Open, and the cell).
+pub(crate) fn publish_to_open_anchor(opened: &ActionHash, order: &DeliveryOrder, now: Timestamp) -> ExternResult<()> {
+    let cell = dispatch_integrity::open_order_cell(order)?.map_err(guest)?;
     let bucket = handshake_types::time_bucket(now.as_millis(), OPEN_ORDER_BUCKET_MILLIS);
-    create_link(open_order_anchor_path(dropoff_geohash, bucket)?.path_entry_hash()?, opened.clone(), LinkTypes::OpenOrderGeohashAnchor, ())?;
+    create_link(open_order_anchor_path(&cell, bucket)?.path_entry_hash()?, opened.clone(), LinkTypes::OpenOrderGeohashAnchor, ())?;
     Ok(())
 }
 
@@ -481,9 +484,8 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
     // The kitchen starts once a driver commits: the prep time is quoted now.
     order.prep_minutes = Some(crate::stores::prep_time(&order.catalog_ref, input.prep_minutes)?);
     order.status = DeliveryStatus::Open;
-    let dropoff_geohash = order.dropoff_geohash.clone();
-    let updated = update_version(&current, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)?;
-    publish_to_open_anchor(&updated, &dropoff_geohash, sys_time()?)?;
+    let updated = update_version(&current, &EntryTypes::DeliveryOrder(order.clone()), LinkTypes::Version)?;
+    publish_to_open_anchor(&updated, &order, sys_time()?)?;
     crate::promos::record_promo_use(&original, promo.as_ref())?;
     crate::bags::record_bag_sales(&original, &lines)?;
     crate::acceptance::record_member_order(&original, &updated, rewards.as_ref())?;

@@ -258,9 +258,8 @@ pub fn drop_order(input: DropOrderInput) -> ExternResult<Record> {
 /// The customer's app takes it off the driver's queue on seeing it
 /// (`record_what_changed`): only the customer edits that queue.
 fn reopen(current: &EntryVersion, order: DeliveryOrder) -> ExternResult<Record> {
-    let geohash = order.dropoff_geohash.clone();
-    let reopened = write(current, order)?;
-    publish_to_open_anchor(reopened.action_address(), &geohash, sys_time()?)?;
+    let reopened = write(current, order.clone())?;
+    publish_to_open_anchor(reopened.action_address(), &order, sys_time()?)?;
     Ok(reopened)
 }
 

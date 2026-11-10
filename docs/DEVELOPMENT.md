@@ -74,7 +74,7 @@ Every entry on the DHT is readable by every peer, forever. So anything personal 
 
 **Customers are pseudonymous.** A customer publishes no name: their profile holds it sealed, and each order carries it sealed to the store (and, inside the drop-off, to the driver). Someone reading the DHT sees an agent key place an order with a store, and nothing that names the person behind it. A store's and a driver's names are public, as their business.
 
-Public on purpose: a delivery's drop-off *area* (a ~1.2 km geohash cell, for driver discovery), a store's own address and phone, a store's and driver's names.
+Public on purpose: a delivery's drop-off *area* (a ~1.2 km geohash cell, so a driver can judge the trip -- drivers find open orders by their store's cell), a store's own address and phone, a store's and driver's names.
 
 Not hidden, and why:
 - **Which key orders from which store.** Every action's author is public on a DHT, and so is each payment's payer and payee. Hiding the link itself would need a different authorship model. What's hidden is who the key is.

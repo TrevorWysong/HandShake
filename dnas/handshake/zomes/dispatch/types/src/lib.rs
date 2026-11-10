@@ -19,6 +19,12 @@ mod settlement;
 /// geohash cell of about 1.2 x 0.6 km -- enough for drivers to see it's
 /// nearby, never the address itself.
 pub const DROPOFF_GEOHASH_PRECISION: usize = 6;
+
+/// How precisely an open delivery is listed for drivers: by its store's cell,
+/// as the big delivery apps offer an order to drivers near the restaurant --
+/// where they go first. The cell a driver's app looks round (about 1.2 x 0.6
+/// km, and its neighbours).
+pub const OPEN_ORDER_PRECISION: usize = 6;
 pub use direct::*;
 pub use issues::*;
 pub use payments::*;

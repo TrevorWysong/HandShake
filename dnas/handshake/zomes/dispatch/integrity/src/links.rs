@@ -135,14 +135,19 @@ fn validate_open_order_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCal
     if link.author != record.action().author() || order.status != DeliveryStatus::Open {
         return invalid("an open order is published by whoever opened that version of it");
     }
+    // Under its store's cell: drivers are offered what's near the restaurant.
+    let cell = match crate::checks::open_order_cell(&order)? {
+        Ok(cell) => cell,
+        Err(reason) => return invalid(&reason),
+    };
     let bucket = handshake_types::time_bucket(link.timestamp.as_millis(), OPEN_ORDER_BUCKET_MILLIS);
-    let allowed = [bucket, bucket - 1].map(|b| path_hash(open_order_anchor(&order.dropoff_geohash, b)));
+    let allowed = [bucket, bucket - 1].map(|b| path_hash(open_order_anchor(&cell, b)));
     for expected in allowed {
         if link.base == &expected? {
             return Ok(ValidateCallbackResult::Valid);
         }
     }
-    invalid("an open order may only be published under its own dropoff cell's current anchor")
+    invalid("an open order may only be published under its store's cell's current anchor")
 }
 
 pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {

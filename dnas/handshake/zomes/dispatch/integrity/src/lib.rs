@@ -37,12 +37,13 @@ use delivery::{validate_new_order, validate_order_transition};
 use pickup::{validate_new_pickup_order, validate_pickup_order_transition};
 use recurring::{validate_new_recurring_template, validate_recurring_template_update};
 pub use links::{open_order_anchor, OPEN_ORDER_BUCKET_MILLIS};
+pub use checks::open_order_cell;
 use links::{validate_create_link, validate_delete_link, OpLinkFields};
 
 // The entry structs live in dispatch_types so other integrity zomes can
 // decode them -- see that crate's doc comment. Re-exported here so the
 // coordinator crate imports everything via `dispatch_integrity::*`.
-pub use dispatch_types::{ArrivalEvidence, ArrivalNote, SavedCardForgotten, CarryEnded, Claim, DeclineCode, PaymentLeg, Part, PaymentAction, PaymentDeclined, PaymentHold, PaymentOffer, PaymentProfile, PaymentRefund, PaymentSettlement, Processor, Appeal, AppealAnswer, Ruling, OrderConfirmation, DeclineNoted, DriverVerification, VerificationCheck, lineage, DropoffShare, LinePricer, Chosen, ChosenInput, OrderItem, Selection, SelectionInput, CollectRequest, claimed_value, CarryRefusal, InHand, PinSecret, DROPOFF_GEOHASH_PRECISION, IssueEvidence, IssueKind, IssueLine, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome, hold_terms, required_collateral, split_delivery_fee, Bid, BidStatus, Cancellation, DeclineReason, DeliveryOrder, DeliveryStatus, DropoffDetails, DropoffPreference, HoldPurpose, OrderLine, OrderRewards, OrderTerms, PickupOrder, PickupStatus, Portion, RequiredAuthor, waits_from};
+pub use dispatch_types::{ArrivalEvidence, ArrivalNote, SavedCardForgotten, CarryEnded, Claim, DeclineCode, PaymentLeg, Part, PaymentAction, PaymentDeclined, PaymentHold, PaymentOffer, PaymentProfile, PaymentRefund, PaymentSettlement, Processor, Appeal, AppealAnswer, Ruling, OrderConfirmation, DeclineNoted, DriverVerification, VerificationCheck, lineage, DropoffShare, LinePricer, Chosen, ChosenInput, OrderItem, Selection, SelectionInput, CollectRequest, claimed_value, CarryRefusal, InHand, PinSecret, DROPOFF_GEOHASH_PRECISION, OPEN_ORDER_PRECISION, IssueEvidence, IssueKind, IssueLine, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome, hold_terms, required_collateral, split_delivery_fee, Bid, BidStatus, Cancellation, DeclineReason, DeliveryOrder, DeliveryStatus, DropoffDetails, DropoffPreference, HoldPurpose, OrderLine, OrderRewards, OrderTerms, PickupOrder, PickupStatus, Portion, RequiredAuthor, waits_from};
 
 // Built once per write and dropped -- boxing the large order would only
 // add an allocation.

@@ -1,12 +1,14 @@
 // Proves matching end to end against real conductors: an order the store
-// accepts is listed under its drop-off's cell, drivers nearby find it by
-// looking (they never announce where they are -- there's no presence zome
-// at all), a driver far away doesn't, and the customer's bid choice is the
-// one on-DHT commit that matters.
+// accepts is listed under its store's cell -- drivers near the restaurant
+// find it by looking (they never announce where they are -- there's no
+// presence zome at all), one only near its drop-off or far away doesn't --
+// and the customer's bid choice is the one on-DHT commit that matters.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
 import { actionHash, bytesEqual, decodeEntry, retryUntil, waitForSignal, ST_PETE, testApp, retryingCaller, customerPaid } from "./helpers.js";
+
+const NORTH = { lat: ST_PETE.lat + 0.045, lon: ST_PETE.lon };
 
 await runScenario(async (scenario) => {
   const [requester, providerA, providerB, providerC] = await scenario.addPlayersWithApps([
@@ -49,7 +51,8 @@ await runScenario(async (scenario) => {
     catalog_ref: catalogRef,
     items: [{ item_ref: menuItemRef, quantity: 1 }],
     order_total: 1250,
-    dropoff: ST_PETE,
+    // About 5 km north of the store: another neighbourhood's cells.
+    dropoff: NORTH,
     max_delivery_fee: 500,
   });
   const orderRef = actionHash(orderRecord);
@@ -57,18 +60,21 @@ await runScenario(async (scenario) => {
   await customerPaid(requester, orderRef, allPlayers);
   await dispatchOf(requester)("accept_delivery_order", { order_original_action: orderRef });
 
-  // Drivers A and B are in the drop-off's neighbourhood; C is in New York.
+  // Drivers A and B are near the store; C is in New York. Near only the
+  // drop-off, a driver isn't offered it: the restaurant is where they'd go.
+  const storeCell = decodeEntry<{ geohash: string }>(catalogRecord).geohash.slice(0, 6);
   const dropoffCell = decodeEntry<{ dropoff_geohash: string }>(orderRecord).dropoff_geohash;
   const NYC_CELL = "dr5reg";
   const feed = (p: typeof requester, cell: string) => dispatchOf(p)<HcRecord[]>("get_open_orders_near", cell);
   const isThisOrder = (records: HcRecord[]) => records.some((r) => decodeEntry<{ requested_at: number }>(r).requested_at === decodeEntry<{ requested_at: number }>(orderRecord).requested_at);
   for (const p of [providerA, providerB]) {
-    const nearby = await retryUntil(() => feed(p, dropoffCell), isThisOrder, 40, 500);
-    assert.ok(isThisOrder(nearby), "a driver nearby finds the order by looking");
+    const nearby = await retryUntil(() => feed(p, storeCell), isThisOrder, 40, 500);
+    assert.ok(isThisOrder(nearby), "a driver near the restaurant finds the order by looking");
   }
+  assert.ok(!isThisOrder(await feed(providerC, dropoffCell)), "a driver near only its drop-off isn't offered it");
   assert.ok(!isThisOrder(await feed(providerC, NYC_CELL)), "a driver far away doesn't see it");
   await assert.rejects(retryingCaller(providerA.cells[0], "geo_presence")("announce_online", { location: ST_PETE, capabilities: ["Food"] }), /doesn't exist|not exist|ZomeNotFound|zome/i, "there's no way for a driver to publish where they are");
-  console.log("[PASS] drivers nearby find a new order by looking; drivers far away don't; nobody publishes their location");
+  console.log("[PASS] drivers near the restaurant find a new order by looking; drivers near only its drop-off, or far away, don't; nobody publishes their location");
 
   // Layer 3: off-DHT bidding, then the one on-DHT commit that matters.
   const bidARecord = await dispatchOf(providerA)<HcRecord>("submit_bid", {
