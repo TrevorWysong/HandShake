@@ -1923,7 +1923,7 @@ export const es: Catalog = {
   "account.setUpOn": "Configurada el {date}",
   "account.phraseDetail": "Doce palabras que apuntas",
   "account.on": "Activada",
-  "account.off": "Desactivada",
+  "account.off": "Sin activar",
   "account.guardians": "Guardianes",
   "account.anyCanVouch": { one: "basta con {count} para avalar", other: "bastan {count} cualesquiera para avalar" },
   "account.guardiansDetail": "Personas de confianza te avalan",
