@@ -169,7 +169,58 @@
      look and a usable dark variant -- consistent with LiveMap's own "no
      paid service" design constraint. */
   .leaflet-tile-pane {
-    filter: grayscale(0.25) saturate(0.85) brightness(1.03);
+    /* Muted, as the big apps' maps are: the route and pins carry the colour. */
+    filter: grayscale(0.55) saturate(0.7) brightness(1.06) contrast(0.95);
+  }
+  /* A delivery's pins (lib/places/mapPins.ts): round badges, the driver's
+     above the rest with a soft pulse. */
+  .map-pin {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    border-radius: 9999px;
+    border: 3px solid #fff;
+    box-shadow: 0 4px 12px rgba(17, 16, 16, 0.25);
+  }
+  .map-pin-store {
+    background: #fff;
+    color: var(--color-handshake-600);
+    border-color: var(--color-handshake-500);
+  }
+  .map-pin-home {
+    background: var(--color-ink-900);
+    color: #fff;
+  }
+  .map-pin-driver {
+    position: relative;
+    background: var(--color-handshake-500);
+    color: #fff;
+  }
+  .map-pin-driver::before {
+    content: "";
+    position: absolute;
+    inset: -8px;
+    border-radius: 9999px;
+    background: var(--color-handshake-500);
+    opacity: 0.25;
+    z-index: -1;
+    animation: map-pulse 2s ease-out infinite;
+  }
+  @keyframes map-pulse {
+    0% { transform: scale(0.7); opacity: 0.35; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+  .dark .map-pin {
+    border-color: var(--color-ink-900);
+  }
+  .dark .map-pin-store {
+    background: var(--color-ink-900);
+    border-color: var(--color-handshake-500);
+  }
+  .dark .map-pin-home {
+    background: #fff;
+    color: var(--color-ink-900);
   }
   .dark .leaflet-tile-pane {
       filter: grayscale(0.4) invert(0.92) hue-rotate(180deg) brightness(0.95) contrast(0.92);
@@ -221,7 +272,8 @@
    says something's under way. */
 @media (prefers-reduced-motion: reduce) {
   .animate-ping,
-  .animate-pulse {
+  .animate-pulse,
+  .map-pin-driver::before {
     animation: none;
   }
   html {

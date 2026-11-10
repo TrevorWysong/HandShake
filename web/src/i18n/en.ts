@@ -1101,6 +1101,7 @@ export const en = {
   "card.deal": "Deal",
   "card.pickupOnly": "Pickup only",
   "map.live": "Live",
+  "map.minutesAway": { one: "1 min away", other: "{minutes} min away" },
   "issues.missing": "Missing",
   "issues.wrong": "Wrong item",
   "issues.refunded": "{amount} refunded for missing or wrong items",

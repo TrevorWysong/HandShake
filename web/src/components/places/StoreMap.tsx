@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
 import { MapPin } from "lucide-react";
 import L from "leaflet";
-import { baseMap, emojiIcon } from "../../lib/places/baseMap";
+import { baseMap } from "../../lib/places/baseMap";
+import { STORE_PIN } from "../../lib/places/mapPins";
 import type { GeoPoint } from "../../holochain/types";
 import { useT } from "../../i18n";
 
-const STORE_ICON = emojiIcon("🏪");
 
 /// Where a store is. The map's asked for only when it's tapped: its tile
 /// server would otherwise learn which stores a person looks at.
@@ -16,7 +16,7 @@ export function StoreMap({ location }: { location: GeoPoint }) {
     (container: HTMLDivElement | null) => {
       if (!container) return;
       const map = baseMap(container);
-      L.marker([location.lat, location.lon], { icon: STORE_ICON }).addTo(map);
+      L.marker([location.lat, location.lon], { icon: STORE_PIN }).addTo(map);
       map.setView([location.lat, location.lon], 15);
       return () => {
         map.remove();

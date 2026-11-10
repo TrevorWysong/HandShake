@@ -231,7 +231,7 @@ export function OrderDetail() {
         <div className="lg:sticky lg:top-6 lg:col-start-2 lg:row-span-3 lg:row-start-1">
           {live && pickup && details?.dropoff && (
             <motion.div variants={fadeSlideUp} className="mt-4 lg:mt-0">
-              <LiveMap orderRef={orderRef} pickup={pickup} dropoff={details.dropoff.point} />
+              <LiveMap orderRef={orderRef} pickup={pickup} dropoff={details.dropoff.point} collected={["PickedUp", "Unanswered", "Disputed"].includes(order.status)} />
             </motion.div>
           )}
 

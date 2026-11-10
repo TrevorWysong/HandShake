@@ -1096,6 +1096,7 @@ export const es: Catalog = {
   "card.pickupOnly": "Solo para recoger",
   "card.deal": "Oferta",
   "map.live": "En directo",
+  "map.minutesAway": { one: "A 1 min", other: "A {minutes} min" },
   "issues.missing": "Falta",
   "issues.wrong": "Incorrecto",
   "issues.refunded": "{amount} reembolsados por artículos que faltaban o incorrectos",

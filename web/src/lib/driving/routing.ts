@@ -133,3 +133,34 @@ export async function minutesTo(to: GeoPoint, from: GeoPoint[]): Promise<(number
   );
   return answers.length ? answers.flat() : none;
 }
+
+/// The most points a route's line is drawn with: a long drive's full path
+/// is thousands, and the map needs no more than this to follow its roads.
+const MAX_PATH_POINTS = 2_000;
+
+/// The way by road through `points`, in order, as a line to draw and how
+/// long it takes -- or null with no service or no route. A car's route: the
+/// customer's map doesn't know how the driver gets around.
+export async function routePath(points: GeoPoint[]): Promise<{ path: GeoPoint[]; minutes: number } | null> {
+  const base = baseUrl("car");
+  if (!base || points.length < 2 || points.length > MAX_POINTS) return null;
+  try {
+    const body = (await getJson(`${base}/route/v1/driving/${coordinates(points)}?overview=full&geometries=geojson&steps=false`)) as { code?: unknown; routes?: { duration?: unknown; geometry?: { coordinates?: unknown } }[] };
+    const route = body.code === "Ok" ? body.routes?.[0] : undefined;
+    const took = minutes(route?.duration);
+    const line = route?.geometry?.coordinates;
+    if (took === null || !Array.isArray(line) || line.length < 2) return null;
+    // An answer from elsewhere: only well-formed coordinates are drawn.
+    const path: GeoPoint[] = [];
+    const step = Math.ceil(line.length / MAX_PATH_POINTS);
+    // Every `step`th point, and always the last: the line ends where it goes.
+    for (let i = 0; i < line.length; i = i === line.length - 1 ? line.length : Math.min(i + step, line.length - 1)) {
+      const [lon, lat] = Array.isArray(line[i]) ? line[i] : [];
+      if (typeof lat !== "number" || typeof lon !== "number" || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+      path.push({ lat, lon });
+    }
+    return { path, minutes: took };
+  } catch {
+    return null;
+  }
+}
