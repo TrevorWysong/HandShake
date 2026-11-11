@@ -105,6 +105,7 @@ pub fn request_pickup_order(input: RequestPickupOrderInput) -> ExternResult<Reco
         beacon: None,
     };
     let action_hash = create_entry(&EntryTypes::PickupOrder(order))?;
+    crate::pricing::note_for_rewards(&action_hash)?;
     // The customer's card, offered with it -- see `request_delivery`.
     if let Some(payment) = input.payment {
         crate::payments::offer(&action_hash, PaymentLeg::Customer, payment)?;

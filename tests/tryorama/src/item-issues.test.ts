@@ -108,6 +108,12 @@ await runScenario(async (scenario) => {
   assert.equal((await call(stranger, "dispatch")<IssueView[]>("get_issues_for_order", order))[0].evidence, null, "nobody else does");
   console.log("[PASS] reports reach the store with their notes, sealed from everyone else");
 
+  // A report goes on a store's list only under the store its order was
+  // placed at, tagged with that order, by whoever reported it.
+  const listing = (by: typeof customer, base: Uint8Array, tag: Uint8Array) => call(by, "dispatch")("test_create_link", { link_type: "StoreToReport", base, target: missingBread, tag: Array.from(tag) });
+  await assert.rejects(listing(customer, order, order), /listed under the store its order was placed at/, "not under anything but its store");
+  await assert.rejects(listing(customer, store, missingBread), /tagged with its order/, "nor tagged with another order");
+  await assert.rejects(listing(stranger, store, order), /listed by whoever made it/, "nor by anyone but its reporter");
   const awaitingAnswer = () => call(merchant, "dispatch")<{ original_action: Uint8Array }[]>("get_orders_awaiting_answer", store);
   const waiting = await retryUntil(awaitingAnswer, (orders) => orders.length === 1);
   assert.deepEqual(Buffer.from(waiting[0].original_action), Buffer.from(order), "the order's on the store's list while a report waits on it");

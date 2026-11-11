@@ -103,6 +103,8 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub max_ranked_bids: Option<u32>,
     #[serde(default)]
+    pub max_listed_orders: Option<u32>,
+    #[serde(default)]
     pub min_reporter_stores: Option<u32>,
     #[serde(default)]
     pub reputation_window_days: Option<u32>,
@@ -443,6 +445,13 @@ pub fn reputation_window() -> Duration {
 /// so a flood of bids from throwaway drivers can't slow it down.
 pub fn max_ranked_bids() -> u32 {
     setting(|p| p.max_ranked_bids, 30).max(1)
+}
+
+/// How many open orders a driver's feed lists at once, oldest first -- so a
+/// busy area costs each driver's every read the same, and no order waits
+/// behind newer ones.
+pub fn max_listed_orders() -> u32 {
+    setting(|p| p.max_listed_orders, 100).max(1)
 }
 
 /// How long a customer's app collects bids, from the first, before matching

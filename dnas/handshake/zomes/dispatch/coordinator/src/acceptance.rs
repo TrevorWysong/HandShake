@@ -13,6 +13,13 @@ use hdk::prelude::*;
 
 /// Whether the order spends a reward the customer's points at the store
 /// don't cover (the rewards zome's `can_redeem`).
+///
+/// Validation can't see points, so nothing re-checks this at commit. Two
+/// acceptances at once can't both spend the same points only because the
+/// store's chain is written in strict order (the HDK's default): the second
+/// to commit finds the chain moved under it and fails, and tried again, it
+/// counts the first's spend. Accepting must never write with
+/// `ChainTopOrdering::Relaxed` (tests/tryorama/src/rewards-concurrency.test.ts).
 pub(crate) fn reward_unavailable(requester: &AgentPubKey, catalog_ref: &ActionHash, rewards: Option<&OrderRewards>) -> ExternResult<bool> {
     let Some(rewards) = rewards else { return Ok(false) };
     let Some(reward) = rewards.reward else { return Ok(false) };

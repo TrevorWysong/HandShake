@@ -30,6 +30,12 @@ pub enum EntryTypes {
     MemberOrder(MemberOrder),
     #[entry_type(visibility = "private")]
     MemberBirthday(MemberBirthday),
+    #[entry_type(visibility = "private")]
+    MemberAccount(MemberAccount),
+    #[entry_type(visibility = "private")]
+    MemberStores(MemberStores),
+    #[entry_type(visibility = "private")]
+    KeptVersion(KeptVersion),
 }
 
 #[hdk_link_types]
@@ -63,6 +69,9 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             // Private to their author's device: checked as they write them.
             EntryTypes::BirthMonth(month) => require((1..=12).contains(&month.month), "a birth month is between 1 and 12"),
             EntryTypes::MemberOrder(_) => valid(),
+            // Private to the device that keeps it, and only ever its own
+            // reckoning: nobody else reads or relies on it.
+            EntryTypes::MemberAccount(_) | EntryTypes::MemberStores(_) | EntryTypes::KeptVersion(_) => valid(),
             EntryTypes::MemberBirthday(b) => require((1..=12).contains(&b.month), "a birth month is between 1 and 12"),
         },
         Checked::Update { entry: EntryTypes::RewardsProgram(program), action } => validate_program_update(&program, action.author(), &action.original_action_address),

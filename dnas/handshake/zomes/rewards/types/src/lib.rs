@@ -30,7 +30,11 @@ use catalog_types::PromoReward;
 use hdi::prelude::*;
 
 pub mod earn;
+pub mod ledger;
 pub mod points;
+
+// The private records a running total is kept in (`ledger`).
+pub use ledger::{KeptRecord, KeptVersion, MemberAccount, MemberStores};
 
 pub use earn::*;
 pub use points::*;

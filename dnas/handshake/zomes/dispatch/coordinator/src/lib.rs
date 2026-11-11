@@ -110,7 +110,8 @@ mod test_utils {
         StoreOwnerToAppeal,
         BagToOrder,
         OrderToPayment,
-        AgentToPaymentProfile
+        AgentToPaymentProfile,
+        StoreToReport
     );
 
     #[derive(Serialize, Deserialize, Debug)]
@@ -221,12 +222,14 @@ mod test_utils {
     /// pricing -- what a modified client could do -- so a test can prove
     /// validation refuses a mispriced order on its own. Queued like a real
     /// order, as such a client would, so the store sees it (and signalled,
-    /// by `post_commit`).
+    /// by `post_commit`) -- and noted in the customer's own rewards
+    /// account, as any app of theirs notes what it places.
     #[hdk_extern]
     pub fn create_raw_pickup_order_for_testing(order: PickupOrder) -> ExternResult<Record> {
         let (catalog_ref, requester) = (order.catalog_ref.clone(), order.requester.clone());
         let action_hash = create_entry(&EntryTypes::PickupOrder(order))?;
         crate::order_queues::enqueue(&action_hash, &catalog_ref, &requester, sys_time()?)?;
+        crate::pricing::note_for_rewards(&action_hash)?;
         written(action_hash)
     }
 
@@ -400,6 +403,9 @@ mod test_utils {
         /// The store's record of handing it over, for a pickup.
         #[serde(default)]
         pub pickup_proof: Option<ActionHash>,
+        /// Proof the customer has it, for a completion.
+        #[serde(default)]
+        pub delivery_receipts: Option<Vec<ActionHash>>,
     }
 
     /// Updates one specific version of a delivery -- branching its history,
@@ -421,6 +427,9 @@ mod test_utils {
         }
         if input.pickup_proof.is_some() {
             order.pickup_proof = input.pickup_proof;
+        }
+        if let Some(receipts) = input.delivery_receipts {
+            order.delivery_receipts = receipts;
         }
         handshake_coordinator_support::update_version(&version, &EntryTypes::DeliveryOrder(order), LinkTypes::Version)
     }

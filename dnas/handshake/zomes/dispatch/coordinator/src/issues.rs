@@ -10,7 +10,7 @@
 //! for a while with no delivery; the settlement once the customer's report
 //! window has run, refunding what the store accepted or never answered.
 
-use crate::order_queues::{classify, order_store, OrderEntry, QueueOwnerExt};
+use crate::order_queues::{classify, order_store, OrderEntry};
 use crate::orders::{record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
 use dispatch_integrity::*;
 use hdk::prelude::*;
@@ -115,6 +115,9 @@ pub fn report_issue(input: ReportIssueInput) -> ExternResult<Record> {
     };
     let hash = create_entry(&EntryTypes::ItemIssue(issue))?;
     create_link(order.clone(), hash.clone(), LinkTypes::OrderToIssue, ())?;
+    // On the store's list of reports to answer, tagged with the order.
+    let catalog_ref = decode_or::<DeliveryOrder>(&latest).map(|o| o.catalog_ref).or_else(|| decode_or::<PickupOrder>(&latest).map(|o| o.catalog_ref)).ok_or(guest("order not found"))?;
+    create_link(catalog_ref, hash.clone(), LinkTypes::StoreToReport, LinkTag::new(order.get_raw_39().to_vec()))?;
     let _ = send_remote_signal(crate::signals::RemoteSignal::IssueReported { order_hash: order }, vec![terms.merchant]);
     written(hash)
 }
@@ -208,33 +211,48 @@ fn store_answer(issue: &ActionHash, merchant: &AgentPubKey) -> ExternResult<Opti
     Ok(None)
 }
 
-/// How far back a store's unanswered reports are looked for: a report can only
-/// come once a customer has their order, and one can be scheduled five days
-/// ahead of that.
-const REPORTS_SCAN_DAYS: i64 = 6;
-/// The most orders one read checks, newest first, so a busy store's costs the
-/// same however long its week.
-const REPORTS_SCAN_ORDERS: usize = 250;
-
 /// The store's orders with a report it hasn't answered and hasn't settled:
-/// what its Issues tab lists. Reads only what's already public on each order.
+/// what its Issues tab lists. Read from the store's list of reports (each
+/// filed there by its customer, tagged with its order), however busy the
+/// store and however old the report -- and each one answered or settled
+/// since is cleared from the list as it's found.
 #[hdk_extern]
 pub fn get_orders_awaiting_answer(catalog_ref: ActionHash) -> ExternResult<Vec<OrderEntry>> {
-    let store = QueueOwner::Store(&catalog_ref);
-    let today = history_day(sys_time()?);
-    let mut orders = Vec::new();
-    for day in ((today - REPORTS_SCAN_DAYS)..=today).rev() {
-        orders.extend(store.orders_on_day(day)?);
-        if orders.len() >= REPORTS_SCAN_ORDERS {
-            break;
+    let links = get_links(LinkQuery::try_new(catalog_ref.clone(), LinkTypes::StoreToReport)?, GetStrategy::default())?;
+    let mut orders: Vec<(ActionHash, Vec<ActionHash>)> = Vec::new();
+    for link in links {
+        let Ok(order) = ActionHash::try_from_raw_39(link.tag.0.clone()) else { continue };
+        match orders.iter_mut().find(|(o, _)| o == &order) {
+            Some((_, of)) => of.push(link.create_link_hash),
+            None => orders.push((order, vec![link.create_link_hash])),
         }
     }
-    orders.truncate(REPORTS_SCAN_ORDERS);
-    orders.sort();
-    orders.dedup();
-    // One order failing (still gossiping, say) mustn't hide the rest; the next
-    // read tries it again.
-    Ok(orders.into_iter().filter_map(|order| awaiting_answer(&catalog_ref, order).ok().flatten()).collect())
+    let mut waiting = Vec::new();
+    let mut answered = Vec::new();
+    for (order, of) in orders {
+        // One order failing (still gossiping, say) mustn't hide the rest;
+        // the next read tries it again.
+        match awaiting_answer(&catalog_ref, order) {
+            Ok(Some(entry)) => waiting.push(entry),
+            Ok(None) => answered.extend(of),
+            Err(_) => {}
+        }
+    }
+    // Answered or settled: off the list, in a call of its own -- and only
+    // by the store, which validation holds it to.
+    if !answered.is_empty() {
+        let _ = handshake_coordinator_support::isolated::<_, ()>("clear_answered_reports", answered);
+    }
+    Ok(waiting)
+}
+
+/// Clears reports the caller's store has answered or settled from its list.
+#[hdk_extern]
+pub fn clear_answered_reports(links: Vec<ActionHash>) -> ExternResult<()> {
+    for link in links {
+        delete_link(link, GetOptions::default())?;
+    }
+    Ok(())
 }
 
 fn awaiting_answer(catalog_ref: &ActionHash, order: ActionHash) -> ExternResult<Option<OrderEntry>> {

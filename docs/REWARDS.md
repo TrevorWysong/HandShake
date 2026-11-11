@@ -22,14 +22,14 @@ The program is versioned: changing it writes a new version. Each order cites the
 
 ## How points move
 
-Nobody keeps a points ledger, so there is no balance to forge, and nothing to read. A member's points at a store follow from what the store itself holds:
+No points ledger is published, so there is no balance to forge, and nothing to read. A member's points at a store follow from what the store itself holds:
 
 - the orders it accepted from them that joined its program (`MemberOrder`, a private entry on the store's chain, written as it accepts each one);
 - its settlement of each, once the refund period is over;
 - the rewards those orders spent;
 - its own grants to them.
 
-The store's app plays those through the pure rules in `rewards_types::points` (`replay`) before it accepts an order that spends a reward. The member's app works out the same from their own orders and the grants sealed to them, to show their card, what's on its way and what they've redeemed. The two agree because they read the same records with the same function.
+The store's app plays those through the pure rules in `rewards_types::points` (`replay`) before it accepts an order that spends a reward. The member's app works out the same from their own orders and the grants sealed to them, to show their card, what's on its way and what they've redeemed. The two agree because they read the same records with the same function, and events at the same moment always play in the same order.
 
 - **Earn.** An order earns once the store has settled it and the refund period is over.
   - **The refund period** is the network's window to appeal the settlement (`appeal_window_secs`, 14 days by default), on a network with arbiters. Until then the points show as pending: on the card, in an "On the way" list, and on the order's page. The store doesn't count them yet either.
@@ -40,6 +40,18 @@ The store's app plays those through the pure rules in `rewards_types::points` (`
   - **The store decides whether the points cover it**, from its own records, as it accepts the order (`can_redeem`). An order whose points don't cover it, or whose tier doesn't reach it, is declined (`RewardUnavailable`), and nothing is charged.
   - An order the store never accepted spends nothing: cancelled first, or declined. One whose food the store gave back returns its points too.
 - **Gift.** A store's grant (`PointsGrant`) is sealed between the store and the member: what it gives is private; whom it's to, from which store, and an order they placed there are public. A store can only give points to its own customers, so nobody can fill a stranger's inbox. The member's app reads a store's grants by its owner's key, so nobody else's can crowd them out, and knows each is the store's, because only the store's key could have sealed it. Stores use grants for goodwill and birthdays.
+
+## Accounts: a running total, not a whole history
+
+Playing a member's whole history every time costs every order they ever placed, several network reads each. That's about 35 ms per order for a card and 22 ms for the store's check, measured on a laptop, so a regular with a few hundred orders would wait seconds. So each side keeps its reckoning as a private running total (`rewards_types::ledger`, `MemberAccount`), on its own device: the store one per member, the member one per store. Nothing about it is published.
+
+- **What's folded can't change.** An order is folded into the total once nothing about it can: its store settled it and its refund period is over (an appeal ruled), or it ended without the store accepting it. Until then it stays open, and every read plays it on top.
+- **Everything folded came before everything open** (`through`): nothing at or after the oldest open order's placing is folded, nor anything after an event of a done order that can't be folded whole. So the rules always play one history, in order, and a folded total plus the open orders is exactly what playing everything would give. The unit tests hold it to that against a full replay, read every simulated day, for 501, 5,000 and 50,000 orders (`cargo test --release -p rewards_types -- --ignored` for the last). The program they use has tiers rolling by year, expiry, a welcome and caps.
+- **Played afresh when it must be:** the first time an account is read (accounts from before they were kept, too); when the store changes its program, since every point plays under its current rules; and when a grant turns up dated before what's folded. Afresh means from every record, however many. Nothing is ever cut off at a count.
+- **Kept where the records change.** The store carries a member's account forward as it accepts their order or gives them points, in the same call. The member's is noted as they place an order. A card read that folds something keeps it in a call of its own, only if no newer version was written meanwhile, so a race costs a repeat, never a lost order. Recording an accepted order twice records it once: the record is the same each time, so it's found by its own hash.
+- **Found without walking the chain.** Each version is written whole, followed by a marker whose content is only *which account, which version*. Its hash is the same every time, so the latest version is found by looking a few markers up (doubling, then halving between), however many versions there are. The version is the action just before its marker. Private entries can't be updated on this network (an update needs the network to see what it updates), which is why versions are new entries.
+
+A read then costs what's still open (at most a few weeks of orders, the refund period), plus a handful of lookups, at any account's age.
 
 ## Time can't be faked
 
@@ -67,22 +79,26 @@ People choose their own entries' timestamps, so no rule depends on one where fak
 | Learning someone's points or birthday | Neither is published. A grant's and a birthday's contents are sealed; a store's member records are private to its device |
 | A stranger's store filling someone's wallet or inbox with gifts | A grant must cite an order its recipient placed at that store, by its owner (validation), so only a store's own customers can be sent one. A store's grants are read by its owner's key, so nobody else's can hide them |
 | Flooding a store with birthday shares | A share must cite an order its author placed there; the store reads only its own buying members', by key |
+| Two acceptances recording the same order, or a card read racing an order being placed | The record is found by its own hash, so a repeat records nothing; a read keeps its fold only if no version was written meanwhile |
 | Spending a reward on an order, then cancelling it on a stale branch | The reward comes back only if the order was called off before the customer saw the store start -- the same rule as the food |
+| Spending the same points twice, on two orders the store answers at once (two devices, or a modified app) | The store's chain is written in strict order: of two acceptances at once, the second to commit finds the chain moved and fails, and tried again it counts the first's spend. The points check is the store's app's, never re-run at commit, so accepting must never write with relaxed ordering |
 
 ## What's left
 
 - **Orders are public.** Anyone can see who ordered from whom, and so could estimate someone's points at a store from their orders. The balance itself, the gifts, the rewards and the birth month aren't published.
 - **A lost store key** loses its member records with it: a store that recovers its account starts its members' points afresh.
 - **A store could refuse a reward its member can afford.** It's the store's own program, and the refusal is recorded on the order, so the customer knows.
+- **A store's program stats and birthday sweep still read its whole chain**: the stats on its dashboard, and the birthday sweep a few times a day (one walk for all members, not one each). Neither decides anyone's points. Both are worth an index of members if stores grow very large.
+- **An order open a long time holds its member's account back**: an appeal waiting months keeps everything after it unfolded, so reads of that member cost more until it's ruled. It never makes them wrong.
 
 ## Where it lives
 
-- `dnas/handshake/zomes/rewards/types`: the program, grants and private records; `points.rs`, the rules and `replay` (unit-tested); `earn.rs`, what an order earns.
+- `dnas/handshake/zomes/rewards/types`: the program, grants and private records; `points.rs`, the rules and `replay` (unit-tested); `ledger.rs`, the running total and when an order can be folded into it (tested against a full replay); `earn.rs`, what an order earns.
 - `dnas/handshake/zomes/rewards/integrity`: validation of programs, sealed grants and birthdays.
-- `dnas/handshake/zomes/rewards/coordinator`: programs, cards (the member's view), `can_redeem` and `record_member_order` (the store's), grants, birthdays, stats.
+- `dnas/handshake/zomes/rewards/coordinator`: programs, cards (the member's view), `can_redeem` and `record_member_order` (the store's), each side's accounts (`accounts.rs`), grants, birthdays, stats.
 - `dnas/handshake/zomes/dispatch/coordinator/src/acceptance.rs`: what the store checks before accepting: points, a newcomer's verified card, serial cancellers.
 - `dnas/handshake/zomes/dispatch/integrity/src/checks.rs`: an order's rewards and reward pricing (`check_rewards`).
 - `dnas/handshake/zomes/dispatch/coordinator/src/pricing.rs`: joining a program at checkout, and the store's current-version check (`ensure_current_program`); `settlement.rs`, the store's settlement that earning rests on.
 - `web/src/lib/rewards/rewards.ts`: the same rules, for previews (`web/test/rewards.test.ts` runs the Rust cases).
 - `web/src/routes/customer/Rewards.tsx`: the wallet, each card, the store page's strip. `web/src/routes/customer/RedeemRewards.tsx`: the redeem screen. The bag holds the reward (`web/src/store/cart.ts`). `web/src/routes/merchant/Rewards.tsx`: the program builder. `web/src/components/rewards/`: the card, the tiles, the levels.
-- Tests: `tests/tryorama/src/rewards.test.ts` (on real conductors), `rewards-refund-period.test.ts`, `newcomer-protections.test.ts`, `web/e2e/rewards.spec.ts`.
+- Tests: `tests/tryorama/src/rewards.test.ts` (on real conductors), `rewards-concurrency.test.ts` (two acceptances at once, cancels on a stale branch), `rewards-refund-period.test.ts`, `newcomer-protections.test.ts`, `web/e2e/rewards.spec.ts`.

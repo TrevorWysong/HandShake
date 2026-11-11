@@ -56,15 +56,27 @@ pub(crate) fn food_given_back(order: &ActionHash) -> ExternResult<bool> {
     dispatch::<_, bool>("food_given_back", order.clone())
 }
 
-/// What one accepted order means for points now: an earning (once its
-/// refund period is over) or where it stands, and the reward it spent.
-/// What happened, and where its points stand (with what they'd be, before
-/// the member's tier) if they're still to come.
-pub(crate) type OrderEvents = (Vec<Event>, Option<(PointsStatus, u64)>);
+/// What one order means for points now: the events it's brought about,
+/// where its earning stands if that's still to come (with what it'd be,
+/// before the member's tier), and whether any of that can still change.
+pub(crate) struct OrderNow {
+    pub(crate) events: Vec<Event>,
+    pub(crate) pending: Option<(PointsStatus, u64)>,
+    /// Nothing about it can change any more: it ended without the store
+    /// accepting it, or it's settled and earned (or earns nothing). Until
+    /// then it isn't folded into anyone's ledger -- including when what it
+    /// earns can't be read just now.
+    pub(crate) done: bool,
+}
 
-pub(crate) fn order_events(view: &MemberOrderView, now: Timestamp) -> ExternResult<OrderEvents> {
+pub(crate) fn order_now(view: &MemberOrderView, now: Timestamp) -> ExternResult<OrderNow> {
     let mut events = Vec::new();
-    let Some(accepted) = &view.accepted else { return Ok((events, None)) };
+    let unknown = |events| Ok(OrderNow { events, pending: None, done: false });
+    let Some(accepted) = &view.accepted else {
+        // Never accepted: it spends and earns nothing, and is done once
+        // it's called off (cancelled, or declined).
+        return Ok(OrderNow { events, pending: None, done: order_called_off(&view.order)? });
+    };
     let accepted_at = get(accepted.clone(), GetOptions::default())?.map_or(view.placed_at, |r| r.action().timestamp());
     // The reward it spent -- back again if the store gave the food back, or
     // the customer called it off in time.
@@ -77,18 +89,19 @@ pub(crate) fn order_events(view: &MemberOrderView, now: Timestamp) -> ExternResu
     }
     let Some(settlement) = dispatch::<_, Option<ActionHash>>("order_settlement", view.order.clone())? else {
         // Not settled yet: an estimate from what was paid.
-        let Some(record) = get(view.order.clone(), GetOptions::default())? else { return Ok((events, None)) };
-        let Some(placed) = OrderForRewards::of(&record) else { return Ok((events, None)) };
-        let Ok(lines) = line_totals(&placed)? else { return Ok((events, None)) };
-        let Some(cited) = program_cited(&view.order)? else { return Ok((events, None)) };
+        let Some(record) = get(view.order.clone(), GetOptions::default())? else { return unknown(events) };
+        let Some(placed) = OrderForRewards::of(&record) else { return unknown(events) };
+        let Ok(lines) = line_totals(&placed)? else { return unknown(events) };
+        let Some(cited) = program_cited(&view.order)? else { return unknown(events) };
         let base = rewards_integrity::order_points(&cited, &lines, placed.order_total.saturating_sub(placed.tax_cents), accepted_at);
-        return Ok((events, (base > 0).then_some((PointsStatus::Settling, base))));
+        return Ok(OrderNow { events, pending: (base > 0).then_some((PointsStatus::Settling, base)), done: false });
     };
     let appeal = dispatch::<_, Option<AppealWire>>("get_appeal_for_order", view.order.clone())?;
     let ruling = appeal.as_ref().and_then(|a| a.ruling.as_ref().map(|r| r.ruling.clone()));
-    let Ok(earning) = earning(&view.order, &settlement, accepted, ruling.as_ref())? else { return Ok((events, None)) };
+    let Ok(earning) = earning(&view.order, &settlement, accepted, ruling.as_ref())? else { return unknown(events) };
     if earning.base == 0 {
-        return Ok((events, None));
+        // Settled and earning nothing: an award only ever takes away.
+        return Ok(OrderNow { events, pending: None, done: true });
     }
     let ended = if earning.available_at > earning.settled_at { now > earning.available_at } else { now >= earning.settled_at };
     let status = match (&appeal, &ruling) {
@@ -99,7 +112,8 @@ pub(crate) fn order_events(view: &MemberOrderView, now: Timestamp) -> ExternResu
             PointsStatus::Earned
         }
     };
-    Ok((events, Some((status, earning.base))))
+    let done = status == PointsStatus::Earned;
+    Ok(OrderNow { events, pending: Some((status, earning.base)), done })
 }
 
 /// The program version an order (its original action) cites.
@@ -108,40 +122,4 @@ pub(crate) fn program_cited(order: &ActionHash) -> ExternResult<Option<RewardsPr
     let Some(placed) = OrderForRewards::of(&record) else { return Ok(None) };
     let Some(rewards) = placed.rewards else { return Ok(None) };
     Ok(program_at(&rewards.program, &placed.catalog_ref)?.ok())
-}
-
-/// A member's standing at a store, worked out from what happened.
-pub(crate) struct Standing {
-    pub(crate) state: Option<PointsState>,
-    /// What each order or grant moved, oldest first, by what it came from.
-    pub(crate) log: Vec<(ActionHash, Event, i64)>,
-    /// Orders whose points are on their way, oldest first.
-    pub(crate) pending: Vec<OrderPoints>,
-}
-
-/// `grants`: each grant's record, when, and its points.
-pub(crate) fn standing(catalog_ref: &ActionHash, program: &RewardsProgram, orders: Vec<MemberOrderView>, grants: Vec<(ActionHash, Timestamp, u32)>) -> ExternResult<Standing> {
-    let now = sys_time()?;
-    let mut events: Vec<(Event, ActionHash)> = grants.into_iter().map(|(grant, at, points)| (Event::Credit { at, points: u64::from(points) }, grant)).collect();
-    let mut on_the_way: Vec<(ActionHash, Timestamp, PointsStatus, u64)> = Vec::new();
-    for view in &orders {
-        let (happened, pending) = order_events(view, now)?;
-        events.extend(happened.into_iter().map(|e| (e, view.order.clone())));
-        if let Some((status, base)) = pending.filter(|(s, _)| *s != PointsStatus::Earned) {
-            on_the_way.push((view.order.clone(), view.placed_at, status, base));
-        }
-    }
-    let (state, log) = replay(program, events);
-    let state = state.map(|s| roll(program, &s, now));
-    // What each pending order should bring, in turn -- a welcome counts once.
-    on_the_way.sort_by_key(|(_, at, ..)| *at);
-    let rules = program.clone();
-    let mut preview = state.clone();
-    let mut pending = Vec::new();
-    for (order, placed_at, status, base) in on_the_way {
-        let Ok((next, points)) = step(&rules, preview.as_ref(), Event::Earn { at: now, base }) else { continue };
-        preview = Some(next);
-        pending.push(OrderPoints { order, catalog_ref: catalog_ref.clone(), placed_at, points, status });
-    }
-    Ok(Standing { state, log, pending })
 }

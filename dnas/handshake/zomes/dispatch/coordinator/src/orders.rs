@@ -421,6 +421,7 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         auto_match: input.auto_match,
     };
     let action_hash = create_entry(&EntryTypes::DeliveryOrder(order))?;
+    crate::pricing::note_for_rewards(&action_hash)?;
     // The customer's card for it, offered to the store in this same commit:
     // the store's app holds it, and accepts the order only once it has.
     if let Some(payment) = input.payment {

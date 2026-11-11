@@ -431,6 +431,13 @@ fn rewards_call<I: Serialize + std::fmt::Debug, O: serde::de::DeserializeOwned +
     call_local("rewards", function, input)?.map_err(|why| guest(format!("rewards {function}: {why}")))
 }
 
+/// Notes an order the caller just placed in their own rewards account at
+/// its store, if it joined a program -- in the same call, so their card
+/// plays it without reading their chain (the rewards zome's `note_my_order`).
+pub(crate) fn note_for_rewards(order: &ActionHash) -> ExternResult<()> {
+    rewards_call("note_my_order", order.clone())
+}
+
 /// How an order placed now joins its store's rewards program: its current
 /// version, if it's running -- and the reward chosen, if any, with what it
 /// takes off. Without a reward, a program that can't be read is no reason

@@ -4,13 +4,16 @@
 //! (`rewards_types::points::replay`) -- the store from its own records
 //! (the orders it accepted from the member, its settlements, its grants)
 //! before it honours a reward; the member's app from their own orders, to
-//! show them where they stand and what's on its way. See docs/REWARDS.md.
+//! show them where they stand and what's on its way. Each keeps the result
+//! as a private running total (`accounts`), so neither plays a member's
+//! whole history again to read it. See docs/REWARDS.md.
 
 use handshake_coordinator_support::chain::{my_current_version, my_versions, mine};
-use handshake_coordinator_support::{call_local, decode_or, guest, open, original_action_of, resolve_version, seal, update_version};
+use handshake_coordinator_support::{call_local, decode_or, guest, isolated, open, original_action_of, resolve_version, seal, update_version};
 use hdk::prelude::*;
 use rewards_integrity::*;
 
+mod accounts;
 mod birthdays;
 mod grants;
 mod history;
@@ -18,6 +21,7 @@ mod member;
 mod programs;
 mod stats;
 mod store;
+use accounts::*;
 use birthdays::*;
 use grants::*;
 use history::*;

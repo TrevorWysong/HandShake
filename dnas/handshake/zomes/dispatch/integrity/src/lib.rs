@@ -161,6 +161,11 @@ pub enum LinkTypes {
     /// A committed driver's vehicle for its customer (`VehicleShare`), base
     /// = the order's original action, tagged with the driver's key.
     OrderToVehicleShare,
+    /// A customer's report of a problem (`ItemIssue`), base = the store it
+    /// was placed at, tagged with the order: the store's reports still to
+    /// answer, found in one read however busy it is. Its owner clears each
+    /// once it's answered or settled.
+    StoreToReport,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");

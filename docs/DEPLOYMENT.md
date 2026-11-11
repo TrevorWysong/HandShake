@@ -51,6 +51,7 @@ Every other setting is optional, and the defaults suit most networks. Set only t
 | `max_driver_changes` | 6 | How many times an order may change drivers (each one leaving or moved on). Past it, the order can only be collected or cancelled -- which bounds the history validation walks. |
 | `max_offers_per_order` | 20 | How many bids an order's customer may accept in all, counting offers drivers let lapse -- so a ring of throwaway drivers can't exhaust an order, and its history stays bounded. |
 | `max_ranked_bids` | 30 | How many of an order's bids its customer's app weighs, earliest first, so a flood of bids can't slow matching. |
+| `max_listed_orders` | 100 | How many open orders a driver's feed lists at once, oldest first, so a busy area costs each read the same and no order waits behind newer ones. |
 | `min_reporter_stores` | 3 | How many different stores a driver must have completed deliveries for before their report that a store wouldn't check them in counts on the store's record. |
 | `reputation_window_days` | 365 | How far back ratings and records reach. Summaries count what happened within it, so reading a busy store's costs what it did lately, not its whole history. |
 | `bid_window_secs` | 30 | How long a customer's app collects bids, from the first, before matching automatically. |

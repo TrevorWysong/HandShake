@@ -20,7 +20,10 @@ pub(crate) fn open_order_anchor_path(geohash: &str, bucket: i64) -> ExternResult
 }
 
 /// Open orders in `geohash` and its neighbouring cells -- what an online
-/// driver's app reads every few seconds.
+/// driver's app reads every few seconds. The oldest first, up to the
+/// network's `max_listed_orders`: an area however busy costs each read the
+/// same, and an order never waits behind newer ones -- each is listed in
+/// turn as those before it are taken.
 #[hdk_extern]
 pub fn get_open_orders_near(geohash: String) -> ExternResult<Vec<Record>> {
     use dispatch_integrity::DeliveryOrder;
@@ -39,20 +42,24 @@ pub fn get_open_orders_near(geohash: String) -> ExternResult<Vec<Record>> {
     }
     // Anchor links point at the store's acceptance (the version that opened
     // the order); each order is read at its current version, so one that's
-    // moved on stops showing as Open. Every anchor, every order's original
-    // and every current version are read together: a driver's app reads
-    // this every few seconds.
-    let mut opened: Vec<ActionHash> = get_links_many(queries)?.into_iter().flatten().filter_map(|link| link.target.into_action_hash()).collect();
-    opened.sort();
-    opened.dedup();
-    let mut originals: Vec<ActionHash> = originals_of(&opened)?.into_iter().flatten().collect();
-    originals.sort();
-    originals.dedup();
-    let orders = resolve_many(&originals)?
-        .into_iter()
-        .flatten()
-        .filter(|record| decode_or::<DeliveryOrder>(record).is_some_and(|order| order.status == DeliveryStatus::Open))
-        .collect::<Vec<_>>();
+    // moved on stops showing as Open. Oldest first, a batch at a time --
+    // each batch's originals and current versions read together -- until
+    // the feed's full: what's read is bounded by the feed, not the area.
+    let mut links = get_links_many(queries)?.into_iter().flatten().collect::<Vec<_>>();
+    links.sort_by_key(|link| link.timestamp);
+    let mut listed = std::collections::BTreeSet::new();
+    let opened: Vec<ActionHash> = links.into_iter().filter_map(|link| link.target.into_action_hash()).filter(|target| listed.insert(target.clone())).collect();
+    let most = handshake_governance::max_listed_orders() as usize;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut orders = Vec::new();
+    for batch in opened.chunks(most) {
+        let originals: Vec<ActionHash> = originals_of(batch)?.into_iter().flatten().filter(|o| seen.insert(o.clone())).collect();
+        orders.extend(resolve_many(&originals)?.into_iter().flatten().filter(|record| decode_or::<DeliveryOrder>(record).is_some_and(|order| order.status == DeliveryStatus::Open)));
+        if orders.len() >= most {
+            break;
+        }
+    }
+    orders.truncate(most);
     Ok(orders)
 }
 

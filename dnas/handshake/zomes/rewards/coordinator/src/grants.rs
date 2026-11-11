@@ -15,9 +15,13 @@ pub struct GrantInput {
     pub order: Option<ActionHash>,
 }
 
-/// The caller's store's latest record of an order `customer` placed under
-/// its program -- what a grant to them cites.
+/// The member's latest order at the caller's store under its program --
+/// what a grant to them cites: from the store's account of them, or, for
+/// one from before accounts, its records.
 pub(crate) fn latest_member_order(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResult<Option<ActionHash>> {
+    if let Some(order) = account(catalog_ref, customer, true)?.value.and_then(|a| a.latest_order) {
+        return Ok(Some(order));
+    }
     let types = [EntryType::try_from(UnitEntryTypes::MemberOrder)?];
     Ok(mine(&types).find(|r| decode_or::<MemberOrder>(r).is_some_and(|m| &m.customer == customer && &m.catalog_ref == catalog_ref))?.and_then(|r| decode_or::<MemberOrder>(&r)).map(|m| m.order))
 }
@@ -30,9 +34,13 @@ pub(crate) fn grant(to: AgentPubKey, catalog_ref: ActionHash, order: Option<Acti
         Some(order) => order,
         None => latest_member_order(&catalog_ref, &to)?.ok_or(guest("You can give points only to customers who've ordered here."))?,
     };
-    let sealed = seal(&to, &GrantPayload { points, reason })?;
-    let hash = create_entry(&EntryTypes::PointsGrant(PointsGrant { to: to.clone(), catalog_ref, order, sealed }))?;
-    create_link(to, hash.clone(), LinkTypes::AgentToGrant, ())?;
+    let payload = GrantPayload { points, reason };
+    let sealed = seal(&to, &payload)?;
+    let hash = create_entry(&EntryTypes::PointsGrant(PointsGrant { to: to.clone(), catalog_ref: catalog_ref.clone(), order, sealed }))?;
+    create_link(to.clone(), hash.clone(), LinkTypes::AgentToGrant, ())?;
+    // Dated as the member reads it: by the grant's own record.
+    let at = get(hash.clone(), GetOptions::local())?.map_or(sys_time()?, |r| r.action().timestamp());
+    record_grant(&catalog_ref, &to, open_grant(hash.clone(), at, &payload))?;
     Ok(hash)
 }
 
@@ -49,15 +57,19 @@ pub fn grant_points(input: GrantInput) -> ExternResult<ActionHash> {
     grant(input.to, input.catalog_ref, input.order, input.points, GrantReason::Goodwill { note: input.note })
 }
 
-/// The grants `owner`'s store `catalog_ref` gave the caller, opened. Read by
-/// the owner's key, all of them -- as many as it counts itself -- so nobody
-/// else's, however many, can crowd them out; and only the key that sealed
-/// one can have sent it.
-pub(crate) fn grants_from(owner: &AgentPubKey, catalog_ref: &ActionHash) -> ExternResult<Vec<GrantToMe>> {
+/// The grants `owner`'s store `catalog_ref` gave the caller, opened, but
+/// for those `folded` into their account already -- passed over before
+/// they're fetched. Read by the owner's key, all of them -- as many as it
+/// counts itself -- so nobody else's, however many, can crowd them out;
+/// and only the key that sealed one can have sent it.
+pub(crate) fn grants_from(owner: &AgentPubKey, catalog_ref: &ActionHash, folded: &[ActionHash]) -> ExternResult<Vec<GrantToMe>> {
     let query = LinkQuery::try_new(me()?, LinkTypes::AgentToGrant)?.author(owner.clone());
     let mut out = Vec::new();
     for link in get_links(query, GetStrategy::default())? {
         let Some(hash) = link.target.into_action_hash() else { continue };
+        if folded.contains(&hash) {
+            continue;
+        }
         let Some(record) = get(hash, GetOptions::default())? else { continue };
         let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| &g.catalog_ref == catalog_ref) else { continue };
         if record.action().author() != owner {

@@ -441,7 +441,8 @@ export interface CardView {
   pending: OrderPoints[];
   pending_points: number;
   /**
-   * Every point that's come in or gone out, newest first.
+   * Every point that's come in or gone out, newest first -- the latest
+   * `HISTORY` of them.
    */
   history: PointsLine[];
 }

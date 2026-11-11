@@ -124,7 +124,13 @@ moves money depends on which branch wins: each one that could conflict
 across branches is decided on a single author's own chain
 (`dispatch_types::lineage`). A driver can't both leave an order and pick it
 up, a store can't both move a driver on and check them in, and a customer
-can't both cancel and claim the driver's pay back.
+can't both cancel and claim the driver's pay back. Each such pair is tested by writing
+the second step on the older version, past the app's own checks
+(`tests/tryorama/src/conflicting-steps.test.ts` and `conflicting-releases`,
+`handed-over`, `stale-cancel`, `deadline-proofs`, `store-silence`). Where both
+steps are valid, the money is settled and checked: one driver released twice at
+once pays for the food once, and a delivery completed twice at once pays each
+party once and counts once on the driver's record.
 
 ## Properties the tests hold the tables to
 

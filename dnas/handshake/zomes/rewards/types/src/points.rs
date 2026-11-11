@@ -57,6 +57,16 @@ impl Event {
             Event::Earn { at, .. } | Event::Spend { at, .. } | Event::Credit { at, .. } => *at,
         }
     }
+
+    /// Where it plays among events at the same moment: what comes in before
+    /// what goes out.
+    fn rank(&self) -> u8 {
+        match self {
+            Event::Earn { .. } => 0,
+            Event::Credit { .. } => 1,
+            Event::Spend { .. } => 2,
+        }
+    }
 }
 
 /// A moment in a program's local time.
@@ -201,11 +211,20 @@ pub fn step(program: &RewardsProgram, prior: Option<&PointsState>, event: Event)
 /// would say now -- it was checked when the store took it -- and never below
 /// nothing. The state (`None` before anything happened), and what each
 /// event moved, signed, in order.
-pub fn replay<S>(program: &RewardsProgram, mut events: Vec<(Event, S)>) -> (Option<PointsState>, Vec<(S, Event, i64)>) {
-    events.sort_by_key(|(e, _)| e.at());
+pub fn replay<S: Ord>(program: &RewardsProgram, events: Vec<(Event, S)>) -> (Option<PointsState>, Vec<(S, Event, i64)>) {
+    replay_from(program, None, events)
+}
+
+/// `replay`, carried on from `start`: what came before folded into it
+/// already (`ledger`). Events at the same moment play in one fixed order --
+/// earnings, then grants, then spending, each by what it came from -- so
+/// a history plays the same however it's split or listed, on the store's
+/// side and the member's alike.
+pub fn replay_from<S: Ord>(program: &RewardsProgram, start: Option<PointsState>, mut events: Vec<(Event, S)>) -> (Option<PointsState>, Vec<(S, Event, i64)>) {
+    events.sort_by(|(a, s), (b, t)| (a.at(), a.rank()).cmp(&(b.at(), b.rank())).then_with(|| s.cmp(t)));
     let rules = program;
     let signed = |n: u64| i64::try_from(n).unwrap_or(i64::MAX);
-    let mut state: Option<PointsState> = None;
+    let mut state = start;
     let mut log = Vec::new();
     for (event, source) in events {
         match step(rules, state.as_ref(), event) {

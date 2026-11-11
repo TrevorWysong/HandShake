@@ -1,10 +1,14 @@
 //! The member's side: their own orders at each store, worked into a card --
-//! points, tier, history and what's on its way.
+//! points, tier, history and what's on its way -- from their account there
+//! (`accounts`), carried forward from what's still open.
 
 use super::*;
+use rewards_integrity::ledger::{OpenGrant, OpenOrder};
 
-/// The caller's orders that joined a program, newest first: each one's
-/// original action, its store, and when it was placed.
+/// Every order of the caller's that joined a program, newest first: each
+/// one's original action, its store, and when it was placed -- however
+/// many. A walk of their whole chain: only for playing an account afresh,
+/// or finding stores from before accounts kept a list.
 pub(crate) fn my_orders() -> ExternResult<Vec<(ActionHash, ActionHash, Timestamp)>> {
     let orders: Vec<EntryType> = [dispatch_types::lineage::dispatch_entry_type(0)?, dispatch_types::lineage::dispatch_entry_type(3)?]
         .into_iter()
@@ -12,7 +16,7 @@ pub(crate) fn my_orders() -> ExternResult<Vec<(ActionHash, ActionHash, Timestamp
         .map(|s| EntryType::App(AppEntryDef { entry_index: s.zome_type, zome_index: s.zome_index, visibility: EntryVisibility::Public }))
         .collect();
     let mut out = Vec::new();
-    for record in mine(&orders).creates().records()?.into_iter().take(MAX_ORDERS_READ) {
+    for record in mine(&orders).creates().records()? {
         if let Some(placed) = OrderForRewards::of(&record).filter(|o| o.rewards.is_some()) {
             out.push((record.action_address().clone(), placed.catalog_ref, record.action().timestamp()));
         }
@@ -20,18 +24,11 @@ pub(crate) fn my_orders() -> ExternResult<Vec<(ActionHash, ActionHash, Timestamp
     Ok(out)
 }
 
-/// The most of their own orders a member's card reads.
-pub(crate) const MAX_ORDERS_READ: usize = 500;
-
-/// The caller's view of one of their orders: whether, and when, the store
-/// accepted it, and the reward it spent. An order the store never accepted
-/// -- cancelled first, or declined -- spends nothing and earns nothing.
-pub(crate) fn my_order_view(order: &ActionHash, placed_at: Timestamp) -> ExternResult<Option<MemberOrderView>> {
-    let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
+/// An order of the caller's, as an account holds it.
+fn open_order(order: &ActionHash, placed_at: Timestamp) -> ExternResult<Option<OpenOrder>> {
+    let Some(record) = get(order.clone(), GetOptions::local())? else { return Ok(None) };
     let Some(placed) = OrderForRewards::of(&record) else { return Ok(None) };
-    let reward = placed.rewards.as_ref().and_then(|r| r.reward);
-    let accepted = acceptance(order, &placed.merchant)?;
-    Ok(Some(MemberOrderView { order: order.clone(), placed_at, accepted, reward }))
+    Ok(Some(OpenOrder { order: order.clone(), placed_at, accepted: None, reward: placed.rewards.as_ref().and_then(|r| r.reward) }))
 }
 
 /// The store's acceptance of an order: its earliest update from `Placed`
@@ -68,7 +65,8 @@ pub struct CardView {
     /// Orders still to earn here, oldest first -- and what they'll bring.
     pub pending: Vec<OrderPoints>,
     pub pending_points: u64,
-    /// Every point that's come in or gone out, newest first.
+    /// Every point that's come in or gone out, newest first -- the latest
+    /// `HISTORY` of them.
     pub history: Vec<PointsLine>,
 }
 
@@ -92,58 +90,84 @@ pub enum PointsLineKind {
     Birthday,
 }
 
-pub(crate) fn card_for(catalog_ref: &ActionHash, orders: Vec<(ActionHash, Timestamp)>) -> ExternResult<CardView> {
-    let program = program_of(catalog_ref.clone())?;
-    let store_info = store(catalog_ref)?;
-    let grants = grants_from(&store_info.owner, catalog_ref)?;
-    let mut views = Vec::new();
-    let mut reserved = 0u64;
-    for (order, placed_at) in orders {
-        let Some(view) = my_order_view(&order, placed_at)? else { continue };
-        if view.accepted.is_none() {
-            // Placed, not yet accepted: a reward it names is held for it.
-            if let (Some(id), Some(cited)) = (view.reward, program_cited(&order)?) {
-                if !order_called_off(&order)? {
-                    reserved += cited.reward(id).map_or(0, |r| u64::from(r.cost));
-                }
-            }
-            continue;
-        }
-        views.push(view);
+impl From<rewards_integrity::ledger::LedgerLine> for PointsLine {
+    fn from(line: rewards_integrity::ledger::LedgerLine) -> Self {
+        use rewards_integrity::ledger::LineKind;
+        let (kind, note) = match line.kind {
+            LineKind::Earned => (PointsLineKind::Earned, None),
+            LineKind::Spent => (PointsLineKind::Spent, None),
+            LineKind::Gift { note } => (PointsLineKind::Gift, note),
+            LineKind::Birthday => (PointsLineKind::Birthday, None),
+        };
+        PointsLine { entry: line.entry, at: line.at, kind, points: line.points, note }
     }
-    let theirs: Vec<&GrantToMe> = grants.iter().collect();
-    let Some(view) = program.clone() else {
-        return Ok(CardView { catalog_ref: catalog_ref.clone(), store_name: store_info.business_name, program, state: None, balance: 0, reserved, tier: 0, expires_at: None, pending: Vec::new(), pending_points: 0, history: Vec::new() });
-    };
-    let grants: Vec<(ActionHash, Timestamp, u32)> = theirs.iter().map(|g| (g.grant.clone(), g.at, g.payload.points)).collect();
-    let standing = standing(catalog_ref, &view.program, views, grants)?;
-    // What each moved, as the rules played it.
-    let mut history: Vec<PointsLine> = standing
-        .log
-        .iter()
-        .map(|(entry, event, points)| {
-            let grant = theirs.iter().find(|g| &g.grant == entry);
-            let (kind, note) = match (event, grant.map(|g| &g.payload.reason)) {
-                (Event::Earn { .. }, _) => (PointsLineKind::Earned, None),
-                (Event::Spend { .. }, _) => (PointsLineKind::Spent, None),
-                (Event::Credit { .. }, Some(GrantReason::Birthday { .. })) => (PointsLineKind::Birthday, None),
-                (Event::Credit { .. }, Some(GrantReason::Goodwill { note })) => (PointsLineKind::Gift, (!note.is_empty()).then(|| note.clone())),
-                (Event::Credit { .. }, None) => (PointsLineKind::Gift, None),
-            };
-            PointsLine { entry: entry.clone(), at: event.at(), kind, points: *points, note }
-        })
-        .collect();
-    history.reverse();
-    history.truncate(HISTORY);
-    let (balance, tier, expires_at) = match &standing.state {
-        Some(state) => (state.balance, tier_of(&view.program, state), expires_at(&view.program, state).filter(|_| state.balance > 0)),
-        None => (0, 0, None),
-    };
-    let pending_points = standing.pending.iter().map(|p| p.points).sum();
-    Ok(CardView { catalog_ref: catalog_ref.clone(), store_name: store_info.business_name, program, state: standing.state, balance: balance.saturating_sub(reserved), reserved, tier, expires_at, pending: standing.pending, pending_points, history })
 }
 
-pub(crate) const HISTORY: usize = 30;
+/// The store's grants to the caller not folded into their account yet.
+fn grants_to_play(owner: &AgentPubKey, catalog_ref: &ActionHash, folded: &[ActionHash]) -> ExternResult<Vec<OpenGrant>> {
+    Ok(grants_from(owner, catalog_ref, folded)?.into_iter().map(|g| open_grant(g.grant, g.at, &g.payload)).collect())
+}
+
+/// The caller's card at `catalog_ref`, from their account there: carried
+/// forward from what's still open, or played afresh from every order of
+/// theirs there when it must be (`accounts`). What it folds is kept.
+pub(crate) fn card_for(catalog_ref: &ActionHash) -> ExternResult<CardView> {
+    let store_info = store(catalog_ref)?;
+    let Some(program) = program_of(catalog_ref.clone())? else {
+        return Ok(CardView { catalog_ref: catalog_ref.clone(), store_name: store_info.business_name, program: None, state: None, balance: 0, reserved: 0, tier: 0, expires_at: None, pending: Vec::new(), pending_points: 0, history: Vec::new() });
+    };
+    let now = sys_time()?;
+    let me = me()?;
+    let found = account(catalog_ref, &me, false)?;
+    let kept = found.value.clone();
+    let prior = kept.as_ref().and_then(|a| a.ledger.as_ref()).filter(|l| l.program == program.version);
+    let carried = match prior {
+        Some(ledger) => play(&program, Some(ledger), &ledger.open_orders, grants_to_play(&store_info.owner, catalog_ref, &ledger.folded_grants)?, Some(&store_info.owner), now)?.ok(),
+        None => None,
+    };
+    let (folded, standing) = match carried {
+        Some(carried) => carried,
+        None => {
+            let mut orders = Vec::new();
+            for (order, _, at) in my_orders()?.into_iter().filter(|(_, c, _)| c == catalog_ref) {
+                orders.extend(open_order(&order, at)?);
+            }
+            play(&program, None, &orders, grants_to_play(&store_info.owner, catalog_ref, &[])?, Some(&store_info.owner), now)?.map_err(|_| guest("couldn't play this card's history"))?
+        }
+    };
+    let latest_order = kept.as_ref().and_then(|a| a.latest_order.clone()).or_else(|| standing.iter().map(|(f, _)| &f.order).max_by_key(|o| o.placed_at).map(|o| o.order.clone()));
+    keep_read(&found, MemberAccount { catalog_ref: catalog_ref.clone(), member: me, kept_by_store: false, ledger: Some(folded.ledger.clone()), latest_order }, &folded);
+
+    // Held for orders still waiting on the store, and what each order still
+    // to earn should bring, in turn -- a welcome counts once.
+    let mut reserved = 0u64;
+    let mut on_the_way: Vec<(ActionHash, Timestamp, PointsStatus, u64)> = Vec::new();
+    for (facts, now_) in &standing {
+        if facts.order.accepted.is_none() && !facts.done {
+            if let (Some(id), Some(cited)) = (facts.order.reward, program_cited(&facts.order.order)?) {
+                reserved += cited.reward(id).map_or(0, |r| u64::from(r.cost));
+            }
+        }
+        if let Some((status, base)) = now_.pending.clone().filter(|(s, _)| *s != PointsStatus::Earned) {
+            on_the_way.push((facts.order.order.clone(), facts.order.placed_at, status, base));
+        }
+    }
+    on_the_way.sort_by_key(|(_, at, ..)| *at);
+    let mut preview = folded.state.clone();
+    let mut pending = Vec::new();
+    for (order, placed_at, status, base) in on_the_way {
+        let Ok((next, points)) = step(&program.program, preview.as_ref(), Event::Earn { at: now, base }) else { continue };
+        preview = Some(next);
+        pending.push(OrderPoints { order, catalog_ref: catalog_ref.clone(), placed_at, points, status });
+    }
+    let (balance, tier, expires_at) = match &folded.state {
+        Some(state) => (state.balance, tier_of(&program.program, state), expires_at(&program.program, state).filter(|_| state.balance > 0)),
+        None => (0, 0, None),
+    };
+    let pending_points = pending.iter().map(|p| p.points).sum();
+    let history = folded.history.into_iter().map(PointsLine::from).collect();
+    Ok(CardView { catalog_ref: catalog_ref.clone(), store_name: store_info.business_name, program: Some(program), state: folded.state, balance: balance.saturating_sub(reserved), reserved, tier, expires_at, pending, pending_points, history })
+}
 
 /// Whether an order was called off: any of its versions cancels it.
 pub(crate) fn order_called_off(order: &ActionHash) -> ExternResult<bool> {
@@ -159,26 +183,61 @@ pub(crate) fn order_called_off(order: &ActionHash) -> ExternResult<bool> {
     Ok(false)
 }
 
+/// The stores the caller has a card at, newest first: their list, or --
+/// before they kept one -- every store their orders joined a program at,
+/// kept as the list from then on.
+pub(crate) fn my_card_stores() -> ExternResult<Vec<ActionHash>> {
+    if let Some(stores) = my_stores()? {
+        return Ok(stores);
+    }
+    let mut stores: Vec<ActionHash> = Vec::new();
+    for (_, catalog_ref, _) in my_orders()? {
+        if !stores.contains(&catalog_ref) {
+            stores.push(catalog_ref);
+        }
+    }
+    let _ = isolated::<_, ()>("keep_my_stores_read", stores.clone());
+    Ok(stores)
+}
+
 /// The caller's card at a store -- with the store's program even before
 /// they've ordered there.
 #[hdk_extern]
 pub fn my_card(catalog_ref: ActionHash) -> ExternResult<CardView> {
-    let orders = my_orders()?.into_iter().filter(|(_, c, _)| c == &catalog_ref).map(|(o, _, at)| (o, at)).collect();
-    card_for(&catalog_ref, orders)
+    card_for(&catalog_ref)
 }
 
 /// Every card the caller holds: a store they've ordered from under its
 /// program. Most recent first.
 #[hdk_extern]
 pub fn my_cards(_: ()) -> ExternResult<Vec<CardView>> {
-    let mut stores: Vec<(ActionHash, Vec<(ActionHash, Timestamp)>)> = Vec::new();
-    for (order, catalog_ref, at) in my_orders()? {
-        match stores.iter_mut().find(|(s, _)| s == &catalog_ref) {
-            Some((_, list)) => list.push((order, at)),
-            None => stores.push((catalog_ref, vec![(order, at)])),
+    my_card_stores()?.iter().map(card_for).collect()
+}
+
+/// Notes an order the caller just placed in their account at its store, if
+/// it joined a program: their card plays it from then on without reading
+/// their chain. Called as the order is placed (dispatch), in the same call,
+/// so an order is never placed without it.
+#[hdk_extern]
+pub fn note_my_order(order: ActionHash) -> ExternResult<()> {
+    let Some(record) = get(order.clone(), GetOptions::local())? else { return Ok(()) };
+    let Some(placed) = OrderForRewards::of(&record).filter(|o| o.rewards.is_some()) else { return Ok(()) };
+    let me = me()?;
+    if placed.requester != me {
+        return Ok(());
+    }
+    add_my_stores(std::slice::from_ref(&placed.catalog_ref))?;
+    let found = account(&placed.catalog_ref, &me, false)?;
+    let mut kept = found.value.clone().unwrap_or(MemberAccount { catalog_ref: placed.catalog_ref.clone(), member: me.clone(), kept_by_store: false, ledger: None, latest_order: None });
+    // An account not played yet plays this order with the rest, from the
+    // chain, on its first read.
+    if let Some(ledger) = kept.ledger.as_mut() {
+        if !ledger.open_orders.iter().any(|o| o.order == order) {
+            ledger.open_orders.extend(open_order(&order, record.action().timestamp())?);
         }
     }
-    stores.into_iter().map(|(store, orders)| card_for(&store, orders)).collect()
+    kept.latest_order = Some(order);
+    keep(&found, kept)
 }
 
 /// One of the caller's orders, as its points stand -- for its order page.
@@ -190,16 +249,24 @@ pub fn order_points(order: ActionHash) -> ExternResult<Option<OrderPoints>> {
     if placed.requester != me()? || placed.rewards.is_none() {
         return Ok(None);
     }
-    let Some(program) = program_of(placed.catalog_ref.clone())? else { return Ok(None) };
-    let Some(view) = my_order_view(&order, record.action().timestamp())? else { return Ok(None) };
-    if view.accepted.is_none() {
+    let card = card_for(&placed.catalog_ref)?;
+    let Some(program) = card.program.as_ref() else { return Ok(None) };
+    let Some(open) = open_order(&order, record.action().timestamp())? else { return Ok(None) };
+    let now = sys_time()?;
+    let (facts, now_) = facts(&open, Some(&placed.merchant), now)?;
+    if facts.order.accepted.is_none() {
         return Ok(None);
     }
-    let (_, status) = order_events(&view, sys_time()?)?;
-    let Some((status, base)) = status else { return Ok(None) };
-    // What it earns at the member's standing without it.
-    let card = card_for(&placed.catalog_ref, my_orders()?.into_iter().filter(|(o, c, _)| c == &placed.catalog_ref && o != &order).map(|(o, _, at)| (o, at)).collect())?;
-    let rules = program.program.clone();
-    let points = step(&rules, card.state.as_ref(), Event::Earn { at: sys_time()?, base }).map_or(base, |(_, p)| p);
+    let Some((status, base)) = now_.pending else { return Ok(None) };
+    // Still to come: what it'll earn at where the member stands now, which
+    // doesn't count it yet. Earned: what it brought, as its card shows.
+    let points = match card.pending.iter().find(|p| p.order == order) {
+        Some(p) => p.points,
+        None => card
+            .history
+            .iter()
+            .find(|l| l.entry == order && l.kind == PointsLineKind::Earned)
+            .map_or_else(|| step(&program.program, card.state.as_ref(), Event::Earn { at: now, base }).map_or(base, |(_, p)| p), |l| l.points.unsigned_abs()),
+    };
     Ok(Some(OrderPoints { order, catalog_ref: placed.catalog_ref, placed_at: record.action().timestamp(), points, status }))
 }

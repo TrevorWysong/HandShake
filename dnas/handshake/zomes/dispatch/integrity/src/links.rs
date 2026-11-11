@@ -52,6 +52,7 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
         }
         LinkTypes::OpenOrderGeohashAnchor => validate_open_order_link(&link),
         LinkTypes::OrderToIssue | LinkTypes::IssueToResponse | LinkTypes::OrderToDecision | LinkTypes::OrderToCollectRequest | LinkTypes::OrderToDropoffShare => validate_issue_link(&link),
+        LinkTypes::StoreToReport => validate_report_link(&link),
         LinkTypes::DriverToVerification => crate::verification::validate_verification_link(&link),
         LinkTypes::OrderToAppeal | LinkTypes::ArbiterToAppeal | LinkTypes::AppealToAnswer | LinkTypes::AppealToRuling | LinkTypes::StoreOwnerToRuling | LinkTypes::StoreOwnerToAppeal => crate::appeals::validate_appeal_link(&link),
         LinkTypes::OwnerToTemplate => {
@@ -169,6 +170,12 @@ pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
             require(record.action().author() == link.author, "only its verifier unlinks a verification")
         }
         LinkTypes::OrderToIssue | LinkTypes::IssueToResponse | LinkTypes::OrderToDecision | LinkTypes::OrderToCollectRequest | LinkTypes::OrderToDropoffShare => invalid("an order's issues, requests and settlement are a permanent record"),
+        // The report itself stays under its order; only the store's
+        // reminder of it goes, cleared by the store.
+        LinkTypes::StoreToReport => {
+            let Some(store) = linked_record(link.base)? else { return invalid("a report is listed under a store") };
+            require(store.action().author() == link.author, "only the store clears a report from its list")
+        }
         LinkTypes::OrderToAppeal | LinkTypes::ArbiterToAppeal | LinkTypes::AppealToAnswer | LinkTypes::AppealToRuling | LinkTypes::StoreOwnerToRuling | LinkTypes::StoreOwnerToAppeal => invalid("an appeal is a permanent record"),
         _ => validate_queue_link_delete(link),
     }
@@ -178,6 +185,19 @@ pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
 /// or a different entry type.
 fn target_entry<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(target: &AnyLinkableHash) -> ExternResult<Option<T>> {
     Ok(linked_record(target)?.and_then(|record| decode::<T>(&record)))
+}
+
+/// A customer's report, listed under the store its order was placed at by
+/// whoever reported it, tagged with that order.
+fn validate_report_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
+    let Some(record) = linked_record(link.target)? else { return invalid("a report link targets a report") };
+    let Some(issue) = decode::<dispatch_types::ItemIssue>(&record) else { return invalid("a report link targets a report") };
+    if record.action().author() != link.author || link.tag.0 != issue.order.get_raw_39().to_vec() {
+        return invalid("a report is listed by whoever made it, tagged with its order");
+    }
+    let order = must_get_valid_record(issue.order.clone())?;
+    let catalog = decode::<DeliveryOrder>(&order).map(|o| o.catalog_ref).or_else(|| decode::<PickupOrder>(&order).map(|o| o.catalog_ref));
+    require(catalog.is_some_and(|c| link.base == &AnyLinkableHash::from(c)), "a report is listed under the store its order was placed at")
 }
 
 /// An issue, a store's answer, and the store's decisions are each found
