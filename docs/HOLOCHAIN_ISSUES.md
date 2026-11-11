@@ -9,7 +9,7 @@ has been re-checked against 0.7.0 and annotated where anything changed.
 The 0.7.1 changelog was read in full for the 0.7.1 bump: nothing in it
 touches #1–#8 (its fixes are to publishing with no peers, entry/hash
 checking on receipt, validation receipts, capability grants, direct
-signals and DHT indexes), so they stand as written until re-run. #9 and #10 are new.
+signals and DHT indexes), so they stand as written until re-run. #9 and #10 are new, and #11 and #12 were found on 0.7.1 since.
 The last section lists what the 0.8 upgrade will change here.
 
 These are things found in Holochain itself (or its immediate dependencies)
@@ -584,6 +584,36 @@ replaced with a first-party mechanism.
 **In this project:** moving to a new phone (RECOVERY.md).
 
 **Workaround:** each zome's `prepare_device` writes its grants where the device doesn't hold them, and schedules its background work; init and the app's every start call it. A grant written again has the same entry as the old one, so the old grant's action counts again too. The dev host moves the identity, not the chain, because it is one node. Tests restore across separate conductors, with enough peers.
+
+## 11. Updating a private entry leaves its ops stuck in validation limbo (0.7.1)
+
+**Classification:** Unconfirmed: a bug, or an undocumented limit. Found empirically, not from the source (not vendored here).
+
+**Component:** `holochain 0.7.1`, publishing and validating `Update` ops for an entry type marked `visibility = "private"`.
+
+**Description:** An agent creates a private entry, then `update_entry`s it, in the same call or a later one. The author's own commit succeeds. But another conductor sharing the network keeps the update's ops in validation limbo indefinitely: `dhtSync` reports `# of ops in validation limbo: 2` on the other conductor and never completes. The likely cause, unconfirmed, is that the update's ops go to the authority for the *original* entry's hash, which can't fetch a private entry to check the update against. App validation isn't involved: our `classify` passes private-entry ops as `Other`.
+
+**What does work:** creating private entries, and finding one in a later call by `get_details(hash_entry(&entry), GetOptions::local())` (and `get`), for its author. Not found if never written. Checked with a probe across separate calls, 2026-11-11.
+
+**In this project:** the rewards accounts (`rewards/coordinator/src/accounts.rs`). They first kept each account as updates of one private entry, which hung the rewards tests at their first `dhtSync`.
+
+**Workaround:** never update a private entry. Each version of an account is a fresh private create, followed in the same call by a `KeptVersion { record, n }` marker, whose content is fixed, so its hash is too. The latest version is found by looking up markers (doubling `n`, then halving between): about 2 log₂ n lookups. The version is the marker's previous action.
+
+**To recheck on an upgrade:** a scenario with two conductors where one agent creates and then updates a private entry, then `dhtSync`. If it completes, private updates work and the marker scheme could become plain updates of a fixed first version.
+
+## 12. `get_links_details` ignores the query's `author` and `after` filters (0.7.1)
+
+**Classification:** Unconfirmed: likely a bug (the same `LinkQuery` filters work with `get_links`). Found empirically, not from the source.
+
+**Component:** `hdk 0.7.1`, `get_links_details(LinkQuery, GetStrategy)`.
+
+**Description:** A `LinkQuery` built with `.author(agent)` and `.after(time)` returns only that agent's links since then through `get_links`, as the many reads here that rely on it show. Through `get_links_details`, the same query returned other agents' links too.
+
+**In this project:** a store refuses a customer who keeps calling off orders before it answers (`dispatch::acceptance::serial_canceller`), counted from that customer's links in the store's active queue, read with `get_links_details`. So one customer's cancellations got every customer at the store declined. `newcomer-protections.test.ts` now orders as a second customer after the first is refused, and it failed until the fix.
+
+**Workaround:** `order_queues::orders_queued_by` checks each returned link's author and timestamp itself. It's the only `get_links_details` call in the zomes. Prefer `get_links` wherever the details (deletes) aren't needed.
+
+**To recheck on an upgrade:** two agents each create a link on one base, then `get_links_details` filtered to one author. If only that author's link comes back, the explicit check is belt and braces.
 
 ## Upgrading to 0.8: what will change here
 
