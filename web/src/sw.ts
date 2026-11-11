@@ -8,15 +8,25 @@
 //
 // This app is fundamentally live/p2p: every screen either polls a real
 // conductor or listens for a signal. A cached response is actively wrong
-// for anything that touches it, so this SW only caches the *static app
-// shell* (enough to satisfy PWA installability and let the app shell
-// render offline), never zome-call data -- and there's nothing to
-// accidentally cache wrong here anyway, since zome calls go over a
-// WebSocket, which fetch/service-worker interception never sees.
+// for anything that touches it, so this SW handles only the *static app
+// shell* -- this site's own pages, icons and built assets, enough to
+// install it and render it offline -- and leaves every other request
+// alone, uncached: the map's tiles, routes, and address searches, whose
+// URLs carry where someone lives. Zome calls go over a WebSocket, which
+// fetch interception never sees.
 declare const self: ServiceWorkerGlobalScope;
 
-const CACHE_NAME = "handshake-shell-v2";
+// A new name drops every older cache when this worker activates -- v2's
+// held whatever the app fetched, address searches included.
+const CACHE_NAME = "handshake-shell-v3";
 const APP_SHELL = ["/", "/index.html", "/favicon.svg", "/manifest.webmanifest"];
+
+/// Whether `request` is for the app's shell: this site's own pages and
+/// built files (the build puts them under /assets/, named by their hash).
+function isShell(request: Request): boolean {
+  const url = new URL(request.url);
+  return request.method === "GET" && url.origin === self.location.origin && (APP_SHELL.includes(url.pathname) || url.pathname.startsWith("/assets/"));
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -35,7 +45,7 @@ self.addEventListener("activate", (event) => {
 // Network-first, falling back to the cached shell only when genuinely
 // offline -- never serve a stale shell over a working connection.
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  if (!isShell(event.request)) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {
