@@ -103,6 +103,28 @@ export function createAgent(options: AgentOptions) {
   }
   const round = () => void rounded().catch((err) => onProblem("round", err));
 
+  // Nothing is paid until the network's profile is known to match the keys
+  // kept here (`reconcile`): until then there's no engine, and each tick
+  // tries to put it right again rather than a round.
+  let reconciled = false;
+  let reconciling: Promise<void> | null = null;
+  function begin(): Promise<void> {
+    reconciling ??= (async () => {
+      const kept = await credentials.load();
+      await inTurn(() => reconcile(kept));
+      if (kept) {
+        const { currency } = await terms();
+        await inTurn(() => use(kept.processor, kept.keys, kept.connection, currency));
+      }
+      reconciled = true;
+    })().finally(() => (reconciling = null));
+    return reconciling;
+  }
+  const tick = () => {
+    if (reconciled) return round();
+    begin().then(round, (err) => onProblem("round", err));
+  };
+
   /// Runs `processor`'s account from now on. Called in turn.
   async function use(processor: ProcessorName, keys: Record<string, string>, connection: Connection, currency: string) {
     const account = accountId(processor, connection);
@@ -138,15 +160,12 @@ export function createAgent(options: AgentOptions) {
 
   return {
     /// Starts rounds with the keys already kept, if any.
+    /// Puts the network's profile right by the keys kept here, then starts
+    /// rounds with them -- or, if that can't be done yet, tries again each
+    /// tick, paying nothing meanwhile.
     async start() {
-      const kept = await credentials.load();
-      await inTurn(() => reconcile(kept)).catch((err) => onProblem("round", err));
-      if (kept) {
-        const { currency } = await terms();
-        await inTurn(() => use(kept.processor, kept.keys, kept.connection, currency));
-        round();
-      }
-      timer ??= setInterval(round, roundMs);
+      timer ??= setInterval(tick, roundMs);
+      await begin().then(round, (err) => onProblem("round", err));
     },
 
     stop() {
@@ -187,6 +206,7 @@ export function createAgent(options: AgentOptions) {
         await credentials.save({ processor, keys, connection });
         await use(processor, keys, connection, network.currency);
         trouble = null;
+        reconciled = true;
       });
       round();
       return { processor, account: connection.account, live: connection.live, trouble: null };
@@ -202,13 +222,15 @@ export function createAgent(options: AgentOptions) {
         await credentials.clear();
         engine = null;
         trouble = null;
+        reconciled = false;
         await dispatch("clear_payment_profile", null);
+        reconciled = true;
       });
     },
 
     /// Looks for payments due now, not at the next round.
     wake() {
-      round();
+      tick();
     },
 
     /// A round, awaited: how many payments it carried out.

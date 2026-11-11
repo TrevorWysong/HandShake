@@ -379,3 +379,35 @@ test("disconnecting forgets the keys first: cut short, the next start withdraws 
   assert.equal(await restarted.agent.status(), null);
   assert.ok(!restarted.calls.includes("payments_due"), "nothing runs with keys it no longer has");
 });
+
+test("a start that can't put the profile right pays nothing, and starts once it can", async (t) => {
+  // Keys kept from an earlier run.
+  const earlier = restartable();
+  await earlier.agent.connect("Test", {});
+  earlier.agent.stop();
+
+  const calls: string[] = [];
+  let networkDown = true;
+  const dispatch = async <T,>(fn: string): Promise<T> => {
+    if (networkDown && fn === "set_payment_profile") throw new Error("the network isn't reachable");
+    calls.push(fn);
+    if (fn === "get_network_terms") return { currency: "USD", live_payments: false } as T;
+    if (fn === "payments_due") return [] as T;
+    return null as T;
+  };
+  const problems: string[] = [];
+  const agent = createAgent({ dispatch, credentials: earlier.credentials, state: memoryStore(), processorFor, confirm: async () => true, roundMs: 20, onProblem: (what) => problems.push(what) });
+  t.after(() => agent.stop());
+  await agent.start();
+  agent.wake();
+  assert.equal(await agent.round(), 0, "no engine: a round asked for does nothing");
+  await new Promise((done) => setTimeout(done, 70));
+  assert.ok(problems.length > 0, "the failure is reported");
+  assert.ok(!calls.includes("payments_due"), "nothing asked of payments while it can't be reconciled");
+
+  // The network's back: a later tick reconciles, and rounds begin.
+  networkDown = false;
+  await new Promise((done) => setTimeout(done, 70));
+  assert.ok(calls.includes("set_payment_profile"));
+  assert.ok(calls.indexOf("set_payment_profile") < calls.indexOf("payments_due"), "reconciled before any round");
+});
