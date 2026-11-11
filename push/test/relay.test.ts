@@ -56,6 +56,7 @@ async function relay(overrides: Partial<Deps> = {}, outcome: Outcome = "sent") {
       wakesPerMinute: 2,
       wakesPerDay: 3,
       requestsPerIpPerHour: 100,
+      wakeRequestsPerIpPerMinute: 100,
       appOrigins: ["http://app.test"],
       trustProxy: false,
       onWake: (result) => {
@@ -248,4 +249,39 @@ test("FCM: a data-only wake, with an access token traded once for the service ac
 
   const gone = fcmSender({ project_id: "p", client_email: "e", private_key: privateKey.export({ format: "pem", type: "pkcs8" }).toString() }, fakeFetch((url) => (url.includes("oauth2") ? { status: 200, body: JSON.stringify({ access_token: "a", expires_in: 3600 }) } : { status: 404 })).fetch);
   assert.equal(await gone.send("old"), "gone");
+});
+
+test("an address may ask for only so many wakes a minute, whatever their tokens", async (t) => {
+  const r = await relay({ wakeRequestsPerIpPerMinute: 3 });
+  t.after(r.close);
+  for (const token of ["garbage", "more garbage", "still garbage"]) assert.equal((await r.wake(token)).status, 200);
+  const refused = await r.call("POST", "/wake", { token: "and more" });
+  assert.equal(refused.status, 429, "the fourth is refused before its token is read");
+  assert.deepEqual(refused.body, { error: "Too many requests from here. Try again later." }, "the same for any token: it says nothing of the token");
+});
+
+test("wakes are delivered a few at a time, and past a full queue are dropped", async (t) => {
+  let release!: () => void;
+  const held = new Promise<void>((done) => (release = done));
+  let inFlight = 0;
+  let most = 0;
+  const slow: Sender = {
+    accepts: () => true,
+    send: async () => {
+      most = Math.max(most, ++inFlight);
+      await held;
+      inFlight -= 1;
+      return "sent";
+    },
+  };
+  const r = await relay({ senders: { webpush: slow }, wakeQueue: { sending: 2, waiting: 3 }, wakesPerMinute: 100, wakesPerDay: 100 });
+  t.after(r.close);
+  const { tokens } = (await r.call("POST", "/devices", { channel: "webpush", address: "sub" })).body as { tokens: string[] };
+  // Two delivering, three waiting, and the rest dropped at once.
+  for (const token of tokens.slice(0, 7)) assert.equal((await r.call("POST", "/wake", { token })).status, 200);
+  assert.deepEqual(r.outcomes, ["dropped", "dropped"], "the two past a full queue");
+  release();
+  await new Promise((done) => setTimeout(done, 50));
+  assert.equal(most, 2, "never more than two at once");
+  assert.equal(r.outcomes.filter((o) => o === "sent").length, 5, "and every queued one delivered");
 });

@@ -28,6 +28,7 @@ serve(
     wakesPerMinute: config.wakesPerMinute,
     wakesPerDay: config.wakesPerDay,
     requestsPerIpPerHour: config.requestsPerIpPerHour,
+    wakeRequestsPerIpPerMinute: config.wakeRequestsPerIpPerMinute,
     appOrigins: config.appOrigins,
     trustProxy: config.trustProxy,
     log,

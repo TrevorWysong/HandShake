@@ -12,7 +12,9 @@
 // wake names only a token: the relay learns that some device was woken,
 // not who asked or about what, and answers every wake alike so nobody can
 // use it to test a token. Each device is woken a few times a minute at
-// most, and so often a day.
+// most, and so often a day; each address may ask for only so many wakes a
+// minute; and wakes are delivered a few at a time, from a bounded queue, so
+// a flood of requests -- valid tokens or not -- can't exhaust the relay.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Outcome, Sender } from "./channels/channel.ts";
 import type { Channel, Store } from "./store.ts";
@@ -21,6 +23,9 @@ import { mintToken, openToken } from "./tokens.ts";
 const MAX_BODY_BYTES = 8 * 1024;
 const MAX_ADDRESS_CHARS = 4 * 1024;
 const TOKENS_PER_BATCH = 20;
+/// Wakes delivered at once, and waiting to be: past that, a wake is dropped.
+const SENDING = 16;
+const WAITING = 1024;
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
@@ -38,6 +43,10 @@ export interface Deps {
   wakesPerDay: number;
   /// Registrations and token batches one address may ask for an hour.
   requestsPerIpPerHour: number;
+  /// Wakes one address may ask for a minute, valid tokens or not.
+  wakeRequestsPerIpPerMinute: number;
+  /// How many wakes are delivered at once, and may wait -- for tests.
+  wakeQueue?: { sending: number; waiting: number };
   appOrigins: string[];
   trustProxy: boolean;
   log?: (message: string) => void;
@@ -91,7 +100,7 @@ export function requester(ip: string): string {
 }
 
 export function handler(deps: Deps) {
-  const { store, tokenKey, senders, log = () => {}, onWake = () => {} } = deps;
+  const { store, tokenKey, senders, log = () => {}, onWake = () => {}, wakeQueue = { sending: SENDING, waiting: WAITING } } = deps;
   const channels = Object.keys(senders) as Channel[];
 
   /// When each device was last woken, for its limits. Kept in memory: a
@@ -105,22 +114,45 @@ export function handler(deps: Deps) {
     return true;
   }
 
-  const requestsByAddress = new Map<string, number[]>();
-  let swept = Date.now();
-  function throttle(req: IncomingMessage) {
-    const now = Date.now();
-    if (now - swept > HOUR_MS) {
-      for (const [address, times] of requestsByAddress) if (times.every((at) => at <= now - HOUR_MS)) requestsByAddress.delete(address);
-      for (const [device, times] of wokenAt) if (times.every((at) => at <= now - DAY_MS)) wokenAt.delete(device);
-      swept = now;
+  /// Refuses an address its `limit`th request within `windowMs`.
+  function perAddress(limit: number, windowMs: number) {
+    const requests = new Map<string, number[]>();
+    let swept = Date.now();
+    return (req: IncomingMessage) => {
+      const now = Date.now();
+      if (now - swept > windowMs) {
+        for (const [address, times] of requests) if (times.every((at) => at <= now - windowMs)) requests.delete(address);
+        for (const [device, times] of wokenAt) if (times.every((at) => at <= now - DAY_MS)) wokenAt.delete(device);
+        swept = now;
+      }
+      // The address the trusted proxy saw -- the last it added. Anything
+      // before it came from the client, who can write what they like.
+      const forwarded = deps.trustProxy ? (String(req.headers["x-forwarded-for"] ?? "").split(",").pop() ?? "").trim() : "";
+      const address = requester(forwarded || req.socket.remoteAddress || "unknown");
+      const recent = (requests.get(address) ?? []).filter((at) => at > now - windowMs);
+      if (recent.length >= limit) throw new HttpError(429, "Too many requests from here. Try again later.");
+      requests.set(address, [...recent, now]);
+    };
+  }
+  const throttle = perAddress(deps.requestsPerIpPerHour, HOUR_MS);
+  const throttleWakes = perAddress(deps.wakeRequestsPerIpPerMinute, MINUTE_MS);
+
+  // Wakes waiting to be delivered, a few at a time.
+  const waiting: string[] = [];
+  let sending = 0;
+  function queueWake(token: string) {
+    if (waiting.length >= wakeQueue.waiting) return onWake("dropped");
+    waiting.push(token);
+    deliverWaiting();
+  }
+  function deliverWaiting() {
+    while (sending < wakeQueue.sending && waiting.length > 0) {
+      sending += 1;
+      void wake(waiting.shift()!).finally(() => {
+        sending -= 1;
+        deliverWaiting();
+      });
     }
-    // The address the trusted proxy saw -- the last it added. Anything
-    // before it came from the client, who can write what they like.
-    const forwarded = deps.trustProxy ? (String(req.headers["x-forwarded-for"] ?? "").split(",").pop() ?? "").trim() : "";
-    const address = requester(forwarded || req.socket.remoteAddress || "unknown");
-    const recent = (requestsByAddress.get(address) ?? []).filter((at) => at > now - HOUR_MS);
-    if (recent.length >= deps.requestsPerIpPerHour) throw new HttpError(429, "Too many requests from here. Try again later.");
-    requestsByAddress.set(address, [...recent, now]);
   }
 
   const batch = (device: string) => {
@@ -174,8 +206,9 @@ export function handler(deps: Deps) {
       return {};
     },
     "POST /wake": async (req) => {
+      throttleWakes(req);
       const token = (await json(req)).token;
-      if (typeof token === "string" && token.length <= 512) void wake(token);
+      if (typeof token === "string" && token.length <= 512) queueWake(token);
       return {};
     },
   };

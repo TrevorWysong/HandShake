@@ -15,6 +15,7 @@ export interface Config {
   fcm: ServiceAccount | null;
   wakesPerMinute: number;
   wakesPerDay: number;
+  wakeRequestsPerIpPerMinute: number;
   requestsPerIpPerHour: number;
   appOrigins: string[];
   /// Whether the service is behind one proxy that adds the caller's address
@@ -60,6 +61,7 @@ export function loadConfig(): Config {
     wakesPerMinute: number("WAKES_PER_MINUTE", 4),
     wakesPerDay: number("WAKES_PER_DAY", 150),
     requestsPerIpPerHour: number("REQUESTS_PER_IP_PER_HOUR", 60),
+    wakeRequestsPerIpPerMinute: number("WAKE_REQUESTS_PER_IP_PER_MINUTE", 120),
     appOrigins: required("APP_ORIGINS")
       .split(",")
       .map((origin) => (origin.trim() ? new URL(origin.trim()).origin : ""))
