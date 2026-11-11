@@ -52,6 +52,13 @@ test("a customer's card is held by the store before it takes the order", async (
 test("a store sees where it's paid, and connects again", async ({ page }) => {
   await signInAs(page, "cara");
   await page.goto("/#/payments");
+  // Connected, as seeded -- or again, after a try that stopped midway.
+  const reconnect = page.getByRole("button", { name: "Use the test processor" });
+  await expect(page.getByText(/Paid into your Test account/).or(page.getByRole("radio", { name: /Test processor/ }))).toBeVisible();
+  if (await page.getByRole("radio", { name: /Test processor/ }).isVisible()) {
+    await page.getByRole("radio", { name: /Test processor/ }).click();
+    await reconnect.click();
+  }
   await expect(page.getByText(/Paid into your Test account/)).toBeVisible();
   await shoot(page, "payments-connected");
   // Disconnecting asks first: collecting what's held stops with it.
@@ -63,10 +70,10 @@ test("a store sees where it's paid, and connects again", async ({ page }) => {
   await shoot(page, "payments-connect-stripe");
   await page.getByRole("radio", { name: /Square/ }).click();
   await shoot(page, "payments-connect-square");
-  await page.getByRole("radio", { name: /Clover/ }).click();
-  await shoot(page, "payments-connect-clover");
+  // Clover isn't offered: its charges need the payer's IP address.
+  await expect(page.getByRole("radio", { name: /Clover/ })).toHaveCount(0);
   await page.getByRole("radio", { name: /Test processor/ }).click();
-  await page.getByRole("button", { name: "Use the test processor" }).click();
+  await reconnect.click();
   await expect(page.getByText(/Paid into your Test account/)).toBeVisible();
 });
 

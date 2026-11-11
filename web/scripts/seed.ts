@@ -301,7 +301,7 @@ async function seedDelivery(order: WorldOrder & { kind: "delivery" }, customer: 
   const driver = assigned;
   const bidRef = hash(
     await eventually("submit bid", () =>
-      driver.call("dispatch", "submit_bid", { order_ref: orderRef, eta_seconds: 1200, price_offer: 650 }),
+      driver.call("dispatch", "submit_bid", { order_ref: orderRef, eta_seconds: Math.max(1200, (order.toStoreMinutes ?? 0) * 60), to_store_seconds: (order.toStoreMinutes ?? 0) * 60, price_offer: 650 }),
     ),
   );
   if (!reached(DELIVERY_STEPS, order.until, "BidAccepted")) return orderRef;

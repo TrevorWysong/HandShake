@@ -90,7 +90,7 @@ interface OrderCommon {
   review?: { store: number; driver?: number; comment: string };
 }
 
-export type WorldOrder = (OrderCommon & { kind: "delivery"; until: DeliveryStep; driver?: string }) | (OrderCommon & { kind: "pickup"; until: PickupStep });
+export type WorldOrder = (OrderCommon & { kind: "delivery"; until: DeliveryStep; driver?: string; /** How long the driver says they are from the store, in minutes: when they are due there once committed. */ toStoreMinutes?: number }) | (OrderCommon & { kind: "pickup"; until: PickupStep });
 
 export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: WorldOrder[] } = {
   people: [
@@ -200,11 +200,12 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
     { kind: "delivery", customer: "lee", store: "tacos", items: ["Mushroom Taco", "Elote"], until: "Placed", note: "Store needs to accept it" },
     { kind: "delivery", customer: "sam", store: "kitchen", items: ["Smash Burger", "Hand-cut Fries"], until: "Open", instructions: "No pickles please", note: "Waiting for a driver to bid" },
     { kind: "delivery", customer: "lee", store: "cafe", items: ["Flat White", "Almond Croissant"], until: "BidPlaced", driver: "dana", note: "Has a bid for the customer to accept" },
-    // Committed, its holds in place, and not yet cooking: nothing moves its
-    // driver on however long the browser tests take to reach it
-    // (`e2e/payments.spec.ts`) -- an accepted bid alone would lapse to the
-    // first store app that opened after the network's offer window.
-    { kind: "delivery", customer: "sam", store: "tacos", items: ["Al Pastor Taco", "Al Pastor Taco", "Elote"], until: "Committed", driver: "dana", note: "Store needs to start cooking" },
+    // Committed, with its holds in place, and its driver hours from the store:
+    // nothing moves her on while the browser tests reach it
+    // (`e2e/payments.spec.ts`). An accepted bid alone would lapse to the
+    // first store app to open after the network's offer window, and a
+    // committed driver is moved on once they're due at the store.
+    { kind: "delivery", customer: "sam", store: "tacos", items: ["Al Pastor Taco", "Al Pastor Taco", "Elote"], until: "Committed", driver: "dana", toStoreMinutes: 180, note: "Store needs to start cooking" },
     { kind: "delivery", customer: "lee", store: "kitchen", items: ["Harvest Bowl"], until: "PickedUp", driver: "dana", note: "Driver en route to the customer" },
     { kind: "delivery", customer: "sam", store: "cafe", items: ["Chicken Pesto Panini", "Lentil Soup"], until: "Delivered", driver: "dana", review: { store: 5, driver: 5, comment: "Still hot when it arrived." } },
     { kind: "delivery", customer: "lee", store: "tacos", items: ["Mushroom Taco", "Horchata"], until: "Delivered", driver: "dana", review: { store: 4, driver: 5, comment: "Great tacos, quick handoff." } },
