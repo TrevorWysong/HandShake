@@ -55,9 +55,9 @@ test("square: what's due is completed -- lowered first when it's less -- and not
   ]);
   const square = squareProcessor(SQUARE, "USD", fetchImpl);
   await square.capture("p1", 1800, "k1");
-  assert.deepEqual([sent[1].method, sent[1].body.payment.amount_money.amount, sent[2].url.endsWith("/p1/complete")], ["PUT", 1800, true]);
+  assert.deepEqual([sent[1].method, sent[1].body.payment.amount_money.amount, sent[2].url === "https://connect.squareupsandbox.com/v2/payments/p1/complete"], ["PUT", 1800, true]);
   await square.capture("p2", 0, "k2");
-  assert.ok(sent[4].url.endsWith("/p2/cancel"));
+  assert.equal(sent[4].url, "https://connect.squareupsandbox.com/v2/payments/p2/cancel");
   await square.capture("p3", 1800, "k3");
   assert.equal(sent.length, 6, "already completed for that amount: done");
 });
@@ -102,9 +102,9 @@ test("clover: the keys find their environment; an uncaptured charge, captured fo
   assert.ok(held.status === "held" && held.fingerprint?.startsWith("fp_"), "a fingerprint made from the card's details");
   assert.deepEqual([sent[2].body.capture, sent[2].body.amount, sent[2].headers["idempotency-key"]], [false, 2500, request.idempotencyKey]);
   await clover.capture("c1", 1800, "k1");
-  assert.deepEqual([sent[4].url.endsWith("/v1/charges/c1/capture"), sent[4].body.amount], [true, 1800]);
+  assert.deepEqual([sent[4].url === "https://scl-sandbox.dev.clover.com/v1/charges/c1/capture", sent[4].body.amount], [true, 1800]);
   await clover.capture("c2", 0, "k2");
-  assert.deepEqual([sent[6].url.endsWith("/v1/refunds"), sent[6].body.charge], [true, "c2"], "released by refunding it uncaptured");
+  assert.deepEqual([sent[6].url === "https://scl-sandbox.dev.clover.com/v1/refunds", sent[6].body.charge], [true, "c2"], "released by refunding it uncaptured");
 });
 
 test("clover: one card's fingerprint is the same whichever charge it's on", () => {
@@ -135,11 +135,11 @@ test("a withdrawn card is detached at Stripe and disabled at Square -- and only 
   const { stripeProcessor } = await import("../src/adapters/stripe.ts");
   const stripe = api([[200, {}]]);
   await stripeProcessor({ publishable_key: "pk_test_abcdefghijklmnop", restricted_key: "rk_test_abcdefghijklmnop" }, "USD", stripe.fetchImpl).forget("cus_A1:pm_B2");
-  assert.match(stripe.sent[0].url, /\/v1\/payment_methods\/pm_B2\/detach$/);
+  assert.equal(stripe.sent[0].url, "https://api.stripe.com/v1/payment_methods/pm_B2/detach");
   await assert.rejects(stripeProcessor({ publishable_key: "pk_test_abcdefghijklmnop", restricted_key: "rk_test_abcdefghijklmnop" }, "USD", api([]).fetchImpl).forget("cus_A1:../../v1/charges"), /isn't a card kept here/);
   const square = api([[200, {}]]);
   await squareProcessor(SQUARE, "USD", square.fetchImpl).forget("CUST1:ccof:CARD2");
-  assert.match(square.sent[0].url, /\/cards\/ccof:CARD2\/disable$/);
+  assert.equal(square.sent[0].url, "https://connect.squareupsandbox.com/v2/cards/ccof:CARD2/disable");
   await assert.rejects(squareProcessor(SQUARE, "USD", api([]).fetchImpl).forget("CUST1:a/b"), /isn't a card kept here/);
 });
 
@@ -151,7 +151,7 @@ test("clover: a withdrawn card is revoked; a customer already gone is no failure
   const kept = clover([[200, { id: "CUST1", sources: { data: [{ id: "CARD2" }] } }], [200, {}]]);
   await kept.processor.forget("CUST1");
   assert.equal(kept.sent.at(-1)!.method, "DELETE");
-  assert.match(kept.sent.at(-1)!.url, /\/v1\/customers\/CUST1\/sources\/CARD2$/);
+  assert.equal(kept.sent.at(-1)!.url, "https://scl.clover.com/v1/customers/CUST1/sources/CARD2");
   await clover([[404, {}]]).processor.forget("CUST1");
   await assert.rejects(clover([]).processor.forget("../v1/charges"), /isn't a card kept here/);
   await assert.rejects(clover([[200, { id: "CUST1" }]]).processor.forget("CUST1"), /didn't list/, "never quietly done without having deleted it");

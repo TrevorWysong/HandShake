@@ -5,6 +5,7 @@ import type { Message } from "./en";
 import type { REFUSALS } from "./refusals";
 
 export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
+  "refusal.clover-can-t-be-connected-yet-use": "Clover aún no se puede conectar. Por ahora, usa Stripe o Square.",
   "refusal.only-the-order-s-committed-driver-shares": "Solo el repartidor comprometido con el pedido comparte su vehículo, una vez.",
   "refusal.only-the-customer-closes-an-order-its": "Solo el cliente cierra un pedido en el que su tienda dejó de responder.",
   "refusal.the-store-still-has-time-to-answer": "La tienda todavía tiene tiempo para responder por este pedido.",

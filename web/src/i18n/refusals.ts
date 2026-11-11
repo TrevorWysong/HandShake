@@ -19,6 +19,7 @@ export const REFUSALS = {
   "refusal.choose-a-month": "Choose a month.",
   "refusal.choose-between-1-and-5-stars": "Choose between 1 and 5 stars.",
   "refusal.choose-the-most-you-ll-pay-for": "Choose the most you'll pay for delivery.",
+  "refusal.clover-can-t-be-connected-yet-use": "Clover can't be connected yet. Use Stripe or Square for now.",
   "refusal.clover-didn-t-list-that-customer-s": "Clover didn't list that customer's cards.",
   "refusal.clover-doesn-t-recognise-this-token-for": "Clover doesn't recognise this token for that merchant.",
   "refusal.confirm-you-re-or-older-and-bring": "Confirm you're {age} or older, and bring ID to collect it.",

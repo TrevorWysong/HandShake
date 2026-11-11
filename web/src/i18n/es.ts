@@ -1357,7 +1357,7 @@ export const es: Catalog = {
   "payments.live": "real",
   "payments.test": "modo de prueba",
   "payments.disconnect": "Desconectar",
-  "payments.disconnectWarning": "Mientras esté desconectada, este dispositivo no puede aceptar tarjetas ni cobrar lo ya retenido para tus pedidos, hasta que vuelvas a conectarla.",
+  "payments.disconnectWarning": "Mientras esté desconectada, este dispositivo no puede aceptar tarjetas ni cobrar lo ya retenido para tus pedidos. Lo que retiene esta cuenta solo lo cobra esta cuenta: si conectas otra, queda pendiente, y las tarjetas que los clientes guardaron aquí tendrán que introducirse de nuevo.",
   "payments.connect": "Conectar {processor}",
   "payments.keysStayHere": "Tus claves se quedan en este dispositivo, en su almacén de claves. Nunca van a la red, y puedes revocarlas desde el panel de tu procesador cuando quieras.",
   "payments.key.publishable": "Clave publicable (pk_…)",

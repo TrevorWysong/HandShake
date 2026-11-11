@@ -27,9 +27,15 @@ export interface State {
   /// When each recent decline of a new payer's card was (ms): a burst of
   /// them is cards being tested, and pauses new payers for a while.
   declines: number[];
+  /// The processor account the saved cards above were kept with
+  /// (`accountId`): another account can't charge them.
+  account: string | null;
+  /// The account each hold was placed with, by its reference: it's settled
+  /// or refunded there and nowhere else.
+  heldWith: Record<string, string>;
 }
 
-export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [] });
+export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [], account: null, heldWith: {} });
 
 export interface StateStore {
   load(): Promise<State>;

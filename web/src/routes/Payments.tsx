@@ -197,7 +197,9 @@ function Connected({ connection, agent, onChange }: { connection: PaymentsConnec
 function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: () => void }) {
   const t = useT();
   const live = useTerms().live_payments;
-  const choices: Processor[] = live ? ["Stripe", "Square", "Clover"] : ["Stripe", "Square", "Clover", "Test"];
+  // Clover isn't offered yet: its charges need the payer's IP address,
+  // which a payee's device never sees (payments/src/agent.ts).
+  const choices: Processor[] = live ? ["Stripe", "Square"] : ["Stripe", "Square", "Test"];
   const [processor, setProcessor] = useState<Processor>(live ? "Stripe" : "Test");
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [shown, setShown] = useState<Record<string, boolean>>({});

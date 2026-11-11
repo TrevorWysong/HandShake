@@ -101,3 +101,14 @@ test("a refund is of the intent, for the award", async () => {
   assert.equal(sent[0].body.get("amount"), "1500");
   assert.equal(sent[0].headers["Idempotency-Key"], "r");
 });
+
+test("a card withdrawn is detached from its customer at Stripe's own path; one already gone is no failure", async () => {
+  const { sent, processor } = stripe([[200, { id: "pm_1", customer: null }], [404, { error: { type: "invalid_request_error", code: "resource_missing", message: "No such PaymentMethod" } }]]);
+  await processor.forget("cus_1:pm_1");
+  assert.equal(sent[0].method, "POST");
+  assert.equal(sent[0].url, "https://api.stripe.com/v1/payment_methods/pm_1/detach");
+  await processor.forget("cus_1:pm_1");
+  assert.equal(sent.length, 2);
+  await assert.rejects(processor.forget("cus_1:not-a-card"), Refused);
+  assert.equal(sent.length, 2, "nothing sent for what isn't a card");
+});

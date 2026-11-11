@@ -37,6 +37,8 @@ export interface EngineOptions {
   state: StateStore;
   /// The network's currency (`NetworkTerms.currency`).
   currency: string;
+  /// The processor account connected now (`accountId`).
+  account: string;
   now?: () => number;
   /// What went wrong with one payment, for the payee's log.
   onProblem?: (what: string, err: unknown) => void;
@@ -111,8 +113,8 @@ export class Engine {
       const state = await store.load();
       try {
         if ("Authorize" in item) await this.#authorize(item.Authorize, state);
-        else if ("Settle" in item) await this.#settle(item.Settle);
-        else if ("Refund" in item) await this.#refund(item.Refund);
+        else if ("Settle" in item) await this.#settle(item.Settle, state);
+        else if ("Refund" in item) await this.#refund(item.Refund, state);
         // A withdrawal stays listed for as long as its card could stand:
         // done only when there was a card to delete.
         else if (!(await this.#forget(item.Forget, state))) continue;
@@ -191,6 +193,7 @@ export class Engine {
     // so an offer answered after a withdrawal never reads as later than it.
     if (result.savedAs || (due.token === null && !due.resumes)) state.savedAt[payer] = Math.min(now(), due.offered_at / 1000);
     state.known[payer] = true;
+    state.heldWith[result.reference] = this.#o.account;
     await dispatch("record_hold", { offer: due.offer, reference: result.reference });
   }
 
@@ -234,15 +237,24 @@ export class Engine {
     return expired;
   }
 
-  async #settle(due: Extract<PaymentDue, { Settle: unknown }>["Settle"]) {
+  /// Refuses to act on a hold placed with another account: its reference
+  /// means nothing to this one. It's settled once that account is back.
+  #here(reference: string, state: State) {
+    const placed = state.heldWith[reference];
+    if (placed !== undefined && placed !== this.#o.account) throw new Refused("that payment was held with a processor account that isn't connected now");
+  }
+
+  async #settle(due: Extract<PaymentDue, { Settle: unknown }>["Settle"], state: State) {
     const { dispatch, processor } = this.#o;
     if (due.captured > due.held) throw new Refused("the network asks for more than was held");
+    this.#here(due.reference, state);
     await processor.capture(due.reference, due.captured, idempotencyKey("capture", due.hold, due.captured));
     await dispatch("record_settlement", { hold: due.hold, claims: due.claims });
   }
 
-  async #refund(due: Extract<PaymentDue, { Refund: unknown }>["Refund"]) {
+  async #refund(due: Extract<PaymentDue, { Refund: unknown }>["Refund"], state: State) {
     const { dispatch, processor } = this.#o;
+    this.#here(due.reference, state);
     await processor.refund(due.reference, due.amount, idempotencyKey("refund", due.settlement, hex(due.ruling), due.amount));
     await dispatch("record_refund", { settlement: due.settlement, ruling: due.ruling, amount: due.amount });
   }

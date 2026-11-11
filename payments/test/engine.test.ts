@@ -56,7 +56,7 @@ const authorize = (offer: number, order: number, more: Partial<Extract<PaymentDu
 function setup() {
   const z = zome();
   const processor = testProcessor("USD");
-  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD" });
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", account: "Test:test:" });
   return { z, processor, engine };
 }
 
@@ -145,7 +145,7 @@ test("a burst of declines across new accounts pauses new payers for a while; a p
   const z = zome();
   const processor = testProcessor("USD");
   let clock = 1_000_000;
-  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", now: () => clock });
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", account: "Test:test:", now: () => clock });
   z.due = [authorize(5, 49, { payer: h(80) })];
   await engine.round();
   assert.equal(z.recorded("record_hold").length, 1, "a regular, known from now on");
@@ -189,7 +189,7 @@ test("a hold released is never charged, and more than was held is refused", asyn
   await engine.round();
   const [a, b] = z.recorded("record_hold").map((r) => r.reference as string);
   const problems: unknown[] = [];
-  const watched = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", onProblem: (_, err) => problems.push(err) });
+  const watched = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", account: "Test:test:", onProblem: (_, err) => problems.push(err) });
   z.due = [
     { Settle: { hold: h(60), reference: a, held: 2500, captured: 0, claims: [] } },
     { Settle: { hold: h(61), reference: b, held: 2500, captured: 2600, claims: [] } },
@@ -224,7 +224,7 @@ test("a processor refusing an authorization for good is the payer's to hear abou
     if (calls === 1) throw new Retry("busy");
     throw new Refused("the key was revoked");
   } };
-  const engine = new Engine({ dispatch: z.dispatch, processor: failing, state: memoryStore(), currency: "USD" });
+  const engine = new Engine({ dispatch: z.dispatch, processor: failing, state: memoryStore(), currency: "USD", account: "Test:test:" });
   z.due = [authorize(10, 50)];
   await engine.round();
   assert.equal(z.recorded("record_declined").length, 0, "busy: left for the next round");
@@ -247,7 +247,7 @@ test("a processor down mid-round leaves nothing recorded it didn't do, and the n
       return real.refund(...args);
     },
   };
-  const engine = new Engine({ dispatch: z.dispatch, processor: flaky, state: memoryStore(), currency: "USD" });
+  const engine = new Engine({ dispatch: z.dispatch, processor: flaky, state: memoryStore(), currency: "USD", account: "Test:test:" });
   z.due = [authorize(10, 50)];
   await engine.round();
   const reference = z.recorded("record_hold")[0].reference as string;
@@ -281,7 +281,7 @@ test("one payment failing never holds up the others in its round", async () => {
     if (args[0] === broken) throw new Refused("this authorization has expired");
     return real.capture(...args);
   } };
-  const engine = new Engine({ dispatch: z.dispatch, processor: picky, state: memoryStore(), currency: "USD", onProblem: (what) => problems.push(what) });
+  const engine = new Engine({ dispatch: z.dispatch, processor: picky, state: memoryStore(), currency: "USD", account: "Test:test:", onProblem: (what) => problems.push(what) });
   z.due = [authorize(10, 50), authorize(11, 51)];
   await engine.round();
   const [a, b] = z.recorded("record_hold").map((r) => r.reference as string);
@@ -316,7 +316,7 @@ test("a card its payer withdraws is deleted from the processor -- one they kept 
   const forgotten: string[] = [];
   const processor = { ...testProcessor("USD"), forget: async (savedAs: string) => void forgotten.push(savedAs) };
   let clock = 1_000_000;
-  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", now: () => clock });
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", account: "Test:test:", now: () => clock });
   z.due = [authorize(10, 50, { save: true })];
   await engine.round();
   // Withdrawn before it was kept again: deleted.
@@ -340,7 +340,7 @@ test("a card kept here unused for six months is deleted; one in use stays", asyn
   const forgotten: string[] = [];
   const processor = { ...testProcessor("USD"), forget: async (savedAs: string) => void forgotten.push(savedAs) };
   let clock = 1_000_000;
-  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", now: () => clock });
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", account: "Test:test:", now: () => clock });
   z.due = [authorize(10, 50, { save: true })];
   await engine.round();
   clock += SAVED_CARD_MS - 1000;
@@ -361,7 +361,7 @@ test("a withdrawal outranks an offer still waiting; a card replaced isn't left a
   const forgotten: string[] = [];
   const processor = { ...testProcessor("USD"), forget: async (savedAs: string) => void forgotten.push(savedAs) };
   let clock = 1_000_000;
-  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", now: () => clock });
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", account: "Test:test:", now: () => clock });
   const at = (ms: number) => ms * 1000;
   z.due = [authorize(10, 50, { save: true, offered_at: at(clock) })];
   await engine.round();

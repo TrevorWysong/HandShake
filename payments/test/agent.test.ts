@@ -9,6 +9,7 @@ import { processorFor } from "../src/adapters/index.ts";
 import { memoryCredentials } from "../src/credentials.ts";
 import { memoryStore } from "../src/state.ts";
 import { Refused } from "../src/processor.ts";
+import { testProcessor } from "../src/adapters/test.ts";
 
 function setup(live_payments = false, answer = true) {
   const calls: { fn: string; payload: unknown }[] = [];
@@ -119,4 +120,58 @@ test("a wake asked for mid-round shares that round's verdict -- it never clears 
   finish();
   await Promise.all([first, second]);
   assert.equal((await agent.status())?.trouble?.what, "Settle");
+});
+
+test("switching processor accounts never sends one account's payments to another; they settle when it's back", async () => {
+  const h = (n: number) => new Uint8Array(39).fill(n);
+  let due: unknown[] = [];
+  const recorded: { fn: string; payload: Record<string, unknown> }[] = [];
+  const dispatch = async <T,>(fn: string, payload: unknown): Promise<T> => {
+    if (fn === "get_network_terms") return { currency: "USD", live_payments: false } as T;
+    if (fn === "payments_due") return due as T;
+    recorded.push({ fn, payload: payload as Record<string, unknown> });
+    if (fn === "record_hold" || fn === "record_settlement" || fn === "record_declined") due = [];
+    return null as T;
+  };
+  // Two accounts, told apart by their public keys.
+  const accounts = new Map([["Stripe", testProcessor("USD")], ["Square", testProcessor("USD")]]);
+  const forAccount = (name: string) => {
+    const processor = accounts.get(name)!;
+    return { ...processor, connect: async () => ({ ...(await processor.connect()), publicKey: `pk_${name}` }) };
+  };
+  const keys = { Stripe: { publishable_key: "pk", restricted_key: "rk" }, Square: { application_id: "a", location_id: "l", access_token: "t" } };
+  const agent = createAgent({ dispatch, credentials: memoryCredentials(), state: memoryStore(), processorFor: (name) => forAccount(name), confirm: async () => true, roundMs: 60_000 });
+  // A round of its own, after any connecting started.
+  const round = async () => {
+    await agent.round();
+    await agent.round();
+  };
+  const authorize = (offer: number, token: string | null, save = false) => ({ Authorize: { offer: h(offer), order: h(offer + 50), leg: "Customer", amount: 2500, payer: h(1), token, save, resumes: null, newcomer_deal: null, offered_at: Date.now() * 1000 } });
+
+  await agent.connect("Stripe", keys.Stripe);
+  agent.stop();
+  due = [authorize(10, "tok_test_4242", true)];
+  await round();
+  const reference = recorded.find((r) => r.fn === "record_hold")!.payload.reference as string;
+
+  // Moved to another account: the first's hold isn't sent there.
+  await agent.connect("Square", keys.Square);
+  agent.stop();
+  due = [{ Settle: { hold: h(60), reference, held: 2500, captured: 2500, claims: [] } }];
+  await round();
+  assert.equal(accounts.get("Square")!.held.size, 0);
+  assert.equal(accounts.get("Stripe")!.held.get(reference)?.captured, null);
+  assert.equal((await agent.status())?.trouble?.what, "Settle");
+  // And a card saved with the first can't be charged with the second.
+  due = [authorize(11, null)];
+  await round();
+  assert.deepEqual(recorded.filter((r) => r.fn === "record_declined").map((r) => r.payload.code), ["NoSavedCard"]);
+
+  // Back on the first account, its hold settles there.
+  await agent.connect("Stripe", keys.Stripe);
+  agent.stop();
+  due = [{ Settle: { hold: h(60), reference, held: 2500, captured: 2500, claims: [] } }];
+  await round();
+  assert.equal(accounts.get("Stripe")!.held.get(reference)?.captured, 2500);
+  assert.equal((await agent.status())?.trouble, null);
 });

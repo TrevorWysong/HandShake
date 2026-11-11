@@ -1,6 +1,6 @@
 # Direct payments
 
-How money moves in HandShake: straight between the people in an order, on the payees' own processors (Stripe, Square or Clover). There's no issuer, no balance, no credits, no money server, and no cut for anyone running the network. The network decides **who is owed what**, with signed, validated records. Each payee's own device carries that decision out on its own processor account, and nothing else can.
+How money moves in HandShake: straight between the people in an order, on the payees' own processors (Stripe or Square; Clover is paused, see below). There's no issuer, no balance, no credits, no money server, and no cut for anyone running the network. The network decides **who is owed what**, with signed, validated records. Each payee's own device carries that decision out on its own processor account, and nothing else can.
 
 Not legal advice: each store and driver is the merchant of record on their own account, under that processor's terms.
 
@@ -67,10 +67,14 @@ It runs only on a payee's device (stores and drivers) and holds their processor 
 |---|---|---|---|
 | Stripe | publishable key + **restricted** key (a full `sk_` key is refused) | PaymentIntent, manual capture → capture `amount_to_capture` → cancel | verified in test mode (below) |
 | Square | application id + location + access token | `autocomplete:false` payment → lower, then complete → cancel | written to Square's API docs; not yet run against a sandbox |
-| Clover | merchant id + public key + Ecommerce private token | `capture:false` charge → capture → refund uncaptured (voids) | written to Clover's API docs; not yet run against a sandbox |
+| Clover | merchant id + public key + Ecommerce private token | `capture:false` charge → capture → refund uncaptured (voids) | **paused**: written to Clover's API docs, but not connectable (below) |
 | Test | none (test networks only) | in memory; `tok_test_0002` declines, `…9995` has insufficient funds, `…3155` asks the bank | used by the seed, dev and tests |
 
 Stripe findings (test mode, 2026-11-03): an authorization's `capture_before` is about 7 days out; `card.fingerprint` is present; an idempotent retry returns the same intent; a partial capture releases the rest and is charged its fee on the captured amount only; a cancel has no balance transaction (free); a SetupIntent and an off-session authorization work; `pm_card_authenticationRequired` gives `requires_action`; over-capture is refused. This API version refuses `payment_method_types` alongside automatic payment methods, so the adapter uses `automatic_payment_methods[enabled]` with `allow_redirects=never`.
+
+**Clover is paused.** Clover requires every Ecommerce charge and capture to carry the IP address of the payer's browser (`x-forwarded-for`). A payee's device never sees it: the payer's app talks to the network, not to the store. Sending the store's own address would misreport the payer to Clover, and having the payer's app send its address would hand it to their store. Until that's resolved, the agent refuses to connect Clover and the app doesn't offer it. The adapter stays, for when it is.
+
+**One account's payments stay with it.** The agent records which processor account placed each hold (`State.heldWith`) and settles or refunds it there and nowhere else. A store that disconnects, or connects a different account, leaves that account's holds waiting, reported as trouble on its Payments screen; they're collected when it connects that account again, or lapse uncharged when the hold expires. Cards payers saved with one account can't be charged by another, so they're dropped when the account changes, and those payers enter a card again. The agent never keeps a disconnected account's keys to finish its payments: disconnecting is how a payee cuts off a key they think is exposed.
 
 Still to verify against the processors' sandboxes: Square and Clover end to end; that a Stripe restricted key with only the permissions it needs is refused `/v1/balance`; the card forms inside Electron; and the content security policy's processor domains (`web/vite.config.ts`, `CARD_FORMS`).
 

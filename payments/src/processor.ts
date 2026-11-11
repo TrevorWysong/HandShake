@@ -22,6 +22,10 @@ export interface Connection {
   country: string;
 }
 
+/// One processor account, as the agent tells accounts apart: its processor
+/// and the public half of its keys, which no other account shares.
+export const accountId = (processor: string, connection: Pick<Connection, "publicKey" | "publicAccount">) => `${processor}:${connection.publicKey}:${connection.publicAccount}`;
+
 /// What became of an authorization.
 export type Authorization =
   /// Held: `reference` is the processor's id for it.

@@ -11,7 +11,7 @@ import { Engine, type Dispatch } from "./engine.ts";
 import { KEY_NAMES } from "./adapters/index.ts";
 import type { CredentialStore } from "./credentials.ts";
 import type { Connection, Processor } from "./processor.ts";
-import { Refused } from "./processor.ts";
+import { Refused, accountId } from "./processor.ts";
 import type { StateStore } from "./state.ts";
 import type { NetworkTerms, ProcessorName } from "./types.ts";
 
@@ -90,17 +90,32 @@ export function createAgent(options: AgentOptions) {
   }
   const round = () => void rounded().catch((err) => onProblem("round", err));
 
-  async function run(processor: ProcessorName, keys: Record<string, string>) {
+  async function run(processor: ProcessorName, keys: Record<string, string>, connection: Connection) {
     const { currency } = await terms();
-    engine = new Engine({ dispatch, processor: processorFor(processor, keys, currency), state, currency, onProblem });
+    const account = accountId(processor, connection);
+    await adopt(account);
+    engine = new Engine({ dispatch, processor: processorFor(processor, keys, currency), state, currency, account, onProblem });
     round();
+  }
+
+  /// Makes `account` the one this agent's state is for. Cards saved with
+  /// another, and bank challenges begun there, can't be used with it, so
+  /// they're dropped: their payers enter a card again. Holds placed there
+  /// stay theirs (`State.heldWith`), settled when it's connected again.
+  async function adopt(account: string) {
+    const kept = await state.load();
+    if (kept.account === account) return;
+    // Kept before accounts were told apart: they're this one's.
+    if (kept.account !== null) Object.assign(kept, { saved: {}, savedAt: {}, challenged: {} });
+    kept.account = account;
+    await state.save(kept);
   }
 
   return {
     /// Starts rounds with the keys already kept, if any.
     async start() {
       const kept = await credentials.load();
-      if (kept) await run(kept.processor, kept.keys);
+      if (kept) await run(kept.processor, kept.keys, kept.connection);
       timer ??= setInterval(round, roundMs);
     },
 
@@ -118,6 +133,11 @@ export function createAgent(options: AgentOptions) {
     /// public half as this agent's payment profile.
     async connect(processorInput: unknown, keysInput: unknown): Promise<Status> {
       const { processor, keys } = checkKeysInput(processorInput, keysInput);
+      // Clover's online charges must carry the IP address of the payer's
+      // browser, which a payee's device never sees, so every charge would
+      // fail. Not taken until it can be done without sending the payer's
+      // address to their store.
+      if (processor === "Clover") throw new Refused("Clover can't be connected yet. Use Stripe or Square for now.");
       const network = await terms();
       if (processor === "Test" && network.live_payments) throw new Refused("This network takes real payments: connect a live processor account.");
       const connection = await processorFor(processor, keys, network.currency).connect();
@@ -130,7 +150,7 @@ export function createAgent(options: AgentOptions) {
       await dispatch("set_payment_profile", { processor, public_key: connection.publicKey, account: connection.publicAccount, live: connection.live, country: connection.country });
       await credentials.save({ processor, keys, connection });
       trouble = null;
-      await run(processor, keys);
+      await run(processor, keys, connection);
       return { processor, account: connection.account, live: connection.live, trouble: null };
     },
 

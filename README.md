@@ -156,7 +156,7 @@ sequenceDiagram
 
 ## Money
 
-HandShake's money is ordinary card payments, straight between the people in an order. Each store and driver connects their own Stripe, Square or Clover account; nobody else's account, including the network's operators', is ever in the way. The network holds no money: it decides **who is owed what**, and each payee's own device carries that out on its own processor ([docs/DIRECT_PAYMENTS.md](docs/DIRECT_PAYMENTS.md)).
+HandShake's money is ordinary card payments, straight between the people in an order. Each store and driver connects their own Stripe or Square account; nobody else's account, including the network's operators', is ever in the way. The network holds no money: it decides **who is owed what**, and each payee's own device carries that out on its own processor ([docs/DIRECT_PAYMENTS.md](docs/DIRECT_PAYMENTS.md)).
 
 ```mermaid
 flowchart LR
@@ -254,7 +254,7 @@ To use it rather than work on it, install the desktop app from [Releases](https:
 
 ## Status
 
-HandShake runs end to end on a local network: stores, menus, deliveries and pickups, bidding, handoffs, card holds and settlement, refunds and appeals, ratings, recovery, direct card payments (Stripe; Square and Clover written, awaiting their sandboxes), two languages, and waking a closed app. It is tested by an integration suite of real Holochain nodes, and it builds as a desktop app for macOS, Windows and Linux.
+HandShake runs end to end on a local network: stores, menus, deliveries and pickups, bidding, handoffs, card holds and settlement, refunds and appeals, ratings, recovery, direct card payments (Stripe; Square written, awaiting its sandbox; Clover paused), two languages, and waking a closed app. It is tested by an integration suite of real Holochain nodes, and it builds as a desktop app for macOS, Windows and Linux.
 
 Not yet: signed desktop installers, the phone builds, which wait on Holochain's mobile tooling, and HoloFuel as a second way to pay, which waits on its launch for third-party apps.
 

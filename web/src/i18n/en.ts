@@ -1362,7 +1362,7 @@ export const en = {
   "payments.live": "live",
   "payments.test": "test mode",
   "payments.disconnect": "Disconnect",
-  "payments.disconnectWarning": "While it's disconnected, this device can't take cards, or collect what's already held for your orders, until you connect again.",
+  "payments.disconnectWarning": "While it's disconnected, this device can't take cards, or collect what's already held for your orders. What this account holds is collected only by this account: connecting a different one leaves it waiting, and cards customers saved here have to be entered again.",
   "payments.connect": "Connect {processor}",
   "payments.keysStayHere": "Your keys stay on this device, in its keystore. They never go on the network, and you can revoke them from your processor's dashboard at any time.",
   "payments.key.publishable": "Publishable key (pk_…)",
