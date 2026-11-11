@@ -6,6 +6,7 @@
   "description": "A HandShake payee's payment agent: holds, charges and releases payments on the payee's own card processor, exactly as the network says is due.",
   "scripts": {
     "test": "node --import tsx --test test/*.test.ts",
+    "sandbox": "node --import tsx sandbox/check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
