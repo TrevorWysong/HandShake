@@ -42,6 +42,25 @@ const [OWNER, NAME] = RELEASES.split("/");
 
 const PATCHES = [
   {
+    // Before anything else runs, a packaged app refuses Chromium's debugging
+    // switches (desktop/hardening.ts).
+    file: "src/main/index.ts",
+    from: "import {\n  app,\n  BrowserWindow,\n  dialog,\n",
+    to: "import './handshake/hardening';\nimport {\n  app,\n  BrowserWindow,\n  dialog,\n",
+  },
+  {
+    // Electron's fuses, set in its binary as it's packaged: no way in for
+    // another program on the machine through Node -- run as plain Node,
+    // NODE_OPTIONS, or --inspect and its signal -- where it could unseal the
+    // processor keys as the app does, and only the app's own archive runs,
+    // checked against the hash signed into the app (macOS and Windows).
+    // file:// pages keep their privileges: Kangaroo's screens are served
+    // from it. desktop/securityCheck.ts checks every one in a built app.
+    file: "templates/electron-builder-template.yml",
+    from: "npmRebuild: false\n",
+    to: "npmRebuild: false\nelectronFuses:\n  runAsNode: false\n  enableNodeOptionsEnvironmentVariable: false\n  enableNodeCliInspectArguments: false\n  enableEmbeddedAsarIntegrityValidation: true\n  onlyLoadAppFromAsar: true\n",
+  },
+  {
     // The payment agent starts once the conductor and the app's window are
     // up (desktop/payments.ts).
     file: "src/main/launch.ts",
@@ -187,7 +206,7 @@ copyFileSync(path.join(DESKTOP, "kangaroo.config.ts"), path.join(KANGAROO, "kang
 // preload and page with Kangaroo's own.
 const HANDSHAKE = path.join(KANGAROO, "src/main/handshake");
 mkdirSync(path.join(HANDSHAKE, "web/src/holochain"), { recursive: true });
-for (const file of ["payments.ts", "paymentKeys.ts", "paymentKeyForm.ts"]) copyFileSync(path.join(DESKTOP, file), path.join(HANDSHAKE, file));
+for (const file of ["hardening.ts", "payments.ts", "paymentKeys.ts", "paymentKeyForm.ts"]) copyFileSync(path.join(DESKTOP, file), path.join(HANDSHAKE, file));
 cpSync(path.join(REPO, "payments/src"), path.join(HANDSHAKE, "payments/src"), { recursive: true });
 copyFileSync(path.join(REPO, "web/src/holochain/generated.ts"), path.join(HANDSHAKE, "web/src/holochain/generated.ts"));
 copyFileSync(path.join(DESKTOP, "paymentKeysPreload.ts"), path.join(KANGAROO, "src/preload/paymentKeys.ts"));

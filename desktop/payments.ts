@@ -43,13 +43,30 @@ const sealer: Sealer = {
   },
 };
 
+/// How long after a failed start the agent's tried again: doubling, to a
+/// minute between tries.
+const RESTART_MS = [2_000, 4_000, 8_000, 15_000, 30_000, 60_000];
+
 /// Starts the agent beside the app, never in its way: the app's window is
 /// already up and waiting to sign its calls, which a slow or failed start here
-/// mustn't hold back. Until the agent's up its commands wait for it, and if it
-/// can't start they say so.
+/// mustn't hold back. A start can fail for a moment -- a new install's
+/// conductor busy with its first writes answers "database is locked" -- so
+/// one that fails is tried again until it's up, rather than leaving payments
+/// off until the app restarts. Commands wait for the try under way, and if
+/// it failed they say so.
 export function startPayments(holochain: HolochainManager, window: BrowserWindow, fs: KangarooFileSystem): void {
-  const started = startAgent(holochain, window, fs);
-  started.catch((err) => console.error(`[payments] didn't start: ${err instanceof Error ? err.stack : String(err)}`));
+  let started = startAgent(holochain, window, fs);
+  const retry = (tries: number) => {
+    started.catch((err) => {
+      const wait = RESTART_MS[Math.min(tries, RESTART_MS.length - 1)];
+      console.error(`[payments] didn't start, trying again in ${wait / 1000}s: ${err instanceof Error ? err.stack : String(err)}`);
+      setTimeout(() => {
+        started = startAgent(holochain, window, fs);
+        retry(tries + 1);
+      }, wait);
+    });
+  };
+  retry(0);
   openKeyChannel();
 
   // Only the app's own page, in its own window -- never a frame inside it.

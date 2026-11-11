@@ -13,7 +13,9 @@ Closing the window keeps HandShake running from the menu bar or system tray, so 
 | `screens/` | HandShake's own start-up screens: setting up a password (or not), unlocking with it, and starting. Copied over Kangaroo's, with the same file names and the same calls into its preload (`window.electronAPI`), in the app's look. |
 | `payments.ts`, `paymentsPreload.ts` | The payment agent in the main process, and the four commands the app's window gets (`window.__HANDSHAKE_PAYMENTS__`). |
 | `paymentKeys.ts`, `paymentKeyForm.ts`, `paymentKeys.html`, `paymentKeysPreload.ts` | The window a processor's keys are typed in: its main-process half, what it shares with its preload (the channel, the form and its words in English and Spanish), its page (no script) and its preload. |
-| `build.ts` | Lays those over a fresh copy of Kangaroo at a pinned commit, applies its fixes, and builds. |
+| `hardening.ts` | The first thing the main process runs: a packaged app given Chromium's debugging switches quits. |
+| `build.ts` | Lays those over a fresh copy of Kangaroo at a pinned commit, applies its fixes, sets Electron's fuses, and builds. |
+| `securityCheck.ts` | Checks a built app as an attacker on the same machine would: its fuses, each way of driving it from outside, and the key window (below). |
 
 Kangaroo is meant to be forked. Keeping only HandShake's own files here, with Kangaroo fetched at a pinned commit, keeps the repo small and makes updating Kangaroo a one-line change. The fixes `build.ts` applies:
 
@@ -23,6 +25,7 @@ Kangaroo is meant to be forked. Keeping only HandShake's own files here, with Ka
 - **Signing at start-up.** The page's first calls come before Kangaroo keeps its signer. They wait for it, and the payment agent starts beside the app rather than ahead of it, so a problem in the agent never stops the app's own calls.
 - **The macOS update manifest**, which Kangaroo's script merges for Holochain's own launcher repo.
 - **Linux packages** need a homepage, which Kangaroo's `package.json` leaves out.
+- **Electron's fuses.** No running as plain Node, no `NODE_OPTIONS`, no `--inspect` or its signal, and only the app's own archive, checked against its hash (macOS and Windows). Another program on the machine can't drive the main process to unseal the processor keys. `file://` pages keep their privileges, as Kangaroo's start-up screens are served from it.
 - **Unsigned builds.** Without a certificate, an empty signing secret is unset rather than read as a path, and a macOS build is signed ad hoc -- whole, though anonymous -- so it opens rather than being reported "damaged".
 
 If a Kangaroo update changes what a fix touches, `build.ts` stops and says which one.
@@ -34,6 +37,8 @@ If a Kangaroo update changes what a fix touches, `build.ts` stops and says which
 3. **Publish** the draft once you've tried an installer. Installed apps find it on their next start and offer to update.
 
 To try a build on your own machine, package the bundle, then `node desktop/build.ts dev` (or `mac-arm64`, `mac-x64`, `win`, `linux`). It needs Yarn 1 (`npm i -g yarn`).
+
+Before publishing a release, run `node desktop/securityCheck.ts` against a build on each platform you're releasing. It checks the fuses, then launches the app every way a program could try to drive it (as plain Node, with `NODE_OPTIONS`, with the inspector's signal, `--inspect`, `--remote-debugging-port`) and confirms none works. Then it drives a copy that differs only in the inspector's fuse. It opens the key window from the app's page and tries to inject script, send a request out, open a popup, navigate away and reach its channel from the app's page. It types a key Stripe refuses, cancels and closes the window, and searches the profile and logs for anything typed. It needs a network connection (Stripe answers the key) and takes a few minutes; it exits non-zero on any failure.
 
 ## Before real users
 
