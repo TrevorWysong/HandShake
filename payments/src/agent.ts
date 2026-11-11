@@ -61,11 +61,14 @@ export function createAgent(options: AgentOptions) {
   const { dispatch, credentials, state, processorFor, confirm, roundMs = ROUND_MS, onProblem: report = () => {} } = options;
   let engine: Engine | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
-  // What last went wrong, kept until a round goes cleanly.
+  // What last went wrong, kept until a round goes cleanly. Each round is
+  // judged on its own: a wake asked for mid-round joins that round (the
+  // engine runs one at a time), so it shares its verdict rather than
+  // resetting it.
   let trouble: Status["trouble"] = null;
-  let troubledThisRound = false;
+  let current: { done: Promise<number>; troubled: boolean } | null = null;
   const onProblem = (what: string, err: unknown) => {
-    troubledThisRound = true;
+    if (current) current.troubled = true;
     trouble = { what, at: Date.now() };
     report(what, err);
   };
@@ -73,9 +76,16 @@ export function createAgent(options: AgentOptions) {
   /// A round, its trouble noted -- or cleared, when it went cleanly.
   async function rounded(): Promise<number> {
     if (!engine) return 0;
-    troubledThisRound = false;
-    const done = await engine.round();
-    if (!troubledThisRound) trouble = null;
+    if (!current) {
+      const pass = { done: Promise.resolve(0), troubled: false };
+      pass.done = engine.round().finally(() => {
+        if (current === pass) current = null;
+      });
+      current = pass;
+    }
+    const pass = current;
+    const done = await pass.done;
+    if (!pass.troubled) trouble = null;
     return done;
   }
   const round = () => void rounded().catch((err) => onProblem("round", err));

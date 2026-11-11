@@ -89,3 +89,34 @@ test("a payment the agent couldn't carry out shows in its status -- what kind, n
   assert.equal((await agent.status())?.trouble, null, "cleared by a clean round");
   agent.stop();
 });
+
+test("a wake asked for mid-round shares that round's verdict -- it never clears trouble the round found", async () => {
+  const dispatch = async <T,>(fn: string): Promise<T> => {
+    if (fn === "get_network_terms") return { currency: "USD", live_payments: false } as T;
+    if (fn === "payments_due") return [{ Settle: { hold: new Uint8Array(39), reference: "r", held: 100, captured: 100, claims: [] } }] as T;
+    if (fn === "record_settlement") throw new Error("refused");
+    return null as T;
+  };
+  // The round held open after its trouble, at its last save.
+  let finish!: () => void;
+  const finished = new Promise<void>((done) => (finish = done));
+  let holding = false;
+  const memory = memoryStore();
+  const state = { load: () => memory.load(), save: async (next: Parameters<typeof memory.save>[0]) => {
+    if (holding) await finished;
+    return memory.save(next);
+  } };
+  let troubled = () => {};
+  const agent = createAgent({ dispatch, credentials: memoryCredentials(), state, processorFor, confirm: async () => true, roundMs: 60_000, onProblem: () => troubled() });
+  await agent.connect("Test", {});
+  agent.stop();
+  await agent.round();
+  holding = true;
+  const found = new Promise<void>((done) => (troubled = done));
+  const first = agent.round();
+  await found;
+  const second = agent.round();
+  finish();
+  await Promise.all([first, second]);
+  assert.equal((await agent.status())?.trouble?.what, "Settle");
+});
