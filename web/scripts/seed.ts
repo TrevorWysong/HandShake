@@ -272,7 +272,7 @@ async function attestLeg(driver: Agent, orderRef: ActionHash, sequence: number, 
 /// The deliveries each seeded driver has taken on so far.
 const driverOrders = new Map<Agent, ActionHash[]>();
 
-const DELIVERY_STEPS: DeliveryStep[] = ["Placed", "Open", "BidPlaced", "BidAccepted", "MerchantConfirmed", "PickedUp", "Delivered"];
+const DELIVERY_STEPS: DeliveryStep[] = ["Placed", "Open", "BidPlaced", "BidAccepted", "Committed", "MerchantConfirmed", "PickedUp", "Delivered"];
 const PICKUP_STEPS: PickupStep[] = ["Placed", "MerchantConfirmed", "ReadyForPickup", "PickedUp"];
 const reached = <Step extends string>(steps: Step[], until: Step, step: Step) => steps.indexOf(until) >= steps.indexOf(step);
 
@@ -306,7 +306,7 @@ async function seedDelivery(order: WorldOrder & { kind: "delivery" }, customer: 
   );
   if (!reached(DELIVERY_STEPS, order.until, "BidAccepted")) return orderRef;
   await eventually("accept bid", () => customer.call("dispatch", "accept_bid", { order_original_action: orderRef, bid_action: bidRef }));
-  if (!reached(DELIVERY_STEPS, order.until, "MerchantConfirmed")) return orderRef;
+  if (!reached(DELIVERY_STEPS, order.until, "Committed")) return orderRef;
   // The driver commits once the store holds their collateral and they hold
   // their pay on the store's card; then the store starts cooking. A delivery
   // they finished counts against their carry limit until it's ended, which
@@ -325,6 +325,7 @@ async function seedDelivery(order: WorldOrder & { kind: "delivery" }, customer: 
     },
   );
   driverOrders.set(driver, [...(driverOrders.get(driver) ?? []), orderRef]);
+  if (!reached(DELIVERY_STEPS, order.until, "MerchantConfirmed")) return orderRef;
   await stepOrDone("start cooking", () => store.owner.call("dispatch", "start_cooking", orderRef), /isn't waiting on the kitchen/);
   if (!reached(DELIVERY_STEPS, order.until, "PickedUp")) return orderRef;
   await attestLeg(driver, orderRef, 0, "MerchantHandoff", store.owner, store.location);

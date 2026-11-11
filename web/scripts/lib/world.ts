@@ -75,7 +75,7 @@ export interface WorldStore {
   goodieBag?: { title: string; original: number; price: number; quantity: number };
 }
 
-export type DeliveryStep = "Placed" | "Open" | "BidPlaced" | "BidAccepted" | "MerchantConfirmed" | "PickedUp" | "Delivered";
+export type DeliveryStep = "Placed" | "Open" | "BidPlaced" | "BidAccepted" | "Committed" | "MerchantConfirmed" | "PickedUp" | "Delivered";
 export type PickupStep = "Placed" | "MerchantConfirmed" | "ReadyForPickup" | "PickedUp";
 
 interface OrderCommon {
@@ -200,7 +200,11 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
     { kind: "delivery", customer: "lee", store: "tacos", items: ["Mushroom Taco", "Elote"], until: "Placed", note: "Store needs to accept it" },
     { kind: "delivery", customer: "sam", store: "kitchen", items: ["Smash Burger", "Hand-cut Fries"], until: "Open", instructions: "No pickles please", note: "Waiting for a driver to bid" },
     { kind: "delivery", customer: "lee", store: "cafe", items: ["Flat White", "Almond Croissant"], until: "BidPlaced", driver: "dana", note: "Has a bid for the customer to accept" },
-    { kind: "delivery", customer: "sam", store: "tacos", items: ["Al Pastor Taco", "Al Pastor Taco", "Elote"], until: "BidAccepted", driver: "dana", note: "Merchant needs to confirm prep" },
+    // Committed, its holds in place, and not yet cooking: nothing moves its
+    // driver on however long the browser tests take to reach it
+    // (`e2e/payments.spec.ts`) -- an accepted bid alone would lapse to the
+    // first store app that opened after the network's offer window.
+    { kind: "delivery", customer: "sam", store: "tacos", items: ["Al Pastor Taco", "Al Pastor Taco", "Elote"], until: "Committed", driver: "dana", note: "Store needs to start cooking" },
     { kind: "delivery", customer: "lee", store: "kitchen", items: ["Harvest Bowl"], until: "PickedUp", driver: "dana", note: "Driver en route to the customer" },
     { kind: "delivery", customer: "sam", store: "cafe", items: ["Chicken Pesto Panini", "Lentil Soup"], until: "Delivered", driver: "dana", review: { store: 5, driver: 5, comment: "Still hot when it arrived." } },
     { kind: "delivery", customer: "lee", store: "tacos", items: ["Mushroom Taco", "Horchata"], until: "Delivered", driver: "dana", review: { store: 4, driver: 5, comment: "Great tacos, quick handoff." } },

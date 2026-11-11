@@ -72,7 +72,9 @@ test("a store sees where it's paid, and connects again", async ({ page }) => {
 
 test("a driver's collateral and pay are held -- by themselves, once cards are kept with each other", async ({ page }) => {
   // Dana and Mo's stores kept their cards with each other on earlier
-  // orders: a bid accepted, both apps pay at once, and Dana is committed.
+  // orders: a bid accepted, both apps paid at once, and Dana committed --
+  // seeded that far, before any cooking, so nothing moves her on whenever
+  // this runs (scripts/lib/world.ts).
   await signInAs(page, "dana");
   await page.goto("/#/driver");
   await expect(page.getByText(/held on your card by the store/).first()).toBeVisible();
