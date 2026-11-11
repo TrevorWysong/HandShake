@@ -3,8 +3,8 @@
 // the operating system's keystore (Electron `safeStorage`); development
 // keeps them in a file only its owner can read. Anything else that can
 // keep a secret fits the same two calls.
-import { readFile, rm } from "node:fs/promises";
-import { writeAtomically } from "./files.ts";
+import { readFile } from "node:fs/promises";
+import { removeDurably, writeAtomically } from "./files.ts";
 import type { Connection } from "./processor.ts";
 import type { ProcessorName } from "./types.ts";
 
@@ -45,7 +45,7 @@ export function fileCredentials(path: string, sealer: Sealer | null = null): Cre
       await writeAtomically(path, sealer ? await sealer.seal(json) : json);
     },
     async clear() {
-      await rm(path, { force: true });
+      await removeDurably(path);
     },
   };
 }

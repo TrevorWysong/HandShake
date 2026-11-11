@@ -34,7 +34,21 @@ When the phone is **lost**, its key goes with it. Then the account carries on as
 
 A plan counts only if it's the account's **latest** as of where the account stood (`head`, an action on its chain). So a phrase the person replaced, or a guardian they removed, can't recover them from that point on.
 
-Each key takes over at most one account, so an account's history is a single line. Ratings and reputation for drivers and customers follow that line (the reputation zome reads the whole `lineage`). Stores are keyed by their catalog, so they don't move: see *What doesn't move yet*.
+Each key takes over at most one account. Ratings and reputation for drivers and customers follow the account's line of keys (the reputation zome reads the whole `lineage`). Stores are keyed by their catalog, so they don't move: see *What doesn't move yet*.
+
+### One successor: what the network enforces, and what it doesn't
+
+**This is a real limit of the design, not an unfinished test.** Read it before relying on recovery for an account that matters, such as a busy store's owner.
+
+- **Enforced by validation, on every peer:** a key takes over at most one account; a plan counts only if it's the account's latest; guardians recover only on a plan whose threshold is more than half of them, and each guardian vouches once per account and plan. So two recoveries **by guardians** can't both validate.
+- **Not enforced by validation:** that an account has **one** successor. A recovery phrase can sign for any number of keys. Validation sees only the records it's checking, never the whole network, so it can't refuse a second succession, and a check before writing can't stop two made at once.
+- **What honest apps do instead:** they read every succession of the account and recognise a successor only if exactly one stands (`successor_of`). Where two do, **neither** inherits history, ratings or stores. A leaked phrase can take an account from its owner, but can't hand it to someone else.
+- **Where that falls short:**
+  - A modified app can ignore the rule and show a contested account's history under either key.
+  - While the network converges, two honest peers can briefly disagree: one has seen only one succession, the other both. Each settles once the second reaches it.
+  - The losing key's own chain stays valid, as a lost key's does (*Residual risks*).
+
+So the phrase is as sensitive as the account itself. Keep it offline, and replace it at once if it may have been seen. Before relying on recovery for important business identities, the integrity rules here should have an independent review.
 
 ### Identity on the network; money stays where it is
 

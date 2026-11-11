@@ -42,3 +42,15 @@ test("the agent's state is replaced whole too", async (t) => {
   assert.equal((await store.load()).account, "Stripe:pk:");
   assert.equal((await stat(path)).mode & 0o777, 0o600);
 });
+
+test("clearing keys deletes them for good, and clearing none is no error", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "handshake-clear-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const sealer: Sealer = { seal: async (plain) => Buffer.from(plain), open: async (sealed) => Buffer.from(sealed).toString() };
+  const store = fileCredentials(join(dir, "payments", "keys.sealed"), sealer);
+  await store.clear();
+  await store.save(keys("first"));
+  await store.clear();
+  assert.equal(await store.load(), null);
+  assert.deepEqual(await readdir(join(dir, "payments")), [], "nothing left");
+});
