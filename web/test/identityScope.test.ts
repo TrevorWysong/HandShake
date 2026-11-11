@@ -8,7 +8,7 @@ const kept = new Map<string, string>();
 Object.assign(globalThis, {
   localStorage: { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) },
 });
-const { signedIn } = await import("../src/store/identityScope.ts");
+const { signedIn, stillSignedIn } = await import("../src/store/identityScope.ts");
 const { useCarts } = await import("../src/store/cart.ts");
 const { useGuardianNames } = await import("../src/store/guardianNames.ts");
 
@@ -38,4 +38,35 @@ test("nothing is written for nobody, and signing out keeps each identity's copy"
   await settle();
   assert.deepEqual(useCarts.getState().carts, {}, "signed out, nothing shows");
   assert.ok([...kept.keys()].every((k) => k.endsWith(":aa") || k.endsWith(":bb")), "everything kept is under an identity");
+});
+
+test("switching identities quickly, without waiting for anything to read back, never shows one person's to another", async () => {
+  signedIn("cc");
+  useCarts.getState().addLine(store, new Uint8Array([9]), "Mo's", bread);
+  useGuardianNames.getState().setName("key2", "Dad");
+  // Back and forth, with no pause for any store to settle.
+  for (const who of ["dd", "cc", "dd", null, "dd"] as const) signedIn(who);
+  assert.deepEqual(useCarts.getState().carts, {}, "the last one in has none of cc's cart");
+  assert.deepEqual(useGuardianNames.getState().names, {}, "nor cc's guardians");
+  await settle();
+  assert.deepEqual(useCarts.getState().carts, {}, "nor once anything reading back has finished");
+  signedIn("cc");
+  await settle();
+  assert.equal(Object.values(useCarts.getState().carts)[0]?.lines.length, 1, "and cc's are still theirs");
+  assert.equal(useGuardianNames.getState().names.key2, "Dad");
+});
+
+test("a read that answers after another identity signs in, or after signing out, is known to be stale", () => {
+  signedIn("ee");
+  const forEe = stillSignedIn();
+  assert.ok(forEe(), "still ee's");
+  signedIn("ee");
+  assert.ok(forEe(), "signing the same identity in again changes nothing");
+  signedIn("ff");
+  assert.ok(!forEe(), "ff signed in: ee's read is dropped");
+  const forFf = stillSignedIn();
+  signedIn(null);
+  assert.ok(!forFf(), "signed out: ff's read is dropped");
+  signedIn("ff");
+  assert.ok(!forFf(), "and stays dropped when ff signs back in -- it was asked before");
 });

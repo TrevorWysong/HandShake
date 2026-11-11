@@ -6,7 +6,9 @@
 //
 // A store opts in with `identityStorage()` (its saved copy) and
 // `perIdentity()` (cleared on a change); one with nothing saved, only
-// `forEachIdentity()`. The session says who's signed in (`signedIn`).
+// `forEachIdentity()`. A read that answers later checks it's still for
+// whoever asked (`stillSignedIn`). The session says who's signed in
+// (`signedIn`).
 import { createJSONStorage, type PersistStorage } from "zustand/middleware";
 import type { StoreApi } from "zustand";
 import { forget, readStored, store } from "../lib/util/storage";
@@ -14,6 +16,8 @@ import { forget, readStored, store } from "../lib/util/storage";
 /// The signed-in identity's key (hex) -- `null` while nobody is, or while
 /// the stores are being cleared for another.
 let current: string | null = null;
+/// Bumped at every change of identity, signing out included.
+let generation = 0;
 const resets: (() => void)[] = [];
 const reloads: (() => unknown)[] = [];
 
@@ -52,11 +56,20 @@ export function perIdentity<T>(api: StoreApi<T> & { persist: { rehydrate: () => 
   reloads.push(() => api.persist.rehydrate());
 }
 
+/// For a read that answers later: whether whoever was signed in when it
+/// started still is. Its answer is dropped if not -- it's another
+/// identity's, or nobody's.
+export function stillSignedIn(): () => boolean {
+  const startedFor = generation;
+  return () => startedFor === generation;
+}
+
 /// Who's signed in now (`null`: nobody). Every per-identity store is cleared
 /// -- with nothing written, so neither identity's saved copy changes -- and
 /// then reads back the new identity's.
 export function signedIn(identity: string | null): void {
   if (identity === current) return;
+  generation += 1;
   current = null;
   for (const reset of resets) reset();
   current = identity;

@@ -5,7 +5,7 @@
 import { create } from "zustand";
 import { fetchActiveDeliveries } from "../lib/driving/feed";
 import type { OrderRow } from "../lib/driving/deliveryRows";
-import { forEachIdentity } from "./identityScope";
+import { forEachIdentity, stillSignedIn } from "./identityScope";
 
 const NONE = { driver: null as string | null, rows: undefined as OrderRow[] | undefined };
 
@@ -13,8 +13,9 @@ export const useCarrying = create(() => NONE);
 
 /// Reads what `driver` is carrying now.
 export async function refreshCarrying(driver: string): Promise<void> {
+  const current = stillSignedIn();
   const rows = await fetchActiveDeliveries();
-  useCarrying.setState({ driver, rows });
+  if (current()) useCarrying.setState({ driver, rows });
 }
 
 forEachIdentity(() => useCarrying.setState(NONE));

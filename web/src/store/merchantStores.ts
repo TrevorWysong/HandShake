@@ -13,7 +13,7 @@ import { myAgentPubKey } from "../holochain/client";
 import type { ActionHash, MerchantCatalog } from "../holochain/types";
 import { readStored, store } from "../lib/util/storage";
 import { useResource } from "../lib/hooks/useResource";
-import { forEachIdentity } from "./identityScope";
+import { forEachIdentity, stillSignedIn } from "./identityScope";
 
 export interface StoreRow {
   /// The store's catalog `original_action` -- its stable identity, used as
@@ -52,9 +52,6 @@ interface MerchantStoresState {
 /// Two screens mounting at once (or a re-render mid-load) share one
 /// in-flight read instead of racing two.
 let inflight: Promise<StoreRow[]> | null = null;
-/// Which identity's list a read is for: one that finishes after another
-/// identity has signed in is dropped.
-let generation = 0;
 
 export const useMerchantStores = create<MerchantStoresState>((set) => ({
   stores: null,
@@ -78,9 +75,10 @@ export const useMerchantStores = create<MerchantStoresState>((set) => ({
 }));
 
 async function loadStores(selectHex: string | undefined): Promise<StoreRow[]> {
-  const startedFor = generation;
+  // One that finishes after another identity has signed in is dropped.
+  const current = stillSignedIn();
   const views = await listMyCatalogs();
-  if (startedFor !== generation) return [];
+  if (!current()) return [];
   const stores = views.map((v) => ({ hash: v.original_action, hex: bytesToHex(v.original_action), catalog: decodeEntry<MerchantCatalog>(v.record) }));
   // Keep the current/remembered selection if it still exists, otherwise
   // fall back to the first store -- never leave a stale selection pointing
@@ -94,7 +92,6 @@ async function loadStores(selectHex: string | undefined): Promise<StoreRow[]> {
 
 // Another identity's stores are never this one's.
 forEachIdentity(() => {
-  generation += 1;
   inflight = null;
   useMerchantStores.setState({ stores: null, activeHex: null });
 });
