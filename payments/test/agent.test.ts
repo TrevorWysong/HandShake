@@ -309,3 +309,73 @@ test("keys a processor refuses while connecting are called mistyped, not revoked
   await assert.rejects(agent.connect("Stripe", { publishable_key: "pk", restricted_key: "rk" }), /Those keys weren't accepted by Stripe\. Check them in its dashboard/);
   assert.equal(await credentials.load(), null);
 });
+
+test("holds from the version that knew accounts but didn't bind holds stay with the account it ran", async () => {
+  // As cb6c4ec kept it: an account, no `legacy`, and a hold it never bound.
+  const { legacy: _, ...shape } = { ...emptyState(), account: "Stripe:pk_Stripe:" };
+  const { world, settle, round, connect } = twoAccounts(memoryStore(shape as ReturnType<typeof emptyState>));
+  await connect("Square");
+  world.due = [settle("test_auth_unbound")];
+  await round();
+  assert.deepEqual(world.captured, [], "never sent to the account connected after the upgrade");
+  await connect("Stripe");
+  world.due = [settle("test_auth_unbound")];
+  await round();
+  assert.deepEqual(world.captured, ["Stripe:test_auth_unbound"]);
+});
+
+/// An agent on `credentials`, whose zome calls are logged -- and can be
+/// made to fail, as a crash would cut them short.
+function restartable(credentials = memoryCredentials()) {
+  const calls: string[] = [];
+  const failing = new Set<string>();
+  const dispatch = async <T,>(fn: string): Promise<T> => {
+    if (failing.has(fn)) throw new Error("the device stopped");
+    calls.push(fn);
+    if (fn === "get_network_terms") return { currency: "USD", live_payments: false } as T;
+    if (fn === "payments_due") return [] as T;
+    return null as T;
+  };
+  const agent = createAgent({ dispatch, credentials, state: memoryStore(), processorFor, confirm: async () => true, roundMs: 60_000 });
+  return { agent, calls, failing, credentials };
+}
+
+test("a start puts the network's profile right by the keys this device keeps", async () => {
+  // Connecting cut short after the profile was published, before the keys were kept.
+  const first = restartable();
+  first.credentials.save = async () => {
+    throw new Error("the device stopped");
+  };
+  await assert.rejects(first.agent.connect("Test", {}));
+  first.agent.stop();
+  assert.ok(first.calls.includes("set_payment_profile"), "published");
+  const restarted = restartable(memoryCredentials());
+  await restarted.agent.start();
+  restarted.agent.stop();
+  assert.ok(restarted.calls.includes("clear_payment_profile"), "no keys kept: the profile is withdrawn");
+
+  // Keys kept: the start publishes their profile, whatever the network had.
+  const kept = restartable();
+  await kept.agent.connect("Test", {});
+  kept.agent.stop();
+  const again = restartable(kept.credentials);
+  await again.agent.start();
+  again.agent.stop();
+  assert.ok(again.calls.includes("set_payment_profile"));
+  assert.ok(!again.calls.includes("clear_payment_profile"));
+});
+
+test("disconnecting forgets the keys first: cut short, the next start withdraws the profile and doesn't run", async () => {
+  const { agent, failing, credentials } = restartable();
+  await agent.connect("Test", {});
+  failing.add("clear_payment_profile");
+  await assert.rejects(agent.disconnect());
+  agent.stop();
+  assert.equal(await credentials.load(), null, "the keys went first");
+  const restarted = restartable(credentials);
+  await restarted.agent.start();
+  restarted.agent.stop();
+  assert.ok(restarted.calls.includes("clear_payment_profile"));
+  assert.equal(await restarted.agent.status(), null);
+  assert.ok(!restarted.calls.includes("payments_due"), "nothing runs with keys it no longer has");
+});

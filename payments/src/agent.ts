@@ -9,7 +9,7 @@
 // another account.
 import { Engine, type Dispatch } from "./engine.ts";
 import { KEY_NAMES } from "./adapters/index.ts";
-import type { CredentialStore } from "./credentials.ts";
+import type { CredentialStore, Credentials } from "./credentials.ts";
 import type { Connection, Processor } from "./processor.ts";
 import { KeyRefused, Refused, accountId } from "./processor.ts";
 import type { StateStore } from "./state.ts";
@@ -56,6 +56,9 @@ export function checkKeysInput(processor: unknown, keys: unknown): { processor: 
   }
   return { processor: processor as ProcessorName, keys: Object.fromEntries(entries.map(([name, value]) => [name, (value as string).trim()])) };
 }
+
+/// The public half of an account's keys, as the network publishes it.
+const profileOf = (processor: ProcessorName, connection: Connection) => ({ processor, public_key: connection.publicKey, account: connection.publicAccount, live: connection.live, country: connection.country });
 
 export function createAgent(options: AgentOptions) {
   const { dispatch, credentials, state, processorFor, confirm, roundMs = ROUND_MS, onProblem: report = () => {} } = options;
@@ -113,23 +116,31 @@ export function createAgent(options: AgentOptions) {
   /// stay theirs (`State.heldWith`), settled when it's connected again.
   async function adopt(account: string) {
     const kept = await state.load();
-    if (kept.account === account) return;
-    if (kept.account === null) {
-      // The first account this agent runs: whatever it kept before accounts
-      // were told apart -- saved cards, and holds it never bound -- was this
-      // one's, the account it was running then.
-      kept.legacy ??= account;
-    } else {
-      Object.assign(kept, { saved: {}, savedAt: {}, challenged: {} });
-    }
+    // Holds kept before they were bound to an account (`State.heldWith`)
+    // were placed with the account this agent was running then: the one it
+    // last ran, if it kept that, or else this one. Once set, it stays.
+    const legacy = kept.legacy ?? kept.account ?? account;
+    if (kept.account === account && kept.legacy === legacy) return;
+    if (kept.account !== null && kept.account !== account) Object.assign(kept, { saved: {}, savedAt: {}, challenged: {} });
+    kept.legacy = legacy;
     kept.account = account;
     await state.save(kept);
+  }
+
+  /// What the network says of this payee follows the keys this device keeps
+  /// -- published while it has some, withdrawn when it has none -- so a change
+  /// a crash cut short is put right at the next start. Both calls do nothing
+  /// when the network already says so.
+  async function reconcile(kept: Credentials | null) {
+    if (kept) await dispatch("set_payment_profile", profileOf(kept.processor, kept.connection));
+    else await dispatch("clear_payment_profile", null);
   }
 
   return {
     /// Starts rounds with the keys already kept, if any.
     async start() {
       const kept = await credentials.load();
+      await inTurn(() => reconcile(kept)).catch((err) => onProblem("round", err));
       if (kept) {
         const { currency } = await terms();
         await inTurn(() => use(kept.processor, kept.keys, kept.connection, currency));
@@ -172,7 +183,7 @@ export function createAgent(options: AgentOptions) {
       if (connection.currency.toUpperCase() !== network.currency.toUpperCase()) throw new Refused(`That account takes ${connection.currency.toUpperCase()}; this network pays in ${network.currency.toUpperCase()}.`);
       if (!(await confirm({ processor, connection }))) throw new Refused("Not connected: you didn't confirm it.");
       await inTurn(async () => {
-        await dispatch("set_payment_profile", { processor, public_key: connection.publicKey, account: connection.publicAccount, live: connection.live, country: connection.country });
+        await dispatch("set_payment_profile", profileOf(processor, connection));
         await credentials.save({ processor, keys, connection });
         await use(processor, keys, connection, network.currency);
         trouble = null;
@@ -185,11 +196,13 @@ export function createAgent(options: AgentOptions) {
     /// held settle once it's connected again.
     async disconnect() {
       if (!(await confirm(null))) throw new Refused("Still connected: you didn't confirm it.");
+      // The keys go first: cut short after that, the next start withdraws
+      // the profile too, rather than finding keys and carrying on with them.
       await inTurn(async () => {
-        await dispatch("clear_payment_profile", null);
         await credentials.clear();
         engine = null;
         trouble = null;
+        await dispatch("clear_payment_profile", null);
       });
     },
 
