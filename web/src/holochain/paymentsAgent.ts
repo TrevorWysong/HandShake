@@ -7,14 +7,18 @@
 //   status()                  what's connected: the processor, its account,
 //                             live or test, and a payment it couldn't carry
 //                             out lately (only its kind) -- or nothing
-//   connect(processor, keys)  checks the keys with the processor, keeps them,
+//   connect(processor)        asks for the processor's keys in a window of
+//                             the runtime's own, which no page can see,
+//                             checks them with the processor, keeps them,
 //                             and publishes the public half as this agent's
 //                             payment profile
 //   disconnect()              forgets the keys and withdraws the profile
 //   wake()                    looks for payments due now, not at its next poll
 //
 // None of them take an amount or name a payment: script in the UI can only
-// ask the agent to do what the network already says is due. A runtime
+// ask the agent to do what the network already says is due. And no key
+// passes through the UI: only the dev host, with test keys, takes them from
+// the page (`keyEntry`). A runtime
 // without an agent leaves it undefined; the app then can't take payments.
 // In development the dev host stands in for the runtime (`devPayments.ts`).
 import type { Processor } from "./types";
@@ -32,8 +36,12 @@ export interface PaymentsConnection {
 }
 
 export interface PaymentsAgent {
+  /// Where a processor's keys are typed: in a window of the runtime's own
+  /// ("runtime"), or -- the dev host only -- in the page, passed to `connect`.
+  keyEntry: "runtime" | "page";
   status(): Promise<PaymentsConnection | null>;
-  connect(processor: Processor, keys: Record<string, string>): Promise<PaymentsConnection>;
+  /// `null` when the person closes the runtime's key window instead.
+  connect(processor: Processor, keys?: Record<string, string>): Promise<PaymentsConnection | null>;
   disconnect(): Promise<void>;
   wake(): void;
 }

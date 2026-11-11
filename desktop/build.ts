@@ -12,7 +12,8 @@
 // Kangaroo is a template meant to be forked; this keeps only what's
 // HandShake's own (kangaroo.config.ts, network.json) and lays it over a
 // fresh copy of Kangaroo in desktop/.kangaroo, with a few fixes (`PATCHES`)
-// and the payee's payment agent (desktop/payments.ts, payments/).
+// and the payee's payment agent (desktop/payments.ts, payments/) with the
+// window its keys are typed in (desktop/paymentKeys*).
 // Installers land in desktop/.kangaroo/dist. Releasing is
 // .github/workflows/desktop.yml.
 import { execFileSync } from "node:child_process";
@@ -45,7 +46,7 @@ const PATCHES = [
     // up (desktop/payments.ts).
     file: "src/main/launch.ts",
     from: "import { HolochainManager } from './holochainManager';\n",
-    to: "import { HolochainManager } from './holochainManager';\nimport { startPayments } from './handshakePayments';\n",
+    to: "import { HolochainManager } from './holochainManager';\nimport { startPayments } from './handshake/payments';\n",
   },
   {
     file: "src/main/launch.ts",
@@ -76,6 +77,17 @@ const PATCHES = [
     file: "src/main/index.ts",
     from: "  if (!ZOME_CALL_SIGNER) throw new Error('Zome call signer undefined.');\n",
     to: "  if (_e.senderFrame !== _e.sender.mainFrame) throw new Error('Not allowed.');\n  while (!ZOME_CALL_SIGNER) await new Promise((resolve) => setTimeout(resolve, 50));\n",
+  },
+  {
+    // The key window's preload and page are built with the app's others.
+    file: "electron.vite.config.ts",
+    from: "          splashscreen: resolve(__dirname, 'src/preload/splashscreen.ts'),\n",
+    to: "          splashscreen: resolve(__dirname, 'src/preload/splashscreen.ts'),\n          paymentKeys: resolve(__dirname, 'src/preload/paymentKeys.ts'),\n",
+  },
+  {
+    file: "electron.vite.config.ts",
+    from: "          enterPassword: resolve(__dirname, 'src/renderer/enterPassword.html'),\n",
+    to: "          enterPassword: resolve(__dirname, 'src/renderer/enterPassword.html'),\n          paymentKeys: resolve(__dirname, 'src/renderer/paymentKeys.html'),\n",
   },
   {
     // payments/ imports its modules by their .ts names, as Node runs them.
@@ -169,12 +181,17 @@ const patches = macUnsigned
 
 fetchKangaroo();
 copyFileSync(path.join(DESKTOP, "kangaroo.config.ts"), path.join(KANGAROO, "kangaroo.config.ts"));
-// The payment agent, beside Kangaroo's main process: payments/ as it is,
-// with the network's generated types where its import finds them.
-copyFileSync(path.join(DESKTOP, "payments.ts"), path.join(KANGAROO, "src/main/handshakePayments.ts"));
-cpSync(path.join(REPO, "payments/src"), path.join(KANGAROO, "src/main/payments/src"), { recursive: true });
-mkdirSync(path.join(KANGAROO, "src/main/web/src/holochain"), { recursive: true });
-copyFileSync(path.join(REPO, "web/src/holochain/generated.ts"), path.join(KANGAROO, "src/main/web/src/holochain/generated.ts"));
+// The payment agent, in a folder of its own beside Kangaroo's main process:
+// payments/ as it is, with the network's generated types where its import
+// finds them, and the key window -- its main-process half there, its
+// preload and page with Kangaroo's own.
+const HANDSHAKE = path.join(KANGAROO, "src/main/handshake");
+mkdirSync(path.join(HANDSHAKE, "web/src/holochain"), { recursive: true });
+for (const file of ["payments.ts", "paymentKeys.ts", "paymentKeyForm.ts"]) copyFileSync(path.join(DESKTOP, file), path.join(HANDSHAKE, file));
+cpSync(path.join(REPO, "payments/src"), path.join(HANDSHAKE, "payments/src"), { recursive: true });
+copyFileSync(path.join(REPO, "web/src/holochain/generated.ts"), path.join(HANDSHAKE, "web/src/holochain/generated.ts"));
+copyFileSync(path.join(DESKTOP, "paymentKeysPreload.ts"), path.join(KANGAROO, "src/preload/paymentKeys.ts"));
+copyFileSync(path.join(DESKTOP, "paymentKeys.html"), path.join(KANGAROO, "src/renderer/paymentKeys.html"));
 for (const { file, from, to } of patches) {
   const at = path.join(KANGAROO, file);
   const text = readFileSync(at, "utf8");

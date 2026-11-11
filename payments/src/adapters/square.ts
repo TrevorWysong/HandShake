@@ -12,7 +12,7 @@
 // against Square's sandbox: see DIRECT_PAYMENTS.md.
 import { createHash } from "node:crypto";
 import type { Authorization, AuthorizeRequest, Connection, Processor } from "../processor.ts";
-import { NotFound, Refused, Retry } from "../processor.ts";
+import { KeyRefused, NotFound, Refused, Retry } from "../processor.ts";
 import type { DeclineCode } from "../types.ts";
 
 export interface SquareKeys {
@@ -89,7 +89,7 @@ export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: F
     const json = (await response.json().catch(() => ({}))) as Json;
     if (response.ok) return json;
     if (response.status === 429 || response.status >= 500) throw new Retry(`Square is busy (${response.status})`);
-    if (response.status === 401) throw new Refused("Square no longer accepts this device's access token. Connect again.");
+    if (response.status === 401) throw new KeyRefused("Square no longer accepts this device's access token. Connect again.");
     if (response.status === 403) throw new Refused("The access token can't do this. It needs payments, customers and cards.");
     if (json.errors?.some((e: Json) => e.category === "PAYMENT_METHOD_ERROR")) throw new CardDeclined(declineCode(json.errors));
     if (response.status === 404) throw new NotFound(json.errors?.[0]?.detail ?? "Square has no record of that.");

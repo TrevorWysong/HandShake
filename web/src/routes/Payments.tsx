@@ -205,7 +205,9 @@ function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: ()
   const [shown, setShown] = useState<Record<string, boolean>>({});
   const action = useAction();
   const chosen = PROCESSORS[processor];
-  const complete = chosen.fields.every((f) => keys[f.name]?.trim());
+  // Typed here only on the dev host: elsewhere, in the runtime's own window.
+  const typedHere = agent.keyEntry === "page";
+  const complete = !typedHere || chosen.fields.every((f) => keys[f.name]?.trim());
 
   const choose = (next: Processor) => {
     setProcessor(next);
@@ -215,9 +217,10 @@ function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: ()
   };
   const connect = () =>
     action.run(async () => {
-      await agent.connect(processor, Object.fromEntries(Object.entries(keys).map(([k, v]) => [k, v.trim()])));
+      const connected = await agent.connect(processor, typedHere ? Object.fromEntries(Object.entries(keys).map(([k, v]) => [k, v.trim()])) : undefined);
       setKeys({});
-      onConnected();
+      // Closed the key window: nothing changed.
+      if (connected) onConnected();
     });
 
   return (
@@ -268,7 +271,13 @@ function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: ()
         </ol>
       )}
 
-      {chosen.fields.length > 0 && (
+      {chosen.fields.length > 0 && !typedHere && (
+        <p className="mt-4 flex items-start gap-1.5 text-[11px] leading-relaxed text-ink-400">
+          <Lock size={12} className="mt-0.5 shrink-0" /> {t("payments.keysInWindow")}
+        </p>
+      )}
+
+      {chosen.fields.length > 0 && typedHere && (
         <div className="mt-4 flex flex-col gap-3">
           {chosen.fields.map((field) => (
             <Field key={field.name} label={t(field.label)}>
@@ -299,7 +308,7 @@ function Connect({ agent, onConnected }: { agent: PaymentsAgent; onConnected: ()
 
       {action.error && <Notice className="mt-3">{action.error}</Notice>}
       <Button className="mt-4 w-full" loading={action.busy} disabled={!complete} onClick={connect}>
-        {processor === "Test" ? t("payments.connectTest") : t("payments.connect", { processor })}
+        {processor === "Test" ? t("payments.connectTest") : typedHere ? t("payments.connect", { processor }) : t("payments.enterKeys", { processor })}
       </Button>
     </Card>
   );

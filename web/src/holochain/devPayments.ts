@@ -30,8 +30,10 @@ async function command<T>(name: string, input: Record<string, unknown> = {}): Pr
 export async function devPayments(): Promise<PaymentsAgent | null> {
   if (!(await host())) return null;
   return {
+    // A dev network's test keys only: a live one refuses them.
+    keyEntry: "page",
     status: () => command<PaymentsConnection | null>("status"),
-    connect: (processor, keys) => command<PaymentsConnection>("connect", { processor, keys }),
+    connect: (processor, keys = {}) => command<PaymentsConnection>("connect", { processor, keys }),
     disconnect: () => command<void>("disconnect"),
     wake: () => void command("wake").catch(() => {}),
   };

@@ -1360,6 +1360,8 @@ export const es: Catalog = {
   "payments.disconnectWarning": "Mientras esté desconectada, este dispositivo no puede aceptar tarjetas ni cobrar lo ya retenido para tus pedidos. Lo que retiene esta cuenta solo lo cobra esta cuenta: si conectas otra, queda pendiente, y las tarjetas que los clientes guardaron aquí tendrán que introducirse de nuevo.",
   "payments.connect": "Conectar {processor}",
   "payments.keysStayHere": "Tus claves se quedan en este dispositivo, en su almacén de claves. Nunca van a la red, y puedes revocarlas desde el panel de tu procesador cuando quieras.",
+  "payments.enterKeys": "Introducir tus claves de {processor}",
+  "payments.keysInWindow": "Las pegarás en una ventana propia de HandShake, que esta página no puede ver. Se quedan en este dispositivo, selladas en su almacén de claves, y puedes revocarlas desde el panel de tu procesador cuando quieras.",
   "payments.key.publishable": "Clave publicable (pk_…)",
   "payments.key.restricted": "Clave restringida (rk_…)",
   "payments.key.applicationId": "ID de aplicación",

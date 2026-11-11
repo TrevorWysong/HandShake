@@ -75,3 +75,6 @@ export class Refused extends Error {}
 
 /// The processor has no record of what was asked about.
 export class NotFound extends Refused {}
+
+/// The processor doesn't accept the keys: mistyped, or since revoked.
+export class KeyRefused extends Refused {}

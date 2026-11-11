@@ -1,10 +1,12 @@
 // The desktop app's payment agent (payments/), in Electron's main process --
-// copied into Kangaroo's src/main by build.ts, and started by its launch
-// once the conductor and the app's window are up. It keeps the payee's
-// processor keys sealed with the operating system's keystore (Electron
-// `safeStorage`), outside the app's pages, and answers four commands from
-// the app's own window only (`window.__HANDSHAKE_PAYMENTS__`, exposed by the
-// preload patch): status, connect, disconnect, wake. None takes an amount.
+// copied into Kangaroo's src/main/handshake by build.ts, and started by its
+// launch once the conductor and the app's window are up. It keeps the
+// payee's processor keys sealed with the operating system's keystore
+// (Electron `safeStorage`), outside the app's pages, and answers four
+// commands from the app's own window only (`window.__HANDSHAKE_PAYMENTS__`,
+// exposed by the preload patch): status, connect, disconnect, wake. None
+// takes an amount, and none takes a key: they're typed in a window of the
+// main process's own (paymentKeys.ts).
 import path from 'path';
 import { BrowserWindow, dialog, ipcMain, safeStorage, type IpcMainInvokeEvent } from 'electron';
 import { AppWebsocket, CellType } from '@holochain/client';
@@ -13,14 +15,19 @@ import { processorFor } from './payments/src/adapters/index.ts';
 import { fileCredentials, type Sealer } from './payments/src/credentials.ts';
 import { Refused } from './payments/src/processor.ts';
 import { fileStore } from './payments/src/state.ts';
-import type { HolochainManager } from './holochainManager';
-import type { KangarooFileSystem } from './filesystem';
-import { HAPP_APP_ID } from './const';
+import { openKeyChannel, withKeys } from './paymentKeys';
+import { fill, isKeyed, localeOf, WORDS, type Locale } from './paymentKeyForm';
+import type { HolochainManager } from '../holochainManager';
+import type { KangarooFileSystem } from '../filesystem';
+import { HAPP_APP_ID } from '../const';
 
 /// The app's DNA role, as its hApp names it.
 const ROLE_NAME = 'handshake';
 /// The origin the agent's websocket presents to its own app interface.
 const AGENT_ORIGIN = 'handshake-payments';
+
+/// The language the app's page last asked in: its dialogs speak it too.
+let speaking: Locale = 'en';
 
 /// The keystore's seal: refuses to keep keys where there's no keystore.
 const sealer: Sealer = {
@@ -43,6 +50,7 @@ const sealer: Sealer = {
 export function startPayments(holochain: HolochainManager, window: BrowserWindow, fs: KangarooFileSystem): void {
   const started = startAgent(holochain, window, fs);
   started.catch((err) => console.error(`[payments] didn't start: ${err instanceof Error ? err.stack : String(err)}`));
+  openKeyChannel();
 
   // Only the app's own page, in its own window -- never a frame inside it.
   const fromTheApp = (event: IpcMainInvokeEvent) => !window.isDestroyed() && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame;
@@ -52,9 +60,16 @@ export function startPayments(holochain: HolochainManager, window: BrowserWindow
     switch (command) {
       case 'status':
         return agent.status();
-      case 'connect':
-        return agent.connect(args[0], args[1]);
+      case 'connect': {
+        const processor = args[0];
+        speaking = localeOf(args[1]);
+        // Keys are typed in the key window, never passed in by the page.
+        if (isKeyed(processor)) return withKeys(window, processor, speaking, (keys) => agent.connect(processor, keys));
+        // The test processor needs none; anything else is refused.
+        return agent.connect(processor, {});
+      }
       case 'disconnect':
+        speaking = localeOf(args[0]);
         return agent.disconnect();
       case 'wake':
         return agent.wake();
@@ -86,11 +101,14 @@ async function startAgent(holochain: HolochainManager, window: BrowserWindow, fs
     credentials: fileCredentials(path.join(dir, 'keys.sealed'), sealer),
     state: fileStore(path.join(dir, 'state.json')),
     processorFor,
-    // The person's own yes, in a dialog the app's pages can't draw or click.
+    // The person's own yes, in a dialog the app's pages can't draw or click
+    // -- over the key window, while it's open.
     confirm: async (change) => {
-      const { response } = await dialog.showMessageBox(window, change
-        ? { type: 'question', buttons: ['Connect', 'Cancel'], defaultId: 1, cancelId: 1, message: `Get paid into this ${change.processor} account?`, detail: `${change.connection.account} (${change.connection.live ? 'live' : 'test mode'}). Customers' and stores' cards will be held and charged for you on it.` }
-        : { type: 'warning', buttons: ['Disconnect', 'Cancel'], defaultId: 1, cancelId: 1, message: 'Stop taking card payments here?', detail: 'Payments already held are charged once you connect again; until then nobody can pay you by card.' });
+      const words = WORDS[speaking];
+      const over = BrowserWindow.getFocusedWindow() ?? window;
+      const { response } = await dialog.showMessageBox(over, change
+        ? { type: 'question', buttons: [words.confirmConnectYes, words.cancel], defaultId: 1, cancelId: 1, message: fill(words.confirmConnect, { processor: change.processor }), detail: fill(words.confirmConnectDetail, { account: change.connection.account, mode: change.connection.live ? words.live : words.test }) }
+        : { type: 'warning', buttons: [words.confirmDisconnectYes, words.cancel], defaultId: 1, cancelId: 1, message: words.confirmDisconnect, detail: words.confirmDisconnectDetail });
       return response === 0;
     },
     onProblem: (what, err) => console.warn(`[payments] ${what}: ${err instanceof Error ? err.message : String(err)}`),

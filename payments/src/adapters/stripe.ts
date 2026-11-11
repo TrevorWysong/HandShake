@@ -11,7 +11,7 @@
 // lasts about seven days; a capture is charged its fee on what's captured
 // only, and a cancel (release) costs nothing.
 import type { Authorization, AuthorizeRequest, Connection, Processor } from "../processor.ts";
-import { Refused, Retry } from "../processor.ts";
+import { KeyRefused, Refused, Retry } from "../processor.ts";
 import type { DeclineCode } from "../types.ts";
 
 const API = "https://api.stripe.com/v1";
@@ -76,7 +76,7 @@ export function stripeProcessor(keys: StripeKeys, currency: string, fetchImpl: F
     if (response.ok) return json;
     if (response.status === 429 || response.status >= 500) throw new Retry(`Stripe is busy (${response.status})`);
     if (response.status === 402 || json.error?.type === "card_error") throw new CardDeclined(declineCode(json.error));
-    if (response.status === 401) throw new Refused("Stripe no longer accepts this device's key. Connect again.");
+    if (response.status === 401) throw new KeyRefused("Stripe no longer accepts this device's key. Connect again.");
     if (response.status === 403) throw new Refused("The restricted key can't do this. Give it write access to PaymentIntents, SetupIntents, Customers and PaymentMethods.");
     throw new StripeError(json.error?.code ?? "", json.error?.message ?? `Stripe refused (${response.status})`);
   }

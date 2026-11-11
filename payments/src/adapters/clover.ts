@@ -12,7 +12,7 @@
 // sandbox: see DIRECT_PAYMENTS.md.
 import { createHash } from "node:crypto";
 import type { Authorization, AuthorizeRequest, Connection, Processor } from "../processor.ts";
-import { NotFound, Refused, Retry } from "../processor.ts";
+import { KeyRefused, NotFound, Refused, Retry } from "../processor.ts";
 import type { DeclineCode } from "../types.ts";
 
 export interface CloverKeys {
@@ -75,7 +75,7 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
     const json = (await response.json().catch(() => ({}))) as Json;
     if (response.ok) return json;
     if (response.status === 429 || response.status >= 500) throw new Retry(`Clover is busy (${response.status})`);
-    if (response.status === 401) throw new Unauthorized("Clover no longer accepts this device's token. Connect again.");
+    if (response.status === 401) throw new KeyRefused("Clover no longer accepts this device's token. Connect again.");
     if (response.status === 402 || json.error?.type === "card_error") throw new CardDeclined(declineCode(json.error));
     if (response.status === 404) throw new NotFound(json.error?.message ?? "Clover has no record of that.");
     throw new Refused(json.error?.message ?? `Clover refused (${response.status})`);
@@ -91,7 +91,7 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
         live = name === "live";
         return candidate;
       } catch (err) {
-        if (!(err instanceof Unauthorized)) throw err;
+        if (!(err instanceof KeyRefused)) throw err;
       }
     }
     throw new Refused("Clover doesn't recognise this token for that merchant.");
@@ -176,4 +176,3 @@ class CardDeclined extends Error {
   }
 }
 
-class Unauthorized extends Refused {}

@@ -1365,6 +1365,8 @@ export const en = {
   "payments.disconnectWarning": "While it's disconnected, this device can't take cards, or collect what's already held for your orders. What this account holds is collected only by this account: connecting a different one leaves it waiting, and cards customers saved here have to be entered again.",
   "payments.connect": "Connect {processor}",
   "payments.keysStayHere": "Your keys stay on this device, in its keystore. They never go on the network, and you can revoke them from your processor's dashboard at any time.",
+  "payments.enterKeys": "Enter your {processor} keys",
+  "payments.keysInWindow": "You'll paste them in a window of HandShake's own, which this page can't see. They stay on this device, sealed in its keystore, and you can revoke them from your processor's dashboard at any time.",
   "payments.key.publishable": "Publishable key (pk_…)",
   "payments.key.restricted": "Restricted key (rk_…)",
   "payments.key.applicationId": "Application ID",

@@ -6,7 +6,8 @@
 //     sentence (it starts with a capital). A lowercase one is a diagnostic,
 //     not for people; the app says something went wrong instead;
 //   - the device runtime (runtime/device): its errors' `#[error("...")]`;
-//   - the payment agent (payments/): each `new Refused(...)`.
+//   - the payment agent (payments/): each `new Refused(...)` or
+//     `new KeyRefused(...)`.
 //
 // A value in the text becomes a placeholder: `{name}` for a named one,
 // `{0}`, `{1}`... by position otherwise. Every catalog must translate each
@@ -66,7 +67,7 @@ function collect(): string[] {
   }
   for (const file of [...files("payments/src", ".ts"), "desktop/payments.ts"]) {
     const source = readFileSync(join(repo, file), "utf8");
-    for (const m of source.matchAll(/\bnew Refused\(\s*(?:"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`)\s*\)/g)) {
+    for (const m of source.matchAll(/\bnew (?:Key)?Refused\(\s*(?:"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`)\s*\)/g)) {
       texts.push(m[1] !== undefined ? unescapeJs(m[1]) : fromTemplate(m[2]));
     }
   }

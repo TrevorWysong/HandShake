@@ -5,6 +5,8 @@ import type { Message } from "./en";
 import type { REFUSALS } from "./refusals";
 
 export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
+  "refusal.those-keys-weren-t-accepted-by-check": "{0} no aceptó esas claves. Revísalas en su panel y vuelve a intentarlo.",
+  "refusal.clover-no-longer-accepts-this-device-s": "Clover ya no acepta el token de este dispositivo. Vuelve a conectarlo.",
   "refusal.clover-can-t-be-connected-yet-use": "Clover aún no se puede conectar. Por ahora, usa Stripe o Square.",
   "refusal.only-the-order-s-committed-driver-shares": "Solo el repartidor comprometido con el pedido comparte su vehículo, una vez.",
   "refusal.only-the-customer-closes-an-order-its": "Solo el cliente cierra un pedido en el que su tienda dejó de responder.",
