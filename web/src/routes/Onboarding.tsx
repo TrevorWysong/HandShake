@@ -19,6 +19,7 @@ import { isRestoring, rememberedMethod } from "../lib/account/restoring";
 import { MAX_LABEL_CHARS, MAX_LICENSE_PLATE_CHARS, MAX_NOTE_CHARS, MAX_PHONE_CHARS, MAX_VEHICLE_CHARS } from "../holochain/types";
 import { useT, type MessageKey } from "../i18n";
 import { useDriverSettings } from "../store/roleSettings";
+import { stillSignedIn } from "../store/identityScope";
 import { TRAVEL_MODES } from "../lib/driving/routing";
 import { useAction } from "../lib/hooks/useAction";
 import { normalizePhone } from "../lib/phone";
@@ -95,6 +96,8 @@ export function Onboarding() {
 
   const finish = () => action.run(async () => {
     await createIdentity(displayName.trim(), roles, location, { bio, avatarDataUri, phone: phoneNumber ?? "" }, adminUrl);
+    // Signed in now, as the person this sets up.
+    const current = stillSignedIn();
     if (addressDraft.street.trim()) {
       // Its own call, after the profile: an address that doesn't save
       // leaves sign-up done, and it can be added at checkout instead.
@@ -110,7 +113,7 @@ export function Onboarding() {
         license_plate: licensePlate,
         photo_data_uri: vehiclePhoto,
       });
-      useDriverSettings.getState().setTravelMode(vehicle.mode);
+      if (current()) useDriverSettings.getState().setTravelMode(vehicle.mode);
     }
     navigate(`/${primaryModeForRoles(roles)}`);
   }, { stayBusy: true });

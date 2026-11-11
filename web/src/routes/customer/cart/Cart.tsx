@@ -17,6 +17,7 @@ import { ItemSheet } from "../../../components/store/ItemSheet";
 import { cartItems, menuLines, useCart, useCarts } from "../../../store/cart";
 import { useSession } from "../../../store/session";
 import { useCustomerSettings } from "../../../store/roleSettings";
+import { NoLongerSignedIn, stillSignedIn } from "../../../store/identityScope";
 import { useTerms } from "../../../store/network";
 import { createRecurringTemplate, requestDelivery, requestPickupOrder } from "../../../holochain/zomes/dispatch";
 import { paymentProfileOf } from "../../../holochain/zomes/payments";
@@ -217,6 +218,9 @@ export function Cart() {
     const promo_code_ref = discounts.appliedPromo?.hash ?? null;
     const reward = discounts.chosenReward?.id ?? null;
     return action.run(async () => {
+      // The order is placed whoever's signed in by when it's done; the bag
+      // emptied and the checkout remembered only for the person who placed it.
+      const current = stillSignedIn();
       if (!delivery) {
         const record = await requestPickupOrder({
           merchant,
@@ -231,6 +235,7 @@ export function Cart() {
           wake_for_store: wakeTokensForOrder().wake_for_store,
           payment,
         });
+        if (!current()) throw new NoLongerSignedIn();
         cart.clear();
         navigate(`/customer/pickup-orders/${bytesToHex(actionHash(record))}`);
         return;
@@ -257,6 +262,7 @@ export function Cart() {
         ...wakeTokensForOrder(),
         payment,
       });
+      if (!current()) throw new NoLongerSignedIn();
       useCustomerSettings.getState().rememberCheckout({ tipPercent: options.tipPercent, feeCapCents: maxFeeCents, dropoffPreference, priority: options.priority, autoMatch: options.autoMatch });
       if (options.saveAsDefault) setSessionLocation(options.dropoff);
       cart.clear();

@@ -21,6 +21,7 @@ import { DriverSettingsCard } from "./DriverSettingsCard";
 import { VerificationCard } from "./VerificationCard";
 import { useTerms } from "../../store/network";
 import { useSentBids } from "../../store/sentBids";
+import { stillSignedIn } from "../../store/identityScope";
 import { resetFeed, useDriverFeed } from "../../store/driverFeed";
 import { useDriverLocation, useDriverPosition } from "../../store/driverPosition";
 import { sendBid } from "../../lib/driving/feed";
@@ -90,9 +91,10 @@ export function DriverDashboard() {
   /// Offline: their offers taken back first, so none is accepted while
   /// they're off. One that can't be is said so -- it can still be accepted.
   const goOffline = () => bidding.run(async () => {
+    const current = stillSignedIn();
     const results = await Promise.allSettled(offersOut.map(async (orderHex) => {
       await withdrawBid(hexToBytes(sentBids[`${driverHex}:${orderHex}`].bid));
-      useSentBids.getState().forget(driverHex, orderHex);
+      if (current()) useSentBids.getState().forget(driverHex, orderHex);
     }));
     setConfirmingOffline(false);
     resetFeed(null);
@@ -109,8 +111,9 @@ export function DriverDashboard() {
     const offer = sentBids[`${driverHex}:${orderHex}`];
     if (!offer) return;
     return bidding.run(async () => {
+      const current = stillSignedIn();
       await withdrawBid(hexToBytes(offer.bid));
-      useSentBids.getState().forget(driverHex, orderHex);
+      if (current()) useSentBids.getState().forget(driverHex, orderHex);
     }, { as: orderHex });
   }
 

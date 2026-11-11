@@ -64,6 +64,16 @@ export function stillSignedIn(): () => boolean {
   return () => startedFor === generation;
 }
 
+/// What a step that finished after whoever started it signed out, or
+/// another identity signed in, throws: the rest of it is dropped, so
+/// nothing of one person's lands under another's.
+export class NoLongerSignedIn extends Error {
+  constructor() {
+    super("Someone else is signed in now.");
+    this.name = "NoLongerSignedIn";
+  }
+}
+
 /// Who's signed in now (`null`: nobody). Every per-identity store is cleared
 /// -- with nothing written, so neither identity's saved copy changes -- and
 /// then reads back the new identity's.

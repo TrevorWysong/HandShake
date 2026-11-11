@@ -9,6 +9,7 @@ import type { Bid, DeliveryOrder, GeoPoint, MerchantCatalog, NetworkTerms } from
 import { distanceKm, geohashCenter } from "../places/geohash";
 import { useDriverSettings } from "../../store/roleSettings";
 import { useSentBids } from "../../store/sentBids";
+import { stillSignedIn } from "../../store/identityScope";
 import { offerable, offerRules, type Commitment } from "./addOns";
 import { autoBidPrice, skipsStore } from "./autoBid";
 import { estimateTrip } from "./eta";
@@ -47,13 +48,15 @@ export async function fetchOffered(geohash: string, driver: Uint8Array): Promise
 
 /// Sends a bid, kept as this device's to take back.
 export async function sendBid(driverHex: string, orderRef: Uint8Array, trip: { etaMinutes: number; toStoreMinutes: number }, feeCents: number): Promise<void> {
+  const current = stillSignedIn();
   const record = await submitBid({
     order_ref: orderRef,
     eta_seconds: trip.etaMinutes * 60,
     to_store_seconds: Math.min(trip.toStoreMinutes, trip.etaMinutes) * 60,
     price_offer: feeCents,
   });
-  useSentBids.getState().record(driverHex, bytesToHex(orderRef), { bid: bytesToHex(actionHash(record)), feeCents, etaMinutes: trip.etaMinutes, sentAt: Date.now() });
+  // Kept for the driver who sent it, never under whoever's signed in since.
+  if (current()) useSentBids.getState().record(driverHex, bytesToHex(orderRef), { bid: bytesToHex(actionHash(record)), feeCents, etaMinutes: trip.etaMinutes, sentAt: Date.now() });
 }
 
 /// Orders this device has bid on by itself, by driver and order, so no read

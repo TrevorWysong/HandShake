@@ -8,6 +8,7 @@ import { getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/z
 import { getCatalog } from "../../holochain/zomes/catalog";
 import { decodeEntry, bytesToHex } from "../../holochain/decode";
 import { cartKey, useCarts } from "../../store/cart";
+import { NoLongerSignedIn, stillSignedIn } from "../../store/identityScope";
 import { useCartReplace } from "../../lib/hooks/useCartReplace";
 import { ReplaceCartSheet } from "../../components/store/ReplaceCartSheet";
 import { usePolling, useResource } from "../../lib/hooks/useResource";
@@ -195,10 +196,12 @@ function ReorderButton({ row }: { row: OrderRow }) {
   const replacing = useCartReplace();
 
   const reorder = () => reordering.run(async () => {
+    const current = stillSignedIn();
     const { order } = row;
     const [catalogRecord, menuItems] = await Promise.all([getCatalog(order.catalog_ref), fetchMenu(order.catalog_ref)]);
     const catalog = decodeEntry<MerchantCatalog>(catalogRecord);
     const lines = await cartLinesFromOrder(order.catalog_ref, order.lines, menuItems);
+    if (!current()) throw new NoLongerSignedIn();
     useCarts.getState().setCart(order.catalog_ref, order.merchant, catalog.business_name, lines);
     navigate(`/customer/cart/${cartKey(order.catalog_ref)}`);
   });

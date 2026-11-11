@@ -7,6 +7,7 @@ import { bytesToHex, decodeEntry } from "../../holochain/decode";
 import type { DropoffPreference, GeoPoint, MerchantCatalog, RecurringDue, RecurringOrderTemplate, TemplateDetails } from "../../holochain/types";
 import { t } from "../../i18n";
 import { cartKey, useCarts } from "../../store/cart";
+import { NoLongerSignedIn, stillSignedIn } from "../../store/identityScope";
 import { cartLinesFromItems, fetchMenu } from "../storefront/menu";
 
 export interface RecurringOrder {
@@ -47,9 +48,11 @@ export interface CheckoutDraft {
 /// its next time. Returns how checkout starts; nothing's ordered or charged.
 export async function takeToCheckout(order: RecurringOrder): Promise<CheckoutDraft> {
   const { template, details } = order;
+  const current = stillSignedIn();
   const lines = await cartLinesFromItems(template.catalog_ref, template.items, await fetchMenu(template.catalog_ref));
   if (lines.length === 0) throw new Error(t("recurring.nothingLeft", { store: order.storeName }));
   await advanceRecurringTemplate(order.hash);
+  if (!current()) throw new NoLongerSignedIn();
   const carts = useCarts.getState();
   carts.setCart(template.catalog_ref, template.merchant, order.storeName, lines);
   carts.choosePromo(cartKey(template.catalog_ref), template.promo_code_ref ? bytesToHex(template.promo_code_ref) : null);

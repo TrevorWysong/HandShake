@@ -6,6 +6,7 @@ import { publishCatalog } from "../../holochain/zomes/catalog";
 import { actionHash, bytesToHex } from "../../holochain/decode";
 import { useSession } from "../../store/session";
 import { useMerchantStores } from "../../store/merchantStores";
+import { NoLongerSignedIn, stillSignedIn } from "../../store/identityScope";
 import { Button, Card, Field, Input, Notice } from "../../components/ui";
 import { SplitAddressFields } from "../../components/places/SplitAddressFields";
 import { EMPTY_SPLIT_ADDRESS, toCatalogAddress } from "../../lib/places/splitAddress";
@@ -39,11 +40,15 @@ export function NewStoreForm({ firstStore }: { firstStore: boolean }) {
   function publish() {
     if (!businessName.trim()) return;
     return action.run(async () => {
+      const current = stillSignedIn();
       const record = await publishCatalog({ business_name: businessName.trim(), location: pickupLocation, ...toCatalogAddress(addressDraft) });
       // Only a merchant's *first* store moves their browsing location --
       // that's "where I am" for someone just setting up. Adding a second
       // location across town shouldn't silently change where their own
       // customer-mode browsing is centered.
+      // The store is the merchant's who made it, whoever's signed in now;
+      // where they browse from, and the store list, only theirs.
+      if (!current()) throw new NoLongerSignedIn();
       if (firstStore) setLocation(pickupLocation);
       const hex = bytesToHex(actionHash(record));
       await loadStores(hex);
