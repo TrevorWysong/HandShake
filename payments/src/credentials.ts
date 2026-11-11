@@ -3,8 +3,8 @@
 // the operating system's keystore (Electron `safeStorage`); development
 // keeps them in a file only its owner can read. Anything else that can
 // keep a secret fits the same two calls.
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile, rm } from "node:fs/promises";
+import { writeAtomically } from "./files.ts";
 import type { Connection } from "./processor.ts";
 import type { ProcessorName } from "./types.ts";
 
@@ -28,7 +28,7 @@ export interface Sealer {
 }
 
 /// Credentials in a file only its owner can read -- sealed by `sealer`
-/// where there's a keystore to seal with.
+/// where there's a keystore to seal with, and replaced whole or not at all.
 export function fileCredentials(path: string, sealer: Sealer | null = null): CredentialStore {
   return {
     async load() {
@@ -41,10 +41,8 @@ export function fileCredentials(path: string, sealer: Sealer | null = null): Cre
       }
     },
     async save(credentials) {
-      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
       const json = JSON.stringify(credentials);
-      await writeFile(path, sealer ? await sealer.seal(json) : json, { mode: 0o600 });
-      await chmod(path, 0o600);
+      await writeAtomically(path, sealer ? await sealer.seal(json) : json);
     },
     async clear() {
       await rm(path, { force: true });

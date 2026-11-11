@@ -5,8 +5,8 @@
 // through the payee's account). None of it is a secret -- the processor
 // keys are kept apart (`credentials.ts`) -- but it's nobody else's, so the
 // file is the owner's alone.
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
+import { writeAtomically } from "./files.ts";
 
 export interface State {
   /// The processor's id for each payer's saved card, by payer (hex).
@@ -54,8 +54,8 @@ export function memoryStore(initial: State = emptyState()): StateStore {
   };
 }
 
-/// State in a JSON file readable by its owner only, written whole and
-/// renamed into place, so a crash never leaves half of it.
+/// State in a JSON file readable by its owner only, replaced whole or not
+/// at all (`writeAtomically`).
 export function fileStore(path: string): StateStore {
   return {
     async load() {
@@ -67,11 +67,7 @@ export function fileStore(path: string): StateStore {
       }
     },
     async save(state) {
-      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-      const next = `${path}.next`;
-      await writeFile(next, JSON.stringify(state), { mode: 0o600 });
-      await chmod(next, 0o600);
-      await rename(next, path);
+      await writeAtomically(path, JSON.stringify(state));
     },
   };
 }

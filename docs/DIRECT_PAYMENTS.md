@@ -4,6 +4,18 @@ How money moves in HandShake: straight between the people in an order, on the pa
 
 Not legal advice: each store and driver is the merchant of record on their own account, under that processor's terms.
 
+## What the network enforces, and what it can't
+
+The network enforces the **obligations**: who may hold what on whose card, exactly how much, and how much of a hold each party may capture, on which decision. Every peer checks every record, and a record that breaks a rule is refused. It doesn't see the **charges**. A hold or a settlement names the processor's reference and an amount, written by the payee. Nothing in it is a receipt the processor signed, so the network can't check that the processor did what the record says.
+
+So a payee who leaves the payment agent, or edits it, can charge a card from their own processor dashboard, for any amount, whatever the network records. HandShake is a marketplace of independent merchants with their processors' protections, **not an escrow**. What a payer has instead:
+
+- **The record.** Every hold, settlement and refund is a signed, public record of what the network says they owe. A charge that doesn't match one is a clear case for a chargeback, and the record is the evidence.
+- **Their own history.** The Payments screen lists what the network settled, so it can be laid beside a card statement.
+- **The processors' own rules.** Stores and drivers are merchants under their processor's terms, which cover unauthorized and disputed charges.
+
+The network never claims to enforce the amount a processor actually charged, and nothing in HandShake should say it does. Reading the processor's own record of a charge, from its webhooks or a receipt it signs, is how this could narrow later. Neither is built.
+
 ## The three payments of a delivery
 
 | Leg | Payer → payee | Held for | Held when |

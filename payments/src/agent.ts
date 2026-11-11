@@ -202,11 +202,23 @@ export function createAgent(options: AgentOptions) {
       if (connection.currency.toUpperCase() !== network.currency.toUpperCase()) throw new Refused(`That account takes ${connection.currency.toUpperCase()}; this network pays in ${network.currency.toUpperCase()}.`);
       if (!(await confirm({ processor, connection }))) throw new Refused("Not connected: you didn't confirm it.");
       await inTurn(async () => {
-        await dispatch("set_payment_profile", profileOf(processor, connection));
-        await credentials.save({ processor, keys, connection });
-        await use(processor, keys, connection, network.currency);
+        try {
+          await dispatch("set_payment_profile", profileOf(processor, connection));
+          await credentials.save({ processor, keys, connection });
+          await use(processor, keys, connection, network.currency);
+        } catch (err) {
+          // Cut short: start over from the keys still kept here -- the
+          // network's profile put back to match them, then rounds with
+          // them -- as a start does, now and each tick until it can.
+          engine = null;
+          reconciled = false;
+          throw err;
+        }
         trouble = null;
         reconciled = true;
+      }).catch((err) => {
+        tick();
+        throw err;
       });
       round();
       return { processor, account: connection.account, live: connection.live, trouble: null };

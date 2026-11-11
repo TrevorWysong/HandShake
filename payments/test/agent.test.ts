@@ -411,3 +411,36 @@ test("a start that can't put the profile right pays nothing, and starts once it 
   assert.ok(calls.includes("set_payment_profile"));
   assert.ok(calls.indexOf("set_payment_profile") < calls.indexOf("payments_due"), "reconciled before any round");
 });
+
+test("a connect cut short while running puts the network back to the keys kept, and carries on with them", async (t) => {
+  const published: string[] = [];
+  const asked: string[] = [];
+  const dispatch = async <T,>(fn: string, payload: unknown): Promise<T> => {
+    if (fn === "set_payment_profile") published.push((payload as { public_key: string }).public_key);
+    if (fn === "payments_due") asked.push(fn);
+    if (fn === "get_network_terms") return { currency: "USD", live_payments: false } as T;
+    if (fn === "payments_due") return [] as T;
+    return null as T;
+  };
+  const kept = memoryCredentials();
+  let failSave = false;
+  const credentials = { ...kept, save: async (c: Parameters<typeof kept.save>[0]) => (failSave ? Promise.reject(new Error("the disk is full")) : kept.save(c)) };
+  const publicKeyOf = (name: string) => async () => ({ ...(await testProcessor("USD").connect()), publicKey: `pk_${name}` });
+  const processorFor = (name: string) => ({ ...testProcessor("USD"), connect: publicKeyOf(name) });
+  const agent = createAgent({ dispatch, credentials, state: memoryStore(), processorFor, confirm: async () => true, roundMs: 20 });
+  t.after(() => agent.stop());
+  await agent.start();
+  await agent.connect("Stripe", { publishable_key: "pk", restricted_key: "rk" });
+
+  failSave = true;
+  await assert.rejects(agent.connect("Square", { application_id: "a", location_id: "l", access_token: "t" }), /disk is full/);
+  failSave = false;
+  await new Promise((done) => setTimeout(done, 60));
+  const square = published.lastIndexOf("pk_Square");
+  assert.ok(square >= 0, "the new profile went out before the save failed");
+  assert.ok(published.lastIndexOf("pk_Stripe") > square, "and was put back to the keys still kept");
+  assert.equal((await agent.status())?.processor, "Stripe");
+  const before = asked.length;
+  await new Promise((done) => setTimeout(done, 60));
+  assert.ok(asked.length > before, "rounds carry on with them");
+});

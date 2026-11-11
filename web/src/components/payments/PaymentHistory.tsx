@@ -146,6 +146,9 @@ export function PaymentHistory() {
               );
             })}
           </Card>
+          {/* What the network settled, beside what a processor charged: the
+              network can't see the charge itself (docs/DIRECT_PAYMENTS.md). */}
+          <p className="mt-2 px-1 text-[11px] leading-relaxed text-ink-400">{t("transparency.compare")}</p>
         </motion.div>
       )}
     </motion.div>
