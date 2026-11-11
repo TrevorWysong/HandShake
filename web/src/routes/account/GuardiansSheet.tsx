@@ -14,13 +14,15 @@ import { keyFingerprint } from "../../lib/account/accountMove";
 import { useAction } from "../../lib/hooks/useAction";
 import { useGuardianNames } from "../../store/guardianNames";
 import { useT } from "../../i18n";
-import { planWith } from "./plan";
+import { majorityOf, planWith } from "./plan";
 
 export function GuardiansSheet({ plan, me, onClose, onSaved }: { plan: PlanView | null; me: AgentPubKey; onClose: () => void; onSaved: () => Promise<void> }) {
   const { names, setName } = useGuardianNames();
   const t = useT();
   const [guardians, setGuardians] = useState<AgentPubKey[]>(plan?.guardians ?? []);
   const [threshold, setThreshold] = useState(plan?.threshold || 1);
+  // Never fewer than a majority: the network refuses a plan that takes less.
+  const choices = Array.from({ length: guardians.length - majorityOf(guardians.length) + 1 }, (_, i) => majorityOf(guardians.length) + i);
   const [adding, setAdding] = useState<AgentPubKey | "scan" | null>(null);
   const [newName, setNewName] = useState("");
   const saving = useAction();
@@ -39,7 +41,7 @@ export function GuardiansSheet({ plan, me, onClose, onSaved }: { plan: PlanView 
     setGuardians(next);
     // More than half, by default: two recoveries of one account would need
     // a guardian on both sides.
-    setThreshold(Math.floor(next.length / 2) + 1);
+    setThreshold(majorityOf(next.length));
     setAdding(null);
     setNewName("");
   }
@@ -110,7 +112,7 @@ export function GuardiansSheet({ plan, me, onClose, onSaved }: { plan: PlanView 
               onClick={() => {
                 const next = guardians.filter((x) => !bytesEqual(x, g));
                 setGuardians(next);
-                setThreshold(Math.max(1, Math.min(threshold, next.length)));
+                setThreshold(Math.max(majorityOf(next.length), Math.min(threshold, next.length)));
               }}
               className="text-ink-300 hover:text-red-500"
             >
@@ -127,10 +129,9 @@ export function GuardiansSheet({ plan, me, onClose, onSaved }: { plan: PlanView 
       {guardians.length > 0 && (
         <Field label={t("account.howMany")} className="mt-4">
           <Select value={threshold} onChange={(e) => setThreshold(Number(e.target.value))}>
-            {guardians.map((_, i) => (
-              <option key={i} value={i + 1}>
-                {t("account.ofCount", { n: i + 1, count: guardians.length })}
-                {i + 1 > guardians.length / 2 ? "" : ` ${t("account.fewerThanHalf")}`}
+            {choices.map((n) => (
+              <option key={n} value={n}>
+                {t("account.ofCount", { n, count: guardians.length })}
               </option>
             ))}
           </Select>

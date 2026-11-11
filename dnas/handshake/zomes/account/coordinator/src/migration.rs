@@ -24,18 +24,25 @@ pub struct MigrateInput {
 /// Refuses, saying why, while something would be stranded by closing the
 /// chain now.
 fn nothing_unfinished() -> ExternResult<()> {
-    // Any entry at all: what they are doesn't matter here.
-    let busy = |zome: &str, function: &str| -> ExternResult<bool> {
-        let entries: Result<Vec<serde::de::IgnoredAny>, _> = call_local(zome, function, ())?;
-        Ok(entries.is_ok_and(|entries| !entries.is_empty()))
+    let orders: Result<Vec<serde::de::IgnoredAny>, String> = call_local("dispatch", "get_my_active_orders", ())?;
+    let deliveries: Result<Vec<serde::de::IgnoredAny>, String> = call_local("dispatch", "get_my_active_deliveries", ())?;
+    let unsettled: Result<u32, String> = call_local("dispatch", "my_unsettled_holds", ())?;
+    may_move(orders.map(|o| o.len()), deliveries.map(|d| d.len()), unsettled)
+}
+
+/// Whether the account may move, from how many orders, deliveries and
+/// unsettled holds it has -- or why not. Closing the chain can't be undone,
+/// so a count that couldn't be read stops the move: it never reads as none.
+fn may_move(orders: Result<usize, String>, deliveries: Result<usize, String>, unsettled: Result<u32, String>) -> ExternResult<()> {
+    let (Ok(orders), Ok(deliveries), Ok(unsettled)) = (orders, deliveries, unsettled) else {
+        return Err(guest("This account's orders and payments couldn't be checked, so it hasn't moved. Try again in a moment."));
     };
-    if busy("dispatch", "get_my_active_orders")? || busy("dispatch", "get_my_active_deliveries")? {
+    if orders > 0 || deliveries > 0 {
         return Err(guest("Finish your orders in progress first: they can only be settled from this account."));
     }
     // A payment this account held but hasn't charged can only be settled
     // from here: closed now, it would lapse uncharged.
-    let unsettled: Result<u32, _> = call_local("dispatch", "my_unsettled_holds", ())?;
-    if unsettled.is_ok_and(|n| n > 0) {
+    if unsettled > 0 {
         return Err(guest("Your payments are still settling: move once they've been charged."));
     }
     Ok(())
@@ -223,4 +230,33 @@ pub fn open_parcels(account: AgentPubKey) -> ExternResult<Vec<String>> {
         }
     }
     Ok(parcels)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::may_move;
+
+    /// Why `may_move` refused, or `None` if it didn't.
+    fn refusal(result: hdk::prelude::ExternResult<()>) -> Option<String> {
+        result.err().map(|err| format!("{err:?}"))
+    }
+
+    fn failed<T>() -> Result<T, String> {
+        Err("the dispatch zome didn't answer".to_string())
+    }
+
+    #[test]
+    fn an_account_moves_only_with_nothing_left_here() {
+        assert_eq!(refusal(may_move(Ok(0), Ok(0), Ok(0))), None);
+        assert!(refusal(may_move(Ok(1), Ok(0), Ok(0))).is_some_and(|r| r.contains("Finish your orders")));
+        assert!(refusal(may_move(Ok(0), Ok(2), Ok(0))).is_some_and(|r| r.contains("Finish your orders")));
+        assert!(refusal(may_move(Ok(0), Ok(0), Ok(1))).is_some_and(|r| r.contains("still settling")));
+    }
+
+    #[test]
+    fn a_check_that_fails_stops_the_move() {
+        for (what, result) in [("active orders", may_move(failed(), Ok(0), Ok(0))), ("active deliveries", may_move(Ok(0), failed(), Ok(0))), ("unsettled holds", may_move(Ok(0), Ok(0), failed()))] {
+            assert!(refusal(result).is_some_and(|r| r.contains("couldn't be checked")), "{what} unread");
+        }
+    }
 }

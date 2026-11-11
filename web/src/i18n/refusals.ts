@@ -165,6 +165,7 @@ export const REFUSALS = {
   "refusal.this-account-hasn-t-arrived-from-a": "This account hasn't arrived from a previous network.",
   "refusal.this-account-was-used-on-two-phones": "This account was used on two phones at once, and the network has locked it. Recover it with your recovery phrase or guardians: {0}",
   "refusal.this-account-s-key-can-t-be": "This account's key can't be moved: recover the account on the new phone with your recovery phrase or guardians instead.",
+  "refusal.this-account-s-orders-and-payments-couldn": "This account's orders and payments couldn't be checked, so it hasn't moved. Try again in a moment.",
   "refusal.this-app-has-no-previous-version-to": "This app has no previous version to arrive from.",
   "refusal.this-computer-has-no-keystore-to-keep": "This computer has no keystore to keep your processor's keys in.",
   "refusal.this-customer-has-called-off-several-orders": "This customer has called off several orders here lately before you could answer, so this one can't be accepted -- decline it.",

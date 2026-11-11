@@ -69,7 +69,7 @@ pub fn my_succession(_: ()) -> ExternResult<Option<SuccessionView>> {
 /// Every key that has taken over `account` and still stands (`stands`) --
 /// none while it's in use. More than one means someone recovered it who
 /// shouldn't have, or it was recovered twice: apps treat it as moved on
-/// either way.
+/// either way, and none of them carries it on (`successor_of`).
 #[hdk_extern]
 pub fn successions_of(account: AgentPubKey) -> ExternResult<Vec<SuccessionView>> {
     let mut standing = Vec::new();
@@ -81,15 +81,33 @@ pub fn successions_of(account: AgentPubKey) -> ExternResult<Vec<SuccessionView>>
     Ok(standing)
 }
 
+/// The key that carries `account` on: the one whose succession of it still
+/// stands, if exactly one does. Validation can't see the whole network, so
+/// it can't stop two keys taking over one account -- its recovery phrase
+/// signing for both, say -- but here they cancel out: neither inherits its
+/// history, ratings or stores. Recovering an account twice never hands it to
+/// two keys, or to whichever one someone with a leaked phrase made.
+#[hdk_extern]
+pub fn successor_of(account: AgentPubKey) -> ExternResult<Option<AgentPubKey>> {
+    let mut successors: Vec<AgentPubKey> = successions_of(account)?.into_iter().map(|view| view.successor).collect();
+    successors.sort_by(|a, b| a.get_raw_39().cmp(b.get_raw_39()));
+    successors.dedup();
+    Ok(match successors.as_slice() {
+        [only] => Some(only.clone()),
+        _ => None,
+    })
+}
+
 /// The keys `agent`'s account had before it, newest first -- whose ratings
-/// and history are its own.
+/// and history are its own: each one only while `agent`'s line is the one
+/// that carries it on (`successor_of`).
 #[hdk_extern]
 pub fn lineage(agent: AgentPubKey) -> ExternResult<Vec<AgentPubKey>> {
     let mut line: Vec<AgentPubKey> = Vec::new();
     let mut current = agent;
     while line.len() < MAX_LINEAGE {
         let Some(view) = linked_records(own_links(&current, LinkTypes::SuccessorToSuccession)?, GetStrategy::default())?.iter().filter_map(view_of).find(|v| v.successor == current) else { break };
-        if line.contains(&view.predecessor) || !stands(&view)? {
+        if line.contains(&view.predecessor) || successor_of(view.predecessor.clone())?.as_ref() != Some(&current) {
             break;
         }
         line.push(view.predecessor.clone());

@@ -21,11 +21,6 @@ struct MySuccession {
     predecessor: AgentPubKey,
 }
 
-#[derive(Deserialize, Debug)]
-struct SuccessionView {
-    successor: AgentPubKey,
-}
-
 /// The stores `owner` has published, oldest first -- for a new key to see
 /// what its predecessor ran.
 #[hdk_extern]
@@ -195,17 +190,18 @@ fn copy_promos(source: &Source, from: &ActionHash, to: &ActionHash, items: &BTre
     Ok(())
 }
 
-/// The moves out of `catalog` that stand: made by a key whose succession of
-/// the store's owner still counts (the account zome's `successions_of`
-/// leaves out a recovery whose plan was replaced). Newest last.
+/// The moves out of `catalog` that stand: made by the key that carries the
+/// store's owner on (the account zome's `successor_of`: a recovery whose
+/// plan was replaced doesn't count, and nor do two that contest it). Newest
+/// last.
 fn standing_moves(catalog: &ActionHash, link_type: LinkTypes) -> ExternResult<Vec<StoreSuccession>> {
     let mut moves = Vec::new();
     let links = get_links(LinkQuery::try_new(catalog.clone(), link_type)?, GetStrategy::default())?;
     for record in resolve_links_to_records_with_original(links).into_iter().map(|(_, r)| r) {
         let Some(moved) = decode_or::<StoreSuccession>(&record) else { continue };
         let Some(old) = get(moved.from.clone(), GetOptions::default())? else { continue };
-        let Ok(successions) = call_local::<_, Vec<SuccessionView>>("account", "successions_of", old.action().author().clone())? else { continue };
-        if successions.iter().any(|s| &s.successor == record.action().author()) {
+        let Ok(successor) = call_local::<_, Option<AgentPubKey>>("account", "successor_of", old.action().author().clone())? else { continue };
+        if successor.as_ref() == Some(record.action().author()) {
             moves.push(moved);
         }
     }

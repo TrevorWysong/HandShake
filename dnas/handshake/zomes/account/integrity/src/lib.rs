@@ -11,11 +11,16 @@
 //!   as of where the account stood. Nobody can claim someone else's account
 //!   on their own say-so.
 //! - **A guardian vouches once** for each account and plan, from their own
-//!   chain, and never for themselves.
+//!   chain, and never for themselves -- and recovering by guardians takes
+//!   more than half of them, so two recoveries of one account would each
+//!   need a guardian who vouched for both, which their chain refuses.
 //! - **A key takes over at most one account**, so an account's history is a
 //!   single line of keys.
 //!
-//! What it can't: stop a lost key that turns up again. Nothing on a
+//! What it can't: stop a recovery phrase signing for two keys, since no
+//! validation sees the whole network -- so where two keys have taken over
+//! one account, neither carries it on (the account coordinator's
+//! `successor_of`) -- or stop a lost key that turns up again. Nothing on a
 //! peer-to-peer network can prove a key is gone, so everyone's app refuses
 //! to deal with a key whose account has moved on (see docs/RECOVERY.md).
 //! No money is at stake in a key: it lives in each person's own processor
@@ -105,12 +110,19 @@ fn validate_plan(plan: &RecoveryPlan, author: &AgentPubKey) -> ExternResult<Vali
     if distinct.len() != plan.guardians.len() {
         return invalid("a plan names each guardian once");
     }
-    let threshold = usize::from(plan.threshold);
     if plan.guardians.is_empty() {
-        require(threshold == 0, "a plan without guardians needs no vouches")
+        require(plan.threshold == 0, "a plan without guardians needs no vouches")
     } else {
-        require((1..=plan.guardians.len()).contains(&threshold), "a plan needs between one and all of its guardians to vouch")
+        require(is_majority(plan), "a plan needs more than half its guardians, and at most all of them, to vouch")
     }
+}
+
+/// Whether `plan`'s threshold is more than half its guardians, and no more
+/// than all: two recoveries would then each need a guardian who vouched for
+/// both, and a guardian vouches once.
+fn is_majority(plan: &RecoveryPlan) -> bool {
+    let threshold = usize::from(plan.threshold);
+    threshold * 2 > plan.guardians.len() && threshold <= plan.guardians.len()
 }
 
 fn validate_vouch(vouch: &Vouch, author: &AgentPubKey, at: Timestamp, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
@@ -158,7 +170,9 @@ fn validate_succession(succession: &Succession, author: &AgentPubKey, prev_actio
                 Ok(plan) => plan,
                 Err(reason) => return invalid(reason),
             };
-            if plan.threshold == 0 || vouches.len() > MAX_GUARDIANS {
+            // A plan from before thresholds had to be a majority recovers
+            // nothing by guardians: two disjoint groups could each meet it.
+            if plan.guardians.is_empty() || !is_majority(&plan) || vouches.len() > MAX_GUARDIANS {
                 return invalid("that plan can't be recovered by guardians");
             }
             let mut guardians: Vec<AgentPubKey> = Vec::new();

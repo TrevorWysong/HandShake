@@ -35,11 +35,12 @@ await runScenario(async (scenario) => {
   const guardians = [bob.agentPubKey, carol.agentPubKey, frank.agentPubKey];
   await assert.rejects(rawPlan(dana, { phrase_key: null, guardians: [dana.agentPubKey], threshold: 1 }), /a guardian is someone else/);
   await assert.rejects(rawPlan(dana, { phrase_key: null, guardians: [bob.agentPubKey, bob.agentPubKey], threshold: 1 }), /each guardian once/);
-  await assert.rejects(rawPlan(dana, { phrase_key: null, guardians, threshold: 4 }), /between one and all/);
-  await assert.rejects(rawPlan(dana, { phrase_key: null, guardians, threshold: 0 }), /between one and all/);
+  await assert.rejects(rawPlan(dana, { phrase_key: null, guardians, threshold: 4 }), /more than half its guardians, and at most all/);
+  await assert.rejects(rawPlan(dana, { phrase_key: null, guardians, threshold: 0 }), /more than half its guardians/);
+  await assert.rejects(rawPlan(dana, { phrase_key: null, guardians, threshold: 1 }), /more than half its guardians/, "one of three would let two others each recover it");
   await assert.rejects(rawPlan(dana, { phrase_key: null, guardians: [], threshold: 1 }), /needs no vouches/);
   await assert.rejects(rawPlan(dana, { phrase_key: dana.agentPubKey, guardians: [], threshold: 0 }), /its own, not the account's/);
-  console.log("[PASS] a recovery plan names others, each once, with a sensible threshold");
+  console.log("[PASS] a recovery plan names others, each once, and needs a majority of them");
 
   // ===== Recovery by phrase =====
   const phrase = phraseKey();
@@ -67,6 +68,7 @@ await runScenario(async (scenario) => {
   assert.ok(same(moved[0].successor, erin.agentPubKey) && moved[0].kind === "Phrase", "everyone sees Dana's account recovered onto Erin's key");
   const line = await account(carol)<Uint8Array[]>("lineage", erin.agentPubKey);
   assert.ok(line.length === 1 && same(line[0], dana.agentPubKey), "and Erin's key carries Dana's history");
+  assert.ok(same(await account(carol)<Uint8Array | null>("successor_of", dana.agentPubKey), erin.agentPubKey), "the one key that carries it on");
   console.log("[PASS] the recovery phrase's signature, for this key and this account, recovers it");
 
   // ===== Recovery by guardians =====
@@ -88,6 +90,18 @@ await runScenario(async (scenario) => {
   assert.equal(vouches.length, 2);
   await account(hank)("take_over", viaGuardians([bobVouch, carolVouch]));
   console.log("[PASS] enough of an account's guardians, each once, recover it");
+
+  // ===== Two keys that took over one account: neither carries it on =====
+  // Validation can't see the whole network, so it can't refuse a second
+  // recovery -- by guardians here, or a phrase signing for two keys. But a
+  // contested account carries on with nobody.
+  await sync();
+  const contested = await retryUntil(() => account(alice)<SuccessionView[]>("successions_of", dana.agentPubKey), (list) => list.length === 2);
+  assert.equal(contested.length, 2, "both recoveries are on record");
+  assert.equal(await account(alice)<Uint8Array | null>("successor_of", dana.agentPubKey), null, "but neither key carries the account on");
+  assert.deepEqual(await account(alice)<Uint8Array[]>("lineage", erin.agentPubKey), [], "nor Dana's history -- the first key's");
+  assert.deepEqual(await account(alice)<Uint8Array[]>("lineage", hank.agentPubKey), [], "nor the second's");
+  console.log("[PASS] an account recovered twice carries on with neither key");
 
   // ===== Only the account's latest plan counts =====
   const newPhrase = phraseKey();
