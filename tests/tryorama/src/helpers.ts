@@ -135,14 +135,16 @@ export const testApp = appWithProperties({});
 /// read throughput and anchor-contention behavior, which that caveat
 /// doesn't undermine -- it does NOT attempt to measure real WAN gossip
 /// latency, which is a separate, still-open limitation.
-export async function installManyAgents(conductor: Conductor, count: number, labelPrefix: string): Promise<PlayerApp[]> {
+/// `properties` are the network's settings, the same for every conductor on
+/// it (they set its DNA hash).
+export async function installManyAgents(conductor: Conductor, count: number, labelPrefix: string, properties: Record<string, unknown> = {}): Promise<PlayerApp[]> {
   const port = await conductor.attachAppInterface();
   const adminWs = conductor.adminWs();
   const players: PlayerApp[] = [];
   for (let i = 0; i < count; i++) {
     const agentPubKey = await adminWs.generateAgentPubKey();
     const installedAppId = `${labelPrefix}-${i}`;
-    const appInfo = await conductor.installApp({ appBundleSource: appSource, options: { agentPubKey, installedAppId, rolesSettings: rolesSettingsWith() } });
+    const appInfo = await conductor.installApp({ appBundleSource: appSource, options: { agentPubKey, installedAppId, rolesSettings: rolesSettingsWith(properties) } });
     const issued = await adminWs.issueAppAuthenticationToken({ installed_app_id: appInfo.installed_app_id });
     const appWs = await conductor.connectAppWs(issued.token, port);
     const agentApp = await enableAndGetAgentApp(adminWs, appWs, appInfo);
