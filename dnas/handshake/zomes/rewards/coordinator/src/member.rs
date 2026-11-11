@@ -226,17 +226,24 @@ pub fn note_my_order(order: ActionHash) -> ExternResult<()> {
     if placed.requester != me {
         return Ok(());
     }
-    add_my_stores(std::slice::from_ref(&placed.catalog_ref))?;
     let found = account(&placed.catalog_ref, &me, false)?;
-    let mut kept = found.value.clone().unwrap_or(MemberAccount { catalog_ref: placed.catalog_ref.clone(), member: me.clone(), kept_by_store: false, ledger: None, latest_order: None });
-    // An account not played yet plays this order with the rest, from the
-    // chain, on its first read.
-    if let Some(ledger) = kept.ledger.as_mut() {
-        if !ledger.open_orders.iter().any(|o| o.order == order) {
-            ledger.open_orders.extend(open_order(&order, record.action().timestamp())?);
+    let kept = match found.value.clone() {
+        Some(mut kept) => {
+            // Not played yet: its first read plays every order there from
+            // the chain, this one with them -- nothing to note until then.
+            let Some(ledger) = kept.ledger.as_mut() else { return Ok(()) };
+            if !ledger.open_orders.iter().any(|o| o.order == order) {
+                ledger.open_orders.extend(open_order(&order, record.action().timestamp())?);
+            }
+            kept.latest_order = Some(order);
+            kept
         }
-    }
-    kept.latest_order = Some(order);
+        // Their first order here: the store goes on their list of cards.
+        None => {
+            add_my_stores(std::slice::from_ref(&placed.catalog_ref))?;
+            MemberAccount { catalog_ref: placed.catalog_ref.clone(), member: me, kept_by_store: false, ledger: None, latest_order: Some(order) }
+        }
+    };
     keep(&found, kept)
 }
 

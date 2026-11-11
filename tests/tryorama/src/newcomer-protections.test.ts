@@ -77,7 +77,12 @@ await runScenario(async (scenario) => {
   await customerPaid(merchant, next, all);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: next }), /called off several orders/);
   await retryUntilOk(() => call(merchant, "dispatch")("decline_pickup_order", { order_original_action: next, reason: "TooManyCancellations" }));
-  console.log("[PASS] a customer who keeps calling off orders before the store answers has the next one declined, even those kept out of its history");
+  // Only theirs: another customer at the same store is answered as ever.
+  const someoneElses = actionHash(await retryUntilOk(() => order(known)));
+  await sync();
+  await customerPaid(merchant, someoneElses, all);
+  await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: someoneElses }));
+  console.log("[PASS] a customer who keeps calling off orders before the store answers has the next one declined, even those kept out of its history -- and nobody else does");
 
   // ===== And across every store, a daily allowance =====
   // Three called off so far; one more reaches the network's allowance here.

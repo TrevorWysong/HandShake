@@ -254,15 +254,21 @@ pub fn get_active_orders_for_store(catalog_ref: ActionHash) -> ExternResult<Vec<
 pub(crate) fn orders_queued_by(catalog_ref: &ActionHash, customer: &AgentPubKey, since: Timestamp) -> ExternResult<Vec<ActionHash>> {
     let store = QueueOwner::Store(catalog_ref);
     let mut orders: Vec<ActionHash> = Vec::new();
+    // Each link's author and time checked here too: a links-with-details
+    // read hands back every link, whatever the query asked to filter -- and
+    // one customer's orders must never count against another.
     let active = LinkQuery::try_new(store.active_base(), store.active_link_type())?.author(customer.clone()).after(since);
     for (create, _) in get_links_details(active, GetStrategy::default())?.into_inner() {
+        if create.hashed.content.author() != customer || create.hashed.content.timestamp() < since {
+            continue;
+        }
         if let ActionData::CreateLink(link) = &create.hashed.content.data {
             orders.extend(link.target_address.clone().into_action_hash());
         }
     }
     for day in history_day(since)..=history_day(sys_time()?) {
         let query = LinkQuery::try_new(store.history_day(day)?, store.history_link_type())?.author(customer.clone()).after(since);
-        orders.extend(get_links(query, GetStrategy::default())?.into_iter().filter_map(|l| l.target.into_action_hash()));
+        orders.extend(get_links(query, GetStrategy::default())?.into_iter().filter(|l| &l.author == customer).filter_map(|l| l.target.into_action_hash()));
     }
     orders.sort_unstable();
     orders.dedup();
