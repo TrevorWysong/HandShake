@@ -33,9 +33,12 @@ export interface State {
   /// The account each hold was placed with, by its reference: it's settled
   /// or refunded there and nowhere else.
   heldWith: Record<string, string>;
+  /// The account holds placed before they were bound to one (`heldWith`)
+  /// belong to: the one this agent ran first after it began binding them.
+  legacy: string | null;
 }
 
-export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [], account: null, heldWith: {} });
+export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [], account: null, heldWith: {}, legacy: null });
 
 export interface StateStore {
   load(): Promise<State>;

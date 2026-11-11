@@ -193,7 +193,10 @@ export class Engine {
     // so an offer answered after a withdrawal never reads as later than it.
     if (result.savedAs || (due.token === null && !due.resumes)) state.savedAt[payer] = Math.min(now(), due.offered_at / 1000);
     state.known[payer] = true;
+    // Bound to its account on disk before the network hears of it: a
+    // crash between the two never leaves a hold no account claims.
     state.heldWith[result.reference] = this.#o.account;
+    await this.#o.state.save(state);
     await dispatch("record_hold", { offer: due.offer, reference: result.reference });
   }
 
@@ -239,9 +242,10 @@ export class Engine {
 
   /// Refuses to act on a hold placed with another account: its reference
   /// means nothing to this one. It's settled once that account is back.
+  /// One placed before holds were bound belongs to the legacy account.
   #here(reference: string, state: State) {
-    const placed = state.heldWith[reference];
-    if (placed !== undefined && placed !== this.#o.account) throw new Refused("that payment was held with a processor account that isn't connected now");
+    const placed = state.heldWith[reference] ?? state.legacy;
+    if (placed !== null && placed !== this.#o.account) throw new Refused("that payment was held with a processor account that isn't connected now");
   }
 
   async #settle(due: Extract<PaymentDue, { Settle: unknown }>["Settle"], state: State) {

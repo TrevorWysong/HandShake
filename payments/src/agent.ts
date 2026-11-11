@@ -11,7 +11,7 @@ import { Engine, type Dispatch } from "./engine.ts";
 import { KEY_NAMES } from "./adapters/index.ts";
 import type { CredentialStore } from "./credentials.ts";
 import type { Connection, Processor } from "./processor.ts";
-import { Refused, accountId } from "./processor.ts";
+import { KeyRefused, Refused, accountId } from "./processor.ts";
 import type { StateStore } from "./state.ts";
 import type { NetworkTerms, ProcessorName } from "./types.ts";
 
@@ -73,12 +73,22 @@ export function createAgent(options: AgentOptions) {
     report(what, err);
   };
   const terms = () => dispatch<NetworkTerms>("get_network_terms", null);
+
+  // Rounds and changes of account take turns: a round begun with one
+  // account's keys never saves its state over what a change made, and a
+  // change waits for it to finish.
+  let turn: Promise<unknown> = Promise.resolve();
+  function inTurn<T>(work: () => Promise<T>): Promise<T> {
+    const mine = turn.then(work, work);
+    turn = mine.catch(() => undefined);
+    return mine;
+  }
+
   /// A round, its trouble noted -- or cleared, when it went cleanly.
   async function rounded(): Promise<number> {
-    if (!engine) return 0;
     if (!current) {
       const pass = { done: Promise.resolve(0), troubled: false };
-      pass.done = engine.round().finally(() => {
+      pass.done = inTurn(async () => (engine ? engine.round() : 0)).finally(() => {
         if (current === pass) current = null;
       });
       current = pass;
@@ -90,12 +100,11 @@ export function createAgent(options: AgentOptions) {
   }
   const round = () => void rounded().catch((err) => onProblem("round", err));
 
-  async function run(processor: ProcessorName, keys: Record<string, string>, connection: Connection) {
-    const { currency } = await terms();
+  /// Runs `processor`'s account from now on. Called in turn.
+  async function use(processor: ProcessorName, keys: Record<string, string>, connection: Connection, currency: string) {
     const account = accountId(processor, connection);
     await adopt(account);
     engine = new Engine({ dispatch, processor: processorFor(processor, keys, currency), state, currency, account, onProblem });
-    round();
   }
 
   /// Makes `account` the one this agent's state is for. Cards saved with
@@ -105,8 +114,14 @@ export function createAgent(options: AgentOptions) {
   async function adopt(account: string) {
     const kept = await state.load();
     if (kept.account === account) return;
-    // Kept before accounts were told apart: they're this one's.
-    if (kept.account !== null) Object.assign(kept, { saved: {}, savedAt: {}, challenged: {} });
+    if (kept.account === null) {
+      // The first account this agent runs: whatever it kept before accounts
+      // were told apart -- saved cards, and holds it never bound -- was this
+      // one's, the account it was running then.
+      kept.legacy ??= account;
+    } else {
+      Object.assign(kept, { saved: {}, savedAt: {}, challenged: {} });
+    }
     kept.account = account;
     await state.save(kept);
   }
@@ -115,7 +130,11 @@ export function createAgent(options: AgentOptions) {
     /// Starts rounds with the keys already kept, if any.
     async start() {
       const kept = await credentials.load();
-      if (kept) await run(kept.processor, kept.keys, kept.connection);
+      if (kept) {
+        const { currency } = await terms();
+        await inTurn(() => use(kept.processor, kept.keys, kept.connection, currency));
+        round();
+      }
       timer ??= setInterval(round, roundMs);
     },
 
@@ -140,17 +159,25 @@ export function createAgent(options: AgentOptions) {
       if (processor === "Clover") throw new Refused("Clover can't be connected yet. Use Stripe or Square for now.");
       const network = await terms();
       if (processor === "Test" && network.live_payments) throw new Refused("This network takes real payments: connect a live processor account.");
-      const connection = await processorFor(processor, keys, network.currency).connect();
+      // Keys refused now were mistyped, not revoked: said so.
+      const connection = await processorFor(processor, keys, network.currency)
+        .connect()
+        .catch((err) => {
+          throw err instanceof KeyRefused ? new Refused(`Those keys weren't accepted by ${processor}. Check them in its dashboard, then try again.`) : err;
+        });
       if (connection.live !== network.live_payments) {
         if (network.live_payments) throw new Refused("This network takes real payments: use your account's live keys.");
         throw new Refused("This network is for testing: use your account's test keys.");
       }
       if (connection.currency.toUpperCase() !== network.currency.toUpperCase()) throw new Refused(`That account takes ${connection.currency.toUpperCase()}; this network pays in ${network.currency.toUpperCase()}.`);
       if (!(await confirm({ processor, connection }))) throw new Refused("Not connected: you didn't confirm it.");
-      await dispatch("set_payment_profile", { processor, public_key: connection.publicKey, account: connection.publicAccount, live: connection.live, country: connection.country });
-      await credentials.save({ processor, keys, connection });
-      trouble = null;
-      await run(processor, keys, connection);
+      await inTurn(async () => {
+        await dispatch("set_payment_profile", { processor, public_key: connection.publicKey, account: connection.publicAccount, live: connection.live, country: connection.country });
+        await credentials.save({ processor, keys, connection });
+        await use(processor, keys, connection, network.currency);
+        trouble = null;
+      });
+      round();
       return { processor, account: connection.account, live: connection.live, trouble: null };
     },
 
@@ -158,10 +185,12 @@ export function createAgent(options: AgentOptions) {
     /// held settle once it's connected again.
     async disconnect() {
       if (!(await confirm(null))) throw new Refused("Still connected: you didn't confirm it.");
-      await dispatch("clear_payment_profile", null);
-      await credentials.clear();
-      engine = null;
-      trouble = null;
+      await inTurn(async () => {
+        await dispatch("clear_payment_profile", null);
+        await credentials.clear();
+        engine = null;
+        trouble = null;
+      });
     },
 
     /// Looks for payments due now, not at the next round.
