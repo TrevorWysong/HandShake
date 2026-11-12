@@ -12,7 +12,7 @@
 use crate::settlement::{holds_on, payment_records, settlement_due, settlements_on, DueClaim};
 use dispatch_integrity::payments::{leg_context, LegContext};
 use dispatch_integrity::*;
-use handshake_coordinator_support::{call_local, call_role, decode_or, find_latest, guest, open, original_action_of, seal};
+use handshake_coordinator_support::{arrived, call_local, call_role, decode_or, find_latest, guest, open, original_action_of, seal};
 use hdk::prelude::*;
 use std::collections::BTreeSet;
 
@@ -942,7 +942,7 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
     for record in handshake_coordinator_support::chain::mine(&types).creates().since(since).records()? {
         let order = match (decode_or::<PaymentOffer>(&record), decode_or::<PaymentHold>(&record)) {
             (Some(offer), _) => Some(offer.order),
-            (None, Some(hold)) => get(hold.offer, GetOptions::default())?.and_then(|r| decode_or::<PaymentOffer>(&r)).map(|o| o.order),
+            (None, Some(hold)) => decode_or::<PaymentOffer>(&arrived(&hold.offer)?).map(|o| o.order),
             _ => None,
         };
         if let Some(order) = order.filter(|o| !orders.contains(o)) {
@@ -952,10 +952,10 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
     let mut out = Vec::new();
     for order in orders {
         let settlements = settlements_on(&order)?;
-        let placed = get(order.clone(), GetOptions::default())?;
-        let found = placed.as_ref().and_then(|r| {
-            decode_or::<DeliveryOrder>(r).map(|o| (OrderTerms::of_delivery(&o), o.catalog_ref)).or_else(|| decode_or::<PickupOrder>(r).map(|o| (OrderTerms::of_pickup(&o), o.catalog_ref)))
-        });
+        // Each record here is one a validated payment names: one not read
+        // yet is an error, never a payment left out or priced at nothing.
+        let placed = arrived(&order)?;
+        let found = decode_or::<DeliveryOrder>(&placed).map(|o| (OrderTerms::of_delivery(&o), o.catalog_ref)).or_else(|| decode_or::<PickupOrder>(&placed).map(|o| (OrderTerms::of_pickup(&o), o.catalog_ref)));
         let Some((terms, catalog_ref)) = found else { continue };
         let store_name = crate::stores::current_catalog(&catalog_ref).map(|c| c.business_name).unwrap_or_default();
         for (hold_ref, payee, hold, offer) in holds_on(&order)? {
@@ -963,14 +963,14 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
             if context.payee != payee || (payee != me && context.payer != me) {
                 continue;
             }
-            let held_at = get(hold_ref.clone(), GetOptions::default())?.map(|r| r.action().timestamp()).unwrap_or(since);
+            let held_at = arrived(&hold_ref)?.action().timestamp();
             let settled = settlements.iter().find(|(_, author, s)| author == &payee && s.hold == hold_ref);
             let (charged, parts, at) = match settled {
                 Some((settlement_ref, _, settlement)) => {
                     let mut parts: Vec<ChargedPart> = Vec::new();
                     for claim in settlement.claims.iter().filter(|c| c.part.portion != Portion::Food) {
                         let bid = match &claim.part.purpose {
-                            HoldPurpose::DriverPay { bid } | HoldPurpose::Subsidy { bid } | HoldPurpose::Collateral { bid } => get(bid.clone(), GetOptions::default())?.and_then(|r| decode_or::<Bid>(&r)),
+                            HoldPurpose::DriverPay { bid } | HoldPurpose::Subsidy { bid } | HoldPurpose::Collateral { bid } => decode_or::<Bid>(&arrived(bid)?),
                             HoldPurpose::Food => None,
                         };
                         let amount = dispatch_integrity::direct::part_share(&terms, &claim.part, bid.as_ref()).map_or(0, |(_, amount)| amount);
@@ -983,7 +983,7 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
                         let rest: u64 = parts.iter().map(|p| p.amount).sum();
                         parts.push(ChargedPart { part: food.part.clone(), amount: charged.saturating_sub(rest) });
                     }
-                    let at = get(settlement_ref.clone(), GetOptions::default())?.map(|r| r.action().timestamp()).unwrap_or(held_at);
+                    let at = arrived(settlement_ref)?.action().timestamp();
                     (Some(charged), parts, at)
                 }
                 None => (None, Vec::new(), held_at),
