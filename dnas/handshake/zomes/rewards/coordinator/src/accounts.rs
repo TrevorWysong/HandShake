@@ -147,7 +147,7 @@ pub(crate) fn facts(order: &OpenOrder, learn_acceptance: bool, now: Timestamp) -
             return Ok((OrderFacts { order: OpenOrder { accepted, settled: Some(settled.clone()), ..order.clone() }, events: now_.events.clone(), done: now_.done }, now_));
         }
     }
-    let view = MemberOrderView { order: order.order.clone(), placed_at: order.placed_at, accepted: accepted.clone(), reward: order.reward };
+    let view = MemberOrderView { order: order.order.clone(), accepted: accepted.clone(), reward: order.reward };
     let now_ = order_now(&view, now)?;
     let open = OpenOrder { accepted, settled: now_.settled.clone(), ..order.clone() };
     Ok((OrderFacts { order: open, events: now_.events.clone(), done: now_.done }, now_))

@@ -7,7 +7,6 @@ use super::*;
 /// One order that joined a store's program, as either side knows it.
 pub(crate) struct MemberOrderView {
     pub(crate) order: ActionHash,
-    pub(crate) placed_at: Timestamp,
     /// The store's acceptance of it, once it's accepted.
     pub(crate) accepted: Option<ActionHash>,
     /// The reward it spent (id), if it spent one.
@@ -80,7 +79,10 @@ pub(crate) fn order_now(view: &MemberOrderView, now: Timestamp) -> ExternResult<
         // it's called off (cancelled, or declined).
         return Ok(OrderNow { events, pending: None, done: order_called_off(&view.order)?, settled: None });
     };
-    let accepted_at = get(accepted.clone(), GetOptions::default())?.map_or(view.placed_at, |r| r.action().timestamp());
+    // The order and the store's acceptance of it are validated as there:
+    // one not read yet is an error -- left out, a spend would go uncounted
+    // and the member's balance read high.
+    let accepted_at = arrived(accepted)?.action().timestamp();
     // The reward it spent -- back again if the store gave the food back, or
     // the customer called it off in time.
     let mut spend = None;
@@ -94,8 +96,7 @@ pub(crate) fn order_now(view: &MemberOrderView, now: Timestamp) -> ExternResult<
     }
     let Some(settlement) = dispatch::<_, Option<ActionHash>>("order_settlement", view.order.clone())? else {
         // Not settled yet: an estimate from what was paid.
-        let Some(record) = get(view.order.clone(), GetOptions::default())? else { return unknown(events) };
-        let Some(placed) = OrderForRewards::of(&record) else { return unknown(events) };
+        let Some(placed) = OrderForRewards::of(&arrived(&view.order)?) else { return unknown(events) };
         let Ok(lines) = line_totals(&placed)? else { return unknown(events) };
         let Some(cited) = program_cited(&view.order)? else { return unknown(events) };
         let base = rewards_integrity::order_points(&cited, &lines, placed.order_total.saturating_sub(placed.tax_cents), accepted_at);
@@ -124,8 +125,7 @@ pub(crate) fn order_now(view: &MemberOrderView, now: Timestamp) -> ExternResult<
 
 /// The program version an order (its original action) cites.
 pub(crate) fn program_cited(order: &ActionHash) -> ExternResult<Option<RewardsProgram>> {
-    let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
-    let Some(placed) = OrderForRewards::of(&record) else { return Ok(None) };
+    let Some(placed) = OrderForRewards::of(&arrived(order)?) else { return Ok(None) };
     let Some(rewards) = placed.rewards else { return Ok(None) };
     Ok(program_at(&rewards.program, &placed.catalog_ref)?.ok())
 }
