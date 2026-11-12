@@ -15,7 +15,7 @@ pub(crate) fn member_orders(catalog_ref: &ActionHash, customer: &AgentPubKey) ->
     for record in mine(&types).records()? {
         let Some(m) = decode_or::<MemberOrder>(&record).filter(|m| &m.customer == customer && &m.catalog_ref == catalog_ref) else { continue };
         let Some(placed) = get(m.order.clone(), GetOptions::default())? else { continue };
-        out.push(OpenOrder { order: m.order, placed_at: placed.action().timestamp(), accepted: Some(m.accepted), reward: m.reward.map(|(id, ..)| id) });
+        out.push(OpenOrder { order: m.order, placed_at: placed.action().timestamp(), accepted: Some(m.accepted), reward: m.reward.map(|(id, ..)| id), settled: None });
     }
     Ok(out)
 }
@@ -131,7 +131,7 @@ pub fn record_member_order(input: MemberOrderInput) -> ExternResult<()> {
     }
     create_entry(&member_order)?;
     let program = my_running_program(&placed.catalog_ref)?;
-    let order = OpenOrder { order: input.order.clone(), placed_at: record.action().timestamp(), accepted: Some(input.accepted), reward: rewards.reward };
+    let order = OpenOrder { order: input.order.clone(), placed_at: record.action().timestamp(), accepted: Some(input.accepted), reward: rewards.reward, settled: None };
     let (found, folded) = store_standing(&placed.catalog_ref, &placed.requester, &program, vec![order], Vec::new())?;
     keep(&found, MemberAccount { catalog_ref: placed.catalog_ref, member: placed.requester, kept_by_store: true, ledger: Some(folded.ledger), latest_order: Some(input.order) })
 }

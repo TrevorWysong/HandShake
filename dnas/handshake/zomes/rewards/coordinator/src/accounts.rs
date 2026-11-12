@@ -128,9 +128,25 @@ pub(crate) fn facts(order: &OpenOrder, merchant: Option<&AgentPubKey>, now: Time
         (None, Some(merchant)) => acceptance(&order.order, merchant)?,
         (None, None) => None,
     };
+    // Settled before, and still unappealed: what's left is its refund
+    // period ending -- one read, not the order's whole story again.
+    if let Some(settled) = &order.settled {
+        if dispatch::<_, Option<AppealWire>>("get_appeal_for_order", order.order.clone())?.is_none() {
+            let mut events: Vec<Event> = settled.spend.iter().map(|(at, cost, min_tier)| Event::Spend { at: *at, cost: *cost, min_tier: *min_tier }).collect();
+            let ended = settled.ended(now);
+            let status = if ended {
+                events.push(Event::Earn { at: settled.settled_at, base: settled.base });
+                PointsStatus::Earned
+            } else {
+                PointsStatus::RefundPeriod { until: settled.available_at }
+            };
+            let now_ = OrderNow { events, pending: Some((status, settled.base)), done: ended, settled: Some(settled.clone()) };
+            return Ok((OrderFacts { order: OpenOrder { accepted, ..order.clone() }, events: now_.events.clone(), done: now_.done }, now_));
+        }
+    }
     let view = MemberOrderView { order: order.order.clone(), placed_at: order.placed_at, accepted: accepted.clone(), reward: order.reward };
     let now_ = order_now(&view, now)?;
-    let open = OpenOrder { accepted, ..order.clone() };
+    let open = OpenOrder { accepted, settled: now_.settled.clone(), ..order.clone() };
     Ok((OrderFacts { order: open, events: now_.events.clone(), done: now_.done }, now_))
 }
 

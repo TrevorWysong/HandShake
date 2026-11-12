@@ -67,23 +67,28 @@ pub(crate) struct OrderNow {
     /// then it isn't folded into anyone's ledger -- including when what it
     /// earns can't be read just now.
     pub(crate) done: bool,
+    /// What its settlement fixed, when it's settled, earns something and
+    /// nobody has appealed it -- for the account to keep (`Settled`).
+    pub(crate) settled: Option<rewards_integrity::ledger::Settled>,
 }
 
 pub(crate) fn order_now(view: &MemberOrderView, now: Timestamp) -> ExternResult<OrderNow> {
     let mut events = Vec::new();
-    let unknown = |events| Ok(OrderNow { events, pending: None, done: false });
+    let unknown = |events| Ok(OrderNow { events, pending: None, done: false, settled: None });
     let Some(accepted) = &view.accepted else {
         // Never accepted: it spends and earns nothing, and is done once
         // it's called off (cancelled, or declined).
-        return Ok(OrderNow { events, pending: None, done: order_called_off(&view.order)? });
+        return Ok(OrderNow { events, pending: None, done: order_called_off(&view.order)?, settled: None });
     };
     let accepted_at = get(accepted.clone(), GetOptions::default())?.map_or(view.placed_at, |r| r.action().timestamp());
     // The reward it spent -- back again if the store gave the food back, or
     // the customer called it off in time.
+    let mut spend = None;
     if let Some(id) = view.reward {
         if let Some(reward) = program_cited(&view.order)?.and_then(|p| p.reward(id).cloned()) {
             if !food_given_back(&view.order)? && !dispatch::<_, bool>("cancelled_in_time", view.order.clone())? {
                 events.push(Event::Spend { at: accepted_at, cost: u64::from(reward.cost), min_tier: reward.min_tier });
+                spend = Some((accepted_at, u64::from(reward.cost), reward.min_tier));
             }
         }
     }
@@ -94,14 +99,14 @@ pub(crate) fn order_now(view: &MemberOrderView, now: Timestamp) -> ExternResult<
         let Ok(lines) = line_totals(&placed)? else { return unknown(events) };
         let Some(cited) = program_cited(&view.order)? else { return unknown(events) };
         let base = rewards_integrity::order_points(&cited, &lines, placed.order_total.saturating_sub(placed.tax_cents), accepted_at);
-        return Ok(OrderNow { events, pending: (base > 0).then_some((PointsStatus::Settling, base)), done: false });
+        return Ok(OrderNow { events, pending: (base > 0).then_some((PointsStatus::Settling, base)), done: false, settled: None });
     };
     let appeal = dispatch::<_, Option<AppealWire>>("get_appeal_for_order", view.order.clone())?;
     let ruling = appeal.as_ref().and_then(|a| a.ruling.as_ref().map(|r| r.ruling.clone()));
     let Ok(earning) = earning(&view.order, &settlement, accepted, ruling.as_ref())? else { return unknown(events) };
     if earning.base == 0 {
         // Settled and earning nothing: an award only ever takes away.
-        return Ok(OrderNow { events, pending: None, done: true });
+        return Ok(OrderNow { events, pending: None, done: true, settled: None });
     }
     let ended = if earning.available_at > earning.settled_at { now > earning.available_at } else { now >= earning.settled_at };
     let status = match (&appeal, &ruling) {
@@ -113,7 +118,8 @@ pub(crate) fn order_now(view: &MemberOrderView, now: Timestamp) -> ExternResult<
         }
     };
     let done = status == PointsStatus::Earned;
-    Ok(OrderNow { events, pending: Some((status, earning.base)), done })
+    let settled = appeal.is_none().then_some(rewards_integrity::ledger::Settled { spend, settled_at: earning.settled_at, base: earning.base, available_at: earning.available_at });
+    Ok(OrderNow { events, pending: Some((status, earning.base)), done, settled })
 }
 
 /// The program version an order (its original action) cites.

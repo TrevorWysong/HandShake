@@ -28,7 +28,7 @@ pub(crate) fn my_orders() -> ExternResult<Vec<(ActionHash, ActionHash, Timestamp
 fn open_order(order: &ActionHash, placed_at: Timestamp) -> ExternResult<Option<OpenOrder>> {
     let Some(record) = get(order.clone(), GetOptions::local())? else { return Ok(None) };
     let Some(placed) = OrderForRewards::of(&record) else { return Ok(None) };
-    Ok(Some(OpenOrder { order: order.clone(), placed_at, accepted: None, reward: placed.rewards.as_ref().and_then(|r| r.reward) }))
+    Ok(Some(OpenOrder { order: order.clone(), placed_at, accepted: None, reward: placed.rewards.as_ref().and_then(|r| r.reward), settled: None }))
 }
 
 /// The store's acceptance of an order: its earliest update from `Placed`

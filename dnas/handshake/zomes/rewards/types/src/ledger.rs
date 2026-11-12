@@ -60,6 +60,35 @@ pub struct OpenOrder {
     pub accepted: Option<ActionHash>,
     /// The reward it names (id), if it names one.
     pub reward: Option<u16>,
+    /// What its store's settlement fixed, once it's settled and nobody has
+    /// appealed it: all that's left to happen is its refund period ending,
+    /// so a read checks only for an appeal (`None`: not settled yet).
+    #[serde(default)]
+    pub settled: Option<Settled>,
+}
+
+/// What an order's settlement fixed, for its points.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Settled {
+    /// The reward it spent, still spent once it's settled: when the store
+    /// accepted it, what it cost, and the tier it needed.
+    pub spend: Option<(Timestamp, u64, u8)>,
+    pub settled_at: Timestamp,
+    /// What it earns, before the member's tier.
+    pub base: u64,
+    /// When its refund period ends.
+    pub available_at: Timestamp,
+}
+
+impl Settled {
+    /// Whether its refund period is over at `now`.
+    pub fn ended(&self, now: Timestamp) -> bool {
+        if self.available_at > self.settled_at {
+            now > self.available_at
+        } else {
+            now >= self.settled_at
+        }
+    }
 }
 
 /// A store's grant to the member.
@@ -362,7 +391,7 @@ mod tests {
             };
             let given_back = settled.filter(|_| spend.is_some() && rng.below(10) == 0);
             lives.push(Life {
-                order: OpenOrder { order: hash(n as u64 + 1), placed_at: Timestamp(placed), accepted: None, reward: spend.map(|_| 1) },
+                order: OpenOrder { order: hash(n as u64 + 1), placed_at: Timestamp(placed), accepted: None, reward: spend.map(|_| 1), settled: None },
                 accepted_at: accepted,
                 spend,
                 given_back_at: given_back,
@@ -459,7 +488,7 @@ mod tests {
     fn a_grant_from_before_what_is_folded_plays_it_all_afresh() {
         let program = program();
         let version = hash(1);
-        let early = OrderFacts { order: OpenOrder { order: hash(2), placed_at: Timestamp(START), accepted: None, reward: None }, events: vec![Event::Earn { at: Timestamp(START + 1), base: 100 }], done: true };
+        let early = OrderFacts { order: OpenOrder { order: hash(2), placed_at: Timestamp(START), accepted: None, reward: None, settled: None }, events: vec![Event::Earn { at: Timestamp(START + 1), base: 100 }], done: true };
         let folded = fold(&program, &version, None, vec![early], Vec::new(), Timestamp(START + 10 * DAY), 30).unwrap();
         assert!(folded.ledger.through > Timestamp(START + 1), "the order is folded");
         let late = OpenGrant { grant: hash(3), at: Timestamp(START + 2), points: 5, kind: GrantKind::Birthday };
@@ -472,7 +501,7 @@ mod tests {
         let program = program();
         let version = hash(1);
         let at = |d: i64| Timestamp(START + d * DAY);
-        let order = |n: u64, placed: i64, events: Vec<Event>, done: bool| OrderFacts { order: OpenOrder { order: hash(n), placed_at: at(placed), accepted: None, reward: None }, events, done };
+        let order = |n: u64, placed: i64, events: Vec<Event>, done: bool| OrderFacts { order: OpenOrder { order: hash(n), placed_at: at(placed), accepted: None, reward: None, settled: None }, events, done };
         // An order still in review from day 1; one done from day 2.
         let reviewing = order(2, 1, Vec::new(), false);
         let done = order(3, 2, vec![Event::Earn { at: at(2), base: 300 }], true);
@@ -486,7 +515,7 @@ mod tests {
     fn history_keeps_its_newest_lines() {
         let program = program();
         let version = hash(1);
-        let orders = (0..50).map(|n| OrderFacts { order: OpenOrder { order: hash(n + 2), placed_at: Timestamp(START + n as i64 * DAY), accepted: None, reward: None }, events: vec![Event::Earn { at: Timestamp(START + n as i64 * DAY + 1), base: 100 }], done: true }).collect();
+        let orders = (0..50).map(|n| OrderFacts { order: OpenOrder { order: hash(n + 2), placed_at: Timestamp(START + n as i64 * DAY), accepted: None, reward: None, settled: None }, events: vec![Event::Earn { at: Timestamp(START + n as i64 * DAY + 1), base: 100 }], done: true }).collect();
         let folded = fold(&program, &version, None, orders, Vec::new(), Timestamp(START + 60 * DAY), 30).unwrap();
         assert_eq!(folded.ledger.recent.len(), 30);
         assert_eq!(folded.history.len(), 30);
