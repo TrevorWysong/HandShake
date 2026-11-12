@@ -7,10 +7,13 @@
 //
 //   canMove()        whether this device's account can move by its key
 //   invite()         the new phone: an invitation code to show
-//   send(invitation) the old phone: stops the app for good, returns the
-//                    account's key sealed to the invitation
-//   stay()           the old phone: takes the account back -- only while the
-//                    new phone hasn't used the key
+//   send(invitation, head)
+//                    the old phone: stops the app, returns the account's
+//                    key sealed to the invitation with `head` -- where its
+//                    chain ends, from the account zome's `begin_handover`
+//   stay()           the old phone: starts the app again, still handing
+//                    over; the app then asks the account zome to `take_back`,
+//                    which it may only while the new phone hasn't written
 //   retire()         the old phone: removes the account from this device
 //   receive(sealed)  the new phone: takes the key in and restores the
 //                    account from the network; resolves once it's running
@@ -29,7 +32,7 @@ export interface DeviceRuntime {
   oneNode?: boolean;
   canMove(): Promise<boolean>;
   invite(): Promise<string>;
-  send(invitation: string): Promise<string>;
+  send(invitation: string, head: string): Promise<string>;
   stay(): Promise<void>;
   retire(): Promise<void>;
   receive(sealed: string): Promise<void>;

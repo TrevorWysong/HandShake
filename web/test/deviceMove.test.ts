@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { invitationFingerprint, isInvitation, sealedAccount } from "../src/lib/account/deviceMove.ts";
+import { invitationFingerprint, isInvitation, sealedAccount, sealedHead } from "../src/lib/account/deviceMove.ts";
 
 // Made by the runtime (runtime/device/src/code.rs, `the_app_reads_the_same_codes`):
 // the app must read exactly what it writes.
-const SEALED = "handshake-key:1:hCAkCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQldqCMwAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQECAgICAgICAgICAgICAgICAgICAgICAgIFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU";
+const SEALED = "handshake-key:2:hCAkCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQldqCMwhCkkBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBweIGAsCAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQECAgICAgICAgICAgICAgICAgICAgICAgIFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU";
 const INVITATION = "handshake-move:1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
 
 test("a sealed key names its account", () => {
   const account = sealedAccount(SEALED);
+  const head = sealedHead(SEALED);
+  assert.deepEqual([...head!.slice(0, 35)], [0x84, 0x29, 0x24, ...new Array(32).fill(7)], "the head it was handed over at, as the runtime sealed it");
+  assert.equal(sealedAccount("handshake-key:1:hCAkCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQldqCMwAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQECAgICAgICAgICAgICAgICAgICAgICAgIFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU"), null, "a code from before handovers were marked isn't taken");
   assert.ok(account);
   assert.deepEqual([...account.slice(0, 3)], [0x84, 0x20, 0x24], "an agent key");
   assert.deepEqual([...account.slice(3, 35)], new Array(32).fill(9), "the account's");

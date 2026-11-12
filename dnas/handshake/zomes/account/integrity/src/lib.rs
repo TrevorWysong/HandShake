@@ -40,6 +40,10 @@ pub enum EntryTypes {
     Parcel(Parcel),
     Migration(Migration),
     Arrival(Arrival),
+    #[entry_type(visibility = "private")]
+    Handover(Handover),
+    #[entry_type(visibility = "private")]
+    HandoverEnded(HandoverEnded),
 }
 
 #[hdk_link_types]
@@ -83,6 +87,9 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Parcel(parcel) => validate_parcel(&parcel, action.author()),
             EntryTypes::Migration(migration) => validate_migration(&migration, action.author(), action.prev_action()),
             EntryTypes::Arrival(arrival) => validate_arrival(&arrival, action.author(), action.prev_action()),
+            // Private to the device that writes them, and only ever its own
+            // bookkeeping of a handover: nobody else reads them.
+            EntryTypes::Handover(_) | EntryTypes::HandoverEnded(_) => Ok(ValidateCallbackResult::Valid),
         },
         Checked::Update { .. } => invalid("account entries can't be changed: publish a new plan instead"),
         Checked::Delete { .. } => invalid("account entries can't be deleted"),

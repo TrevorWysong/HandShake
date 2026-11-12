@@ -11,7 +11,7 @@
 // lasts about seven days; a capture is charged its fee on what's captured
 // only, and a cancel (release) costs nothing.
 import type { Authorization, AuthorizeRequest, Connection, Processor } from "../processor.ts";
-import { KeyRefused, Refused, Retry } from "../processor.ts";
+import { KeyRefused, Refused, Retry, PROCESSOR_TIMEOUT_MS } from "../processor.ts";
 import type { DeclineCode } from "../types.ts";
 
 const API = "https://api.stripe.com/v1";
@@ -52,7 +52,7 @@ export function declineCode(error: Json | undefined): DeclineCode {
   return "Declined";
 }
 
-export function stripeProcessor(keys: StripeKeys, currency: string, fetchImpl: Fetch = fetch): Processor {
+export function stripeProcessor(keys: StripeKeys, currency: string, fetchImpl: Fetch = fetch, timeoutMs = PROCESSOR_TIMEOUT_MS): Processor {
   const { live } = checkKeys(keys);
   const secret = keys.restricted_key.trim();
 
@@ -62,6 +62,7 @@ export function stripeProcessor(keys: StripeKeys, currency: string, fetchImpl: F
     try {
       response = await fetchImpl(`${API}${path}${method === "GET" && body ? `?${body}` : ""}`, {
         method,
+        signal: AbortSignal.timeout(timeoutMs),
         headers: {
           Authorization: `Bearer ${secret}`,
           "Content-Type": "application/x-www-form-urlencoded",
@@ -72,7 +73,11 @@ export function stripeProcessor(keys: StripeKeys, currency: string, fetchImpl: F
     } catch (err) {
       throw new Retry(`Stripe couldn't be reached: ${(err as Error).message}`);
     }
-    const json = (await response.json().catch(() => ({}))) as Json;
+    const json = (await response.json().catch((err: Error) => {
+      // Cut off by the deadline: not an answer, but no answer yet.
+      if (err.name === "TimeoutError" || err.name === "AbortError") throw new Retry(`Stripe didn't finish answering: ${err.message}`);
+      return {};
+    })) as Json;
     if (response.ok) return json;
     if (response.status === 429 || response.status >= 500) throw new Retry(`Stripe is busy (${response.status})`);
     if (response.status === 402 || json.error?.type === "card_error") throw new CardDeclined(declineCode(json.error));

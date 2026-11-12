@@ -131,3 +131,22 @@ pub struct Arrival {
     pub previous_account: AgentPubKey,
     pub migration: ActionHash,
 }
+
+/// This device handing the account to a new phone (docs/RECOVERY.md, "Moving
+/// to a new phone"): written just before it sends the key, so the chain the
+/// new phone restores ends here. Private, so it stays on this device: while
+/// it stands, this device's background work and setup do nothing -- it
+/// writes nothing a new phone writing too would fork the account with.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+pub struct Handover {
+    pub started_at: Timestamp,
+}
+
+/// This device taking the account back from a handover (`handover`, its
+/// action): only once the network shows the new phone never wrote as it.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+pub struct HandoverEnded {
+    pub handover: ActionHash,
+}

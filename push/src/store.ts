@@ -3,6 +3,8 @@
 // secret that lets the device change or forget its own row. Nothing about
 // who the device belongs to, and nothing about any wake.
 import { createHash, randomBytes } from "node:crypto";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from "node:fs";
+import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type Channel = "webpush" | "apns" | "fcm";
@@ -17,10 +19,25 @@ export interface Device {
 
 const hash = (secret: string) => createHash("sha256").update(secret).digest("hex");
 
+/// The database's file -- and the journal and write-ahead log SQLite makes
+/// beside it, which take its permissions -- readable by the relay's own
+/// account only: the addresses it holds reach people's devices. Its folder
+/// is made the account's own if the relay makes it.
+export function ownerOnly(path: string): void {
+  const folder = dirname(path);
+  if (!existsSync(folder)) mkdirSync(folder, { recursive: true, mode: 0o700 });
+  closeSync(openSync(path, "a", 0o600));
+  for (const file of [path, `${path}-journal`, `${path}-wal`, `${path}-shm`]) {
+    // An umask can't widen it, and a file from before is narrowed.
+    if (existsSync(file)) chmodSync(file, 0o600);
+  }
+}
+
 export class Store {
   private db: DatabaseSync;
 
   constructor(path: string) {
+    if (path !== ":memory:") ownerOnly(path);
     this.db = new DatabaseSync(path);
     this.db.exec(`CREATE TABLE IF NOT EXISTS devices (
       id TEXT PRIMARY KEY,

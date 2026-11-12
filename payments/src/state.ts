@@ -5,7 +5,9 @@
 // through the payee's account). None of it is a secret -- the processor
 // keys are kept apart (`credentials.ts`) -- but it's nobody else's, so the
 // file is the owner's alone.
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { holdFolder } from "./lock.ts";
 import { writeAtomically } from "./files.ts";
 
 export interface State {
@@ -50,6 +52,10 @@ export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}
 export interface StateStore {
   load(): Promise<State>;
   save(state: State): Promise<void>;
+  /// Holds the state for this agent alone, until the release is called --
+  /// refused while another agent holds it (`lock.ts`). A store only one
+  /// agent can reach has nothing to hold.
+  hold?(): Promise<() => Promise<void>>;
 }
 
 /// State in memory: for tests, and a runtime that keeps it elsewhere.
@@ -75,6 +81,10 @@ export function fileStore(path: string): StateStore {
     },
     async save(state) {
       await writeAtomically(path, JSON.stringify(state));
+    },
+    async hold() {
+      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+      return holdFolder(dirname(path));
     },
   };
 }

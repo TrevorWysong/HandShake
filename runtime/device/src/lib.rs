@@ -9,17 +9,22 @@
 //! In order, with the UI around it:
 //!
 //! 1. The new phone (`invite`) shows an invitation code.
-//! 2. The old phone's UI waits until the network holds everything it wrote
-//!    (the account zome's `ready_to_move`), then scans it; the runtime
-//!    (`send`) stops the app for good -- nothing more may be written from
-//!    here -- and shows the account's key sealed to the invitation.
+//! 2. The old phone's UI marks the handover (the account zome's
+//!    `begin_handover`: from then on this device writes nothing of its own
+//!    accord), waits until the network holds everything it wrote
+//!    (`ready_to_move`), then scans it; the runtime (`send`) stops the app
+//!    and shows the account's key sealed to the invitation, with the head
+//!    its chain ended at.
 //! 3. The new phone scans that (`receive`): the key goes into its keystore,
 //!    and the app is installed for it, its chain restored from the network.
-//!    The UI then sets the device up (each zome's `prepare_device`).
+//!    The UI checks the chain still ends at that head (`confirm_handover`)
+//!    -- if not, the old phone took it back, and this one lets it go --
+//!    then sets the device up (each zome's `prepare_device`).
 //! 4. The old phone, once the person confirms the new one has it, removes
-//!    the app (`retire`). Until then it can still take the account back
-//!    (`stay`), which the UI offers only while the new phone hasn't used
-//!    the key.
+//!    the app (`retire`). It can take the account back instead (`stay`,
+//!    then the account zome's `take_back`), but only while the network
+//!    shows the new phone never wrote as it: the UI is told otherwise, and
+//!    can only let it go. One account written on two phones forks for good.
 
 pub mod code;
 pub mod keys;
@@ -27,7 +32,7 @@ pub mod node;
 
 use code::{Invitation, SealedKey};
 use holochain_client::AdminWebsocket;
-use holochain_types::prelude::AgentPubKey;
+use holochain_types::prelude::{ActionHash, AgentPubKey};
 use lair_keystore_api::LairClient;
 use node::App;
 use std::sync::Arc;
@@ -38,6 +43,8 @@ use tokio::sync::Mutex;
 pub enum Error {
     #[error("That isn't a code from HandShake's move to a new phone.")]
     BadCode,
+    #[error("This device hasn't marked the handover: start the move again.")]
+    NoHandover,
     #[error("This device's keystore doesn't hold that key.")]
     NoSuchKey,
     #[error("This account's key can't be moved: recover the account on the new phone with your recovery phrase or guardians instead.")]
@@ -113,17 +120,20 @@ impl Device {
         Ok(invitation.encode())
     }
 
-    /// The old phone: stops the app for good, and seals the account's key
-    /// to `invitation`. The UI checks `ready_to_move` first.
-    pub async fn send(&self, invitation: &str) -> Result<String> {
+    /// The old phone: stops the app, and seals the account's key to
+    /// `invitation` with `head` -- the action its chain ended at, from the
+    /// account zome's `begin_handover`. The UI marks the handover and checks
+    /// `ready_to_move` first.
+    pub async fn send(&self, invitation: &str, head: &str) -> Result<String> {
         let invitation = Invitation::decode(invitation)?;
+        let head = holochain_types::prelude::ActionHashB64::from_b64_str(head.trim()).map(ActionHash::from).map_err(|_| Error::NoHandover)?;
         let info = node::app_info(&self.admin, &self.app).await?.ok_or(Error::NoSuchKey)?;
         let account = info.agent_pub_key;
         if !self.can_move().await? {
             return Err(Error::NotExportable);
         }
         node::freeze(&self.admin, &self.app).await?;
-        match keys::seal(&self.lair, &account, &invitation).await {
+        match keys::seal(&self.lair, &account, &head, &invitation).await {
             Ok(sealed) => Ok(sealed.encode()),
             Err(err) => {
                 node::thaw(&self.admin, &self.app).await?;
@@ -132,8 +142,10 @@ impl Device {
         }
     }
 
-    /// The old phone: takes the account back, the new phone not having
-    /// used the key.
+    /// The old phone: starts the app again, still handing over -- it writes
+    /// nothing of its own accord -- for the UI to take the account back
+    /// (the account zome's `take_back`), which it may only if the network
+    /// shows the new phone never wrote as it.
     pub async fn stay(&self) -> Result<()> {
         node::thaw(&self.admin, &self.app).await
     }

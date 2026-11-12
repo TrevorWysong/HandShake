@@ -285,3 +285,25 @@ test("wakes are delivered a few at a time, and past a full queue are dropped", a
   assert.equal(most, 2, "never more than two at once");
   assert.equal(r.outcomes.filter((o) => o === "sent").length, 5, "and every queued one delivered");
 });
+
+test("the relay's database, and the files SQLite makes beside it, are readable by its own account only", { skip: process.platform === "win32" }, async () => {
+  const { mkdtempSync, statSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const previous = process.umask(0o022);
+  try {
+    const dir = path.join(mkdtempSync(path.join(tmpdir(), "relay-")), "data");
+    const db = path.join(dir, "push.db");
+    const store = new Store(db);
+    store.register("webpush", JSON.stringify({ endpoint: "https://fcm.googleapis.com/fcm/send/x", keys: { p256dh: "p", auth: "a" } }));
+    assert.equal(statSync(dir).mode & 0o777, 0o700, "its folder");
+    assert.equal(statSync(db).mode & 0o777, 0o600, "its file, despite a permissive umask");
+    // A file from before, left readable, is narrowed when the relay opens it.
+    const old = path.join(dir, "old.db");
+    writeFileSync(old, "", { mode: 0o644 });
+    new Store(old);
+    assert.equal(statSync(old).mode & 0o777, 0o600, "an existing file, narrowed");
+  } finally {
+    process.umask(previous);
+  }
+});

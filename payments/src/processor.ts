@@ -78,3 +78,10 @@ export class NotFound extends Refused {}
 
 /// The processor doesn't accept the keys: mistyped, or since revoked.
 export class KeyRefused extends Refused {}
+
+/// How long a processor has to answer one request, body and all, before the
+/// agent gives up on it and tries again next round -- every request carries
+/// an idempotency key, so a retry is the same request. Bounded so one hung
+/// connection can't stall a round, and with it every payment after it;
+/// far longer than any answer takes.
+export const PROCESSOR_TIMEOUT_MS = 30_000;

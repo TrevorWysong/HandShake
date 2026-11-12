@@ -20,8 +20,8 @@ function fromBase64Url(text: string): Uint8Array {
 }
 
 /// The code for `account` (its 39 bytes), living at `where`.
-export function devSealedKey(account: Uint8Array, where: DevIdentity): string {
-  const bytes = new Uint8Array([...account, ...new Uint8Array(32 + 24), ...new TextEncoder().encode(JSON.stringify(where))]);
+export function devSealedKey(account: Uint8Array, head: Uint8Array, where: DevIdentity): string {
+  const bytes = new Uint8Array([...account, ...head, ...new Uint8Array(32 + 24), ...new TextEncoder().encode(JSON.stringify(where))]);
   return `${SEALED_KEY_PREFIX}${base64Url(bytes)}`;
 }
 
@@ -30,7 +30,7 @@ export function readDevSealedKey(code: string): { account: Uint8Array; where: De
   const account = sealedAccount(code);
   if (!account) return null;
   try {
-    const where = JSON.parse(new TextDecoder().decode(fromBase64Url(code.trim().slice(SEALED_KEY_PREFIX.length)).slice(39 + 32 + 24))) as DevIdentity;
+    const where = JSON.parse(new TextDecoder().decode(fromBase64Url(code.trim().slice(SEALED_KEY_PREFIX.length)).slice(39 + 39 + 32 + 24))) as DevIdentity;
     return typeof where?.adminUrl === "string" && typeof where?.installedAppId === "string" ? { account, where } : null;
   } catch {
     return null;

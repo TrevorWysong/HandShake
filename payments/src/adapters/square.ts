@@ -12,7 +12,7 @@
 // against Square's sandbox: see DIRECT_PAYMENTS.md.
 import { createHash } from "node:crypto";
 import type { Authorization, AuthorizeRequest, Connection, Processor } from "../processor.ts";
-import { KeyRefused, NotFound, Refused, Retry } from "../processor.ts";
+import { KeyRefused, NotFound, Refused, Retry, PROCESSOR_TIMEOUT_MS } from "../processor.ts";
 import type { DeclineCode } from "../types.ts";
 
 export interface SquareKeys {
@@ -70,7 +70,7 @@ function keptCard(savedAs: string): [string, string] {
   return at < 0 ? [savedAs, ""] : [savedAs.slice(0, at), savedAs.slice(at + 1)];
 }
 
-export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: Fetch = fetch): Processor {
+export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: Fetch = fetch, timeoutMs = PROCESSOR_TIMEOUT_MS): Processor {
   const { live } = checkKeys(keys);
   const base = live ? "https://connect.squareup.com/v2" : "https://connect.squareupsandbox.com/v2";
   const location = keys.location_id.trim();
@@ -80,13 +80,18 @@ export function squareProcessor(keys: SquareKeys, currency: string, fetchImpl: F
     try {
       response = await fetchImpl(`${base}${path}`, {
         method,
+        signal: AbortSignal.timeout(timeoutMs),
         headers: { Authorization: `Bearer ${keys.access_token.trim()}`, "Square-Version": VERSION, "Content-Type": "application/json" },
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch (err) {
       throw new Retry(`Square couldn't be reached: ${(err as Error).message}`);
     }
-    const json = (await response.json().catch(() => ({}))) as Json;
+    const json = (await response.json().catch((err: Error) => {
+      // Cut off by the deadline: not an answer, but no answer yet.
+      if (err.name === "TimeoutError" || err.name === "AbortError") throw new Retry(`Square didn't finish answering: ${err.message}`);
+      return {};
+    })) as Json;
     if (response.ok) return json;
     if (response.status === 429 || response.status >= 500) throw new Retry(`Square is busy (${response.status})`);
     if (response.status === 401) throw new KeyRefused("Square no longer accepts this device's access token. Connect again.");

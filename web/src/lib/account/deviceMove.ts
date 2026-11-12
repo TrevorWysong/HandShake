@@ -5,19 +5,22 @@
 //
 //   - the new phone's invitation, `handshake-move:1:` and the public half of a
 //     one-time encryption key in its keystore;
-//   - the old phone's sealed key, `handshake-key:1:` and the account, the key
-//     sealed to that invitation.
+//   - the old phone's sealed key, `handshake-key:2:` and the account, the
+//     action its chain ended at as it was handed over, and the key sealed to
+//     that invitation.
 //
 // Both base64url, unpadded.
-import type { AgentPubKey } from "../../holochain/types";
+import type { ActionHash, AgentPubKey } from "../../holochain/types";
 
 export const INVITATION_PREFIX = "handshake-move:1:";
-export const SEALED_KEY_PREFIX = "handshake-key:1:";
+export const SEALED_KEY_PREFIX = "handshake-key:2:";
 
-/// Holochain's prefix for an agent key.
+/// Holochain's prefixes for an agent key, and an action's hash.
 const AGENT_PREFIX = [0x84, 0x20, 0x24];
-/// The account, the sender's key, the nonce, and the least ciphertext.
-const SEALED_MIN_BYTES = 39 + 32 + 24 + 17;
+const ACTION_PREFIX = [0x84, 0x29, 0x24];
+/// The account, the head, the sender's key, the nonce, and the least
+/// ciphertext.
+const SEALED_MIN_BYTES = 39 + 39 + 32 + 24 + 17;
 
 function fromBase64Url(text: string): Uint8Array | null {
   if (!/^[A-Za-z0-9_-]*$/.test(text)) return null;
@@ -39,11 +42,23 @@ export function isInvitation(code: string): boolean {
   return body(code, INVITATION_PREFIX)?.length === 32;
 }
 
+/// A sealed key's bytes, if `code` is one.
+function sealed(code: string): Uint8Array | null {
+  const bytes = body(code, SEALED_KEY_PREFIX);
+  const ok = bytes && bytes.length >= SEALED_MIN_BYTES && AGENT_PREFIX.every((b, i) => bytes[i] === b) && ACTION_PREFIX.every((b, i) => bytes[39 + i] === b);
+  return ok ? bytes : null;
+}
+
 /// The account a sealed key carries -- `null` for anything else.
 export function sealedAccount(code: string): AgentPubKey | null {
-  const bytes = body(code, SEALED_KEY_PREFIX);
-  if (!bytes || bytes.length < SEALED_MIN_BYTES || !AGENT_PREFIX.every((b, i) => bytes[i] === b)) return null;
-  return bytes.slice(0, 39);
+  return sealed(code)?.slice(0, 39) ?? null;
+}
+
+/// Where the account's chain ended as the old phone handed it over --
+/// what the new phone checks its restored chain still ends at
+/// (`confirm_handover`). `null` for anything else.
+export function sealedHead(code: string): ActionHash | null {
+  return sealed(code)?.slice(39, 78) ?? null;
 }
 
 /// A short fingerprint of an invitation, to compare on both phones: whoever

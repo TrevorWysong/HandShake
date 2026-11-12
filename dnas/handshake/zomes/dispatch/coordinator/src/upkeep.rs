@@ -49,6 +49,9 @@ const SWEEP_CRON: &str = "0 * * * * * *";
 /// Scheduled at `init`.
 #[hdk_extern(infallible)]
 pub fn tend_orders_periodically(_: Option<Schedule>) -> Option<Schedule> {
+    if crate::settlement::moved_on() {
+        return Some(Schedule::Persisted(SWEEP_CRON.into()));
+    }
     let _ = tend_customer_orders();
     let _ = answer_store_orders();
     let _ = tend_store_deliveries();

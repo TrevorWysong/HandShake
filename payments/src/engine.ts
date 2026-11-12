@@ -113,8 +113,10 @@ export class Engine {
   async #round(): Promise<number> {
     const { dispatch, state: store, onProblem } = this.#o;
     const due = await dispatch<PaymentDue[]>("payments_due", null);
-    await this.#claimKeptCards();
-    let done = await this.#expireSavedCards();
+    // Upkeep never stands in the way of what's owed: a part that fails is
+    // reported, kept for the next round, and the payments go on.
+    await this.#claimKeptCards().catch((err) => onProblem("Claim kept cards", err));
+    let done = await this.#expireSavedCards().catch((err) => (onProblem("Expire saved cards", err), 0));
     // Withdrawals first: a card withdrawn is charged by no offer still waiting.
     for (const item of [...due].sort((a, b) => Number("Forget" in b) - Number("Forget" in a))) {
       // Each payment on its own: one failing never holds up the rest.
@@ -139,17 +141,24 @@ export class Engine {
   }
 
   /// First-order cards an agent from before kept on this device alone,
-  /// claimed on the network -- once each, then forgotten here.
+  /// claimed on the network -- each on its own, then forgotten here. One
+  /// that can't be claimed just now is reported and kept, and still counts
+  /// here meanwhile (`#authorize`), so no card slips through in between.
   async #claimKeptCards() {
-    const state = await this.#o.state.load();
+    const { dispatch, state: store, onProblem } = this.#o;
+    const state = await store.load();
     if (Object.keys(state.newcomers).length === 0) return;
-    for (const [store, cards] of Object.entries(state.newcomers)) {
+    for (const [shop, cards] of Object.entries(state.newcomers)) {
       for (const [fingerprint, order] of Object.entries(cards)) {
-        await this.#o.dispatch<boolean>("claim_newcomer_card", { store: unhex(store), fingerprint, order: unhex(order) });
-        delete cards[fingerprint];
+        try {
+          await dispatch<boolean>("claim_newcomer_card", { store: unhex(shop), fingerprint, order: unhex(order) });
+          delete cards[fingerprint];
+        } catch (err) {
+          onProblem("Claim kept card", err);
+        }
       }
-      delete state.newcomers[store];
-      await this.#o.state.save(state);
+      if (Object.keys(cards).length === 0) delete state.newcomers[shop];
+      await store.save(state);
     }
   }
 
@@ -216,7 +225,9 @@ export class Engine {
     // another order is released, and the offer declined. Kept on the
     // network, so a store's new or reset device remembers it.
     if (due.newcomer_deal) {
-      const claimed = result.fingerprint !== null && (await dispatch<boolean>("claim_newcomer_card", { store: due.newcomer_deal, fingerprint: result.fingerprint, order: due.order }));
+      // One kept here and not yet claimed on the network counts too.
+      const keptHere = result.fingerprint === null ? undefined : state.newcomers[hex(due.newcomer_deal)]?.[result.fingerprint];
+      const claimed = result.fingerprint !== null && (keptHere === undefined || keptHere === order) && (await dispatch<boolean>("claim_newcomer_card", { store: due.newcomer_deal, fingerprint: result.fingerprint, order: due.order }));
       if (!claimed) {
         await processor.capture(result.reference, 0, idempotencyKey("release", due.offer));
         return decline("NotEligible");

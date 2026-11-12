@@ -7,21 +7,27 @@
 //!   one-time encryption key in its keystore. `handshake-move:1:` and the key.
 //! - A **sealed key**, shown by the old phone: the account's key encrypted
 //!   to that invitation, so only the phone that showed it can open it.
-//!   `handshake-key:1:` and the account, the sender's encryption key, the nonce
-//!   and the ciphertext, together.
+//!   `handshake-key:2:` and the account, the action its chain ended at as it
+//!   was handed over (the account zome's `begin_handover`), the sender's
+//!   encryption key, the nonce and the ciphertext, together. The new phone
+//!   checks its restored chain still ends there before it writes anything
+//!   (`confirm_handover`): if the old phone took the account back, it hasn't.
 //!
 //! Both are base64url without padding.
 
 use crate::{Error, Result};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use holochain_types::prelude::AgentPubKey;
+use holochain_types::prelude::{ActionHash, AgentPubKey};
 
 pub const INVITATION_PREFIX: &str = "handshake-move:1:";
-pub const SEALED_KEY_PREFIX: &str = "handshake-key:1:";
+pub const SEALED_KEY_PREFIX: &str = "handshake-key:2:";
 
-/// Holochain's prefix for an agent key.
+/// Holochain's prefixes for an agent key, and an action's hash.
 const AGENT_PREFIX: [u8; 3] = [0x84, 0x20, 0x24];
+const ACTION_PREFIX: [u8; 3] = [0x84, 0x29, 0x24];
+/// A hash, with its prefix and location.
+const HASH_BYTES: usize = 39;
 const NONCE_BYTES: usize = 24;
 /// The smallest ciphertext there is: crypto_box's tag around nothing.
 const MIN_CIPHER_BYTES: usize = 17;
@@ -49,6 +55,8 @@ impl Invitation {
 pub struct SealedKey {
     /// The account the key is: checked against what opens.
     pub account: AgentPubKey,
+    /// Where its chain ended as it was handed over.
+    pub head: ActionHash,
     pub sender: [u8; 32],
     pub nonce: [u8; NONCE_BYTES],
     pub cipher: Vec<u8>,
@@ -56,19 +64,21 @@ pub struct SealedKey {
 
 impl SealedKey {
     pub fn encode(&self) -> String {
-        let bytes = [self.account.get_raw_39(), &self.sender, &self.nonce, &self.cipher].concat();
+        let bytes = [self.account.get_raw_39(), self.head.get_raw_39(), &self.sender, &self.nonce, &self.cipher].concat();
         format!("{SEALED_KEY_PREFIX}{}", URL_SAFE_NO_PAD.encode(bytes))
     }
 
     pub fn decode(code: &str) -> Result<Self> {
         let bytes = body(code, SEALED_KEY_PREFIX)?;
-        if bytes.len() < 39 + 32 + NONCE_BYTES + MIN_CIPHER_BYTES || bytes[..3] != AGENT_PREFIX {
+        let keys = 2 * HASH_BYTES;
+        if bytes.len() < keys + 32 + NONCE_BYTES + MIN_CIPHER_BYTES || bytes[..3] != AGENT_PREFIX || bytes[HASH_BYTES..HASH_BYTES + 3] != ACTION_PREFIX {
             return Err(Error::BadCode);
         }
-        let account = AgentPubKey::try_from_raw_39(bytes[..39].to_vec()).map_err(|_| Error::BadCode)?;
-        let sender = bytes[39..71].try_into().map_err(|_| Error::BadCode)?;
-        let nonce = bytes[71..71 + NONCE_BYTES].try_into().map_err(|_| Error::BadCode)?;
-        Ok(Self { account, sender, nonce, cipher: bytes[71 + NONCE_BYTES..].to_vec() })
+        let account = AgentPubKey::try_from_raw_39(bytes[..HASH_BYTES].to_vec()).map_err(|_| Error::BadCode)?;
+        let head = ActionHash::try_from_raw_39(bytes[HASH_BYTES..keys].to_vec()).map_err(|_| Error::BadCode)?;
+        let sender = bytes[keys..keys + 32].try_into().map_err(|_| Error::BadCode)?;
+        let nonce = bytes[keys + 32..keys + 32 + NONCE_BYTES].try_into().map_err(|_| Error::BadCode)?;
+        Ok(Self { account, head, sender, nonce, cipher: bytes[keys + 32 + NONCE_BYTES..].to_vec() })
     }
 }
 
@@ -85,6 +95,10 @@ mod tests {
         AgentPubKey::from_raw_32(vec![9; 32])
     }
 
+    fn head() -> ActionHash {
+        ActionHash::from_raw_32(vec![7; 32])
+    }
+
     #[test]
     fn an_invitation_round_trips() {
         let invitation = Invitation { key: [3; 32] };
@@ -94,25 +108,25 @@ mod tests {
 
     #[test]
     fn a_sealed_key_round_trips() {
-        let sealed = SealedKey { account: account(), sender: [1; 32], nonce: [2; 24], cipher: vec![5; 48] };
+        let sealed = SealedKey { account: account(), head: head(), sender: [1; 32], nonce: [2; 24], cipher: vec![5; 48] };
         assert_eq!(SealedKey::decode(&sealed.encode()).unwrap(), sealed);
     }
 
     /// The same codes `web/test/deviceMove.test.ts` reads: the app and the
     /// runtime agree on the form.
-    pub const SEALED_FIXTURE: &str = "handshake-key:1:hCAkCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQldqCMwAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQECAgICAgICAgICAgICAgICAgICAgICAgIFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU";
+    pub const SEALED_FIXTURE: &str = "handshake-key:2:hCAkCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQldqCMwhCkkBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBweIGAsCAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQECAgICAgICAgICAgICAgICAgICAgICAgIFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU";
     pub const INVITATION_FIXTURE: &str = "handshake-move:1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
 
     #[test]
     fn the_app_reads_the_same_codes() {
-        let sealed = SealedKey { account: account(), sender: [1; 32], nonce: [2; 24], cipher: vec![5; 48] };
+        let sealed = SealedKey { account: account(), head: head(), sender: [1; 32], nonce: [2; 24], cipher: vec![5; 48] };
         assert_eq!(sealed.encode(), SEALED_FIXTURE);
         assert_eq!(Invitation { key: core::array::from_fn(|i| i as u8) }.encode(), INVITATION_FIXTURE);
     }
 
     #[test]
     fn anything_else_is_refused() {
-        let sealed = SealedKey { account: account(), sender: [1; 32], nonce: [2; 24], cipher: vec![5; 48] }.encode();
+        let sealed = SealedKey { account: account(), head: head(), sender: [1; 32], nonce: [2; 24], cipher: vec![5; 48] }.encode();
         for code in ["", "handshake-move:1:", "handshake-move:1:AAAA", "handshake-move:2:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "handshake-account:uhCAk", &sealed[..40]] {
             assert!(Invitation::decode(code).is_err() && SealedKey::decode(code).is_err(), "{code}");
         }

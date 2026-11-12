@@ -2,7 +2,9 @@
 // one sends its key once the network holds everything it wrote.
 import { wait } from "../../lib/network/retry";
 import { useState } from "react";
-import { readyToMove } from "../../holochain/zomes/account";
+import { beginHandover, readyToMove } from "../../holochain/zomes/account";
+import { encodeHashToBase64 } from "@holochain/client";
+import { bytesEqual } from "../../holochain/decode";
 import { canMoveAccount, deviceRuntime } from "../../holochain/device";
 import { useDeparture } from "../../store/departure";
 import { invitationFingerprint, isInvitation } from "../../lib/account/deviceMove";
@@ -32,13 +34,17 @@ export function MoveSheet({ onClose }: { onClose: () => void }) {
   const move = (to: string) => moving.run(async () => {
     const runtime = await deviceRuntime();
     if (!runtime) throw new Error(t("move.unsupported"));
+    // From the mark on, this device writes nothing of its own accord: the
+    // chain the new phone restores ends there.
+    const head = await beginHandover();
     let ready = !!runtime.oneNode;
     for (let attempt = 0; attempt < READY_TRIES && !ready; attempt++) {
       if (attempt > 0) await wait(2000);
-      ready = (await readyToMove()).ready;
+      const readiness = await readyToMove();
+      ready = readiness.ready && bytesEqual(readiness.head, head);
     }
     if (!ready) throw new Error(t("move.notReady"));
-    depart(await runtime.send(to));
+    depart(await runtime.send(to, encodeHashToBase64(head)));
   }, { stayBusy: true });
 
   return (

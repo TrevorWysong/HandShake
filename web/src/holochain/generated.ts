@@ -1288,6 +1288,25 @@ export interface HandoffEvidence {
 }
 
 /**
+ * This device handing the account to a new phone (docs/RECOVERY.md, "Moving
+ * to a new phone"): written just before it sends the key, so the chain the
+ * new phone restores ends here. Private, so it stays on this device: while
+ * it stands, this device's background work and setup do nothing -- it
+ * writes nothing a new phone writing too would fork the account with.
+ */
+export interface Handover {
+  started_at: Timestamp;
+}
+
+/**
+ * This device taking the account back from a handover (`handover`, its
+ * action): only once the network shows the new phone never wrote as it.
+ */
+export interface HandoverEnded {
+  handover: ActionHash;
+}
+
+/**
  * A window each week earning at `percent` of the usual rate.
  */
 export interface HappyHour {

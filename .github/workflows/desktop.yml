@@ -121,6 +121,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      # The packaged app, attacked as someone on the same machine would
+      # (desktop/securityCheck.ts): its fuses, no code run from outside, and
+      # the payment-key window's isolation. A failure fails the job, and the
+      # draft isn't to be published until it passes. Linux has no display:
+      # a virtual one.
+      - name: Security check the packaged app
+        run: ${{ matrix.target == 'linux' && 'xvfb-run -a ' || '' }}node desktop/securityCheck.ts
       - name: Linux package fix-ups
         if: matrix.target == 'linux'
         working-directory: desktop/.kangaroo

@@ -3,7 +3,7 @@
 // payload -- so nothing to encrypt (RFC 8291) -- authorised by the relay's
 // VAPID key (RFC 8292). The service worker shows the notification.
 import { createPrivateKey, createPublicKey, type KeyObject } from "node:crypto";
-import { jwt, type Fetch, type Outcome, type Sender } from "./channel.ts";
+import { DELIVERY_TIMEOUT_MS, jwt, withDeadline, type Fetch, type Outcome, type Sender } from "./channel.ts";
 
 /// How long a push service keeps a wake for a device that's offline: past
 /// this, the moment it was about has gone.
@@ -44,7 +44,8 @@ export function vapidPublicKey(privateKey: string): string {
   return Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x!, "base64url"), Buffer.from(jwk.y!, "base64url")]).toString("base64url");
 }
 
-export function webPushSender(vapid: Vapid, fetch: Fetch, hosts: readonly string[] = WEB_PUSH_HOSTS): Sender {
+export function webPushSender(vapid: Vapid, unbounded: Fetch, hosts: readonly string[] = WEB_PUSH_HOSTS, timeoutMs = DELIVERY_TIMEOUT_MS): Sender {
+  const fetch = withDeadline(unbounded, timeoutMs);
   const key: KeyObject = createPrivateKey(vapid.privateKey);
   const publicKey = vapidPublicKey(vapid.privateKey);
   return {

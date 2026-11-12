@@ -3,7 +3,7 @@
 // which wakes the app to build a local notification itself. Authorised by
 // a service account: a signed JWT traded for an access token, kept until
 // shortly before it expires.
-import { jwt, type Fetch, type Outcome, type Sender } from "./channel.ts";
+import { DELIVERY_TIMEOUT_MS, jwt, withDeadline, type Fetch, type Outcome, type Sender } from "./channel.ts";
 
 const SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -15,7 +15,8 @@ export interface ServiceAccount {
   private_key: string;
 }
 
-export function fcmSender(account: ServiceAccount, fetch: Fetch): Sender {
+export function fcmSender(account: ServiceAccount, unbounded: Fetch, timeoutMs = DELIVERY_TIMEOUT_MS): Sender {
+  const fetch = withDeadline(unbounded, timeoutMs);
   let access: { token: string; until: number } | null = null;
 
   async function accessToken(): Promise<string> {

@@ -21,7 +21,9 @@ import { bytesEqual, bytesToHex } from "../../holochain/decode";
 import { accountsForPhraseKey, arrive, arrivedFrom, latestActionOf, migrationsToMeOnPrevious, mySuccession, recoveryPlanOf, takeOver, vouchesForMe } from "../../holochain/zomes/account";
 import { hasPreviousNetwork, thisNetwork } from "../../holochain/client";
 import { canReceiveAccount, deviceRuntime } from "../../holochain/device";
-import { invitationFingerprint, sealedAccount } from "../../lib/account/deviceMove";
+import { invitationFingerprint, sealedAccount, sealedHead } from "../../lib/account/deviceMove";
+import { encodeHashToBase64 } from "@holochain/client";
+import { useArrival } from "../../store/arrival";
 import { catalogsOf, importStore, moveStore, previousStores } from "../../holochain/zomes/catalog";
 import { AccountCode, CodeCard, CodeReader, MoveCode } from "./AccountCode";
 import { Button, Field, Input, Notice, Skeleton, Spinner, Textarea } from "../ui";
@@ -164,6 +166,9 @@ function FromDevice() {
     return receiving.run(async () => {
       await (await deviceRuntime())!.receive(code);
       remember(null);
+      // Checked before anything's written, once the app starts as the account.
+      const head = sealedHead(code);
+      if (head) useArrival.getState().arrive(encodeHashToBase64(head));
       window.location.reload();
     }, { stayBusy: true });
   }

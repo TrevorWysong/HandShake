@@ -17,7 +17,18 @@ export interface Sender {
 }
 
 /// The HTTP a sender needs, injectable so tests needn't reach the network.
-export type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body?: string }) => Promise<{ status: number; text(): Promise<string> }>;
+export type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{ status: number; text(): Promise<string> }>;
+
+/// How long a push service has to answer one wake, before it's given up as
+/// failed: so a service that stops answering ties up none of the relay's
+/// few delivery slots for long (a wake that late is little use anyway).
+export const DELIVERY_TIMEOUT_MS = 10_000;
+
+/// `fetch`, with every request given up at the deadline -- its answer's
+/// body too.
+export function withDeadline(fetch: Fetch, ms = DELIVERY_TIMEOUT_MS): Fetch {
+  return (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(ms) });
+}
 
 /// A signed JWT: ES256 (raw r||s, as JOSE wants) or RS256.
 export function jwt(alg: "ES256" | "RS256", header: Record<string, unknown>, claims: Record<string, unknown>, key: KeyObject | string): string {

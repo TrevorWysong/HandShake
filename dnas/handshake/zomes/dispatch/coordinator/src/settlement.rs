@@ -343,8 +343,10 @@ const SIGNALLED_SWEEP_DAYS: i64 = 30;
 /// stores have moved with it, so its sweeps skip -- but stay scheduled: a
 /// recovery the owner voids (by replacing the plan it rested on, if it
 /// wasn't theirs) moves the account back here, and its sweeps carry on.
-fn moved_on() -> bool {
-    agent_info().and_then(|info| crate::accounts::has_moved(&info.agent_initial_pubkey)).unwrap_or(false)
+/// Whether this device's account has moved on -- or is being handed to a
+/// new phone right now: either way, it settles nothing of its own accord.
+pub(crate) fn moved_on() -> bool {
+    handshake_coordinator_support::handing_over() || agent_info().and_then(|info| crate::accounts::has_moved(&info.agent_initial_pubkey)).unwrap_or(false)
 }
 
 /// Every five minutes, for as long as the conductor runs: the store's

@@ -2,7 +2,9 @@
 // has stopped, so this is all it shows -- the sealed code for the new phone
 // to scan, until the person says the new phone has the account (and this
 // device lets it go), or takes it back because the new phone never
-// finished.
+// finished. Taking it back is the network's call, not this screen's: only
+// while the new phone hasn't written as the account (`take_back`). Once it
+// has, this device can only let it go.
 import { useState } from "react";
 import { Smartphone } from "lucide-react";
 import { deviceRuntime } from "../../holochain/device";
@@ -13,9 +15,10 @@ import { keyFingerprint } from "../../lib/account/accountMove";
 import { CodeCard } from "./AccountCode";
 import { Button } from "../ui";
 import { useT } from "../../i18n";
+import { takeBack } from "../../holochain/zomes/account";
 import { useAction } from "../../lib/hooks/useAction";
 
-type Step = "show" | "done" | "stay" | "removed";
+type Step = "show" | "done" | "stay" | "removed" | "tooLate";
 
 export function Departure({ sealed }: { sealed: string }) {
   const t = useT();
@@ -28,6 +31,15 @@ export function Departure({ sealed }: { sealed: string }) {
     const runtime = await deviceRuntime();
     if (!runtime) throw new Error(t("move.unsupported"));
     await runtime[command]();
+    if (command === "stay") {
+      // Running again, but still handing over: it writes nothing until the
+      // network says the new phone never did.
+      const refused = await takeBack(!!runtime.oneNode).then(() => null, (err: unknown) => err);
+      if (refused) {
+        setStep("tooLate");
+        throw refused;
+      }
+    }
     clear();
     // Taken back: the app starts again as it was. Let go: in development
     // this browser forgets the identity and signs in afresh; in a runtime
@@ -54,6 +66,7 @@ export function Departure({ sealed }: { sealed: string }) {
             {step === "show" && <CodeCard code={sealed} fingerprint={account ? keyFingerprint(account) : ""} note={t("departure.note")} />}
             {step === "done" && <p className="text-sm">{t("departure.doneConfirm")}</p>}
             {step === "stay" && <p className="text-sm text-amber-700 dark:text-amber-400">{t("departure.stayWarning")}</p>}
+            {step === "tooLate" && <p className="text-sm">{t("departure.tooLate")}</p>}
             {action.error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{action.error}</p>}
           </div>
           {step === "show" ? (
@@ -67,12 +80,14 @@ export function Departure({ sealed }: { sealed: string }) {
             </div>
           ) : (
             <div className="flex w-full max-w-sm flex-col gap-2">
-              <Button className="w-full bg-white text-handshake-600" variant="ghost" loading={action.busy} onClick={() => act(step === "done" ? "retire" : "stay")}>
-                {step === "done" ? t("departure.remove") : t("departure.stayConfirm")}
+              <Button className="w-full bg-white text-handshake-600" variant="ghost" loading={action.busy} onClick={() => act(step === "stay" ? "stay" : "retire")}>
+                {step === "stay" ? t("departure.stayConfirm") : t("departure.remove")}
               </Button>
-              <button type="button" disabled={action.busy} onClick={() => setStep("show")} className="text-xs text-white/70 underline underline-offset-2">
-                {t("common.back")}
-              </button>
+              {step !== "tooLate" && (
+                <button type="button" disabled={action.busy} onClick={() => setStep("show")} className="text-xs text-white/70 underline underline-offset-2">
+                  {t("common.back")}
+                </button>
+              )}
             </div>
           )}
         </>

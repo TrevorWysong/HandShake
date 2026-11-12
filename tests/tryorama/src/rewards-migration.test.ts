@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { dhtSync, runScenario, type Conductor } from "@holochain-open-dev/tryorama";
 import type { ActionHash, Record as HcRecord } from "@holochain/client";
-import { HAPP_PATH, ST_PETE, actionHash, customerPaid, decodeEntry, installOn, settleAll, networkSettings, onCell, retryUntil, retryUntilOk, retryingCaller, shareAgentsOn, twoNetworkHapp } from "./helpers.js";
+import { HAPP_PATH, ST_PETE, actionHash, customerPaid, decodeEntry, installOn, settleAll, networkSettings, onCell, retryUntil, retryUntilOk, retryingCaller, shareAgentsOn, twoNetworkHapp, useTestCoordinators } from "./helpers.js";
 
 const OLD = "handshake-rewards-v1";
 const NEW = "handshake-rewards-v2";
@@ -64,6 +64,12 @@ await runScenario(async (scenario) => {
   };
   const call = (p: typeof alice, zome: string) => retryingCaller(p.cells[0], zome);
   const now = Date.now() * 1000;
+
+  // What the bridge makes of the previous network: Holochain's own word
+  // that a function doesn't exist there, never a passing failure.
+  await useTestCoordinators(bobApp, ["account"], bob.cells[0]);
+  const [verdict, asked] = await call(bob, "account")<[{ Ok?: boolean; Err?: string }, string]>("previous_answers_for_testing", "rewards-carry:v2");
+  assert.deepEqual(verdict, { Ok: true }, `the same version answers the bridge -- asking it came to: ${asked}`);
 
   // ===== On the old network: a member with points, earned and given =====
   await call(alice, "profiles")("create_profile", { display_name: "Alice", roles: ["Merchant"], created_at: now });

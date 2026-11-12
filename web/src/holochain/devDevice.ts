@@ -14,6 +14,7 @@ import { forgetStoredIdentity, loadStoredIdentity } from "./devIdentityStorage";
 import { rememberIdentity } from "./devHost";
 import { base64Url, devSealedKey, readDevSealedKey } from "./devSealedKey";
 import { base64ToBytes } from "../lib/util/base64";
+import { decodeHashFromBase64 } from "@holochain/client";
 import { INVITATION_PREFIX, isInvitation } from "../lib/account/deviceMove";
 
 function stored() {
@@ -29,12 +30,12 @@ export const devDevice: DeviceRuntime = {
 
   invite: async () => `${INVITATION_PREFIX}${base64Url(crypto.getRandomValues(new Uint8Array(32)))}`,
 
-  send: async (invitation) => {
+  send: async (invitation, head) => {
     if (!isInvitation(invitation)) throw new Error("That isn't a code from HandShake's move to a new phone.");
     const identity = stored();
     await setIdentityRunning(identity.adminUrl, identity.installedAppId, false);
     // The browser keeps the key as plain base64 (`devIdentityStorage`).
-    return devSealedKey(base64ToBytes(identity.agentPubKeyB64), { adminUrl: identity.adminUrl, installedAppId: identity.installedAppId });
+    return devSealedKey(base64ToBytes(identity.agentPubKeyB64), decodeHashFromBase64(head), { adminUrl: identity.adminUrl, installedAppId: identity.installedAppId });
   },
 
   stay: async () => {

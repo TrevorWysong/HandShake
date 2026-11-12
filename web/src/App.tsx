@@ -39,6 +39,8 @@ import { useLocale, useT } from "./i18n";
 import { MovedAway } from "./components/account/MovedAway";
 import { Departure } from "./components/account/Departure";
 import { useDeparture } from "./store/departure";
+import { Arrival } from "./components/account/Arrival";
+import { useArrival } from "./store/arrival";
 import { useAction } from "./lib/hooks/useAction";
 
 
@@ -160,6 +162,9 @@ export default function App() {
   const locale = useLocale((s) => s.locale);
   // Sent to a new phone: this device has stopped, and connects to nothing.
   const departing = useDeparture((s) => s.sealed);
+  // Just received from another phone: nothing's written until it checks
+  // the old phone didn't take the account back.
+  const arriving = useArrival((s) => s.head);
   const termsAccepted = useTermsAcceptance((s) => s.acceptedVersion === TERMS_VERSION);
   if (HOST === "none") return <NoHost />;
   if (departing) return <Departure sealed={departing} />;
@@ -167,7 +172,7 @@ export default function App() {
   if (!termsAccepted) return <TermsAcceptance key={locale} />;
   return (
     <SessionBootstrap>
-      <Routes key={locale}>
+      {arriving ? <Arrival head={arriving} /> : <Routes key={locale}>
         <Route
           path="/onboarding"
           element={
@@ -213,7 +218,7 @@ export default function App() {
           <Route path="/arbitrate" element={<Screen width="reading"><ArbitratePage /></Screen>} />
           <Route path="*" element={<HomeForMode />} />
         </Route>
-      </Routes>
+      </Routes>}
     </SessionBootstrap>
   );
 }

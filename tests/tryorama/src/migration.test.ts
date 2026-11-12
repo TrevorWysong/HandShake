@@ -69,7 +69,9 @@ await runScenario(async (scenario) => {
   assert.ok(Buffer.from(await on(bobHere, "account")<Uint8Array>("arrive", null)).equals(Buffer.from(aliceKey)), "it arrives as the account it was");
   const was = await on(bobHere, "account")<Uint8Array | null>("arrived_from", bobKey);
   assert.ok(was && Buffer.from(was).equals(Buffer.from(aliceKey)), "checked on the previous network");
-  assert.equal(await on(peerNew.cells[0], "account")<Uint8Array | null>("arrived_from", bobKey), null, "an app without the previous network can't vouch for it");
+  await useTestCoordinators(peerNew, ["account"]);
+  console.log(`[DIAG] an app with no previous network, asking it: ${await on(peerNew.cells[0], "account")<string>("previous_raw_for_testing", null)}`);
+  assert.equal(await on(peerNew.cells[0], "account")<Uint8Array | null>("arrived_from", bobKey), null, "an app without the previous network can't vouch for it -- told apart from one it couldn't reach");
   await assert.rejects(on(bobHere, "account")("create_raw_arrival_for_testing", { previous_network: newNetwork, previous_account: aliceKey, migration: request.close }), /another network/, "an arrival comes from another network");
 
   const stores = await on(bobHere, "catalog")<{ original_action: Uint8Array }[]>("previous_stores", null);

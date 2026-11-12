@@ -8,7 +8,7 @@
 use crate::{decoded, guest, linked_records, me, own_links};
 use account_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{call_local, call_role, open_chunked, seal_chunked};
+use handshake_coordinator_support::{call_local, open_chunked, seal_chunked};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MigrateInput {
@@ -149,9 +149,11 @@ pub fn migrations_to_me(_: ()) -> ExternResult<Vec<MigrationRequest>> {
 pub const PREVIOUS_ROLE: &str = "previous";
 
 /// Calls `function` in `zome` on the previous network (the app's `previous`
-/// role) -- `None` if this app has no previous network, or it won't answer.
+/// role): `None` if this app carries no previous network; an error to try
+/// again if it couldn't be asked just now, or one saying the versions don't
+/// fit if its answer can't be read -- never taken for an empty answer.
 pub(crate) fn on_previous<I: Serialize + std::fmt::Debug, O: for<'de> Deserialize<'de> + std::fmt::Debug>(zome: &str, function: &str, input: I) -> ExternResult<Option<O>> {
-    Ok(call_role(PREVIOUS_ROLE, zome, function, input).ok().and_then(Result::ok))
+    handshake_coordinator_support::ask_previous(zome, function, input).or_retry()
 }
 
 /// What this version answers the next one through its `previous` role,
@@ -191,7 +193,9 @@ pub fn arrive(_: ()) -> ExternResult<AgentPubKey> {
     }
     let here = dna_info()?.hash;
     let previous_network: DnaHash = on_previous("account", "network_hash", ())?.ok_or(guest("This app has no previous version to arrive from."))?;
-    let moved: Vec<MigrationRequest> = on_previous("account", "migrations_to_me", ())?.unwrap_or_default();
+    // Read, or why it couldn't be: a network that couldn't be reached is
+    // tried again, never taken for one where nothing moved.
+    let moved: Vec<MigrationRequest> = on_previous("account", "migrations_to_me", ())?.ok_or(guest("This app has no previous version to arrive from."))?;
     let migration = moved
         .into_iter()
         .find(|m| m.network == here && m.close.is_some())

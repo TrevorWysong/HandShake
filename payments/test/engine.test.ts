@@ -3,6 +3,7 @@
 // one network record -- however a round is cut short -- and declines what a
 // payer shouldn't get (card testing, a first-order deal twice on one card).
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { Engine, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, SAVED_CARD_MS, idempotencyKey, retryingCollisions, type Dispatch } from "../src/engine.ts";
 import { testProcessor } from "../src/adapters/test.ts";
@@ -26,6 +27,10 @@ function zome() {
   const dealCards = new Map<string, Uint8Array>();
   const dispatch = async <T,>(fn: string, payload: unknown): Promise<T> => {
     if (fn === "payments_due") return due as T;
+    if (failNext === fn) {
+      failNext = null;
+      throw new Error("conductor went away");
+    }
     if (fn === "record_busy") {
       calls.push({ fn, payload: payload as Record<string, unknown> });
       busy = h(400 + busies++);
@@ -38,10 +43,6 @@ function zome() {
       const took = dealCards.get(key);
       if (!took) dealCards.set(key, order);
       return (!took || Buffer.from(took).equals(Buffer.from(order))) as T;
-    }
-    if (failNext === fn) {
-      failNext = null;
-      throw new Error("conductor went away");
     }
     calls.push({ fn, payload: payload as Record<string, unknown> });
     due = due.filter((d) => !answers(d, fn, payload as Record<string, unknown>));
@@ -187,6 +188,28 @@ test("cards a device kept for first-order deals before are claimed on the networ
   assert.equal(z.recorded("claim_newcomer_card").length, 1, "once");
 });
 
+test("a kept card that can't be claimed just now never holds up what's owed, still counts here, and is claimed next round", async () => {
+  const z = zome();
+  const processor = testProcessor("USD");
+  // The test processor's fingerprint for the card 4242.
+  const fingerprint = `fp_${createHash("sha256").update("4242").digest("hex").slice(0, 16)}`;
+  const kept = memoryStore({ ...emptyState(), newcomers: { [Buffer.from(store).toString("hex")]: { [fingerprint]: Buffer.from(h(40)).toString("hex") } } });
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: kept, currency: "USD", account: "Test:test:" });
+  // The claim fails this round; an offer waits on the same store's deal.
+  z.failOnce("claim_newcomer_card");
+  z.due = [authorize(10, 50, { newcomer_deal: store })];
+  await engine.round();
+  assert.deepEqual(z.recorded("record_declined").map((d) => d.code), ["NotEligible"], "the card it kept took the deal on another order: still refused");
+  assert.ok(Object.keys((await kept.load()).newcomers).length === 1, "and the card is kept, to claim again");
+  // Another order's payment is held the same round, whatever the upkeep.
+  z.failOnce("claim_newcomer_card");
+  z.due = [authorize(11, 51, { token: "tok_test_5556" })];
+  await engine.round();
+  assert.equal(z.recorded("record_hold").length, 1, "what's owed goes on");
+  await engine.round();
+  assert.deepEqual((await kept.load()).newcomers, {}, "claimed on the network at last, and forgotten here");
+});
+
 test("during a burst of declines from accounts with no history, only they are asked for work -- and with it, never turned away", async () => {
   const z = zome();
   const processor = testProcessor("USD");
@@ -234,6 +257,25 @@ test("during a burst of declines from accounts with no history, only they are as
   z.due = [authorize(81, 111, { payer: h(241) })];
   await engine.round();
   assert.equal(z.recorded("record_hold").length, 7, "and once the burst has passed, newcomers as ever");
+});
+
+test("an agent restarted between the processor's yes and recording it holds the payment once, and records it", async () => {
+  const z = zome();
+  const processor = testProcessor("USD");
+  const state = memoryStore();
+  const first = new Engine({ dispatch: z.dispatch, processor, state, currency: "USD", account: "Test:test:" });
+  z.due = [authorize(10, 50)];
+  // The processor says yes; the agent goes before the network hears it.
+  z.failOnce("record_hold");
+  await first.round();
+  assert.equal(processor.held.size, 1, "held at the processor");
+  assert.equal(z.recorded("record_hold").length, 0, "not yet recorded");
+  assert.ok(Object.keys((await state.load()).heldWith).length === 1, "bound to its account on disk before the network was told");
+  // A new agent, from the state the old one saved.
+  const restarted = new Engine({ dispatch: z.dispatch, processor, state, currency: "USD", account: "Test:test:" });
+  await restarted.round();
+  assert.equal(processor.held.size, 1, "the same authorization, by its idempotency key: never a second hold");
+  assert.equal(z.recorded("record_hold").length, 1, "and recorded at last");
 });
 
 test("a hold is charged once for what's due, the rest released -- even if recording it failed", async () => {

@@ -12,7 +12,7 @@
 // sandbox: see DIRECT_PAYMENTS.md.
 import { createHash } from "node:crypto";
 import type { Authorization, AuthorizeRequest, Connection, Processor } from "../processor.ts";
-import { KeyRefused, NotFound, Refused, Retry } from "../processor.ts";
+import { KeyRefused, NotFound, Refused, Retry, PROCESSOR_TIMEOUT_MS } from "../processor.ts";
 import type { DeclineCode } from "../types.ts";
 
 export interface CloverKeys {
@@ -49,7 +49,7 @@ export function fingerprintOf(source: Json | undefined): string | null {
   return `fp_${createHash("sha256").update(`${source.first6}:${source.last4}:${source.exp_month}:${source.exp_year}`).digest("hex").slice(0, 24)}`;
 }
 
-export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: Fetch = fetch): Processor {
+export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: Fetch = fetch, timeoutMs = PROCESSOR_TIMEOUT_MS): Processor {
   checkKeys(keys);
   const merchant = keys.merchant_id.trim();
   let hosts: (typeof HOSTS)["live"] | null = null;
@@ -62,6 +62,7 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
     try {
       response = await fetchImpl(`${host}${path}`, {
         method,
+        signal: AbortSignal.timeout(timeoutMs),
         headers: {
           Authorization: `Bearer ${keys.private_token.trim()}`,
           "Content-Type": "application/json",
@@ -72,7 +73,11 @@ export function cloverProcessor(keys: CloverKeys, currency: string, fetchImpl: F
     } catch (err) {
       throw new Retry(`Clover couldn't be reached: ${(err as Error).message}`);
     }
-    const json = (await response.json().catch(() => ({}))) as Json;
+    const json = (await response.json().catch((err: Error) => {
+      // Cut off by the deadline: not an answer, but no answer yet.
+      if (err.name === "TimeoutError" || err.name === "AbortError") throw new Retry(`Clover didn't finish answering: ${err.message}`);
+      return {};
+    })) as Json;
     if (response.ok) return json;
     if (response.status === 429 || response.status >= 500) throw new Retry(`Clover is busy (${response.status})`);
     if (response.status === 401) throw new KeyRefused("Clover no longer accepts this device's token. Connect again.");

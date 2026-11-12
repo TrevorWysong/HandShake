@@ -9,7 +9,7 @@
 
 use crate::code::{Invitation, SealedKey};
 use crate::{Error, Result};
-use holochain_types::prelude::AgentPubKey;
+use holochain_types::prelude::{ActionHash, AgentPubKey};
 use lair_keystore_api::prelude::*;
 use std::sync::Arc;
 
@@ -53,13 +53,13 @@ pub async fn invite(lair: &LairClient) -> Result<(Arc<str>, Invitation)> {
 }
 
 /// `account`'s key, sealed to `invitation`.
-pub async fn seal(lair: &LairClient, account: &AgentPubKey, invitation: &Invitation) -> Result<SealedKey> {
+pub async fn seal(lair: &LairClient, account: &AgentPubKey, head: &ActionHash, invitation: &Invitation) -> Result<SealedKey> {
     let (tag, seed) = account_seed(lair, account).await?;
     if !seed.exportable {
         return Err(Error::NotExportable);
     }
     let (nonce, cipher) = lair.export_seed_by_tag(tag, seed.x25519_pub_key.clone(), invitation.key.into(), None).await?;
-    Ok(SealedKey { account: account.clone(), sender: *seed.x25519_pub_key.0, nonce, cipher: cipher.to_vec() })
+    Ok(SealedKey { account: account.clone(), head: head.clone(), sender: *seed.x25519_pub_key.0, nonce, cipher: cipher.to_vec() })
 }
 
 /// Opens `sealed` with the invitation key tagged `invitation`, into this
@@ -110,7 +110,7 @@ mod tests {
         let (old, new, stranger) = (keystore().await, keystore().await, keystore().await);
         let account = new_account_key(&old).await.unwrap();
         let (tag, invitation) = invite(&new).await.unwrap();
-        let sealed = SealedKey::decode(&seal(&old, &account, &invitation).await.unwrap().encode()).unwrap();
+        let sealed = SealedKey::decode(&seal(&old, &account, &ActionHash::from_raw_32(vec![7; 32]), &invitation).await.unwrap().encode()).unwrap();
 
         let (stranger_tag, _) = invite(&stranger).await.unwrap();
         assert!(receive(&stranger, &stranger_tag, &sealed).await.is_err(), "another keystore can't open it");
@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(receive(&new, &tag, &sealed).await.unwrap(), account, "safe to repeat");
 
         let (back, invitation) = invite(&old).await.unwrap();
-        let again = seal(&new, &account, &invitation).await.unwrap();
+        let again = seal(&new, &account, &ActionHash::from_raw_32(vec![7; 32]), &invitation).await.unwrap();
         assert!(receive(&old, &back, &again).await.is_ok(), "and it can move on again");
     }
 
@@ -129,8 +129,8 @@ mod tests {
         let old = keystore().await;
         let seed = old.new_seed("made by the conductor".into(), None, false).await.unwrap();
         let (_, invitation) = invite(&keystore().await).await.unwrap();
-        assert!(matches!(seal(&old, &agent_of(&seed), &invitation).await, Err(Error::NotExportable)));
-        assert!(matches!(seal(&old, &AgentPubKey::from_raw_32(vec![1; 32]), &invitation).await, Err(Error::NoSuchKey)));
+        assert!(matches!(seal(&old, &agent_of(&seed), &ActionHash::from_raw_32(vec![7; 32]), &invitation).await, Err(Error::NotExportable)));
+        assert!(matches!(seal(&old, &AgentPubKey::from_raw_32(vec![1; 32]), &ActionHash::from_raw_32(vec![7; 32]), &invitation).await, Err(Error::NoSuchKey)));
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -138,7 +138,7 @@ mod tests {
         let (old, new) = (keystore().await, keystore().await);
         let account = new_account_key(&old).await.unwrap();
         let (tag, invitation) = invite(&new).await.unwrap();
-        let mut sealed = seal(&old, &account, &invitation).await.unwrap();
+        let mut sealed = seal(&old, &account, &ActionHash::from_raw_32(vec![7; 32]), &invitation).await.unwrap();
         sealed.account = AgentPubKey::from_raw_32(vec![1; 32]);
         assert!(matches!(receive(&new, &tag, &sealed).await, Err(Error::WrongAccount)));
     }

@@ -61,6 +61,25 @@ mod test_utils {
     use hdk::prelude::*;
     handshake_coordinator_support::raw_link_test_externs!(AccountToPlan, PhraseKeyToPlan, GuardianToPlan, SuccessorToVouch, PredecessorToSuccession, SuccessorToSuccession, SuccessorToParcel, SuccessorToMigration, AccountToArrival);
 
+    /// What asking the app's previous network what network it is came to,
+    /// as Holochain gave it -- for a test of an app without one.
+    #[hdk_extern]
+    pub fn previous_raw_for_testing(_: ()) -> ExternResult<String> {
+        Ok(match call(CallTargetCell::OtherRole("previous".into()), ZomeName::from("account"), "network_hash".into(), None, ()) {
+            Ok(answer) => format!("{answer:?}"),
+            Err(e) => format!("Err({e:?})"),
+        })
+    }
+
+    /// Whether the previous network answers `feature`, as this version's
+    /// bridge reads it (`previous_answers`), and what asking it for its
+    /// features came to -- for a test against a real earlier release.
+    #[hdk_extern]
+    pub fn previous_answers_for_testing(feature: String) -> ExternResult<(Result<bool, String>, String)> {
+        let asked = handshake_coordinator_support::asked(call(CallTargetCell::OtherRole("previous".into()), ZomeName::from("account"), "bridge_features".into(), None, ()));
+        Ok((handshake_coordinator_support::previous_answers(&feature)?, format!("{asked:?}")))
+    }
+
     /// Writes each entry exactly as given, skipping the coordinator's checks
     /// -- what a modified client could.
     #[hdk_extern]

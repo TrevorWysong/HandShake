@@ -9,6 +9,9 @@ import { loadConfig } from "./config.ts";
 import { serve } from "./server.ts";
 import { Store, type Channel } from "./store.ts";
 
+// Whatever the relay writes is its own account's alone, whatever umask it
+// was started under.
+process.umask(0o077);
 const config = loadConfig();
 const log = (message: string) => console.log(`${new Date().toISOString()} ${message}`);
 const fetcher: Fetch = (url, init) => fetch(url, init);

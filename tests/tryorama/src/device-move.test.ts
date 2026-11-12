@@ -98,11 +98,22 @@ await runScenario(async (scenario) => {
   // Past here each step waits on what it needs, not a whole-network sync: a
   // node whose app was uninstalled and restored never holds exactly the
   // same set of ops as the rest, which is what `dhtSync` asks.
-  // The new install's peer record, as bootstrap would spread it.
+  // The new install's peer record, as bootstrap would spread it -- and
+  // spread again as each step waits: shared the moment the install starts,
+  // it may not yet claim the arc it settles on, and until peers see it does
+  // they neither answer its reads nor send it what it holds. Bootstrap
+  // republishes it; the test does what bootstrap would.
   await scenario.shareAllAgents();
-  const reached = await retryUntil(() => checkIn().then(() => "", (err) => String(err)), (answer) => /Only the order's driver/.test(answer), 60, 1000);
+  const reshared = <T>(step: () => Promise<T>) => {
+    let tries = 0;
+    return async () => {
+      if (++tries % 5 === 0) await scenario.shareAllAgents();
+      return step();
+    };
+  };
+  const reached = await retryUntil(reshared(() => checkIn().then(() => "", (err) => String(err))), (answer) => /Only the order's driver/.test(answer), 60, 1000);
   assert.match(reached, /Only the order's driver/, "other devices reach the new phone, through the grant it wrote");
-  await retryUntilOk(() => call(merchant.cells[0], "dispatch")("mark_ready_for_pickup", first), 60, 1000);
+  await retryUntilOk(reshared(() => call(merchant.cells[0], "dispatch")("mark_ready_for_pickup", first)), 60, 1000);
   await retryUntilOk(() => call(customer.cells[0], "dispatch")("complete_pickup", first), 120, 1000);
   console.log("[PASS] the order the old phone had in hand finishes on the new one");
   const carriedOn = await retryUntil(() => retryingCaller(merchant.cells[0], "account")<MoveReadiness>("ready_to_move", null), (r) => r.ready, 120, 1000);

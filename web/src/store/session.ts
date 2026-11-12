@@ -10,6 +10,7 @@ import { forgetStoredIdentity, loadStoredIdentity, storedIdentityNeedsUnlock } f
 import { createProfile, getProfileForAgent } from "../holochain/zomes/profiles";
 import { chainClosed, successionsOf } from "../holochain/zomes/account";
 import { prepareDevice } from "../holochain/device";
+import { useArrival } from "./arrival";
 import { actionHash, bytesToHex, decodeEntry } from "../holochain/decode";
 import { describeError } from "../lib/ui/errors";
 import { useNetwork } from "./network";
@@ -196,8 +197,9 @@ export const useSession = create<SessionState>((set, get) => ({
         hasDeviceLock,
       });
       // An account this device received from another phone arrives without
-      // what's private to a device; set it up, in the background.
-      void prepareDevice();
+      // what's private to a device; set it up, in the background -- once
+      // it's checked the old phone didn't take it back (`Arrival` does).
+      if (!useArrival.getState().head) void prepareDevice();
     } catch (err) {
       set({ status: "error", error: describeError(err) });
       throw err;

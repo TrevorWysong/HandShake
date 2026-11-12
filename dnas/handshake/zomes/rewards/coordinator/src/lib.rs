@@ -60,6 +60,9 @@ fn store(catalog_ref: &ActionHash) -> ExternResult<catalog_types::MerchantCatalo
 /// a day, whether or not the app is open. Scheduled at `init`.
 #[hdk_extern(infallible)]
 pub fn rewards_periodically(_: Option<Schedule>) -> Option<Schedule> {
+    if handshake_coordinator_support::handing_over() {
+        return Some(Schedule::Persisted("0 7 */3 * * * *".into()));
+    }
     let _ = celebrate_birthdays(());
     let _ = share_birthdays(());
     Some(Schedule::Persisted("0 7 */3 * * * *".into()))
@@ -75,6 +78,10 @@ pub fn init() -> ExternResult<InitCallbackResult> {
 /// `prepare_device`).
 #[hdk_extern]
 pub fn prepare_device(_: ()) -> ExternResult<()> {
+    // Handing the account over: nothing set up here, for the new phone does.
+    if handshake_coordinator_support::handing_over() {
+        return Ok(());
+    }
     schedule("rewards_periodically")?;
     Ok(())
 }

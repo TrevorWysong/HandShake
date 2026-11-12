@@ -68,6 +68,26 @@ export async function readyToMove(): Promise<MoveReadiness> {
   return callZome("account", "ready_to_move", null);
 }
 
+/// The old phone, about to send its key: marks the handover -- from now
+/// on it writes nothing of its own accord -- and returns the head its chain
+/// ends at, which goes in the sealed key.
+export async function beginHandover(): Promise<ActionHash> {
+  return callZome("account", "begin_handover", null);
+}
+
+/// The old phone taking its account back: refused once the network shows
+/// the new phone has written as it (docs/RECOVERY.md).
+export async function takeBack(oneNode: boolean): Promise<void> {
+  return callZome("account", "take_back", { head: null, one_node: oneNode });
+}
+
+/// The new phone, before it writes anything: its restored chain still ends
+/// where the old phone handed it over (`head`, from the sealed key).
+/// Refused if the old phone took it back meanwhile.
+export async function confirmHandover(head: ActionHash, oneNode: boolean): Promise<void> {
+  return callZome("account", "confirm_handover", { head, one_node: oneNode });
+}
+
 // --- moving to the next version of the network (docs/MIGRATION.md) ---
 
 /// Moves the caller's account to the next network and closes its chain here.

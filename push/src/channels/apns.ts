@@ -4,9 +4,9 @@
 // notification extension may replace it with what actually changed
 // (`mutable-content`). Authorised by the relay's token key (a .p8), whose
 // JWT Apple accepts for up to an hour.
-import { connect, type ClientHttp2Session } from "node:http2";
+import { connect, constants, type ClientHttp2Session } from "node:http2";
 import { createPrivateKey, type KeyObject } from "node:crypto";
-import { jwt, type Outcome, type Sender } from "./channel.ts";
+import { DELIVERY_TIMEOUT_MS, jwt, type Outcome, type Sender } from "./channel.ts";
 
 const TOKEN_LIFETIME_MS = 50 * 60_000;
 const EXPIRY_SECS = 60 * 60;
@@ -62,17 +62,30 @@ export function apnsSender(config: ApnsConfig, request: ApnsRequest = http2Reque
   };
 }
 
-/// Requests over one HTTP/2 connection to Apple, opened as needed.
-function http2Request(sandbox: boolean): ApnsRequest {
-  const origin = sandbox ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com";
+/// Requests over one HTTP/2 connection to Apple, opened as needed. Each is
+/// given up at the deadline: its stream cancelled, and the connection
+/// dropped -- one that stopped answering is opened afresh for the next --
+/// so a hung request never ties up a delivery slot for long.
+export function http2Request(sandbox: boolean, timeoutMs = DELIVERY_TIMEOUT_MS, origin = sandbox ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com"): ApnsRequest {
   let session: ClientHttp2Session | null = null;
   return (path, headers, body) =>
-    new Promise((resolve, reject) => {
+    new Promise((settle, fail) => {
+      let settled = false;
+      const resolve = (answer: { status: number; reason?: string }) => !settled && ((settled = true), settle(answer));
+      const reject = (err: unknown) => !settled && ((settled = true), fail(err));
       if (!session || session.closed || session.destroyed) {
-        session = connect(origin);
-        session.on("error", () => (session = null));
+        const opened = connect(origin);
+        opened.on("error", () => session === opened && (session = null));
+        session = opened;
       }
-      const stream = session.request({ ":method": "POST", ":path": path, ...headers });
+      const using = session;
+      const stream = using.request({ ":method": "POST", ":path": path, ...headers });
+      stream.setTimeout(timeoutMs, () => {
+        stream.close(constants.NGHTTP2_CANCEL);
+        if (session === using) session = null;
+        using.destroy();
+        reject(new Error(`Apple didn't answer within ${timeoutMs} ms`));
+      });
       let status = 0;
       let text = "";
       stream.on("response", (head) => (status = Number(head[":status"])));
@@ -88,6 +101,9 @@ function http2Request(sandbox: boolean): ApnsRequest {
         resolve({ status, reason });
       });
       stream.on("error", reject);
+      // Closed with no answer -- its connection dropped for another's
+      // deadline, say: failed, never left waiting.
+      stream.on("close", () => reject(new Error("Apple's connection closed before it answered")));
       stream.end(body);
     });
 }

@@ -26,6 +26,10 @@ pub fn init() -> ExternResult<InitCallbackResult> {
 /// See `dispatch_coordinator::signals::prepare_device`.
 #[hdk_extern]
 pub fn prepare_device(_: ()) -> ExternResult<()> {
+    // Handing the account over: nothing set up here, for the new phone does.
+    if handshake_coordinator_support::handing_over() {
+        return Ok(());
+    }
     handshake_coordinator_support::ensure_open_calls("codes", &["confirm_by_code", "confirm_check_in"])?;
     Ok(())
 }

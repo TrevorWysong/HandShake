@@ -57,7 +57,7 @@ A release made while people move carries the previous network as a second app ro
 
 The old network runs whatever release it was, which may be older than the bridge a new version would like to use. So each version lists what it answers beyond what every version does (account's `bridge_features`; `coordinator_support::bridge`). The next version asks before relying on any of it, and tells three answers apart:
 - **It answers the feature:** used.
-- **It's too old to list anything,** but answers what every version does: a final no. The new version does without, once, and never retries.
+- **It's too old to list anything:** Holochain itself says the function doesn't exist there, and the network still answers what every version does. That's a final no: the new version does without, once, and never retries. Any other failure, even one that clears up a moment later, is the third answer, never taken for this one (`coordinator_support::asked`, unit-tested, and checked against release 0.2.0's real DNA).
 - **It can't be asked just now:** tried again later.
 
 | Feature | From a release that has it | From one that doesn't |

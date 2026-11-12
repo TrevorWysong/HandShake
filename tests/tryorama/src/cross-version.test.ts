@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dhtSync, runScenario, type Conductor } from "@holochain-open-dev/tryorama";
 import type { ActionHash, Record as HcRecord } from "@holochain/client";
-import { HAPP_PATH, PREVIOUS_RELEASE_DNA, ST_PETE, actionHash, customerPaid, decodeEntry, installOn, networkSettings, onCell, oneNetworkHapp, retryUntil, retryUntilOk, retryingCaller, shareAgentsOn, twoNetworkHapp } from "./helpers.js";
+import { HAPP_PATH, PREVIOUS_RELEASE_DNA, ST_PETE, actionHash, customerPaid, decodeEntry, installOn, networkSettings, onCell, oneNetworkHapp, retryUntil, retryUntilOk, retryingCaller, shareAgentsOn, twoNetworkHapp, useTestCoordinators } from "./helpers.js";
 
 const OLD = "handshake-cross-v1";
 const NEW = "handshake-cross-v2";
@@ -65,6 +65,13 @@ await runScenario(async (scenario) => {
   const call = (p: typeof alice, zome: string) => retryingCaller(p.cells[0], zome);
   const now = Date.now() * 1000;
 
+  // What the bridge makes of the previous network: Holochain's own word
+  // that a function doesn't exist there, never a passing failure.
+  await useTestCoordinators(bobApp, ["account"], bob.cells[0]);
+  const [verdict, asked] = await call(bob, "account")<[{ Ok?: boolean; Err?: string }, string]>("previous_answers_for_testing", "rewards-carry:v2");
+  assert.deepEqual(verdict, { Ok: false }, `${release.version} reads as too old to answer the bridge, for good -- asking it came to: ${asked}`);
+  console.log(`[PASS] ${release.version}'s network reads as too old for the bridge, by Holochain's word that it lacks the function (${asked.slice(0, 80)})`);
+
   // ===== On the earlier release's network: a store with a program =====
   await call(alice, "profiles")("create_profile", { display_name: "Alice", roles: ["Merchant"], created_at: now });
   await call(cara, "profiles")("create_profile", { display_name: "Cara", roles: ["Requester"], created_at: now });
@@ -81,6 +88,9 @@ await runScenario(async (scenario) => {
   // ===== Both move to this version =====
   for (const [from, to] of [[cara, danKey], [alice, bobKey]] as const) await retryUntilOk(() => call(from, "account")("migrate_out", { network: newNetwork, successor: to, parcel: "" }), 20);
   await syncOld();
+  // Each version's own DNA, as each role says: the new key is on the very
+  // network its account moved to.
+  assert.ok(Buffer.from(bob.cells[0].cell_id[0]).equals(Buffer.from(newNetwork)) && Buffer.from(bobBefore.cells[0].cell_id[0]).equals(Buffer.from(oldNetwork)), "each role runs its own version's DNA");
   for (const arriving of [bob, dan]) await retryUntil(() => call(arriving, "account")<Uint8Array>("arrive", null).then(() => true, () => false), (ok) => ok, 60, 1000);
   await call(bob, "profiles")("create_profile", { display_name: "Alice", roles: ["Merchant"], created_at: Date.now() * 1000 });
   await call(dan, "profiles")("create_profile", { display_name: "Cara", roles: ["Requester"], created_at: Date.now() * 1000 });

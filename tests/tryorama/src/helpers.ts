@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { createPrivateKey, generateKeyPairSync, sign } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,9 +105,15 @@ const DNA_PATH = fileURLToPath(new URL("../../../dnas/handshake/workdir/handshak
 export const PREVIOUS_RELEASE_DNA = fileURLToPath(new URL("../fixtures/previous-release/handshake.dna", import.meta.url));
 
 /// An app of `roles`, each role's DNA by path, packed to a temporary file.
+/// Each DNA is copied in under its role's name: a bundle keeps one file per
+/// name, so two DNAs both called `handshake.dna` -- this build's and an
+/// earlier release's -- would otherwise become one.
 function happOf(name: string, roles: [string, string][]): string {
   const dir = mkdtempSync(path.join(tmpdir(), `${name}-`));
-  const role = ([role, dna]: [string, string]) => ({ name: role, provisioning: { strategy: "create", deferred: false }, dna: { path: dna, modifiers: { network_seed: null, properties: null }, clone_limit: 0 } });
+  const role = ([role, dna]: [string, string]) => {
+    copyFileSync(dna, path.join(dir, `${role}.dna`));
+    return { name: role, provisioning: { strategy: "create", deferred: false }, dna: { path: `./${role}.dna`, modifiers: { network_seed: null, properties: null }, clone_limit: 0 } };
+  };
   writeFileSync(path.join(dir, "happ.yaml"), JSON.stringify({ manifest_version: "0", name, description: null, roles: roles.map(role) }));
   execFileSync("hc", ["app", "pack", dir, "-o", path.join(dir, `${name}.happ`)]);
   return path.join(dir, `${name}.happ`);

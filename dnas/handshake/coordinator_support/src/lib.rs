@@ -553,21 +553,128 @@ pub mod bridge {
     pub const FEATURES: &[&str] = &[REWARDS_CARRY, DEAL_CARDS];
 }
 
+/// Whether this device is handing its account to a new phone (account's
+/// `handing_over`): if so, it writes nothing of its own accord -- no
+/// background work, no setup -- so the two can never both write as the
+/// account and fork it. Taken as yes if it can't be told: waiting is
+/// harmless, a fork isn't.
+pub fn handing_over() -> bool {
+    call(CallTargetCell::Local, ZomeName::from("account"), "handing_over".into(), None, ()).ok().and_then(|answer| match answer {
+        ZomeCallResponse::Ok(io) => io.decode::<bool>().ok(),
+        _ => None,
+    }).unwrap_or(true)
+}
+
+/// What the app's previous network answered a call -- kept apart, as an app
+/// must keep them apart: a network it doesn't carry, one that answered, one
+/// it couldn't ask just now, and one that answered in a way it can't read.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Previous<T> {
+    /// The app carries no previous network (no `previous` role).
+    NoNetwork,
+    Answered(T),
+    /// It couldn't be asked just now: try again.
+    Unreachable(String),
+    /// It answered, in a way this version can't read.
+    Unreadable(String),
+}
+
+impl<T> Previous<T> {
+    /// The answer -- `None` without a previous network -- or why it can't be
+    /// had, for a person to read: to try again, or that the versions don't
+    /// fit. Never a passing failure taken for an empty answer.
+    pub fn or_retry(self) -> ExternResult<Option<T>> {
+        match self {
+            Previous::NoNetwork => Ok(None),
+            Previous::Answered(answer) => Ok(Some(answer)),
+            Previous::Unreachable(_) => Err(guest("The previous version of the network couldn't be reached just now. Try again in a moment.")),
+            Previous::Unreadable(_) => Err(guest("The previous version of the network answered in a way this version can't read.")),
+        }
+    }
+}
+
+/// Whether a failed call's error is Holochain saying the app has no cell
+/// for the role it named -- one that doesn't carry it at all.
+fn no_such_role(error: &str) -> bool {
+    let error = error.to_lowercase();
+    error.contains("role") && (error.contains("not found") || error.contains("no cell") || error.contains("missing") || error.contains("unknown") || error.contains("doesn't exist") || error.contains("does not exist"))
+}
+
+/// `previous`'s answer to `function` in `zome`, kept apart as `Previous`
+/// says.
+pub fn ask_previous<I, O>(zome: &str, function: &str, input: I) -> Previous<O>
+where
+    I: Serialize + std::fmt::Debug,
+    O: for<'de> Deserialize<'de> + std::fmt::Debug,
+{
+    read_previous(call(CallTargetCell::OtherRole("previous".into()), ZomeName::from(zome), function.into(), None, input))
+}
+
+/// A call's outcome, as `ask_previous` reads it.
+pub fn read_previous<O: for<'de> Deserialize<'de> + std::fmt::Debug>(answer: ExternResult<ZomeCallResponse>) -> Previous<O> {
+    match answer {
+        Ok(ZomeCallResponse::Ok(io)) => match io.decode::<O>() {
+            Ok(decoded) => Previous::Answered(decoded),
+            Err(e) => Previous::Unreadable(format!("{e:?}")),
+        },
+        Ok(other) => Previous::Unreachable(format!("{other:?}")),
+        Err(e) if no_such_role(&format!("{e:?}")) => Previous::NoNetwork,
+        Err(e) => Previous::Unreachable(format!("{e:?}")),
+    }
+}
+
+/// What asking the previous network for its bridge features came to.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Asked {
+    /// It listed them.
+    Answered(Vec<String>),
+    /// It has no such function: a version from before they were listed.
+    Missing,
+    /// It couldn't be asked, or failed answering: try again later.
+    Failed(String),
+}
+
+/// Whether a failed call's error is Holochain saying the function asked for
+/// doesn't exist in the zome -- an older version's, not a passing failure.
+fn missing_function(error: &str) -> bool {
+    error.contains("ZomeFnNotExists") || error.contains("doesn't exist") || error.contains("does not exist")
+}
+
+/// `bridge_features`' answer, as `previous_answers` reads it: only a call
+/// Holochain refused for want of the function is an older version; every
+/// other failure is passing.
+pub fn asked(answer: ExternResult<ZomeCallResponse>) -> Asked {
+    match answer {
+        Ok(ZomeCallResponse::Ok(io)) => match io.decode::<Vec<String>>() {
+            Ok(features) => Asked::Answered(features),
+            Err(e) => Asked::Failed(format!("its features didn't decode: {e:?}")),
+        },
+        Ok(other) => Asked::Failed(format!("{other:?}")),
+        Err(e) if missing_function(&format!("{e:?}")) => Asked::Missing,
+        Err(e) => Asked::Failed(format!("{e:?}")),
+    }
+}
+
 /// Whether the previous network answers `feature` (`bridge`): `Ok(true)` or
 /// `Ok(false)` -- false from a version too old to list what it answers,
 /// which never changes -- or `Err` if it can't be asked just now, to try
-/// again later.
+/// again later. Only Holochain's word that the list doesn't exist there
+/// counts as too old; any other failure is tried again, never taken for it.
 pub fn previous_answers(feature: &str) -> ExternResult<Result<bool, String>> {
-    match call(CallTargetCell::OtherRole("previous".into()), ZomeName::from("account"), "bridge_features".into(), None, ()) {
-        Ok(ZomeCallResponse::Ok(io)) => Ok(Ok(io.decode::<Vec<String>>().map_err(|e| wasm_error!(e))?.iter().any(|f| f == feature))),
-        // No list: an older version, if it answers what every version does.
-        _ => match call(CallTargetCell::OtherRole("previous".into()), ZomeName::from("account"), "network_hash".into(), None, ()) {
+    let previous = || CallTargetCell::OtherRole("previous".into());
+    match asked(call(previous(), ZomeName::from("account"), "bridge_features".into(), None, ())) {
+        Asked::Answered(features) => Ok(Ok(features.iter().any(|f| f == feature))),
+        Asked::Failed(why) => Ok(Err(why)),
+        // An older version -- if it's the previous network answering what
+        // every version does.
+        Asked::Missing => match call(previous(), ZomeName::from("account"), "network_hash".into(), None, ()) {
             Ok(ZomeCallResponse::Ok(_)) => Ok(Ok(false)),
             Ok(other) => Ok(Err(format!("{other:?}"))),
-            Err(e) => Ok(Err(e.to_string())),
+            Err(e) => Ok(Err(format!("{e:?}"))),
         },
     }
 }
+
 
 /// `call_local`, of `agent`'s own node, over the network -- the inner error
 /// when it can't be reached.
@@ -599,4 +706,46 @@ where
     O: for<'de> Deserialize<'de> + std::fmt::Debug,
 {
     call_local(zome_info().ok()?.name, function, input).ok()?.ok()
+}
+
+#[cfg(test)]
+mod bridge_tests {
+    use super::*;
+
+    fn host_error(message: &str) -> ExternResult<ZomeCallResponse> {
+        Err(wasm_error!(WasmErrorInner::Host(message.into())))
+    }
+
+    #[test]
+    fn only_a_missing_function_is_an_older_version() {
+        assert_eq!(asked(host_error("RibosomeError(ZomeFnNotExists(ZomeName(\"account\"), FunctionName(\"bridge_features\")))")), Asked::Missing);
+        assert_eq!(asked(host_error("Attempted to call a zome function that doesn't exist: account bridge_features")), Asked::Missing);
+    }
+
+    #[test]
+    fn a_passing_failure_is_tried_again_never_taken_for_an_older_version() {
+        assert!(matches!(asked(Ok(ZomeCallResponse::NetworkError("timed out".into()))), Asked::Failed(_)));
+        assert!(matches!(asked(Ok(ZomeCallResponse::CountersigningSession("a session is open".into()))), Asked::Failed(_)));
+        assert!(matches!(asked(host_error("the conductor is shutting down")), Asked::Failed(_)));
+        assert!(matches!(asked(host_error("database is locked")), Asked::Failed(_)));
+    }
+
+    #[test]
+    fn a_previous_network_answering_unreachable_missing_or_unreadable_are_kept_apart() {
+        let io = ExternIO::encode(7u32).unwrap();
+        assert_eq!(read_previous::<u32>(Ok(ZomeCallResponse::Ok(io))), Previous::Answered(7));
+        assert!(matches!(read_previous::<u32>(Ok(ZomeCallResponse::NetworkError("timed out".into()))), Previous::Unreachable(_)));
+        assert!(matches!(read_previous::<u32>(host_error("database is locked")), Previous::Unreachable(_)));
+        assert!(matches!(read_previous::<u32>(host_error("CellMissing: no cell for role previous")), Previous::NoNetwork));
+        let wrong = ExternIO::encode("not a number").unwrap();
+        assert!(matches!(read_previous::<u32>(Ok(ZomeCallResponse::Ok(wrong))), Previous::Unreadable(_)));
+        assert!(Previous::<u32>::Unreachable("x".into()).or_retry().is_err(), "never taken for an empty answer");
+        assert_eq!(Previous::<u32>::NoNetwork.or_retry().unwrap(), None);
+    }
+
+    #[test]
+    fn a_list_is_read() {
+        let io = ExternIO::encode(vec!["rewards-carry:v2".to_string()]).unwrap();
+        assert_eq!(asked(Ok(ZomeCallResponse::Ok(io))), Asked::Answered(vec!["rewards-carry:v2".into()]));
+    }
 }

@@ -8,7 +8,7 @@
 // the app's pages (`confirm`), so no script in them can point payments at
 // another account.
 import { Engine, type Dispatch } from "./engine.ts";
-import { KEY_NAMES } from "./adapters/index.ts";
+import { KEY_NAMES, VERIFIED } from "./adapters/index.ts";
 import type { CredentialStore, Credentials } from "./credentials.ts";
 import type { Connection, Processor } from "./processor.ts";
 import { KeyRefused, Refused, accountId } from "./processor.ts";
@@ -65,6 +65,8 @@ export function createAgent(options: AgentOptions) {
   const { dispatch, credentials, state, processorFor, confirm, roundMs = ROUND_MS, onProblem: report = () => {} } = options;
   let engine: Engine | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
+  /// Lets go of the state this agent holds, while it's started.
+  let release: (() => Promise<void>) | null = null;
   // What last went wrong, kept until a round goes cleanly. Each round is
   // judged on its own: a wake asked for mid-round joins that round (the
   // engine runs one at a time), so it shares its verdict rather than
@@ -164,14 +166,23 @@ export function createAgent(options: AgentOptions) {
     /// Puts the network's profile right by the keys kept here, then starts
     /// rounds with them -- or, if that can't be done yet, tries again each
     /// tick, paying nothing meanwhile.
+    /// Starts its rounds -- once it holds this identity's state, refused
+    /// while another agent does (`StateStore.hold`).
     async start() {
+      release ??= (await state.hold?.()) ?? (async () => {});
       timer ??= setInterval(tick, roundMs);
       await begin().then(round, (err) => onProblem("round", err));
     },
 
-    stop() {
+    /// Stops its rounds, lets the one under way finish, and lets go of the
+    /// state for another agent to hold.
+    async stop() {
       if (timer) clearInterval(timer);
       timer = null;
+      await rounded().catch(() => 0);
+      const letGo = release;
+      release = null;
+      await letGo?.();
     },
 
     async status(): Promise<Status | null> {
@@ -190,6 +201,7 @@ export function createAgent(options: AgentOptions) {
       if (processor === "Clover") throw new Refused("Clover can't be connected yet. Use Stripe or Square for now.");
       const network = await terms();
       if (processor === "Test" && network.live_payments) throw new Refused("This network takes real payments: connect a live processor account.");
+      if (processor !== "Test" && network.live_payments && !VERIFIED[processor]) throw new Refused(`${processor} isn't ready for real payments yet: connect it on a test network to try it, or use Stripe.`);
       // Keys refused now were mistyped, not revoked: said so.
       const connection = await processorFor(processor, keys, network.currency)
         .connect()

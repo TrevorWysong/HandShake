@@ -444,3 +444,8 @@ test("a connect cut short while running puts the network back to the keys kept, 
   await new Promise((done) => setTimeout(done, 60));
   assert.ok(asked.length > before, "rounds carry on with them");
 });
+
+test("a processor not yet run against its own sandbox takes no real money: connected on a test network only", async () => {
+  const { agent } = setup(true);
+  await assert.rejects(agent.connect("Square", { application_id: "sq0idp-abcdefghijklmnop", location_id: "L1234567", access_token: "EAAAabcdefghijklmnopqrstuvwxyz" }), /Square isn't ready for real payments yet/);
+});
