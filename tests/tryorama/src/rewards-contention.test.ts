@@ -18,7 +18,9 @@ const COST = 100;
 const PRICE = 500;
 
 await runScenario(async (scenario) => {
-  const app = appWithProperties({ max_pending_orders: 100 });
+  // A round places dozens of orders before its stores answer them: an hour
+  // to answer, so none lapses on the way.
+  const app = appWithProperties({ max_pending_orders: 100, store_response_secs: 3600 });
   const players = await scenario.addPlayersWithApps([app, app, app, app]);
   const [storeA, storeB, ada, bo] = players;
   await scenario.shareAllAgents();
