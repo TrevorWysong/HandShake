@@ -58,6 +58,21 @@ A release made while people move carries the previous network as a second app ro
 - **History reaches back one version.** The new app reads the network just before it. To reach further back, a release would carry more than one previous role.
 - **The old network has to stay up during the move.** Its peers serve the history the new network reads. Keep the old bootstrap and relay servers running until everyone who's going to move has moved. History on the old network lasts as long as some peers still hold it.
 
+## Update safety
+
+HandShake ships a network of independent copies, not a server: people run different versions, keep data on their own devices, and work offline. What protects them through an update, and what's still to build:
+
+| Concern | Holds today | Still to do |
+| --- | --- | --- |
+| **Versioned schemas** | The DNA hash is the protocol version: any change to entry types, link types, validation or DNA properties is a new network, never a silent reinterpretation of old records. Every entry decodes only its own fields (`#[serde(deny_unknown_fields)]`), so no version misreads another's record. | A written list of each network version and what changed in it, kept with `deploy/releases/`. |
+| **Mixed versions on one network** | Peers on one network all validate with the same integrity zomes, so a newer app can't write what an older peer rejects, nor the reverse. Coordinator changes only change how a device reads and writes its own data. | Peers talk directly through remote signals (`RemoteSignal`). A variant an older app doesn't know is dropped, not misread, but nothing tests a mixed-version pair yet. Add a test with two coordinator versions on one DNA, before relying on it. |
+| **Compatibility policy** | A new network reads exactly one version back (the `previous` role). Coordinator releases on one network are interchangeable. | Say, per release, how long the previous network is kept up and readable, and when its `previous` role is dropped. |
+| **Crash-safe migration** | Leaving is one call, `migrate_out`: its checks, the parcel, the `Migration` entry and the chain's close commit together or not at all. It refuses while anything would be stranded, and fails closed when it can't tell. | Arriving is several steps (arrival, profile, store import). Test each being cut short and run again: each should be safe to repeat, and none should be lost. |
+| **Rollback** | A coordinator release can be rolled back: same network, same data. | **Rolling the app back doesn't roll the data back.** A chain closed by `migrate_out` stays closed: no older app can reopen it, and the account carries on only on the new network. A desktop install keeps its data per version line (`desktop/README.md`), so reinstalling an older line's app starts on that line's data, not the newer one's. Each release note should say which of its changes can be rolled back. |
+| **Rehearsal at real size** | `tests/tryorama/bench/scale.ts` measures long accounts, big menus and busy areas; `migration.test.ts` moves a small account end to end. | Rehearse a move of a store and its regulars at the sizes the benchmark reaches, before a real migration. |
+| **Release channels** | Desktop releases are drafts until the owner publishes them, and an unsigned build never updates itself (`desktop/README.md`). | Beta and stable channels, so a release reaches a few people first. |
+| **Monitoring** | None: no server sees the network. | An opt-in health report from apps (version, failed calls, ops stuck in validation), or a monitoring peer run by the operator. Ops stuck in validation limbo are what HOLOCHAIN_ISSUES.md #11 looked like. |
+
 ## For the operator, step by step
 
 1. Build the new release with the changed integrity zomes. Use a new network seed, such as `handshake-2027`, and carry the previous release:
