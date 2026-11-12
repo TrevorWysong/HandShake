@@ -5,7 +5,7 @@
 // over, so a crash never locks an account out.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, symlinkSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { createAgent } from "../src/agent.ts";
 import { processorFor } from "../src/adapters/index.ts";
 import { memoryCredentials } from "../src/credentials.ts";
-import { LOCK_FILE, holdFolder } from "../src/lock.ts";
+import { LOCK_FILE, holdFolder, startOf } from "../src/lock.ts";
 import { fileStore } from "../src/state.ts";
 
 const folder = () => mkdtemp(path.join(tmpdir(), "handshake-agent-"));
@@ -74,4 +74,35 @@ test("a second agent for the same identity won't start until the first stops", a
   await first.stop();
   await second.start();
   await second.stop();
+});
+
+test("every spelling of a folder is one folder: a symlink or a .. can't hold it twice", { skip: process.platform === "win32" }, async () => {
+  const dir = await folder();
+  const release = await holdFolder(dir);
+  const alias = path.join(path.dirname(dir), `${path.basename(dir)}-alias`);
+  symlinkSync(dir, alias);
+  await assert.rejects(holdFolder(alias), /already running for this account/, "through a symlink");
+  mkdirSync(path.join(dir, "sub"));
+  await assert.rejects(holdFolder(path.join(dir, "sub", "..")), /already running for this account/, "through ..");
+  await release();
+});
+
+test("a process id the system gave someone else is a dead holder's; the holder itself, still running, refuses", { timeout: 30_000 }, async () => {
+  // A running process that isn't an agent: as if the system reused a dead
+  // agent's id for it.
+  const other = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)"], { stdio: "ignore" });
+  try {
+    await new Promise((started) => setTimeout(started, 300));
+    const reused = await folder();
+    await writeFile(path.join(reused, `${LOCK_FILE}.1`), JSON.stringify({ pid: other.pid, started: "when the dead agent started", token: "dead", since: 0 }));
+    const release = await holdFolder(reused);
+    assert.ok(existsSync(path.join(reused, `${LOCK_FILE}.2`)), "taken over: that id is someone else's now");
+    await release();
+    // The same id, started when the lock says: the holder, alive.
+    const live = await folder();
+    await writeFile(path.join(live, `${LOCK_FILE}.1`), JSON.stringify({ pid: other.pid, started: startOf(other.pid!), token: "live", since: 0 }));
+    await assert.rejects(holdFolder(live), /already running for this account/);
+  } finally {
+    other.kill();
+  }
 });
