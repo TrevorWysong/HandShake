@@ -59,6 +59,8 @@ struct Node {
     _conductor: Child,
     device: Device,
     admin: AdminWebsocket,
+    /// The app's connection, for the install it was made for.
+    app_ws: tokio::sync::Mutex<Option<(holochain_types::prelude::CellId, AppWebsocket)>>,
 }
 
 async fn node(services: &str) -> Node {
@@ -93,7 +95,7 @@ async fn node(services: &str) -> Node {
     let passphrase = Arc::new(Mutex::new(sodoken::LockedArray::from(PASSPHRASE.as_bytes().to_vec())));
     let lair = ipc_keystore_connect(Url::parse(&url).unwrap(), passphrase).await.unwrap();
     let device = Device::new(lair, AdminWebsocket::connect(("127.0.0.1", port), None).await.unwrap(), app());
-    Node { _dir: dir, _conductor: conductor, device, admin }
+    Node { _dir: dir, _conductor: conductor, device, admin, app_ws: tokio::sync::Mutex::new(None) }
 }
 
 /// Everyone knows everyone, rather than waiting on bootstrap.
@@ -109,15 +111,30 @@ async fn introduce(nodes: &[&Node]) {
 
 /// A zome call to `node`'s app, as its UI would make it: the answer, or the
 /// zome's refusal as text.
-async fn call<I: serde::Serialize + std::fmt::Debug, O: serde::de::DeserializeOwned + std::fmt::Debug>(node: &Node, zome: &str, function: &str, input: I) -> Result<O, String> {
+/// Connected once per install of the app -- each authorization of signing
+/// credentials writes a grant to the account's chain, so a connection made
+/// per call would grow the chain as fast as anyone polled it.
+async fn app_ws(node: &Node) -> AppWebsocket {
     let info = app_info(&node.admin, &app()).await.unwrap().unwrap();
     let Some(CellInfo::Provisioned(cell)) = info.cell_info["handshake"].first() else { panic!("no relay cell") };
+    let mut cached = node.app_ws.lock().await;
+    if let Some((cell_id, ws)) = cached.as_ref() {
+        if cell_id == &cell.cell_id {
+            return ws.clone();
+        }
+    }
     let signer = ClientAgentSigner::default();
     let credentials = node.admin.authorize_signing_credentials(AuthorizeSigningCredentialsPayload { cell_id: cell.cell_id.clone(), functions: None }).await.unwrap();
     signer.add_credentials(cell.cell_id.clone(), credentials);
     let port = node.admin.attach_app_interface(0, None, AllowedOrigins::Any, None).await.unwrap();
     let token = node.admin.issue_app_auth_token(IssueAppAuthenticationTokenPayload::for_installed_app_id(info.installed_app_id.clone())).await.unwrap().token;
-    let app_ws = AppWebsocket::connect(("127.0.0.1", port), token, signer.into(), None).await.unwrap();
+    let ws = AppWebsocket::connect(("127.0.0.1", port), token, signer.into(), None).await.unwrap();
+    *cached = Some((cell.cell_id.clone(), ws.clone()));
+    ws
+}
+
+async fn call<I: serde::Serialize + std::fmt::Debug, O: serde::de::DeserializeOwned + std::fmt::Debug>(node: &Node, zome: &str, function: &str, input: I) -> Result<O, String> {
+    let app_ws = app_ws(node).await;
     match app_ws.call_zome(ZomeCallTarget::RoleName("handshake".into()), zome.into(), function.into(), ExternIO::encode(input).unwrap()).await {
         Ok(answer) => Ok(answer.decode::<O>().unwrap()),
         Err(err) => Err(format!("{err:?}")),
@@ -127,10 +144,18 @@ async fn call<I: serde::Serialize + std::fmt::Debug, O: serde::de::DeserializeOw
 /// What the old phone's app checks before it sends its key: the network
 /// holds everything this device wrote (the account zome's `ready_to_move`)
 /// -- its handover mark too.
-async fn wait_until_ready(node: &Node) -> ActionHash {
+#[track_caller]
+fn wait_until_ready(node: &Node) -> impl std::future::Future<Output = ActionHash> + '_ {
+    let caller = std::panic::Location::caller();
+    async move { ready_or_panic(node, caller).await }
+}
+
+async fn ready_or_panic(node: &Node, caller: &'static std::panic::Location<'static>) -> ActionHash {
     #[derive(Debug, serde::Deserialize)]
     struct Readiness {
         head: ActionHash,
+        seq: u32,
+        seen: Option<u32>,
         ready: bool,
     }
     for _ in 0..120 {
@@ -140,7 +165,8 @@ async fn wait_until_ready(node: &Node) -> ActionHash {
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    panic!("the network never held the old device's chain");
+    let last: Readiness = call(node, "account", "ready_to_move", ()).await.unwrap();
+    panic!("the network never held the device's chain (waited at {caller}): at {} the device, the network saw {:?}", last.seq, last.seen);
 }
 
 /// The old phone's app, about to send its key: marks the handover, and
@@ -151,20 +177,18 @@ async fn hand_over(node: &Node) -> String {
     ActionHashB64::from(marked).to_string()
 }
 
-#[derive(Debug, serde::Serialize)]
-struct HandoverCheck {
-    head: Option<ActionHash>,
-    one_node: bool,
-}
 
-/// The new phone receiving `sealed`, however long its restore takes.
-async fn receive(node: &Node, sealed: &str) -> AgentPubKey {
+/// The new phone receiving `sealed`, however long its restore takes, and
+/// however long the network takes to say the handover stands.
+async fn receive(node: &Node, sealed: &str) -> handshake_device::Result<AgentPubKey> {
     let mut tries = 0;
     loop {
         match node.device.receive(sealed).await {
-            Ok(moved) => break moved,
-            Err(Error::StillRestoring) if tries < 3 => tries += 1,
-            Err(err) => panic!("{err}"),
+            Err(Error::StillRestoring | Error::NotYet) if tries < 20 => {
+                tries += 1;
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+            answer => return answer,
         }
     }
 }
@@ -196,23 +220,21 @@ async fn an_account_moves_to_a_new_device_with_its_key() {
     assert_eq!(status(&old).await, Some(AppStatus::Enabled), "a bad code changes nothing");
     let stale = old.device.send(&invitation, &head).await.unwrap();
     assert!(matches!(status(&old).await, Some(AppStatus::Disabled(_))), "the old device stops writing");
-    old.device.stay().await.unwrap();
-    call::<_, ()>(&old, "account", "take_back", HandoverCheck { head: None, one_node: false }).await.expect("the new phone never used it: taken back");
+    old.device.stay().await.expect("the new phone never used it: taken back");
+    assert_eq!(status(&old).await, Some(AppStatus::Enabled), "and the old device runs again");
     wait_until_ready(&old).await;
     // The new phone scans the code it was shown anyway: it restores the
-    // account, finds the old phone took it back, and writes nothing.
-    assert_eq!(receive(&new, &stale).await, account);
-    let sealed_head = handshake_device::code::SealedKey::decode(&stale).unwrap().head;
-    let refused = call::<_, ()>(&new, "account", "confirm_handover", HandoverCheck { head: Some(sealed_head), one_node: false }).await;
-    assert!(refused.is_err_and(|why| why.contains("took this account back")), "the new phone sees the account was taken back");
-    new.device.retire().await.unwrap();
-    println!("[PASS] taken back before the new phone used it; the new phone then refuses it");
+    // account, finds -- before writing anything -- the old phone took it
+    // back, and lets it go.
+    assert!(matches!(receive(&new, &stale).await, Err(Error::TakenBack)), "the new phone refuses an account taken back");
+    assert_eq!(status(&new).await, None, "and keeps nothing of it");
+    println!("[PASS] taken back before the new phone used it; the new phone then refuses it, having written nothing");
 
     // ===== Moved, then too late to take back =====
     let invitation = new.device.invite().await.unwrap();
     let head = hand_over(&old).await;
     let sealed = old.device.send(&invitation, &head).await.unwrap();
-    let moved = receive(&new, &sealed).await;
+    let moved = receive(&new, &sealed).await.unwrap();
     assert_eq!(moved, account);
     let info = app_info(&new.admin, &app()).await.unwrap().unwrap();
     assert_eq!(info.agent_pub_key, account, "the new device runs the account, not its own first key");
@@ -220,16 +242,13 @@ async fn an_account_moves_to_a_new_device_with_its_key() {
     assert_eq!(info.status, AppStatus::Enabled);
     assert!(new.device.can_move().await.unwrap(), "and can move it on again");
     assert_eq!(new.device.receive(&sealed).await.unwrap(), account, "safe to repeat");
-    let sealed_head = handshake_device::code::SealedKey::decode(&sealed).unwrap().head;
-    call::<_, ()>(&new, "account", "confirm_handover", HandoverCheck { head: Some(sealed_head), one_node: false }).await.expect("the chain ends where it was handed over");
-    // The new phone carries on as the account: it writes.
+    // Confirmed as it was received: the new phone carries on as the account,
+    // and writes.
     call::<_, ()>(&new, "dispatch", "prepare_device", ()).await.unwrap();
     wait_until_ready(&new).await;
     // Now the old phone tries to take it back: refused, never two writers.
-    old.device.stay().await.unwrap();
-    let refused = call::<_, ()>(&old, "account", "take_back", HandoverCheck { head: None, one_node: false }).await;
-    assert!(refused.is_err_and(|why| why.contains("started using this account")), "the old phone can't take back what the new phone uses");
-    assert!(call::<_, bool>(&old, "account", "handing_over", ()).await.unwrap(), "and still writes nothing of its own accord");
+    assert!(matches!(old.device.stay().await, Err(Error::TooLate)), "the old phone can't take back what the new phone uses");
+    assert!(matches!(status(&old).await, Some(AppStatus::Disabled(_))), "and stops again: never two writers");
     println!("[PASS] once the new phone writes as the account, the old phone can't take it back");
 
     old.device.retire().await.unwrap();

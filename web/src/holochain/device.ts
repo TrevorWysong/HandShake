@@ -11,18 +11,20 @@
 //                    the old phone: stops the app, returns the account's
 //                    key sealed to the invitation with `head` -- where its
 //                    chain ends, from the account zome's `begin_handover`
-//   stay()           the old phone: starts the app again, still handing
-//                    over; the app then asks the account zome to `take_back`,
-//                    which it may only while the new phone hasn't written
+//   stay()           the old phone: takes the account back -- only while the
+//                    network shows the new phone hasn't written as it (the
+//                    account zome's `take_back`); rejects saying why not
 //   retire()         the old phone: removes the account from this device
-//   receive(sealed)  the new phone: takes the key in and restores the
-//                    account from the network; resolves once it's running
-//                    here, after which the app reloads
+//   receive(sealed)  the new phone: takes the key in, restores the account
+//                    from the network, and checks -- before anything writes
+//                    as it -- the old phone didn't take it back
+//                    (`confirm_handover`); resolves once it's running here,
+//                    after which the app reloads
 //
 // A runtime without them (one that can't move keys) leaves it undefined:
 // the app then offers recovery instead. In development the dev host stands
 // in for the runtime (`devDevice.ts`).
-import { callZome } from "./client";
+import { useDeviceSetup } from "../store/deviceSetup";
 import { HOST } from "./host";
 
 export interface DeviceRuntime {
@@ -62,11 +64,9 @@ export async function canReceiveAccount(): Promise<boolean> {
   return (await deviceRuntime()) !== null;
 }
 
-/// Sets this device up to take part, where it isn't: the grants that let
-/// signals and handoff codes reach it, and its background work. A device
-/// set up at signup already is; one that received its account by restore
-/// isn't, so the app does this on every start. Each zome on its own, so
-/// one's trouble doesn't stop the others.
-export async function prepareDevice(): Promise<void> {
-  await Promise.allSettled(["dispatch", "attestation", "rewards"].map((zome) => callZome(zome, "prepare_device", null)));
+/// Sets this device up to take part, where it isn't (`store/deviceSetup`):
+/// each part on its own and tried again, and what still can't be set up
+/// shown, with a way to try again. The parts that couldn't be.
+export async function prepareDevice(): Promise<string[]> {
+  return useDeviceSetup.getState().setUp();
 }

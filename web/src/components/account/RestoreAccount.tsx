@@ -53,7 +53,8 @@ export function RestoreAccount({ devAdminUrl, onBack, onDone }: { devAdminUrl: s
   // A release that carries the previous version of the network offers to
   // bring an account over from it (docs/MIGRATION.md) -- and, after a reload
   // mid-way, picks up where it was.
-  const { data: hasPrevious } = useResource(agentPubKey && `has-previous:${bytesToHex(agentPubKey)}`, hasPreviousNetwork);
+  // Asked again until it can be told: a check that failed isn't "none".
+  const { data: hasPrevious } = useResource(agentPubKey && `has-previous:${bytesToHex(agentPubKey)}`, hasPreviousNetwork, { pollMs: POLL.slow });
   const { data: arrived } = useResource(agentPubKey && hasPrevious ? `arrived:${bytesToHex(agentPubKey)}` : null, () => arrivedFrom(agentPubKey!));
   const [predecessor, setPredecessor] = useState<AgentPubKey | null>(null);
   const takenOver = predecessor ?? taken?.predecessor ?? arrived ?? null;
@@ -164,11 +165,13 @@ function FromDevice() {
   function receive(code: string) {
     setSealed(code);
     return receiving.run(async () => {
-      await (await deviceRuntime())!.receive(code);
+      const runtime = (await deviceRuntime())!;
+      await runtime.receive(code);
       remember(null);
-      // Checked before anything's written, once the app starts as the account.
+      // A runtime checked the handover as it received it. On one node (the
+      // dev host) the app does, as it starts as the account (`Arrival`).
       const head = sealedHead(code);
-      if (head) useArrival.getState().arrive(encodeHashToBase64(head));
+      if (head && runtime.oneNode) useArrival.getState().arrive(encodeHashToBase64(head));
       window.location.reload();
     }, { stayBusy: true });
   }

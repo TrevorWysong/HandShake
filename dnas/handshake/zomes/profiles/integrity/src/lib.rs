@@ -186,7 +186,7 @@ const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::v
 pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     match classify(op.flattened::<EntryTypes, LinkTypes>()?)? {
         Checked::Create { entry, action } => match entry {
-            EntryTypes::Profile(profile) => validate_profile(&profile),
+            EntryTypes::Profile(profile) => validate_first_profile(&profile, action.author(), action.prev_action()),
             EntryTypes::ProviderCredential(credential) => validate_provider_credential(&credential, action.author()),
             EntryTypes::SavedAddress(address) => validate_saved_address(&address, action.author()),
             EntryTypes::SealedAllergies(allergies) => sealed_allergies_valid(&allergies),
@@ -211,6 +211,18 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         Checked::DeleteLink { .. } => handshake_integrity_support::invalid("profile and credential links can't be deleted"),
         Checked::Other => Ok(ValidateCallbackResult::Valid),
     }
+}
+
+/// An account's profile is written once; every change after is an update
+/// of it. A sign-up tried again after part of it failed finds the one it
+/// wrote (the coordinator's `create_profile`), and a second, from any app,
+/// is refused -- so no account ever has two.
+fn validate_first_profile(profile: &Profile, author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
+    let Some(prev) = prev_action else { return Ok(ValidateCallbackResult::Invalid("a profile can't open a chain".into())) };
+    if handshake_integrity_support::chain::wrote_since(author, prev, Timestamp::from_micros(0), UnitEntryTypes::Profile.try_into()?, |_: &Profile| true)? {
+        return Ok(ValidateCallbackResult::Invalid("an account has one profile; change it by updating it".into()));
+    }
+    validate_profile(profile)
 }
 
 fn validate_profile(profile: &Profile) -> ExternResult<ValidateCallbackResult> {

@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import { Lock } from "lucide-react";
 import type { PaymentInput, PaymentProfile } from "../../holochain/types";
 import { cardFormFor, type CardForm } from "../../lib/payments/cardForm";
+import { paySheetKey } from "../../lib/payments/paySheetKey";
 import { useAction } from "../../lib/hooks/useAction";
 import { formatCents } from "../../lib/ui/format";
 import { describeError } from "../../lib/ui/errors";
@@ -15,16 +16,16 @@ import { useT } from "../../i18n";
 import { Button, Skeleton, Switch } from "../ui";
 import { Sheet } from "../Sheet";
 
-export function PaySheet({
-  profile,
-  payee,
-  amountCents,
-  title,
-  subtitle,
-  offerToSave = false,
-  onClose,
-  onCard,
-}: {
+/// Paying a payee by card -- see `paySheetKey` for why its form is made
+/// afresh when the amount moves (the cart repriced while the sheet is open:
+/// a sale ended, the menu changed). A card half-typed is typed again,
+/// against the amount the sheet now shows.
+export function PaySheet(props: PaySheetProps) {
+  const currency = useTerms().currency;
+  return <PaySheetForm key={paySheetKey(props.profile, props.amountCents, currency)} {...props} />;
+}
+
+interface PaySheetProps {
   /// How the payee is paid.
   profile: PaymentProfile;
   /// Who's being paid, as the payer knows them.
@@ -39,11 +40,22 @@ export function PaySheet({
   onClose: () => void;
   /// The card, to offer: resolves once it's offered.
   onCard: (card: PaymentInput) => Promise<void>;
-}) {
+}
+
+function PaySheetForm({
+  profile,
+  payee,
+  amountCents,
+  title,
+  subtitle,
+  offerToSave = false,
+  onClose,
+  onCard,
+}: PaySheetProps) {
   const t = useT();
   const currency = useTerms().currency;
-  // One form for the sheet's life: re-rendering mustn't rebuild a form
-  // someone's typing into.
+  // One form for this amount: re-rendering mustn't rebuild a form someone's
+  // typing into, and a new amount is a new form (`paySheetKey`).
   const [form] = useState<CardForm>(() => cardFormFor(profile, { amountCents, currency, label: payee }));
   const [save, setSave] = useState(false);
   // The processor's form arrives from its own servers: a placeholder holds

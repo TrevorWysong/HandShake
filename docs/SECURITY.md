@@ -297,6 +297,16 @@ A pass over every record and service anyone can aim at someone else: what it cos
 - **Desktop releases weren't checked once built.** Fixed: the release workflow runs `desktop/securityCheck.ts` against every platform's packaged app. A draft is published only once all pass.
 - **What the network guarantees about money, and what stores must keep running,** is now written down for operators and stores (OPERATIONS.md), with the cases where a lost key loses something and a rehearsal list for before real orders.
 
+## 2026-11-12 app-layer review: what a read that fails must never mean
+
+- **The handover's checks wrote before they asked.** Fixed. A client making zome calls needs signing credentials, and authorizing them writes a grant to the account's chain, so a new phone confirming a handover wrote first. The runtime now asks both checks as the account itself, signing with its key from the keystore, which writes nothing: `receive` confirms before it returns, and `stay` takes back before the app starts. A refused confirm removes the install; one that can't tell yet leaves the app stopped, to ask again (`runtime/device`, tested both ways).
+- **A failed check of whether the account moved on read as "it hasn't".** Fixed: session start retries both reads, and if either still fails, it doesn't start (`lib/account/standing.ts`). A bid whose driver's record couldn't be read says so, rather than showing a clean record.
+- **A sign-up tried again could make a second profile or identity.** Fixed: sign-up resumes from the step that failed (`lib/account/signup.ts`). In development a retry reuses the identity it provisioned. `create_profile` is safe to repeat, and validation refuses a second profile per account.
+- **The pay sheet could show one amount while its form paid another.** Fixed: the card form is made afresh whenever the amount, currency or payee's processor changes, its wallet buttons with it (`lib/payments/paySheetKey.ts`).
+- **A previous network that couldn't be checked read as none.** Fixed: it's retried, and the restore screen keeps asking.
+- **Device setup failures were silent.** Fixed: each part is retried, and what still can't be set up shows a banner with a retry (`store/deviceSetup.ts`).
+- **Push:** relay requests have a deadline. A device that stops being woken while the relay is away has the relay told on a later start. A checkout the network refused gives its wake tokens back, and a pickup takes only the token it uses.
+
 ## Store contact details and pickup chat
 
 - **Contact links can only be what they say.** A store's email must be a plain address (letters, digits and `._+-'`, so a `mailto:` link can't carry `?cc=` or anything else), and its website an `http(s)://` address with a real host. No `user@` before the host, which could dress one site up as another. No characters that could break out of a link. Validation holds every peer to this (`handshake_integrity_support::contact`). The app builds every link only from details that pass (`web/src/lib/storefront/contact.ts`), a phone link from its digits alone, and directions from the store's coordinates.

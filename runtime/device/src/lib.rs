@@ -45,6 +45,12 @@ pub enum Error {
     BadCode,
     #[error("This device hasn't marked the handover: start the move again.")]
     NoHandover,
+    #[error("Your other phone took this account back, so it can't be used here. Remove it from this phone, or move it again.")]
+    TakenBack,
+    #[error("Your new phone has started using this account, so this device can't take it back. Remove it from here: the account carries on on the new phone.")]
+    TooLate,
+    #[error("The network hasn't caught up with this account yet. Keep HandShake open and online, then try again in a moment.")]
+    NotYet,
     #[error("This device's keystore doesn't hold that key.")]
     NoSuchKey,
     #[error("This account's key can't be moved: recover the account on the new phone with your recovery phrase or guardians instead.")]
@@ -75,6 +81,13 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// `StillRestoring` -- the restore itself carries on, and a later
 /// `receive` picks it up.
 pub const RESTORE_PATIENCE: Duration = Duration::from_secs(120);
+
+/// The account zome's handover check, as it takes it.
+#[derive(Debug, serde::Serialize)]
+struct HandoverCheck {
+    head: Option<ActionHash>,
+    one_node: bool,
+}
 
 /// One device's side of moving its account.
 pub struct Device {
@@ -142,12 +155,21 @@ impl Device {
         }
     }
 
-    /// The old phone: starts the app again, still handing over -- it writes
-    /// nothing of its own accord -- for the UI to take the account back
-    /// (the account zome's `take_back`), which it may only if the network
-    /// shows the new phone never wrote as it.
+    /// The old phone: takes the account back -- only if the network shows
+    /// the new phone never wrote as it (the account zome's `take_back`),
+    /// asked as the account itself, with nothing written first. Refused, the
+    /// app stops again: `TooLate` once the new phone has written, `NotYet`
+    /// while the network can't say -- try again.
     pub async fn stay(&self) -> Result<()> {
-        node::thaw(&self.admin, &self.app).await
+        node::thaw(&self.admin, &self.app).await?;
+        let answer: std::result::Result<(), String> = node::call_as_account(&self.admin, &self.lair, &self.app, "account", "take_back", HandoverCheck { head: None, one_node: false }).await?;
+        match answer {
+            Ok(()) => Ok(()),
+            Err(why) => {
+                node::freeze(&self.admin, &self.app).await?;
+                Err(if why.contains("started using this account") { Error::TooLate } else { Error::NotYet })
+            }
+        }
     }
 
     /// The old phone: the account lives on the new one now.
@@ -161,7 +183,30 @@ impl Device {
         let sealed = SealedKey::decode(sealed)?;
         let tag = self.invitation.lock().await.clone().ok_or(Error::NoInvitation)?;
         let account = keys::receive(&self.lair, &tag, &sealed).await?;
+        // Running already, as this account: an earlier `receive` confirmed
+        // it -- one that couldn't leaves the app stopped -- and it may have
+        // written since, so it isn't asked again.
+        if node::app_info(&self.admin, &self.app).await?.is_some_and(|info| info.agent_pub_key == account && info.status == holochain_types::app::AppStatus::Enabled) {
+            return Ok(account);
+        }
         node::restore(&self.admin, &self.app, &account, RESTORE_PATIENCE).await?;
-        Ok(account)
+        // Before anything writes as the account here -- the app's signing
+        // grant included -- its chain must still end where the old phone
+        // handed it over. Asked as the account itself, which writes nothing.
+        let answer: std::result::Result<(), String> = node::call_as_account(&self.admin, &self.lair, &self.app, "account", "confirm_handover", HandoverCheck { head: Some(sealed.head.clone()), one_node: false }).await?;
+        match answer {
+            Ok(()) => Ok(account),
+            Err(why) if why.contains("took this account back") => {
+                // The old phone's: let go here, never written as.
+                node::retire(&self.admin, &self.app).await?;
+                Err(Error::TakenBack)
+            }
+            // Restored, but the network can't say yet: stopped, writing
+            // nothing, for a later `receive` to ask again.
+            Err(_) => {
+                node::freeze(&self.admin, &self.app).await?;
+                Err(Error::NotYet)
+            }
+        }
     }
 }

@@ -7,7 +7,7 @@ import App from "./App";
 import { HOST } from "./holochain/host";
 import { loadLocale } from "./i18n";
 import { resumeSession } from "./store/session";
-import { teachServiceWorker } from "./lib/network/push";
+import { teachServiceWorker, forgetPending } from "./lib/network/push";
 import { followTheme } from "./lib/ui/theme";
 
 // Light or dark, as they chose, before anything's drawn.
@@ -18,6 +18,8 @@ await loadLocale();
 void resumeSession();
 // What a wake shows while the app is closed, in this person's language.
 teachServiceWorker();
+// Registrations let go of while the relay couldn't be reached: told now.
+void forgetPending().catch(() => {});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

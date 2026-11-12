@@ -11,6 +11,7 @@ import { createProfile, getProfileForAgent } from "../holochain/zomes/profiles";
 import { chainClosed, successionsOf } from "../holochain/zomes/account";
 import { prepareDevice } from "../holochain/device";
 import { useArrival } from "./arrival";
+import { accountStanding } from "../lib/account/standing";
 import { actionHash, bytesToHex, decodeEntry } from "../holochain/decode";
 import { describeError } from "../lib/ui/errors";
 import { useNetwork } from "./network";
@@ -149,6 +150,11 @@ const RECONNECT_RETRY_DELAY_MS = 1200;
 /// longer has (a dev reset wiped it).
 const FINAL_FAILURES = new Set(["PasskeyError", "IdentityGone"]);
 
+/// The identity a sign-up in development provisioned, until it's remembered:
+/// a sign-up tried again uses it, never a new one. (The profile it wrote is
+/// found again by `create_profile`, which is safe to repeat.)
+let signingUp: { installedAppId: string; agentPubKey: Uint8Array } | null = null;
+
 export const useSession = create<SessionState>((set, get) => ({
   status: "disconnected",
   error: null,
@@ -175,10 +181,11 @@ export const useSession = create<SessionState>((set, get) => ({
       // network's terms load alongside -- every screen past here quotes them.
       // Whether this account has moved on is read before anything else is
       // shown: a key whose account moved on mustn't carry on as if it hadn't.
-      const [profileRecord, successions, closed] = await Promise.all([
+      // Neither read is ever taken for "it hasn't" when it fails
+      // (`accountStanding`): a failure stops the session here, as an error.
+      const [profileRecord, standing] = await Promise.all([
         getProfileForAgent(myAgentPubKey()),
-        successionsOf(myAgentPubKey()).catch(() => []),
-        chainClosed(myAgentPubKey()).catch(() => null),
+        accountStanding({ successions: () => successionsOf(myAgentPubKey()), chainClosed: () => chainClosed(myAgentPubKey()) }),
         useNetwork.getState().load(),
       ]);
       const profile = profileRecord ? decodeEntry<Profile>(profileRecord) : null;
@@ -188,8 +195,8 @@ export const useSession = create<SessionState>((set, get) => ({
         location: loadStoredLocation(myAgentPubKey()) ?? DEFAULT_LOCATION,
         profile,
         profileActionHash: profileRecord ? actionHash(profileRecord) : null,
-        movedTo: successions[0]?.successor ?? null,
-        movedToNewVersion: !!closed,
+        movedTo: standing.movedTo,
+        movedToNewVersion: standing.movedToNewVersion,
         // A fresh store defaults `mode` to "customer"; restore it from the
         // profile, or a driver or merchant reloading lands on their route
         // with the customer nav.
@@ -211,11 +218,14 @@ export const useSession = create<SessionState>((set, get) => ({
     try {
       // A launcher already runs this app as its agent; in development, a
       // new identity is provisioned on the node first.
+      // Safe to repeat: a sign-up tried again after part of it failed
+      // carries on as the identity it made, never provisions another.
       let devIdentity: { installedAppId: string; agentPubKey: Uint8Array } | null = null;
       if (HOST === "launcher") {
         if (!isConnected()) await connectLauncher();
       } else {
-        devIdentity = await (await devHost()).provisionAndConnect(devAdminUrl ?? "");
+        devIdentity = signingUp ?? (await (await devHost()).provisionAndConnect(devAdminUrl ?? ""));
+        signingUp = devIdentity;
       }
 
       await useNetwork.getState().load();
@@ -229,6 +239,7 @@ export const useSession = create<SessionState>((set, get) => ({
       });
       const profile = decodeEntry<Profile>(profileRecord);
       const hasDeviceLock = devIdentity ? await (await devHost()).rememberIdentity(devAdminUrl ?? "", devIdentity.installedAppId, devIdentity.agentPubKey, displayName) : false;
+      signingUp = null;
       saveStoredLocation(location, myAgentPubKey());
       set({
         status: "connected",

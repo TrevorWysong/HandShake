@@ -15,6 +15,7 @@ import { rememberIdentity } from "./devHost";
 import { base64Url, devSealedKey, readDevSealedKey } from "./devSealedKey";
 import { base64ToBytes } from "../lib/util/base64";
 import { decodeHashFromBase64 } from "@holochain/client";
+import { takeBack } from "./zomes/account";
 import { INVITATION_PREFIX, isInvitation } from "../lib/account/deviceMove";
 
 function stored() {
@@ -38,9 +39,12 @@ export const devDevice: DeviceRuntime = {
     return devSealedKey(base64ToBytes(identity.agentPubKeyB64), decodeHashFromBase64(head), { adminUrl: identity.adminUrl, installedAppId: identity.installedAppId });
   },
 
+  // One node, both "phones": no second writer to fork with, so the app
+  // takes it back as itself.
   stay: async () => {
     const identity = stored();
     await setIdentityRunning(identity.adminUrl, identity.installedAppId, true);
+    await takeBack(true);
   },
 
   // The new browser runs the app now: this one only forgets it.

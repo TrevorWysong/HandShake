@@ -19,6 +19,7 @@
 import { AppWebsocket } from "@holochain/client";
 import type { AgentPubKey, AppAuthenticationToken, CellId, DirectSignal, Signal, WsClientOptions } from "@holochain/client";
 import type { LocalSignal } from "./types";
+import { retrying } from "../lib/network/retry";
 
 const ROLE_NAME = "handshake";
 
@@ -163,6 +164,16 @@ const CUT_OFF = /ClientClosedWithPendingRequests|client closed with pending requ
 const RETRYABLE = /could not be completed but may be retried|source chain head has moved/;
 const RETRY_DELAYS_MS = [500, 1500, 3000];
 
+/// Whether a failed call surely wrote nothing: it never reached the
+/// conductor, or the zome refused it (a refusal commits nothing). A call
+/// cut off mid-flight may have run, so it never counts -- nor anything else
+/// this can't be sure of.
+export function definitelyNotWritten(err: unknown): boolean {
+  const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  if (CUT_OFF.test(message)) return false;
+  return NOT_SENT.test(message) || /Guest\(|InvalidCommit|Invalid\(|ValidationFailed/.test(message);
+}
+
 export async function callZome<T>(zomeName: string, fnName: string, payload?: unknown): Promise<T> {
   return callZomeIn(ROLE_NAME, zomeName, fnName, payload);
 }
@@ -179,16 +190,23 @@ export async function callPrevious<T>(zomeName: string, fnName: string, payload?
 
 let previousNetwork: Promise<boolean> | null = null;
 
-/// Whether this release carries the previous version of the network.
+/// Whether this release carries the previous version of the network --
+/// known once asked, as it never changes while the app runs. One that can't
+/// be told just now is tried again, and if it still can't, rejects: never
+/// taken for "no previous network", which would hide moving an account over.
 export function hasPreviousNetwork(): Promise<boolean> {
-  previousNetwork ??= getAppWs()
-    .appInfo()
-    .then((info) => (info?.cell_info[PREVIOUS_ROLE] ?? []).length > 0)
-    .catch(() => {
+  const asked =
+    previousNetwork ??
+    retrying(async () => {
+      const info = await getAppWs().appInfo();
+      return (info?.cell_info[PREVIOUS_ROLE] ?? []).length > 0;
+    }, [500, 1_000, 2_000]).catch((err: unknown) => {
+      // Not known yet: the next ask tries afresh.
       previousNetwork = null;
-      return false;
+      throw err;
     });
-  return previousNetwork;
+  previousNetwork = asked;
+  return asked;
 }
 
 async function callZomeIn<T>(roleName: string, zomeName: string, fnName: string, payload?: unknown): Promise<T> {

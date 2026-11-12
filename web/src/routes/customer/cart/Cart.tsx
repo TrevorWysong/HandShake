@@ -25,7 +25,8 @@ import { actionHash, bytesEqual, bytesToHex } from "../../../holochain/decode";
 import type { DropoffPreference, PaymentInput, RecurrenceRule } from "../../../holochain/types";
 import { earnedFor, pointsEarned } from "../../../lib/rewards/rewards";
 import { storeStatus } from "../../../lib/storefront/storeHours";
-import { wakeTokensForOrder } from "../../../lib/network/push";
+import { withWakeTokens } from "../../../lib/network/push";
+import { definitelyNotWritten } from "../../../holochain/client";
 import { useAction } from "../../../lib/hooks/useAction";
 import { useClock } from "../../../lib/hooks/useClock";
 import { usePolling, useResource } from "../../../lib/hooks/useResource";
@@ -222,7 +223,7 @@ export function Cart() {
       // emptied and the checkout remembered only for the person who placed it.
       const current = stillSignedIn();
       if (!delivery) {
-        const record = await requestPickupOrder({
+        const record = await withWakeTokens(false, (wake) => requestPickupOrder({
           merchant,
           catalog_ref,
           items: cartItems(cart.lines),
@@ -232,15 +233,15 @@ export function Cart() {
           promo_code_ref,
           reward,
           age_confirmed: ageRestricted && ageConfirmed,
-          wake_for_store: wakeTokensForOrder().wake_for_store,
+          wake_for_store: wake.wake_for_store,
           payment,
-        });
+        }), definitelyNotWritten);
         if (!current()) throw new NoLongerSignedIn();
         cart.clear();
         navigate(`/customer/pickup-orders/${bytesToHex(actionHash(record))}`);
         return;
       }
-      const record = await requestDelivery({
+      const record = await withWakeTokens(true, (wake) => requestDelivery({
         merchant,
         catalog_ref,
         items: cartItems(cart.lines),
@@ -259,9 +260,9 @@ export function Cart() {
         door_risk_accepted: dropoffPreference === "LeaveAtDoor" && options.doorRiskAccepted,
         priority: options.priority,
         auto_match: options.autoMatch,
-        ...wakeTokensForOrder(),
+        ...wake,
         payment,
-      });
+      }), definitelyNotWritten);
       if (!current()) throw new NoLongerSignedIn();
       useCustomerSettings.getState().rememberCheckout({ tipPercent: options.tipPercent, feeCapCents: maxFeeCents, dropoffPreference, priority: options.priority, autoMatch: options.autoMatch });
       if (options.saveAsDefault) setSessionLocation(options.dropoff);

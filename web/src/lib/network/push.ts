@@ -58,8 +58,11 @@ export function wakesWhileClosed(): boolean {
   return !!current && current.relay === relayUrl();
 }
 
+/// How long the relay has to answer: a wake, a registration, its settings.
+const RELAY_TIMEOUT_MS = 10_000;
+
 async function post<T>(url: string, body: unknown, method = "POST"): Promise<T> {
-  const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(RELAY_TIMEOUT_MS) });
   const answer = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw Object.assign(new Error(answer.error ?? `The push relay answered ${response.status}.`), { status: response.status });
   return answer;
@@ -74,7 +77,7 @@ export async function startWakingWhileClosed(): Promise<void> {
   if (window.__HANDSHAKE_PUSH__) {
     target = await window.__HANDSHAKE_PUSH__.register();
   } else {
-    const { vapidPublicKey } = (await (await fetch(`${relay}/config`)).json()) as { vapidPublicKey: string | null };
+    const { vapidPublicKey } = (await (await fetch(`${relay}/config`, { signal: AbortSignal.timeout(RELAY_TIMEOUT_MS) })).json()) as { vapidPublicKey: string | null };
     if (!vapidPublicKey) throw new Error(t("error.pushNoBrowsers"));
     if ((await Notification.requestPermission()) !== "granted") throw new Error(t("error.pushBlocked"));
     const worker = await navigator.serviceWorker.ready;
@@ -85,15 +88,45 @@ export async function startWakingWhileClosed(): Promise<void> {
   store(KEY, JSON.stringify({ relay, device, secret, tokens } satisfies Registration));
 }
 
-/// Has the relay forget this device: every token it handed out stops working.
+/// A registration this device let go of, whose relay hasn't yet heard it
+/// to forget: asked again until it has (`forgetPending`).
+const FORGETTING_KEY = "handshake.push.forgetting";
+
+/// Asks a relay to forget `gone`: `true` once it has (or never knew it).
+async function forgetAt(gone: Registration): Promise<boolean> {
+  try {
+    await post(`${gone.relay}/devices`, { device: gone.device, secret: gone.secret }, "DELETE");
+    return true;
+  } catch (err) {
+    return (err as { status?: number }).status === 404;
+  }
+}
+
+/// Has the relay forget this device: every token it handed out stops
+/// working. This device stops at once; if the relay can't be told just now,
+/// it's told later (`forgetPending`), never left holding a registration
+/// nobody uses.
 export async function stopWakingWhileClosed(): Promise<void> {
   const current = registration();
   forget(KEY);
-  if (!current) return;
-  await post(`${current.relay}/devices`, { device: current.device, secret: current.secret }, "DELETE").catch(() => {});
+  if (current && !(await forgetAt(current))) {
+    const pending = readStoredJson<Registration[]>(FORGETTING_KEY) ?? [];
+    store(FORGETTING_KEY, JSON.stringify([...pending.filter((r) => r.device !== current.device), current]));
+  }
   if (!window.__HANDSHAKE_PUSH__ && webPushSupported()) {
     await (await navigator.serviceWorker.ready).pushManager.getSubscription().then((s) => s?.unsubscribe()).catch(() => {});
   }
+}
+
+/// Tells relays to forget registrations this device let go of while they
+/// couldn't be reached -- on every start, until each has heard.
+export async function forgetPending(): Promise<void> {
+  const pending = readStoredJson<Registration[]>(FORGETTING_KEY) ?? [];
+  if (pending.length === 0) return;
+  const left: Registration[] = [];
+  for (const gone of pending) if (!(await forgetAt(gone))) left.push(gone);
+  if (left.length > 0) store(FORGETTING_KEY, JSON.stringify(left));
+  else forget(FORGETTING_KEY);
 }
 
 let refilling: Promise<void> | null = null;
@@ -112,19 +145,48 @@ function refill(current: Registration) {
     .finally(() => (refilling = null));
 }
 
-/// Wake tokens for a new order -- one for its store, one for its driver --
-/// or none, when this device isn't set up to be woken. Each token is used
-/// once: two orders' tokens don't look alike.
-export function wakeTokensForOrder(): { wake_for_store: string | null; wake_for_driver: string | null } {
+/// The wake tokens an order carries: one for its store, and for a delivery
+/// one for its driver.
+export interface OrderWakeTokens {
+  wake_for_store: string | null;
+  wake_for_driver: string | null;
+}
+
+/// Takes `count` tokens from this device's pool, if it holds them.
+function takeTokens(count: number): string[] | null {
   const current = registration();
-  if (!current || current.relay !== relayUrl() || current.tokens.length < 2) {
+  if (!current || current.relay !== relayUrl() || current.tokens.length < count) {
     if (current) refill(current);
-    return { wake_for_store: null, wake_for_driver: null };
+    return null;
   }
-  const [forStore, forDriver, ...rest] = current.tokens;
+  const taken = current.tokens.slice(0, count);
+  const rest = current.tokens.slice(count);
   store(KEY, JSON.stringify({ ...current, tokens: rest }));
   if (rest.length < REFILL_BELOW) refill({ ...current, tokens: rest });
-  return { wake_for_store: forStore, wake_for_driver: forDriver };
+  return taken;
+}
+
+/// Puts tokens an order never used back in the pool -- still unseen by
+/// anyone, so still this device's alone.
+function giveBack(tokens: string[]): void {
+  const current = registration();
+  if (current) store(KEY, JSON.stringify({ ...current, tokens: [...tokens, ...current.tokens] }));
+}
+
+/// Places an order with wake tokens -- its store's, and for a delivery its
+/// driver's too -- or none, when this device isn't set up to be woken. Each
+/// token is used once: two orders' tokens don't look alike. One whose order
+/// surely never made it onto the network (refused, or never sent) goes back
+/// in the pool: a failed checkout spends none.
+export async function withWakeTokens<T>(forDriver: boolean, place: (tokens: OrderWakeTokens) => Promise<T>, notWritten: (err: unknown) => boolean): Promise<T> {
+  const taken = takeTokens(forDriver ? 2 : 1);
+  const tokens: OrderWakeTokens = { wake_for_store: taken?.[0] ?? null, wake_for_driver: forDriver ? (taken?.[1] ?? null) : null };
+  try {
+    return await place(tokens);
+  } catch (err) {
+    if (taken && notWritten(err)) giveBack(taken);
+    throw err;
+  }
 }
 
 /// Wakes a customer whose order this store or driver just changed, with
@@ -133,7 +195,7 @@ export function wakeTokensForOrder(): { wake_for_store: string | null; wake_for_
 export function wakeCustomer(token: string): void {
   const relay = relayUrl();
   if (!relay) return;
-  void fetch(`${relay}/wake`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) }).catch(() => {});
+  void fetch(`${relay}/wake`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }), signal: AbortSignal.timeout(RELAY_TIMEOUT_MS) }).catch(() => {});
 }
 
 /// Tells the service worker what to show when a wake arrives, in this

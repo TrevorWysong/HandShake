@@ -111,9 +111,12 @@ await runScenario(async (scenario) => {
       return step();
     };
   };
-  const reached = await retryUntil(reshared(() => checkIn().then(() => "", (err) => String(err))), (answer) => /Only the order's driver/.test(answer), 60, 1000);
+  // A restored node may read nothing others wrote for a minute or more,
+  // until gossip fills in its share of the network (HOLOCHAIN_ISSUES #10):
+  // what a phone just moved does too, so each step waits as long.
+  const reached = await retryUntil(reshared(() => checkIn().then(() => "", (err) => String(err))), (answer) => /Only the order's driver/.test(answer), 180, 1000);
   assert.match(reached, /Only the order's driver/, "other devices reach the new phone, through the grant it wrote");
-  await retryUntilOk(reshared(() => call(merchant.cells[0], "dispatch")("mark_ready_for_pickup", first)), 60, 1000);
+  await retryUntilOk(reshared(() => call(merchant.cells[0], "dispatch")("mark_ready_for_pickup", first)), 180, 1000);
   await retryUntilOk(() => call(customer.cells[0], "dispatch")("complete_pickup", first), 120, 1000);
   console.log("[PASS] the order the old phone had in hand finishes on the new one");
   const carriedOn = await retryUntil(() => retryingCaller(merchant.cells[0], "account")<MoveReadiness>("ready_to_move", null), (r) => r.ready, 120, 1000);

@@ -138,6 +138,12 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
                         <AlertTriangle size={12} /> {t("order.complaints", { count: w.count })}
                       </p>
                     )}
+                    {/* A record that couldn't be read isn't a clean one. */}
+                    {w === null && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-ink-400">
+                        <AlertTriangle size={12} /> {t("order.complaintsUnknown")}
+                      </p>
+                    )}
                   </div>
                   {refusal ? (
                     <span className="max-w-[7.5rem] text-right text-[11px] font-medium leading-tight text-ink-400">{customerRefusal(refusal)}</span>

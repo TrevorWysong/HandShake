@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord } from "@holochain/client";
-import { actionHash, decodeEntry, bytesEqual, testApp, retryingCaller } from "./helpers.js";
+import { actionHash, decodeEntry, bytesEqual, testApp, retryingCaller, useTestCoordinators } from "./helpers.js";
 
 const HOME = { lat: 41.9035, lon: -71.0898 };
 const WORK = { lat: 42.3601, lon: -71.0589 };
@@ -25,6 +25,17 @@ await runScenario(async (scenario) => {
   const customerProfileRef = actionHash(customerProfile);
   await profilesOf(other)("create_profile", { display_name: "Otto Other", roles: ["Requester"], created_at: now });
   await dhtSync(both, customer.cells[0].cell_id[0]);
+
+  // --- one profile per account: a sign-up tried again finds the one it wrote ---
+  const again = await profilesOf(customer)<HcRecord>("create_profile", { display_name: "Cara Customer", roles: ["Requester"], created_at: now });
+  assert.ok(Buffer.from(actionHash(again)).equals(Buffer.from(customerProfileRef)), "tried again, the same profile: never a second");
+  await useTestCoordinators(customer, ["profiles"]);
+  await assert.rejects(
+    customer.cells[0].callZome({ zome_name: "profiles", fn_name: "create_raw_profile_for_testing", payload: { display_name: "Cara Again", roles: ["Requester"], created_at: now } }),
+    /one profile/,
+    "and validation refuses a second, from any app",
+  );
+  console.log("[PASS] an account has one profile: create_profile is safe to repeat, and a second is refused");
 
   // --- save_address / list_my_addresses / update_saved_address round-trip ---
   const homeRecord = await profilesOf(customer)<HcRecord>("save_address", {

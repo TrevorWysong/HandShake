@@ -58,6 +58,13 @@ fn first_name(name: &str) -> &str {
 
 #[hdk_extern]
 pub fn create_profile(input: ProfileInput) -> ExternResult<Record> {
+    // Safe to repeat: a sign-up tried again after part of it failed -- its
+    // vehicle, say -- carries on with the profile it already wrote, never a
+    // second (validation refuses one anyway).
+    let types = [EntryType::try_from(UnitEntryTypes::Profile)?];
+    if let Some(own) = mine(&types).creates().latest()? {
+        return resolve_latest(own.action_address().clone());
+    }
     let action_hash = create_entry(&EntryTypes::Profile(input.into_profile()?))?;
     let agent = agent_info()?.agent_initial_pubkey;
     create_link(agent, action_hash.clone(), LinkTypes::AgentToProfile, ())?;
@@ -327,6 +334,13 @@ mod test_utils {
     use hdk::prelude::*;
     use profiles_integrity::LinkTypes;
     handshake_coordinator_support::raw_link_test_externs!(AgentToProfile, AgentToFavorite, OwnerToSavedAddress);
+
+    /// Writes a profile as given, skipping `create_profile`'s check for one
+    /// already there -- a second, as a modified app would try.
+    #[hdk_extern]
+    pub fn create_raw_profile_for_testing(input: crate::ProfileInput) -> ExternResult<ActionHash> {
+        create_entry(&profiles_integrity::EntryTypes::Profile(input.into_profile()?))
+    }
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct PadInput {

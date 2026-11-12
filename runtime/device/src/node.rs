@@ -96,3 +96,33 @@ pub async fn thaw(admin: &AdminWebsocket, app: &App) -> Result<()> {
 pub async fn retire(admin: &AdminWebsocket, app: &App) -> Result<()> {
     admin.uninstall_app(app.installed_app_id.clone(), false).await.map_err(conductor)
 }
+
+/// Calls `function` in `zome` of the app's relay cell as the account itself:
+/// signed with its key, straight from the keystore. A call signed by a
+/// cell's own agent needs no grant, so -- unlike a client given signing
+/// credentials, whose grant is a write on the account's chain -- this writes
+/// nothing before the call does. What the handover's checks need: asked
+/// before this device has written anything as the account. The zome's
+/// refusal comes back as `Ok(Err(why))`.
+pub async fn call_as_account<I: serde::Serialize + std::fmt::Debug, O: serde::de::DeserializeOwned + std::fmt::Debug>(
+    admin: &AdminWebsocket,
+    lair: &lair_keystore_api::LairClient,
+    app: &App,
+    zome: &str,
+    function: &str,
+    input: I,
+) -> Result<std::result::Result<O, String>> {
+    use holochain_client::{AllowedOrigins, AppWebsocket, CellInfo, ExternIO, IssueAppAuthenticationTokenPayload, LairAgentSigner, ZomeCallTarget};
+    let info = app_info(admin, app).await?.ok_or(Error::NoSuchKey)?;
+    let Some(CellInfo::Provisioned(cell)) = info.cell_info.get("handshake").and_then(|cells| cells.first()) else { return Err(Error::Conductor("the app has no relay cell".into())) };
+    let mut signer = LairAgentSigner::new(std::sync::Arc::new(lair.clone()));
+    signer.add_credentials(cell.cell_id.clone(), info.agent_pub_key.clone());
+    let port = admin.attach_app_interface(0, None, AllowedOrigins::Any, Some(info.installed_app_id.clone())).await.map_err(conductor)?;
+    let token = admin.issue_app_auth_token(IssueAppAuthenticationTokenPayload::for_installed_app_id(info.installed_app_id.clone())).await.map_err(conductor)?.token;
+    let ws = AppWebsocket::connect(("127.0.0.1", port), token, std::sync::Arc::new(signer), None).await.map_err(conductor)?;
+    let payload = ExternIO::encode(input).map_err(conductor)?;
+    Ok(match ws.call_zome(ZomeCallTarget::CellId(cell.cell_id.clone()), zome.into(), function.into(), payload).await {
+        Ok(answer) => Ok(answer.decode::<O>().map_err(conductor)?),
+        Err(err) => Err(format!("{err:?}")),
+    })
+}

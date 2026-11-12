@@ -243,6 +243,8 @@ export const es: Catalog = {
   "order.dropped": { one: "{count} abandonado", other: "{count} abandonados" },
   "order.lapsed": { one: "{count} no aceptado", other: "{count} no aceptados" },
   "order.complaints": { one: "{count} queja verificada en su historial", other: "{count} quejas verificadas en su historial" },
+  "deviceSetup.incomplete": "Este dispositivo no está del todo configurado: algunas novedades y códigos de entrega pueden no llegarle hasta que lo esté.",
+  "order.complaintsUnknown": "No se pudo comprobar su historial en este momento",
   "order.acceptAnyway": "Aceptar de todos modos",
   "order.accept": "Aceptar",
   "order.door.title": "Se deja en tu puerta.",

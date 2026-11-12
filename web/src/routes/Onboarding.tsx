@@ -22,6 +22,7 @@ import { useDriverSettings } from "../store/roleSettings";
 import { stillSignedIn } from "../store/identityScope";
 import { TRAVEL_MODES } from "../lib/driving/routing";
 import { useAction } from "../lib/hooks/useAction";
+import { completeSignup, type SignupStep } from "../lib/account/signup";
 import { normalizePhone } from "../lib/phone";
 
 const ROLE_CARDS: { role: RoleTag; label: MessageKey; blurb: MessageKey; icon: typeof Bike }[] = [
@@ -94,27 +95,36 @@ export function Onboarding() {
     }
   }
 
+  // Resumable: tried again after a later step failed (the vehicle, say), it
+  // carries on from there as the account it made (`completeSignup`).
+  const [signedUp] = useState(() => new Set<SignupStep["name"]>());
   const finish = () => action.run(async () => {
-    await createIdentity(displayName.trim(), roles, location, { bio, avatarDataUri, phone: phoneNumber ?? "" }, adminUrl);
-    // Signed in now, as the person this sets up.
-    const current = stillSignedIn();
+    const steps: SignupStep[] = [{ name: "account", run: () => createIdentity(displayName.trim(), roles, location, { bio, avatarDataUri, phone: phoneNumber ?? "" }, adminUrl) }];
     if (addressDraft.street.trim()) {
-      // Its own call, after the profile: an address that doesn't save
-      // leaves sign-up done, and it can be added at checkout instead.
+      // An address that doesn't save leaves sign-up done: it can be added
+      // at checkout instead.
       const { street, line2, city, state, zip } = addressDraft;
-      await saveAddress({ label: t("address.home"), location, street: street.trim(), line2: line2.trim(), city: city.trim(), state: state.trim(), zip: zip.trim() }).catch(() => undefined);
+      steps.push({ name: "address", run: () => saveAddress({ label: t("address.home"), location, street: street.trim(), line2: line2.trim(), city: city.trim(), state: state.trim(), zip: zip.trim() }).then(() => undefined, () => undefined) });
     }
     if (roles.includes("Provider")) {
-      await registerProviderCredential({
-        profile_action: useSession.getState().profileActionHash!,
-        vehicle_description: `${t(vehicle.label)}${vehicleDetail ? " · " + vehicleDetail : ""}`,
-        capabilities: ["Food"],
-        verified: false,
-        license_plate: licensePlate,
-        photo_data_uri: vehiclePhoto,
+      steps.push({
+        name: "vehicle",
+        run: async () => {
+          // Signed in now, as the person this sets up.
+          const current = stillSignedIn();
+          await registerProviderCredential({
+            profile_action: useSession.getState().profileActionHash!,
+            vehicle_description: `${t(vehicle.label)}${vehicleDetail ? " · " + vehicleDetail : ""}`,
+            capabilities: ["Food"],
+            verified: false,
+            license_plate: licensePlate,
+            photo_data_uri: vehiclePhoto,
+          });
+          if (current()) useDriverSettings.getState().setTravelMode(vehicle.mode);
+        },
       });
-      if (current()) useDriverSettings.getState().setTravelMode(vehicle.mode);
     }
+    await completeSignup(steps, signedUp);
     navigate(`/${primaryModeForRoles(roles)}`);
   }, { stayBusy: true });
 

@@ -10,19 +10,21 @@ const TOO_LATE = new Error("Guest(\"Your new phone has started using this accoun
 
 test("not yet, then taken back: the first try is a retry, never 'too late', and the next goes through", async () => {
   let stays = 0;
-  const runtime = { stay: async () => void stays++, oneNode: false };
   const answers = [NOT_YET, null];
-  const takeBack = async () => {
-    const answer = answers.shift();
-    if (answer) throw answer;
+  const runtime = {
+    stay: async () => {
+      stays++;
+      const answer = answers.shift();
+      if (answer) throw answer;
+    },
   };
-  await assert.rejects(takeAccountBack(runtime, takeBack), (err: unknown) => err instanceof TakeBackRefused && err.refusal === "notYet");
-  await takeAccountBack(runtime, takeBack);
-  assert.equal(stays, 2, "the app started again each try");
+  await assert.rejects(takeAccountBack(runtime), (err: unknown) => err instanceof TakeBackRefused && err.refusal === "notYet");
+  await takeAccountBack(runtime);
+  assert.equal(stays, 2, "asked again, and taken back");
 });
 
 test("refused for good only once the new phone has written", async () => {
-  await assert.rejects(takeAccountBack({ stay: async () => {} }, async () => Promise.reject(TOO_LATE)), (err: unknown) => err instanceof TakeBackRefused && err.refusal === "tooLate");
+  await assert.rejects(takeAccountBack({ stay: async () => Promise.reject(TOO_LATE) }), (err: unknown) => err instanceof TakeBackRefused && err.refusal === "tooLate");
   assert.equal(takeBackRefusal(TOO_LATE), "tooLate");
   assert.equal(takeBackRefusal(NOT_YET), "notYet");
   assert.equal(takeBackRefusal(new Error("conductor went away")), "notYet", "anything else is tried again");

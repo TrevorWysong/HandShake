@@ -32,7 +32,8 @@ test("a folder is held by one at a time, and free again once let go", async () =
 
 test("a lock another running process holds refuses; one a dead process left is taken over", async () => {
   const dir = await folder();
-  await writeFile(path.join(dir, `${LOCK_FILE}.3`), JSON.stringify({ pid: 4242, token: "theirs", since: 0 }));
+  // Another process's id: never this one's, whatever the system gave it.
+  await writeFile(path.join(dir, `${LOCK_FILE}.3`), JSON.stringify({ pid: process.pid + 1, token: "theirs", since: 0 }));
   await assert.rejects(holdFolder(dir, () => true), /already running for this account/, "its process is still running");
   const release = await holdFolder(dir, () => false);
   assert.equal((JSON.parse(await readFile(path.join(dir, `${LOCK_FILE}.4`), "utf8")) as { pid: number }).pid, process.pid, "taken over, as the next generation");

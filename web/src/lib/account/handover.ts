@@ -1,6 +1,6 @@
 // The old phone taking its account back from a handover (docs/RECOVERY.md):
-// the runtime starts its app again, still handing over, and the account
-// zome asks the network (`take_back`). Its answer is one of three: taken
+// the runtime asks the network, as the account itself and before anything
+// writes (`take_back`). Its answer is one of three: taken
 // back; refused for good, because the new phone has written as the account;
 // or not yet -- the network hasn't caught up -- to try again. Only the
 // second is final: a screen that took "not yet" for it would tell someone
@@ -28,10 +28,9 @@ export class TakeBackRefused extends Error {
 
 /// Takes the account back: resolves once it's this device's again, or
 /// rejects with `TakeBackRefused`. Safe to try again after "not yet".
-export async function takeAccountBack(runtime: Pick<DeviceRuntime, "stay" | "oneNode">, takeBack: (oneNode: boolean) => Promise<void>): Promise<void> {
-  await runtime.stay();
+export async function takeAccountBack(runtime: Pick<DeviceRuntime, "stay">): Promise<void> {
   try {
-    await takeBack(!!runtime.oneNode);
+    await runtime.stay();
   } catch (err) {
     throw new TakeBackRefused(takeBackRefusal(err), err);
   }

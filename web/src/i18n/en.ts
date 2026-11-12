@@ -248,6 +248,8 @@ export const en = {
   "order.dropped": { one: "{count} dropped", other: "{count} dropped" },
   "order.lapsed": { one: "{count} not taken up", other: "{count} not taken up" },
   "order.complaints": { one: "{count} verified complaint on record", other: "{count} verified complaints on record" },
+  "deviceSetup.incomplete": "This device isn't fully set up: some updates and handoff codes may not reach it until it is.",
+  "order.complaintsUnknown": "Their record couldn't be checked just now",
   "order.acceptAnyway": "Accept anyway",
   "order.accept": "Accept",
   "order.door.title": "Leaving it at your door.",

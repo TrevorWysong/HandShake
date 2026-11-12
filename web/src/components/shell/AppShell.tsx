@@ -17,6 +17,7 @@ import { DriverDeliveries } from "./DriverDeliveries";
 import { useDriverFeed } from "../../store/driverFeed";
 import { Toaster } from "./Toaster";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { DeviceSetupBanner } from "./DeviceSetupBanner";
 import { ActiveOrderCard } from "./ActiveOrderCard";
 import { CustomerDock } from "./CustomerDock";
 import { dockFits, useCardOrders } from "../../lib/hooks/useCardOrders";
@@ -204,6 +205,7 @@ export function AppShell() {
         <DriverFeed />
         <DriverDeliveries />
         <ConnectionBanner />
+        <DeviceSetupBanner />
         <main className={clsx("flex-1 lg:px-6 lg:pt-4 lg:pb-12", docked && cards.length > 0 ? "pb-40" : "pb-20")}>
           <AnimatedOutlet />
         </main>
