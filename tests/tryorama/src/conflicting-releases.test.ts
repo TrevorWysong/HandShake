@@ -44,6 +44,11 @@ await runScenario(async (scenario) => {
   const twiceDue = (await timing(twice)).driver_due;
   await branch(first, twiceCooking, "Open", await leaving());
   await sync();
+  // The same two releases the other way round: the store's lands first.
+  const twiceBack = await placed();
+  await driving(twiceBack, second);
+  const twiceBackCooking = await versionAt(twiceBack, "MerchantConfirmed");
+  const twiceBackDue = (await timing(twiceBack)).driver_due;
   // Picked up, and then -- on the version at the counter -- left.
   const carried = await placed();
   await driving(carried, second);
@@ -53,8 +58,8 @@ await runScenario(async (scenario) => {
   await assert.rejects(branch(second, carriedAtCounter, "Open", await leaving()), /either leaves an order or picks it up/);
   console.log("[PASS] a driver who's picked an order up can't also leave it, on any branch");
 
-  assert.ok(checkedDue && movedOnDue && twiceDue, "each driver is due at the store");
-  await sleepUntil(Math.max(checkedDue, movedOnDue, twiceDue));
+  assert.ok(checkedDue && movedOnDue && twiceDue && twiceBackDue, "each driver is due at the store");
+  await sleepUntil(Math.max(checkedDue, movedOnDue, twiceDue, twiceBackDue));
 
   await assert.rejects(branch(merchant, checkedCooking, "Open", await leaving()), /can't move on a driver it's checked in/);
   console.log("[PASS] a store can't move on a driver it's checked in, on any branch");
@@ -73,29 +78,36 @@ await runScenario(async (scenario) => {
   await assert.rejects(branch(merchant, movedOnCooking, "DriverAtStore"), /can't check in a driver it's moved on/);
   console.log("[PASS] a store can't check in a driver it's moved on, on any branch");
 
-  // ===== One driver released twice at once =====
+  // ===== One driver released twice at once, in either order =====
+  // The driver left first on `twice`; here the store moves them on too. On
+  // `twiceBack` the store moves them on first, and they leave after.
   await retryUntilOk(async () => branch(merchant, twiceCooking, "Open", await leaving()));
+  await retryUntilOk(async () => branch(merchant, twiceBackCooking, "Open", await leaving()));
+  await sync();
+  await retryUntilOk(async () => branch(second, twiceBackCooking, "Open", await leaving()));
   await sync();
   await sleepUntil((Date.now() + REPLACEMENT * 1000) * 1000);
-  await retryUntil(
-    async () => {
-      await call(merchant, "dispatch")("end_for_no_driver", { order_ref: twice, beacon: await currentBeacon() }).catch(() => null);
-      return deliveryStatus(customer, twice);
-    },
-    (s) => s === "Cancelled",
-    60,
-    1000,
-  );
-  await sync();
-  await settlesTo(customer, twice, 0, "the customer is refunded in full");
-  await settlesTo(merchant, twice, FOOD, "the store is paid for the food once");
-  await settlesTo(first, twice, -FOOD, "the driver pays for it once, not for each release");
-  for (const p of await paymentsOn(merchant, twice)) {
-    assert.ok((p.charged ?? 0) <= p.held, "no hold is charged past what it held");
+  for (const [order, driver, which] of [[twice, first, "driver first"], [twiceBack, second, "store first"]] as const) {
+    await retryUntil(
+      async () => {
+        await call(merchant, "dispatch")("end_for_no_driver", { order_ref: order, beacon: await currentBeacon() }).catch(() => null);
+        return deliveryStatus(customer, order);
+      },
+      (s) => s === "Cancelled",
+      60,
+      1000,
+    );
+    await sync();
+    await settlesTo(customer, order, 0, `${which}: the customer is refunded in full`);
+    await settlesTo(merchant, order, FOOD, `${which}: the store is paid for the food once`);
+    await settlesTo(driver, order, -FOOD, `${which}: the driver pays for it once, not for each release`);
+    for (const p of await paymentsOn(merchant, order)) {
+      assert.ok((p.charged ?? 0) <= p.held, `${which}: no hold is charged past what it held`);
+    }
+    const collateral = (await paymentsOn(merchant, order)).filter((p) => bytesEqual(p.payer, driver.agentPubKey) && (p.charged ?? 0) > 0);
+    assert.equal(collateral.length, 1, `${which}: one charge to the driver, however many branches released them`);
   }
-  const collateral = (await paymentsOn(merchant, twice)).filter((p) => bytesEqual(p.payer, first.agentPubKey) && (p.charged ?? 0) > 0);
-  assert.equal(collateral.length, 1, "one charge to the driver, however many branches released them");
-  console.log("[PASS] a driver who leaves while the store moves them on pays for the food once");
+  console.log("[PASS] a driver who leaves while the store moves them on pays for the food once, whichever release lands first");
 
   // ===== One delivery completed twice at once =====
   const done = await placed();
