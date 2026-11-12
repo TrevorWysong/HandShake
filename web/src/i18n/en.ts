@@ -609,6 +609,7 @@ export const en = {
   "rewards.line.redeem": "Reward",
   "rewards.line.birthday": "Happy birthday!",
   "rewards.line.gift": "From the store",
+  "rewards.line.carried": "Carried over from the store's previous version",
   "rewards.stripBalance": "{points} {name}",
   "rewards.stripJoinWelcome": "Earn {points} {name} a dollar, plus {welcome} on your first order",
   "rewards.addItemToUse": "Add the reward's item to your cart to use it.",

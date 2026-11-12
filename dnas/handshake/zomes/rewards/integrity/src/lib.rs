@@ -27,9 +27,7 @@ pub enum EntryTypes {
     BirthMonth(BirthMonth),
     BirthdayShare(BirthdayShare),
     #[entry_type(visibility = "private")]
-    MemberOrder(MemberOrder),
-    #[entry_type(visibility = "private")]
-    MemberBirthday(MemberBirthday),
+    MemberBirthdays(MemberBirthdays),
     #[entry_type(visibility = "private")]
     MemberAccount(MemberAccount),
     #[entry_type(visibility = "private")]
@@ -49,6 +47,14 @@ pub enum LinkTypes {
     AgentToGrant,
     /// A member's sealed birth month, base = the store it's for.
     CatalogToBirthday,
+    /// A store's acceptance of an order that joined its program, base = the
+    /// order's customer, tagged with the store and the order
+    /// (`member_order_tag`): what the store works a member's points out from,
+    /// public like the orders themselves, so it survives the store's device.
+    MemberToOrder,
+    /// A member of a store's program, base = the store, target and tag = the
+    /// member: the store's list of members, for its birthdays and stats.
+    StoreToMember,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -68,17 +74,16 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::BirthdayShare(share) => validate_birthday_share(&share, action.author(), action.prev_action()),
             // Private to their author's device: checked as they write them.
             EntryTypes::BirthMonth(month) => require((1..=12).contains(&month.month), "a birth month is between 1 and 12"),
-            EntryTypes::MemberOrder(_) => valid(),
             // Private to the device that keeps it, and only ever its own
             // reckoning: nobody else reads or relies on it.
             EntryTypes::MemberAccount(_) | EntryTypes::MemberStores(_) | EntryTypes::KeptVersion(_) => valid(),
-            EntryTypes::MemberBirthday(b) => require((1..=12).contains(&b.month), "a birth month is between 1 and 12"),
+            EntryTypes::MemberBirthdays(b) => require(b.months.iter().all(|(_, m)| (1..=12).contains(m)), "a birth month is between 1 and 12"),
         },
         Checked::Update { entry: EntryTypes::RewardsProgram(program), action } => validate_program_update(&program, action.author(), &action.original_action_address),
         Checked::Update { .. } => invalid("only a program changes"),
         Checked::Delete { .. } => invalid("rewards records can't be deleted"),
         Checked::CreateLink { link_type: LinkTypes::Version, action } => handshake_integrity_support::versions::validate_version_link(&action.base_address, &action.target_address, &action.tag, action.author()),
-        Checked::CreateLink { link_type, action } => validate_create_link(link_type, &action.base_address, &action.target_address, action.author()),
+        Checked::CreateLink { link_type, action } => validate_create_link(link_type, &action.base_address, &action.target_address, &action.tag, action.author()),
         Checked::DeleteLink { .. } => invalid("rewards links can't be deleted"),
         Checked::Other => valid(),
     }
@@ -176,7 +181,12 @@ fn validate_program_update(program: &RewardsProgram, author: &AgentPubKey, origi
 
 // --- links ---
 
-fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target: &AnyLinkableHash, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target: &AnyLinkableHash, tag: &LinkTag, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    match link_type {
+        LinkTypes::MemberToOrder => return validate_member_order_link(base, target, tag, author),
+        LinkTypes::StoreToMember => return validate_member_link(base, target, tag, author),
+        _ => {}
+    }
     let Some(record) = linked_record(target)? else { return invalid("rewards links target a record") };
     if record.action().author() != author {
         return invalid("a rewards link is made by whoever wrote what it points at");
@@ -186,9 +196,36 @@ fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target: &A
         LinkTypes::CatalogToProgram => decode::<RewardsProgram>(&record).filter(|_| matches!(record.action().data, ActionData::Create(_))).map(|p| p.catalog_ref.into()),
         LinkTypes::AgentToGrant => decode::<PointsGrant>(&record).map(|g| g.to.into()),
         LinkTypes::CatalogToBirthday => decode::<BirthdayShare>(&record).map(|b| b.catalog_ref.into()),
+        LinkTypes::MemberToOrder | LinkTypes::StoreToMember => None,
     };
     match expected {
         Some(expected) => require(&expected == base, "a rewards link sits under the store or member its record is about"),
         None => invalid("a rewards link's target is not the record its link type indexes"),
     }
+}
+
+/// A store's link to its acceptance of a member's order: written by the
+/// order's store, from the order's customer, to a version of the order the
+/// store wrote, tagged with that store and that order -- one that joined its
+/// program. Nobody else can say an order of theirs earns or spends points.
+fn validate_member_order_link(base: &AnyLinkableHash, target: &AnyLinkableHash, tag: &LinkTag, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    let Some((catalog_ref, order)) = parse_member_order_tag(&tag.0) else { return invalid("a member's order is tagged with its store and its order") };
+    let Some(accepted) = linked_record(target)? else { return invalid("a member's order links to the store's acceptance of it") };
+    let Some(placed) = OrderForRewards::of(&accepted) else { return invalid("a member's order links to a version of an order") };
+    let ours = accepted.action().author() == author
+        && &placed.merchant == author
+        && placed.catalog_ref == catalog_ref
+        && placed.rewards.is_some()
+        && base == &AnyLinkableHash::from(placed.requester.clone())
+        && original_creation(accepted.action_address().clone())? == order;
+    require(ours, "a store links only its own acceptance of an order that joined its program, from that order's customer")
+}
+
+/// A store's list of its members: by its owner, under the store, each member
+/// named as target and tag alike.
+fn validate_member_link(base: &AnyLinkableHash, target: &AnyLinkableHash, tag: &LinkTag, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    let Some(catalog_ref) = base.clone().into_action_hash() else { return invalid("a store's members are listed under the store") };
+    let Some(member) = target.clone().into_agent_pub_key() else { return invalid("a store lists its members by their keys") };
+    let owned = store_owner(&catalog_ref)?.is_some_and(|(owner, _)| &owner == author);
+    require(owned && tag.0 == member.get_raw_39(), "only a store's owner lists its members, each by their key")
 }

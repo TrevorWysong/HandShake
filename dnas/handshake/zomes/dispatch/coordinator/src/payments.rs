@@ -14,6 +14,7 @@ use dispatch_integrity::payments::{leg_context, LegContext};
 use dispatch_integrity::*;
 use handshake_coordinator_support::{decode_or, guest, open, original_action_of, seal};
 use hdk::prelude::*;
+use std::collections::BTreeSet;
 
 /// The longest a processor's single-use card token may be.
 const MAX_TOKEN_CHARS: usize = 512;
@@ -250,6 +251,10 @@ pub enum PaymentDue {
         /// card each, which the agent checks by its processor's card
         /// fingerprint (on-chain, a first order is one per account).
         newcomer_deal: Option<ActionHash>,
+        /// The payer has completed orders with several stores before
+        /// (`established_payer_stores`): someone with a record, never slowed
+        /// when declined cards from new accounts look like card testing.
+        payer_established: bool,
         /// When the payer made the offer: what a kept card is dated by.
         offered_at: Timestamp,
     },
@@ -378,7 +383,8 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
             None => None,
         };
         let newcomer_deal = if offer.leg == PaymentLeg::Customer { newcomer_deal(order)? } else { None };
-        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, newcomer_deal, offered_at });
+        let payer_established = established(&payer);
+        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, newcomer_deal, payer_established, offered_at });
     }
     // Each of my holds, once nothing can change what it's owed.
     for (hold_ref, hold) in my_holds {
@@ -395,6 +401,75 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
 
 /// The store, when `order` cites a version of a promo for first orders
 /// there.
+/// How far back `established` reads a payer's history, in pages of its
+/// most: the newest few hundred orders, so a payer with a long history
+/// costs a bounded read.
+const ESTABLISHED_PAGES: usize = 4;
+
+/// Whether `payer` has completed orders with the network's
+/// `established_payer_stores` different store owners, none of them the
+/// payer, in their recent history. That's someone with a record: a new
+/// account has none, and making one takes as many stores, each finishing an
+/// order. Not established if the history can't be read.
+fn established(payer: &AgentPubKey) -> bool {
+    let needed = handshake_governance::established_payer_stores() as usize;
+    let mut owners = BTreeSet::new();
+    let mut before = None;
+    for _ in 0..ESTABLISHED_PAGES {
+        let Ok(page) = crate::order_queues::history_page(QueueOwner::Customer(payer), before, Some(u32::MAX)) else { return false };
+        for entry in &page.orders {
+            let completed = match (decode_or::<DeliveryOrder>(&entry.record), decode_or::<PickupOrder>(&entry.record)) {
+                (Some(o), _) => matches!(o.status, DeliveryStatus::Delivered | DeliveryStatus::Collected).then_some(o.merchant),
+                (None, Some(o)) => (o.status == PickupStatus::PickedUp).then_some(o.merchant),
+                _ => None,
+            };
+            if let Some(owner) = completed.filter(|owner| owner != payer) {
+                owners.insert(owner);
+                if owners.len() >= needed {
+                    return true;
+                }
+            }
+        }
+        let Some(next) = page.next_before else { break };
+        before = Some(next);
+    }
+    false
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NewcomerCardInput {
+    /// The store whose first-order deal it is.
+    pub store: ActionHash,
+    /// The card's fingerprint, as the payee's processor gives it.
+    pub fingerprint: String,
+    /// The order taking the deal.
+    pub order: ActionHash,
+}
+
+/// Claims a store's first-order deal for a card, on `order`: `true` if the
+/// card hasn't taken it before (now it has) or took it on this same order;
+/// `false` if it took it on another. Kept on the network (a
+/// `StoreToNewcomerCard` link), so no device the store loses forgets it;
+/// tagged with a digest only the store's key can make -- its signature of
+/// the fingerprint, hashed -- so the fingerprint is never published, and
+/// nobody else can tell which card it was.
+#[hdk_extern]
+pub fn claim_newcomer_card(input: NewcomerCardInput) -> ExternResult<bool> {
+    let me = me()?;
+    let store = get(input.store.clone(), GetOptions::default())?.ok_or(guest("That store couldn't be found."))?;
+    if store.action().author() != &me {
+        return Err(guest("Only the store's owner keeps its first-order deal."));
+    }
+    let signature = sign_raw(me.clone(), format!("handshake-newcomer-card:v1:{}", input.fingerprint).into_bytes())?;
+    let digest = holo_hash::encode::blake2b_256(&signature.0);
+    let query = LinkQuery::try_new(input.store.clone(), LinkTypes::StoreToNewcomerCard)?.author(me.clone()).tag_prefix(LinkTag::new(digest.clone()));
+    if let Some(link) = get_links(query, GetStrategy::default())?.into_iter().find(|link| link.author == me && link.tag.0 == digest) {
+        return Ok(link.target.into_action_hash().as_ref() == Some(&input.order));
+    }
+    create_link(input.store, input.order, LinkTypes::StoreToNewcomerCard, LinkTag::new(digest))?;
+    Ok(true)
+}
+
 fn newcomer_deal(order: &ActionHash) -> ExternResult<Option<ActionHash>> {
     let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
     let (promo, store) = match (decode_or::<DeliveryOrder>(&record), decode_or::<PickupOrder>(&record)) {

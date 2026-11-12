@@ -1,32 +1,69 @@
-//! The store's side: its members' orders, kept privately as it accepts
-//! them, each member's points carried forward in the store's account of
-//! them (`accounts`), and whether those points cover the reward an order
-//! spends.
+//! The store's side: each member's orders, linked publicly from the member
+//! as the store accepts them (`MemberToOrder`), each member's points carried
+//! forward in the store's account of them (`accounts`), and whether those
+//! points cover the reward an order spends.
+//!
+//! Everything a member's points rest on is public -- the store's links to
+//! its acceptances, its settlements, its grants -- so the store's account of
+//! them is only ever a cache: a device that restores its chain, or a store
+//! recovered by its owner's new key, plays it all again from what the
+//! network holds.
 
 use super::*;
 use rewards_integrity::ledger::{Folded, OpenGrant, OpenOrder};
 
-/// Every order of `customer`'s the caller's store recorded under its
-/// program -- however many. A walk of the store's whole chain: only for
-/// playing an account afresh.
+/// The store `catalog_ref`'s links from `customer` to its acceptances of
+/// their orders, written by `owner` -- all of them, or one order's.
+pub(crate) fn member_order_links(customer: &AgentPubKey, catalog_ref: &ActionHash, owner: &AgentPubKey, order: Option<&ActionHash>) -> ExternResult<Vec<Link>> {
+    let prefix = match order {
+        Some(order) => member_order_tag(catalog_ref, order),
+        None => catalog_ref.get_raw_39().to_vec(),
+    };
+    let query = LinkQuery::try_new(customer.clone(), LinkTypes::MemberToOrder)?.author(owner.clone()).tag_prefix(LinkTag::new(prefix));
+    // Each link's author checked too, not left to the query's filter alone.
+    Ok(get_links(query, GetStrategy::default())?.into_iter().filter(|link| &link.author == owner).collect())
+}
+
+/// The stores whose members' points `catalog_ref` carries on: itself, then
+/// each store it was moved on from by its owner's new key, newest first
+/// (catalog's `store_line`).
+pub(crate) fn store_line(catalog_ref: &ActionHash) -> ExternResult<Vec<ActionHash>> {
+    let earlier: Vec<ActionHash> = call_local("catalog", "store_line", catalog_ref.clone())?.map_err(|why| guest(format!("store_line: {why}")))?;
+    Ok(std::iter::once(catalog_ref.clone()).chain(earlier).collect())
+}
+
+/// Every order of `customer`'s the stores in `catalog_ref`'s line accepted
+/// under their programs -- however many: read from each store's links,
+/// one read per store, not from anyone's chain.
 pub(crate) fn member_orders(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResult<Vec<OpenOrder>> {
-    let types = [EntryType::try_from(UnitEntryTypes::MemberOrder)?];
-    let mut out = Vec::new();
-    for record in mine(&types).records()? {
-        let Some(m) = decode_or::<MemberOrder>(&record).filter(|m| &m.customer == customer && &m.catalog_ref == catalog_ref) else { continue };
-        let Some(placed) = get(m.order.clone(), GetOptions::default())? else { continue };
-        out.push(OpenOrder { order: m.order, placed_at: placed.action().timestamp(), accepted: Some(m.accepted), reward: m.reward.map(|(id, ..)| id), settled: None });
+    let mut out: Vec<OpenOrder> = Vec::new();
+    for catalog in store_line(catalog_ref)? {
+        let owner = store(&catalog)?.owner;
+        for link in member_order_links(customer, &catalog, &owner, None)? {
+            let Some((_, order)) = parse_member_order_tag(&link.tag.0) else { continue };
+            let Some(accepted) = link.target.into_action_hash() else { continue };
+            if out.iter().any(|o| o.order == order) {
+                continue;
+            }
+            let Some(placed) = get(order.clone(), GetOptions::default())? else { continue };
+            let reward = OrderForRewards::of(&placed).and_then(|o| o.rewards).and_then(|r| r.reward);
+            out.push(OpenOrder { order, placed_at: placed.action().timestamp(), accepted: Some(accepted), reward, settled: None });
+        }
     }
     Ok(out)
 }
 
 /// Every grant of the caller's store to `customer`, opened, with when it
-/// was given -- however many. A walk of the store's whole chain.
+/// was given -- from the links it leaves the member, not its chain. Only
+/// the caller's own: a grant sealed by a store's earlier key can't be
+/// opened by its new one (docs/REWARDS.md, "When a store moves").
 pub(crate) fn my_grant_payloads_to(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResult<Vec<(ActionHash, Timestamp, GrantPayload)>> {
-    let types = [EntryType::try_from(UnitEntryTypes::PointsGrant)?];
+    let me = me()?;
+    let query = LinkQuery::try_new(customer.clone(), LinkTypes::AgentToGrant)?.author(me.clone());
     let mut out = Vec::new();
-    for record in mine(&types).records()? {
-        let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| &g.to == customer && &g.catalog_ref == catalog_ref) else { continue };
+    for link in get_links(query, GetStrategy::default())?.into_iter().filter(|link| link.author == me) {
+        let Some(record) = link.target.into_action_hash().map(|hash| get(hash, GetOptions::default())).transpose()?.flatten() else { continue };
+        let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| &g.to == customer && &g.catalog_ref == catalog_ref && record.action().author() == &me) else { continue };
         if let Some(payload) = open::<GrantPayload>(customer, &grant.sealed)? {
             out.push((record.action_address().clone(), record.action().timestamp(), payload));
         }
@@ -34,8 +71,7 @@ pub(crate) fn my_grant_payloads_to(catalog_ref: &ActionHash, customer: &AgentPub
     Ok(out)
 }
 
-/// Every grant of the caller's store to `customer`, as a ledger plays it:
-/// only for playing an account afresh.
+/// Every grant of the caller's store to `customer`, as a ledger plays it.
 pub(crate) fn my_grants_to(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResult<Vec<OpenGrant>> {
     Ok(my_grant_payloads_to(catalog_ref, customer)?.into_iter().map(|(grant, at, payload)| open_grant(grant, at, &payload)).collect())
 }
@@ -48,22 +84,36 @@ pub(crate) fn my_running_program(catalog_ref: &ActionHash) -> ExternResult<Progr
 
 /// `customer`'s points as the caller's store has them now: their account
 /// carried forward, with `also` (an order just accepted, a grant just
-/// given) played in -- or played afresh from everything when it must be.
-/// The account found, the fold, and whether it was played afresh.
+/// given) played in -- or played afresh from the public records when it
+/// must be. The account found, and the fold.
 pub(crate) fn store_standing(catalog_ref: &ActionHash, customer: &AgentPubKey, program: &ProgramView, also_orders: Vec<OpenOrder>, also_grants: Vec<OpenGrant>) -> ExternResult<(accounts::Kept<MemberAccount>, Folded)> {
     let now = sys_time()?;
     let found = account(catalog_ref, customer, true)?;
     let prior = found.value.as_ref().and_then(|a| a.ledger.as_ref()).filter(|l| l.program == program.version);
     if let Some(ledger) = prior {
-        let orders: Vec<OpenOrder> = ledger.open_orders.iter().cloned().chain(also_orders).collect();
-        let grants: Vec<OpenGrant> = ledger.open_grants.iter().cloned().chain(also_grants).collect();
+        let orders: Vec<OpenOrder> = ledger.open_orders.iter().cloned().chain(also_orders.iter().cloned()).collect();
+        let grants = unique_grants(ledger.open_grants.iter().cloned().chain(also_grants.iter().cloned()));
         if let Ok((folded, _)) = play(program, Some(ledger), &orders, grants, None, now)? {
             return Ok((found, folded));
         }
     }
-    // Afresh: what the store's chain holds already has what this call wrote.
-    let (folded, _) = play(program, None, &member_orders(catalog_ref, customer)?, my_grants_to(catalog_ref, customer)?, None, now)?.map_err(|_| guest("couldn't play this member's history"))?;
+    // Afresh, from the public records -- with what this call has just
+    // recorded, should the network not show it yet.
+    let orders: Vec<OpenOrder> = member_orders(catalog_ref, customer)?.into_iter().chain(also_orders).collect();
+    let grants = unique_grants(my_grants_to(catalog_ref, customer)?.into_iter().chain(also_grants));
+    let (folded, _) = play(program, None, &orders, grants, None, now)?.map_err(|_| guest("couldn't play this member's history"))?;
     Ok((found, folded))
+}
+
+/// `grants`, each once.
+fn unique_grants(grants: impl Iterator<Item = OpenGrant>) -> Vec<OpenGrant> {
+    let mut out: Vec<OpenGrant> = Vec::new();
+    for grant in grants {
+        if !out.iter().any(|g| g.grant == grant.grant) {
+            out.push(grant);
+        }
+    }
+    out
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -107,10 +157,10 @@ pub struct MemberOrderInput {
     pub accepted: ActionHash,
 }
 
-/// Records, privately, an order the caller's store accepted that joined its
-/// program -- what its members' points are worked out from -- and carries
-/// the member's account forward with it, in the same call. Safe to repeat:
-/// the record is the same each time, so it's found by its own hash.
+/// Records an order the caller's store accepted that joined its program --
+/// linked publicly from the member, what their points are worked out from --
+/// lists the member, and carries their account forward, in the same call.
+/// Safe to repeat: the order's link is found by its exact tag.
 #[hdk_extern]
 pub fn record_member_order(input: MemberOrderInput) -> ExternResult<()> {
     let Some(record) = get(input.order.clone(), GetOptions::default())? else { return Ok(()) };
@@ -120,20 +170,55 @@ pub fn record_member_order(input: MemberOrderInput) -> ExternResult<()> {
     if placed.merchant != me {
         return Ok(());
     }
-    let reward = match rewards.reward {
-        Some(id) => program_at(&rewards.program, &placed.catalog_ref)?.ok().and_then(|p| p.reward(id).map(|r| (id, r.cost, r.min_tier))),
-        None => None,
-    };
-    let member_order = EntryTypes::MemberOrder(MemberOrder { catalog_ref: placed.catalog_ref.clone(), customer: placed.requester.clone(), order: input.order.clone(), accepted: input.accepted.clone(), reward });
-    let recorded = matches!(get_details(hash_entry(&member_order)?, GetOptions::local())?, Some(Details::Entry(e)) if e.actions.iter().any(|a| a.action().author() == &me));
-    if recorded {
+    if !member_order_links(&placed.requester, &placed.catalog_ref, &me, Some(&input.order))?.is_empty() {
         return Ok(());
     }
-    create_entry(&member_order)?;
+    create_link(placed.requester.clone(), input.accepted.clone(), LinkTypes::MemberToOrder, LinkTag::new(member_order_tag(&placed.catalog_ref, &input.order)))?;
+    list_member(&placed.catalog_ref, &placed.requester)?;
     let program = my_running_program(&placed.catalog_ref)?;
     let order = OpenOrder { order: input.order.clone(), placed_at: record.action().timestamp(), accepted: Some(input.accepted), reward: rewards.reward, settled: None };
-    let (found, folded) = store_standing(&placed.catalog_ref, &placed.requester, &program, vec![order], Vec::new())?;
-    keep(&found, MemberAccount { catalog_ref: placed.catalog_ref, member: placed.requester, kept_by_store: true, ledger: Some(folded.ledger), latest_order: Some(input.order) })
+    let checked = account(&placed.catalog_ref, &placed.requester, true)?.value.is_some_and(|a| a.carried_checked);
+    // Their points at the store's earlier self on the network before, if it
+    // was brought over: carried once, citing this order.
+    let carried = if checked { Ok(None) } else { carried::carry_previous_points(&placed.catalog_ref, &placed.requester, &input.order) };
+    let also_grants: Vec<OpenGrant> = carried.as_ref().ok().cloned().flatten().into_iter().collect();
+    let (found, folded) = store_standing(&placed.catalog_ref, &placed.requester, &program, vec![order], also_grants)?;
+    // A carry that couldn't reach the network before is tried again next time.
+    keep(&found, MemberAccount { catalog_ref: placed.catalog_ref, member: placed.requester, kept_by_store: true, ledger: Some(folded.ledger), latest_order: Some(input.order), carried_checked: checked || carried.is_ok() })
+}
+
+/// Puts `member` on the caller's store's list of members, once.
+fn list_member(catalog_ref: &ActionHash, member: &AgentPubKey) -> ExternResult<()> {
+    if store_members_where(catalog_ref, Some(member))?.is_empty() {
+        create_link(catalog_ref.clone(), member.clone(), LinkTypes::StoreToMember, LinkTag::new(member.get_raw_39().to_vec()))?;
+    }
+    Ok(())
+}
+
+/// The members on the store's list, each with when they joined it -- or just
+/// `member`, if they're on it. Only the store's owner's list counts.
+pub(crate) fn store_members_where(catalog_ref: &ActionHash, member: Option<&AgentPubKey>) -> ExternResult<Vec<(AgentPubKey, Timestamp)>> {
+    let owner = store(catalog_ref)?.owner;
+    let mut query = LinkQuery::try_new(catalog_ref.clone(), LinkTypes::StoreToMember)?.author(owner.clone());
+    if let Some(member) = member {
+        query = query.tag_prefix(LinkTag::new(member.get_raw_39().to_vec()));
+    }
+    let mut members: Vec<(AgentPubKey, Timestamp)> = Vec::new();
+    for link in get_links(query, GetStrategy::default())?.into_iter().filter(|link| link.author == owner) {
+        let Some(who) = link.target.into_agent_pub_key() else { continue };
+        match members.iter_mut().find(|(m, _)| m == &who) {
+            Some((_, joined)) => *joined = (*joined).min(link.timestamp),
+            None => members.push((who, link.timestamp)),
+        }
+    }
+    Ok(members)
+}
+
+/// The members of the store `catalog_ref`, by when they joined, oldest first.
+pub(crate) fn store_members(catalog_ref: &ActionHash) -> ExternResult<Vec<(AgentPubKey, Timestamp)>> {
+    let mut members = store_members_where(catalog_ref, None)?;
+    members.sort_by_key(|(_, joined)| *joined);
+    Ok(members)
 }
 
 /// Carries a member's account forward with a grant the caller's store just
@@ -141,6 +226,6 @@ pub fn record_member_order(input: MemberOrderInput) -> ExternResult<()> {
 pub(crate) fn record_grant(catalog_ref: &ActionHash, to: &AgentPubKey, grant: OpenGrant) -> ExternResult<()> {
     let Some(program) = program_of(catalog_ref.clone())? else { return Ok(()) };
     let (found, folded) = store_standing(catalog_ref, to, &program, Vec::new(), vec![grant])?;
-    let latest_order = found.value.as_ref().and_then(|a| a.latest_order.clone());
-    keep(&found, MemberAccount { catalog_ref: catalog_ref.clone(), member: to.clone(), kept_by_store: true, ledger: Some(folded.ledger), latest_order })
+    let (latest_order, carried_checked) = found.value.as_ref().map_or((None, false), |a| (a.latest_order.clone(), a.carried_checked));
+    keep(&found, MemberAccount { catalog_ref: catalog_ref.clone(), member: to.clone(), kept_by_store: true, ledger: Some(folded.ledger), latest_order, carried_checked })
 }

@@ -16,18 +16,21 @@ pub struct GrantInput {
 }
 
 /// The member's latest order at the caller's store under its program --
-/// what a grant to them cites: from the store's account of them, or, for
-/// one from before accounts, its records.
+/// what a grant to them cites: from the store's account of them, or, when
+/// it has none (a device just restored, say), the newest of the store's
+/// links to their orders.
 pub(crate) fn latest_member_order(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResult<Option<ActionHash>> {
     if let Some(order) = account(catalog_ref, customer, true)?.value.and_then(|a| a.latest_order) {
         return Ok(Some(order));
     }
-    let types = [EntryType::try_from(UnitEntryTypes::MemberOrder)?];
-    Ok(mine(&types).find(|r| decode_or::<MemberOrder>(r).is_some_and(|m| &m.customer == customer && &m.catalog_ref == catalog_ref))?.and_then(|r| decode_or::<MemberOrder>(&r)).map(|m| m.order))
+    let newest = member_order_links(customer, catalog_ref, &me()?, None)?.into_iter().max_by_key(|link| link.timestamp);
+    Ok(newest.and_then(|link| parse_member_order_tag(&link.tag.0)).map(|(_, order)| order))
 }
 
 pub(crate) fn grant(to: AgentPubKey, catalog_ref: ActionHash, order: Option<ActionHash>, points: u32, reason: GrantReason) -> ExternResult<ActionHash> {
-    if points == 0 || points > MAX_GRANT_POINTS {
+    // A gift or a birthday is bounded; a balance carried over is what it was.
+    let given = !matches!(reason, GrantReason::Carried { .. });
+    if points == 0 || (given && points > MAX_GRANT_POINTS) {
         return Err(guest(format!("You can give between 1 and {MAX_GRANT_POINTS} points at a time.")));
     }
     let order = match order {

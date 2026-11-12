@@ -50,6 +50,7 @@ A release made while people move carries the previous network as a second app ro
 - **The parcel** is opened on the previous network, and the profile is re-created from it plus the old public profile.
 - **Stores** are republished by `catalog::import_store`, reading the old store through the bridge: details, choice groups, menu and live promo codes, every reference remapped. A `StoreImport` records where each one came from.
 - **Ratings and reputation**, for people and for stores, add the previous network's summaries once `arrived_from` / `imported_from` confirm the link.
+- **Rewards:** the import copies the store's program, its items and groups remapped (`rewards::carry_program`). Each member's balance at the old store, gifts included, is granted at the new one on their first order there, as points carried over (`GrantReason::Carried`): once each, asked of the old store through the bridge (`carried_balance`). Tier and history start again; docs/REWARDS.md, "When a store moves".
 
 ### What doesn't move, and the limits
 

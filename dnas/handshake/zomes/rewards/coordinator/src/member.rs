@@ -88,6 +88,8 @@ pub enum PointsLineKind {
     Spent,
     Gift,
     Birthday,
+    /// Held at the store's earlier self, on the network before this one.
+    Carried,
 }
 
 impl From<rewards_integrity::ledger::LedgerLine> for PointsLine {
@@ -98,6 +100,7 @@ impl From<rewards_integrity::ledger::LedgerLine> for PointsLine {
             LineKind::Spent => (PointsLineKind::Spent, None),
             LineKind::Gift { note } => (PointsLineKind::Gift, note),
             LineKind::Birthday => (PointsLineKind::Birthday, None),
+            LineKind::Carried => (PointsLineKind::Carried, None),
         };
         PointsLine { entry: line.entry, at: line.at, kind, points: line.points, note }
     }
@@ -129,14 +132,16 @@ pub(crate) fn card_for(catalog_ref: &ActionHash) -> ExternResult<CardView> {
         Some(carried) => carried,
         None => {
             let mut orders = Vec::new();
-            for (order, _, at) in my_orders()?.into_iter().filter(|(_, c, _)| c == catalog_ref) {
+            // Their orders at the store and every store it carries on from.
+            let line = store_line(catalog_ref)?;
+            for (order, _, at) in my_orders()?.into_iter().filter(|(_, c, _)| line.contains(c)) {
                 orders.extend(open_order(&order, at)?);
             }
             play(&program, None, &orders, grants_to_play(&store_info.owner, catalog_ref, &[])?, Some(&store_info.owner), now)?.map_err(|_| guest("couldn't play this card's history"))?
         }
     };
     let latest_order = kept.as_ref().and_then(|a| a.latest_order.clone()).or_else(|| standing.iter().map(|(f, _)| &f.order).max_by_key(|o| o.placed_at).map(|o| o.order.clone()));
-    keep_read(&found, MemberAccount { catalog_ref: catalog_ref.clone(), member: me, kept_by_store: false, ledger: Some(folded.ledger.clone()), latest_order }, &folded);
+    keep_read(&found, MemberAccount { catalog_ref: catalog_ref.clone(), member: me, kept_by_store: false, ledger: Some(folded.ledger.clone()), latest_order, carried_checked: false }, &folded);
 
     // Held for orders still waiting on the store, and what each order still
     // to earn should bring, in turn -- a welcome counts once.
@@ -187,17 +192,46 @@ pub(crate) fn order_called_off(order: &ActionHash) -> ExternResult<bool> {
 /// before they kept one -- every store their orders joined a program at,
 /// kept as the list from then on.
 pub(crate) fn my_card_stores() -> ExternResult<Vec<ActionHash>> {
-    if let Some(stores) = my_stores()? {
-        return Ok(stores);
-    }
-    let mut stores: Vec<ActionHash> = Vec::new();
-    for (_, catalog_ref, _) in my_orders()? {
-        if !stores.contains(&catalog_ref) {
-            stores.push(catalog_ref);
+    let stores = match my_stores()? {
+        Some(stores) => stores,
+        None => {
+            let mut stores: Vec<ActionHash> = Vec::new();
+            for (_, catalog_ref, _) in my_orders()? {
+                if !stores.contains(&catalog_ref) {
+                    stores.push(catalog_ref);
+                }
+            }
+            let _ = isolated::<_, ()>("keep_my_stores_read", stores.clone());
+            stores
+        }
+    };
+    // A store its owner moved to a new key is carried on by its successor:
+    // one card, the newest store's, with the points of every one before it.
+    let mut current: Vec<ActionHash> = Vec::new();
+    for store in stores {
+        let newest = newest_in_line(store)?;
+        if !current.contains(&newest) {
+            current.push(newest);
         }
     }
-    let _ = isolated::<_, ()>("keep_my_stores_read", stores.clone());
-    Ok(stores)
+    Ok(current)
+}
+
+/// The store `catalog_ref` carries on as now: its successor's successor, and
+/// so on, as far as its owners moved it.
+fn newest_in_line(catalog_ref: ActionHash) -> ExternResult<ActionHash> {
+    let mut seen = vec![catalog_ref.clone()];
+    let mut current = catalog_ref;
+    loop {
+        let next: Option<ActionHash> = call_local("catalog", "store_successor", current.clone())?.map_err(|why| guest(format!("store_successor: {why}")))?;
+        match next {
+            Some(next) if !seen.contains(&next) => {
+                seen.push(next.clone());
+                current = next;
+            }
+            _ => return Ok(current),
+        }
+    }
 }
 
 /// The caller's card at a store -- with the store's program even before
@@ -241,7 +275,7 @@ pub fn note_my_order(order: ActionHash) -> ExternResult<()> {
         // Their first order here: the store goes on their list of cards.
         None => {
             add_my_stores(std::slice::from_ref(&placed.catalog_ref))?;
-            MemberAccount { catalog_ref: placed.catalog_ref.clone(), member: me, kept_by_store: false, ledger: None, latest_order: Some(order) }
+            MemberAccount { catalog_ref: placed.catalog_ref.clone(), member: me, kept_by_store: false, ledger: None, latest_order: Some(order), carried_checked: false }
         }
     };
     keep(&found, kept)

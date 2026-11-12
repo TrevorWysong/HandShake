@@ -53,6 +53,21 @@ await runScenario(async (scenario) => {
   await assert.rejects(rawPickup(known, welcome), /first order here/, "nor will the network take a second");
   console.log("[PASS] a newcomers' code goes only to a customer's first order here");
 
+  // ===== One card, one first-order deal, kept on the network =====
+  // The store's payment agent claims the deal for each card it holds; the
+  // claim lives on the network, under a digest only the store can make.
+  const dealOrder = async (n: number) => actionHash(await retryUntilOk(() => order(n === 0 ? known : fresh)));
+  const [orderA, orderB] = [await dealOrder(0), await dealOrder(1)];
+  await sync();
+  const claim = (by: typeof known, fingerprint: string, on: Uint8Array) => call(by, "dispatch")<boolean>("claim_newcomer_card", { store, fingerprint, order: on });
+  assert.equal(await claim(merchant, "fp_card_1", orderA), true, "a card takes the deal");
+  assert.equal(await claim(merchant, "fp_card_1", orderA), true, "on the same order, again: still its");
+  await sync();
+  assert.equal(await claim(merchant, "fp_card_1", orderB), false, "the same card, another order: refused");
+  assert.equal(await claim(merchant, "fp_card_2", orderB), true, "another card is welcome");
+  await assert.rejects(claim(known, "fp_card_3", orderA), /Only the store's owner/, "and only the store keeps its deal");
+  console.log("[PASS] a store's first-order deal is one per card, remembered by the network rather than a device");
+
   // An order a modified app writes raw, called off below.
   const raw = actionHash(await rawPickup(fresh, null));
   await sync();

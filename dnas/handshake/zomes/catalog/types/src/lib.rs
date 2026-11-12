@@ -321,6 +321,21 @@ pub enum PromoReward {
     },
 }
 
+impl PromoReward {
+    /// The same reward naming another store's copies of its item and choice
+    /// groups (`item`, `group`: each original to its copy) -- for a store
+    /// republished by its owner's new key, or on a new network. `None` if
+    /// something it names wasn't copied.
+    pub fn remapped(&self, item: impl Fn(&ActionHash) -> Option<ActionHash>, group: impl Fn(&ActionHash) -> Option<ActionHash>) -> Option<Self> {
+        let choices = |choices: &[ChoiceTerms]| choices.iter().map(|terms| Some(ChoiceTerms { group: group(&terms.group)?, ..terms.clone() })).collect::<Option<Vec<_>>>();
+        Some(match self {
+            PromoReward::FreeItem { item_ref, quantity, choices: picked } => PromoReward::FreeItem { item_ref: item(item_ref)?, quantity: *quantity, choices: choices(picked)? },
+            PromoReward::PercentOffItem { item_ref, percent, quantity, choices: picked } => PromoReward::PercentOffItem { item_ref: item(item_ref)?, percent: *percent, quantity: *quantity, choices: choices(picked)? },
+            other => other.clone(),
+        })
+    }
+}
+
 /// Merchant-scoped, not global -- one restaurant's "WELCOME10" is a
 /// completely independent code from another's, looked up by
 /// `(catalog_ref, code)` rather than a globally unique string. Immutable

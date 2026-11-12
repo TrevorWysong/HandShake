@@ -188,7 +188,7 @@ pub struct OrderHistoryPage {
 /// Every order in `owner`'s history, newest first, a page at a time. Walks
 /// day buckets back from the cursor and stops as soon as it has a full
 /// page, so a page costs the days it covers, not the whole history.
-fn history_page(owner: QueueOwner<'_>, before: Option<Timestamp>, limit: Option<u32>) -> ExternResult<OrderHistoryPage> {
+pub(crate) fn history_page(owner: QueueOwner<'_>, before: Option<Timestamp>, limit: Option<u32>) -> ExternResult<OrderHistoryPage> {
     let limit = limit.map_or(DEFAULT_HISTORY_PAGE, |l| (l as usize).clamp(1, MAX_HISTORY_PAGE));
     let mut days: Vec<i64> = get_links(LinkQuery::try_new(owner.history_root()?, owner.history_index_link_type())?, GetStrategy::default())?
         .iter()

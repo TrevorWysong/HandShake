@@ -15,6 +15,7 @@ use rewards_integrity::*;
 
 mod accounts;
 mod birthdays;
+mod carried;
 mod grants;
 mod history;
 mod member;

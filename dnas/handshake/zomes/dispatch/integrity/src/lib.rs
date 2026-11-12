@@ -166,6 +166,11 @@ pub enum LinkTypes {
     /// answer, found in one read however busy it is. Its owner clears each
     /// once it's answered or settled.
     StoreToReport,
+    /// A card that took a store's first-order deal, base = the store, target
+    /// = the order it took it on, tagged with a digest only the store can
+    /// make of the card's processor fingerprint (`claim_newcomer_card`): one
+    /// card, one deal, kept where a store's device can't lose it.
+    StoreToNewcomerCard,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");

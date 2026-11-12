@@ -235,6 +235,7 @@ function lineLabel(line: PointsLine, t: ReturnType<typeof useT>): string {
   if (line.kind === "Earned") return t("rewards.line.earn");
   if (line.kind === "Spent") return t("rewards.line.redeem");
   if (line.kind === "Birthday") return t("rewards.line.birthday");
+  if (line.kind === "Carried") return t("rewards.line.carried");
   return line.note ?? t("rewards.line.gift");
 }
 

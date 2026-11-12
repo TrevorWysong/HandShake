@@ -1206,6 +1206,15 @@ export type GrantReason =
       Birthday: {
         year: number;
       };
+    }
+  /**
+   * What the member held at the store `from` on the network before this
+   * one, carried over when the store moved here (docs/MIGRATION.md).
+   */
+  | {
+      Carried: {
+        from: ActionHash;
+      };
     };
 
 /**
@@ -1806,45 +1815,6 @@ export const MAX_WEBSITE_CHARS = 200;
  * The fewest and most days points last without an order.
  */
 export const MIN_EXPIRY_DAYS = 30;
-
-/**
- * A store's own record of a member's birth month, once it has read what
- * they told it (`BirthdayShare`) -- private on its chain, so its birthday
- * sweep needs no lookups for members it knows.
- */
-export interface MemberBirthday {
-  catalog_ref: ActionHash;
-  customer: AgentPubKey;
-  /**
-   * 1 (January) to 12.
-   */
-  month: number;
-}
-
-/**
- * A store's own record of an order that joined its program, kept private
- * on its chain: what it works out its members' points from, alongside its
- * settlements and grants. Written as it accepts the order.
- */
-export interface MemberOrder {
-  /**
-   * The store it was placed at.
-   */
-  catalog_ref: ActionHash;
-  customer: AgentPubKey;
-  /**
-   * The order's original action.
-   */
-  order: ActionHash;
-  /**
-   * The store's acceptance of it.
-   */
-  accepted: ActionHash;
-  /**
-   * The reward it spent, and what it cost then, if it spent one.
-   */
-  reward: [number, number, number] | null;
-}
 
 export interface MenuItem {
   catalog_ref: ActionHash;
@@ -2685,6 +2655,12 @@ export type PaymentDue =
          */
         newcomer_deal: ActionHash | null;
         /**
+         * The payer has completed orders with several stores before
+         * (`established_payer_stores`): someone with a record, never slowed
+         * when declined cards from new accounts look like card testing.
+         */
+        payer_established: boolean;
+        /**
          * When the payer made the offer: what a kept card is dated by.
          */
         offered_at: Timestamp;
@@ -3160,7 +3136,15 @@ export interface PointsLine {
   note: string | null;
 }
 
-export type PointsLineKind = "Earned" | "Spent" | "Gift" | "Birthday";
+export type PointsLineKind =
+  | "Earned"
+  | "Spent"
+  | "Gift"
+  | "Birthday"
+  /**
+   * Held at the store's earlier self, on the network before this one.
+   */
+  | "Carried";
 
 /**
  * Where a member stands at a store after an entry.

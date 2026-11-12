@@ -16,7 +16,7 @@
 //! keeps it only if no version has been written since it read it.
 
 use super::*;
-use rewards_integrity::ledger::{fold, Folded, GrantKind, OpenGrant, OpenOrder, OrderFacts};
+use rewards_integrity::ledger::{fold, Folded, GrantKind, OpenGrant, OpenOrder, OrderFacts, Settled};
 
 /// How many lines of history an account keeps: what a card shows.
 pub(crate) const HISTORY: usize = 30;
@@ -40,7 +40,7 @@ fn marker(record: &KeptRecord, n: u32) -> ExternResult<Option<ActionHash>> {
 
 /// `record` at its latest version: the highest `n` with a marker, found by
 /// doubling, then halving between -- a few lookups, however many versions.
-fn kept<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(record: &KeptRecord) -> ExternResult<Kept<T>> {
+pub(crate) fn kept<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(record: &KeptRecord) -> ExternResult<Kept<T>> {
     let Some(mut found) = marker(record, 1)? else { return Ok(Kept { n: 0, value: None }) };
     let (mut low, mut high) = (1u32, 2u32);
     while let Some(at) = marker(record, high)? {
@@ -69,7 +69,7 @@ fn kept<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(record: &Kept
 
 /// Writes `entry` as `record`'s version after `n`, and its marker straight
 /// after it, so the marker's previous action is the version.
-fn write_kept(record: KeptRecord, n: u32, entry: &EntryTypes) -> ExternResult<()> {
+pub(crate) fn write_kept(record: KeptRecord, n: u32, entry: &EntryTypes) -> ExternResult<()> {
     create_entry(entry)?;
     create_entry(&EntryTypes::KeptVersion(KeptVersion { record, n: n + 1 }))?;
     Ok(())
@@ -129,9 +129,11 @@ pub(crate) fn facts(order: &OpenOrder, merchant: Option<&AgentPubKey>, now: Time
         (None, None) => None,
     };
     // Settled before, and still unappealed: what's left is its refund
-    // period ending -- one read, not the order's whole story again.
+    // period ending -- one read, not the order's whole story again; none,
+    // once its window has closed for good.
     if let Some(settled) = &order.settled {
-        if dispatch::<_, Option<AppealWire>>("get_appeal_for_order", order.order.clone())?.is_none() {
+        if settled.closed || dispatch::<_, Option<AppealWire>>("get_appeal_for_order", order.order.clone())?.is_none() {
+            let settled = &Settled { closed: settled.closed || settled.closes(now), ..settled.clone() };
             let mut events: Vec<Event> = settled.spend.iter().map(|(at, cost, min_tier)| Event::Spend { at: *at, cost: *cost, min_tier: *min_tier }).collect();
             let ended = settled.ended(now);
             let status = if ended {
@@ -141,7 +143,7 @@ pub(crate) fn facts(order: &OpenOrder, merchant: Option<&AgentPubKey>, now: Time
                 PointsStatus::RefundPeriod { until: settled.available_at }
             };
             let now_ = OrderNow { events, pending: Some((status, settled.base)), done: ended, settled: Some(settled.clone()) };
-            return Ok((OrderFacts { order: OpenOrder { accepted, ..order.clone() }, events: now_.events.clone(), done: now_.done }, now_));
+            return Ok((OrderFacts { order: OpenOrder { accepted, settled: Some(settled.clone()), ..order.clone() }, events: now_.events.clone(), done: now_.done }, now_));
         }
     }
     let view = MemberOrderView { order: order.order.clone(), placed_at: order.placed_at, accepted: accepted.clone(), reward: order.reward };
@@ -181,6 +183,7 @@ pub(crate) fn open_grant(grant: ActionHash, at: Timestamp, payload: &GrantPayloa
     let kind = match &payload.reason {
         GrantReason::Birthday { .. } => GrantKind::Birthday,
         GrantReason::Goodwill { note } => GrantKind::Gift { note: (!note.is_empty()).then(|| note.clone()) },
+        GrantReason::Carried { .. } => GrantKind::Carried,
     };
     OpenGrant { grant, at, points: payload.points, kind }
 }

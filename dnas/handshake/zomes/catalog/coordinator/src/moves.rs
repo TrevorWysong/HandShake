@@ -85,14 +85,30 @@ impl Source {
     }
 }
 
-/// Republishes `from`'s choice groups, menu and live promo codes, read from
-/// `source`, onto the store `to` -- every reference between them remapped
-/// to the copies.
+/// Republishes `from`'s choice groups, menu, live promo codes and rewards
+/// program, read from `source`, onto the store `to` -- every reference
+/// between them remapped to the copies.
 pub(crate) fn copy_contents(source: &Source, from: &ActionHash, to: &ActionHash) -> ExternResult<()> {
     let groups = copy_groups(source, from, to)?;
     let items = copy_items(source, from, to, &groups)?;
     recompute_dietary_tags(to)?;
-    copy_promos(source, from, to, &items, &groups)
+    copy_promos(source, from, to, &items, &groups)?;
+    carry_program(source, from, to, &items, &groups)
+}
+
+#[derive(Serialize, Debug)]
+struct CarryProgramInput<'a> {
+    from: &'a ActionHash,
+    to: &'a ActionHash,
+    previous: bool,
+    items: Vec<(&'a ActionHash, &'a ActionHash)>,
+    groups: Vec<(&'a ActionHash, &'a ActionHash)>,
+}
+
+/// The rewards zome carrying `from`'s program to `to`, naming the copies.
+fn carry_program(source: &Source, from: &ActionHash, to: &ActionHash, items: &BTreeMap<ActionHash, ActionHash>, groups: &BTreeMap<ActionHash, ActionHash>) -> ExternResult<()> {
+    let input = CarryProgramInput { from, to, previous: matches!(source, Source::Previous), items: items.iter().collect(), groups: groups.iter().collect() };
+    call_local::<_, ()>("rewards", "carry_program", input)?.map_err(|why| guest(format!("couldn't carry the store's rewards program: {why}")))
 }
 
 /// Copies the store's choice groups, each after the groups its options
@@ -161,7 +177,6 @@ fn copy_items(source: &Source, from: &ActionHash, to: &ActionHash, groups: &BTre
 fn copy_promos(source: &Source, from: &ActionHash, to: &ActionHash, items: &BTreeMap<ActionHash, ActionHash>, groups: &BTreeMap<ActionHash, ActionHash>) -> ExternResult<()> {
     let now = sys_time()?;
     let remap = |item: &ActionHash| items.get(item).cloned();
-    let remap_choices = |choices: Vec<ChoiceTerms>| choices.into_iter().map(|terms| Some(ChoiceTerms { group: groups.get(&terms.group)?.clone(), ..terms })).collect::<Option<Vec<_>>>();
     for view in source.read::<_, Vec<PromoView>>("list_live_promo_codes", from.clone())? {
         let Some(promo) = decode_or::<PromoCode>(&view.record) else { continue };
         if !promo.active || promo.expires_at.is_some_and(|at| at <= now) {
@@ -174,17 +189,7 @@ fn copy_promos(source: &Source, from: &ActionHash, to: &ActionHash, items: &BTre
             },
             other => other,
         };
-        let reward = match promo.reward {
-            PromoReward::FreeItem { item_ref, quantity, choices } => match (remap(&item_ref), remap_choices(choices)) {
-                (Some(item_ref), Some(choices)) => PromoReward::FreeItem { item_ref, quantity, choices },
-                _ => continue,
-            },
-            PromoReward::PercentOffItem { item_ref, percent, quantity, choices } => match (remap(&item_ref), remap_choices(choices)) {
-                (Some(item_ref), Some(choices)) => PromoReward::PercentOffItem { item_ref, percent, quantity, choices },
-                _ => continue,
-            },
-            other => other,
-        };
+        let Some(reward) = promo.reward.remapped(remap, |group| groups.get(group).cloned()) else { continue };
         create_promo_code(CreatePromoCodeInput { catalog_ref: to.clone(), code: promo.code, requirement, reward, expires_at: promo.expires_at, auto_apply: promo.auto_apply, limits: promo.limits })?;
     }
     Ok(())

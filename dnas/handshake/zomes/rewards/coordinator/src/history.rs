@@ -118,7 +118,7 @@ pub(crate) fn order_now(view: &MemberOrderView, now: Timestamp) -> ExternResult<
         }
     };
     let done = status == PointsStatus::Earned;
-    let settled = appeal.is_none().then_some(rewards_integrity::ledger::Settled { spend, settled_at: earning.settled_at, base: earning.base, available_at: earning.available_at });
+    let settled = appeal.is_none().then_some(rewards_integrity::ledger::Settled { spend, settled_at: earning.settled_at, base: earning.base, available_at: earning.available_at, closed: false }).map(|s| rewards_integrity::ledger::Settled { closed: s.closes(now), ..s });
     Ok(OrderNow { events, pending: Some((status, earning.base)), done, settled })
 }
 

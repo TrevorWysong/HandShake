@@ -604,6 +604,7 @@ export const es: Catalog = {
   "rewards.line.redeem": "Recompensa",
   "rewards.line.birthday": "¡Feliz cumpleaños!",
   "rewards.line.gift": "De la tienda",
+  "rewards.line.carried": "Traídos de la versión anterior de la tienda",
   "rewards.stripBalance": "{points} {name}",
   "rewards.stripJoinWelcome": "Gana {points} {name} por dólar, y {welcome} en tu primer pedido",
   "rewards.addItemToUse": "Agrega el artículo de la recompensa al carrito para usarla.",

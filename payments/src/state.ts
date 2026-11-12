@@ -16,17 +16,22 @@ export interface State {
   savedAt: Record<string, number>;
   /// A challenged authorization's reference, by the challenge's action (hex).
   challenged: Record<string, string>;
-  /// Each store's first-order deal: the order (hex) each card fingerprint
-  /// took it on, by store (hex), then fingerprint.
+  /// First-order deal cards kept here by an agent from before they were
+  /// kept on the network (`claim_newcomer_card`): the order (hex) each card
+  /// fingerprint took it on, by store (hex). Claimed on the network on the
+  /// next round, then emptied.
   newcomers: Record<string, Record<string, string>>;
   /// Each recent offer the agent tried on its processor, by offer (hex):
   /// whose, for which order, and when (ms).
   attempts: Record<string, { payer: string; order: string; at: number }>;
   /// Payers (hex) whose card this payee has held before.
   known: Record<string, true>;
-  /// When each recent decline of a new payer's card was (ms): a burst of
-  /// them is cards being tested, and pauses new payers for a while.
+  /// When each recent decline of a card from a payer with no history was
+  /// (ms): a burst of them is cards being tested, and slows such payers.
   declines: number[];
+  /// When the last payer with no history was let through during a burst
+  /// (ms), or `null`.
+  trickleAt: number | null;
   /// The processor account the saved cards above were kept with
   /// (`accountId`): another account can't charge them.
   account: string | null;
@@ -38,7 +43,7 @@ export interface State {
   legacy: string | null;
 }
 
-export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [], account: null, heldWith: {}, legacy: null });
+export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [], trickleAt: null, account: null, heldWith: {}, legacy: null });
 
 export interface StateStore {
   load(): Promise<State>;

@@ -105,6 +105,8 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub max_listed_orders: Option<u32>,
     #[serde(default)]
+    pub established_payer_stores: Option<u32>,
+    #[serde(default)]
     pub min_reporter_stores: Option<u32>,
     #[serde(default)]
     pub reputation_window_days: Option<u32>,
@@ -445,6 +447,15 @@ pub fn reputation_window() -> Duration {
 /// so a flood of bids from throwaway drivers can't slow it down.
 pub fn max_ranked_bids() -> u32 {
     setting(|p| p.max_ranked_bids, 30).max(1)
+}
+
+/// How many different store owners a payer has to have completed orders
+/// with, none of them the payer, before a store's payment agent counts them
+/// established: never slowed when a burst of declined cards from new
+/// accounts looks like card testing. More than one, so a throwaway account
+/// can't vouch for itself with one store of its own.
+pub fn established_payer_stores() -> u32 {
+    setting(|p| p.established_payer_stores, 2).max(1)
 }
 
 /// How many open orders a driver's feed lists at once, oldest first -- so a

@@ -19,11 +19,16 @@ export type Dispatch = <T>(fn: string, payload: unknown) => Promise<T>;
 export const MAX_ATTEMPTS_PER_ORDER = 5;
 export const MAX_ATTEMPTS_PER_PAYER_HOUR = 10;
 /// New accounts are free, so the per-payer caps don't stop cards being
-/// tested across many of them: this many declines of new payers' cards
-/// within the window pauses new payers until it's passed. Payers whose
-/// card held here before carry on. Short, since anyone can trip it.
+/// tested across many of them. Only payers with no history count, and only
+/// they are slowed: one whose card held here before, or who has completed
+/// orders with several stores (`payer_established`), carries on as
+/// ever. This many declines of such payers' cards within the window is a
+/// burst; during one they're let through one at a time, a try every
+/// `NEW_PAYER_TRICKLE_MS` -- too slow to test cards with, but never closed
+/// to a real newcomer, whoever starts the burst.
 export const MAX_NEW_PAYER_DECLINES = 10;
 export const NEW_PAYER_WINDOW_MS = 15 * 60_000;
+export const NEW_PAYER_TRICKLE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 /// Attempts older than an authorization can live are forgotten.
 const ATTEMPTS_KEPT_MS = 8 * 24 * HOUR_MS;
@@ -45,6 +50,7 @@ export interface EngineOptions {
 }
 
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
+const unhex = (text: string) => new Uint8Array(Buffer.from(text, "hex"));
 
 /// A write that met another on the payee's chain -- their app writing at
 /// the same moment -- wrote nothing, so it's tried again at once rather than
@@ -106,6 +112,7 @@ export class Engine {
   async #round(): Promise<number> {
     const { dispatch, state: store, onProblem } = this.#o;
     const due = await dispatch<PaymentDue[]>("payments_due", null);
+    await this.#claimKeptCards();
     let done = await this.#expireSavedCards();
     // Withdrawals first: a card withdrawn is charged by no offer still waiting.
     for (const item of [...due].sort((a, b) => Number("Forget" in b) - Number("Forget" in a))) {
@@ -130,6 +137,21 @@ export class Engine {
     return done;
   }
 
+  /// First-order cards an agent from before kept on this device alone,
+  /// claimed on the network -- once each, then forgotten here.
+  async #claimKeptCards() {
+    const state = await this.#o.state.load();
+    if (Object.keys(state.newcomers).length === 0) return;
+    for (const [store, cards] of Object.entries(state.newcomers)) {
+      for (const [fingerprint, order] of Object.entries(cards)) {
+        await this.#o.dispatch<boolean>("claim_newcomer_card", { store: unhex(store), fingerprint, order: unhex(order) });
+        delete cards[fingerprint];
+      }
+      delete state.newcomers[store];
+      await this.#o.state.save(state);
+    }
+  }
+
   async #authorize(due: Extract<PaymentDue, { Authorize: unknown }>["Authorize"], state: State) {
     const { dispatch, processor, currency, now } = this.#o;
     const decline = async (code: DeclineCode) => {
@@ -137,6 +159,7 @@ export class Engine {
     };
     const payer = hex(due.payer);
     const order = hex(due.order);
+    const established = state.known[payer] === true || due.payer_established;
     const offerKey = idempotencyKey("authorize", due.offer);
 
     let result: Authorization;
@@ -157,14 +180,17 @@ export class Engine {
         state.attempts[offer] = { payer, order, at: now() };
       }
       state.declines = state.declines.filter((at) => now() - at < NEW_PAYER_WINDOW_MS);
-      if (!state.known[payer] && state.declines.length >= MAX_NEW_PAYER_DECLINES) return decline("TooManyAttempts");
+      if (!established && state.declines.length >= MAX_NEW_PAYER_DECLINES) {
+        if (state.trickleAt !== null && now() - state.trickleAt < NEW_PAYER_TRICKLE_MS) return decline("TooManyAttempts");
+        state.trickleAt = now();
+      }
       const savedAs = due.token === null ? (state.saved[payer] ?? null) : null;
       if (due.token === null && !savedAs) return decline("NoSavedCard");
       result = await authorizing(() => processor.authorize({ amount: due.amount, currency, token: due.token, savedAs, save: due.save, tag: orderTag(due.order), idempotencyKey: offerKey }));
     }
 
     if (result.status === "declined") {
-      if (!state.known[payer] && result.code !== "Unavailable") state.declines.push(now());
+      if (!established && result.code !== "Unavailable") state.declines.push(now());
       return decline(result.code);
     }
     if (result.status === "action") {
@@ -173,19 +199,14 @@ export class Engine {
       return;
     }
     // A first-order deal is one per card here: a card that took it on
-    // another order is released, and the offer declined.
+    // another order is released, and the offer declined. Kept on the
+    // network, so a store's new or reset device remembers it.
     if (due.newcomer_deal) {
-      const store = hex(due.newcomer_deal);
-      if (!result.fingerprint) {
+      const claimed = result.fingerprint !== null && (await dispatch<boolean>("claim_newcomer_card", { store: due.newcomer_deal, fingerprint: result.fingerprint, order: due.order }));
+      if (!claimed) {
         await processor.capture(result.reference, 0, idempotencyKey("release", due.offer));
         return decline("NotEligible");
       }
-      const took = (state.newcomers[store] ??= {})[result.fingerprint];
-      if (took && took !== order) {
-        await processor.capture(result.reference, 0, idempotencyKey("release", due.offer));
-        return decline("NotEligible");
-      }
-      state.newcomers[store][result.fingerprint] = order;
     }
     // A new card takes the old one's place: not left behind at the processor.
     const replaced = state.saved[payer];

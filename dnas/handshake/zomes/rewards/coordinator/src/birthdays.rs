@@ -70,73 +70,59 @@ pub(crate) const BIRTHDAYS_LOOKED_UP: usize = 200;
 /// it is: once a year each, to members who've ordered there for a while,
 /// taking the first month each member told it. Only members are looked up,
 /// each by their own key -- what anyone else links under the store is never
-/// read -- and a month once read is kept privately (`MemberBirthday`).
-/// Returns how many it gave.
+/// read -- and the months read are kept privately (`MemberBirthdays`), a
+/// cache read again in turn if a device loses it. Everything else is
+/// public: the store's list of members, its links to their orders, its
+/// grants. Returns how many it gave.
 #[hdk_extern]
 pub fn celebrate_birthdays(_: ()) -> ExternResult<u32> {
-    let types = [EntryType::try_from(UnitEntryTypes::RewardsProgram)?];
     let now = sys_time()?;
+    let me = me()?;
     let mut given = 0;
-    for original in mine(&types).creates().records()? {
-        let Some(first) = decode_or::<RewardsProgram>(&original) else { continue };
-        let Ok(ProgramView { program, .. }) = my_running_program(&first.catalog_ref) else { continue };
+    for catalog_ref in my_catalogs()? {
+        let Ok(ProgramView { program, .. }) = my_running_program(&catalog_ref) else { continue };
         if !program.active || program.birthday_points == 0 {
             continue;
         }
         let catalog_ref = program.catalog_ref.clone();
         let local = local_time(now, &program.time_zone);
-        // Members, by when they first ordered here, oldest first, with
-        // their orders -- one walk of the store's records for all of them.
-        let member_types = [EntryType::try_from(UnitEntryTypes::MemberOrder)?];
-        let mut members: Vec<(AgentPubKey, Timestamp)> = Vec::new();
-        let mut orders_of: Vec<(AgentPubKey, ActionHash)> = Vec::new();
-        for record in mine(&member_types).records()? {
-            let Some(m) = decode_or::<MemberOrder>(&record).filter(|m| m.catalog_ref == catalog_ref) else { continue };
-            let at = record.action().timestamp();
-            match members.iter_mut().find(|(c, _)| c == &m.customer) {
-                Some((_, first)) => *first = (*first).min(at),
-                None => members.push((m.customer.clone(), at)),
-            }
-            orders_of.push((m.customer, m.order));
-        }
-        // Who's had this year's already: only the last year's grants can be.
-        let grant_types = [EntryType::try_from(UnitEntryTypes::PointsGrant)?];
-        let mut celebrated: Vec<AgentPubKey> = Vec::new();
-        for record in mine(&grant_types).since(Timestamp::from_micros(now.as_micros() - 366 * 86_400_000_000)).records()? {
-            let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| g.catalog_ref == catalog_ref) else { continue };
-            if open::<GrantPayload>(&grant.to, &grant.sealed)?.is_some_and(|g| matches!(g.reason, GrantReason::Birthday { year } if year == local.year)) {
-                celebrated.push(grant.to);
-            }
-        }
-        members.sort_by_key(|(_, at)| *at);
-        let known_types = [EntryType::try_from(UnitEntryTypes::MemberBirthday)?];
-        let mut known: Vec<(AgentPubKey, u8)> = mine(&known_types).records()?.iter().filter_map(decode_or::<MemberBirthday>).filter(|b| b.catalog_ref == catalog_ref).map(|b| (b.customer, b.month)).collect();
+        let members = store_members(&catalog_ref)?;
+        let record = KeptRecord::Birthdays { catalog_ref: catalog_ref.clone() };
+        let cache = kept::<MemberBirthdays>(&record)?;
+        let mut known: Vec<(AgentPubKey, u8)> = cache.value.map(|b| b.months).unwrap_or_default();
         // Look up some of those it doesn't know, in turn.
         let unknown: Vec<&AgentPubKey> = members.iter().map(|(c, _)| c).filter(|c| !known.iter().any(|(k, _)| k == *c)).collect();
         if !unknown.is_empty() {
+            let learned = known.len();
             let turn = (now.as_micros() / 10_800_000_000) as usize % unknown.len().div_ceil(BIRTHDAYS_LOOKED_UP);
             for member in unknown.into_iter().skip(turn * BIRTHDAYS_LOOKED_UP).take(BIRTHDAYS_LOOKED_UP) {
                 let query = LinkQuery::try_new(catalog_ref.clone(), LinkTypes::CatalogToBirthday)?.author(member.clone());
-                let Some(earliest) = get_links(query, GetStrategy::default())?.into_iter().min_by_key(|l| l.timestamp) else { continue };
+                let Some(earliest) = get_links(query, GetStrategy::default())?.into_iter().filter(|l| &l.author == member).min_by_key(|l| l.timestamp) else { continue };
                 let Some(share) = earliest.target.into_action_hash().and_then(|h| get(h, GetOptions::default()).ok().flatten()).and_then(|r| decode_or::<BirthdayShare>(&r)) else { continue };
                 let Some(month) = open::<u8>(member, &share.sealed_month)?.filter(|m| (1..=12).contains(m)) else { continue };
-                create_entry(&EntryTypes::MemberBirthday(MemberBirthday { catalog_ref: catalog_ref.clone(), customer: member.clone(), month }))?;
                 known.push((member.clone(), month));
+            }
+            if known.len() > learned {
+                write_kept(record, cache.n, &EntryTypes::MemberBirthdays(MemberBirthdays { catalog_ref: catalog_ref.clone(), months: known.clone() }))?;
             }
         }
         for (member, _) in known.into_iter().filter(|(_, m)| *m == local.month) {
-            let first_order = members.iter().find(|(c, _)| c == &member).map(|(_, at)| *at);
-            if !first_order.is_some_and(|at| now.as_micros() - at.as_micros() >= BIRTHDAY_AFTER_DAYS * 86_400_000_000) {
+            // On the list a while: a fresh account set up for the birthday
+            // alone gets nothing.
+            let joined = members.iter().find(|(c, _)| c == &member).map(|(_, at)| *at);
+            if !joined.is_some_and(|at| now.as_micros() - at.as_micros() >= BIRTHDAY_AFTER_DAYS * 86_400_000_000) {
+                continue;
+            }
+            let celebrated = my_grant_payloads_to(&catalog_ref, &member)?.iter().any(|(_, _, g)| matches!(g.reason, GrantReason::Birthday { year } if year == local.year));
+            if celebrated {
                 continue;
             }
             // A member is someone who's bought here: an order the store settled,
             // not one called off in time, which cost them nothing.
-            if celebrated.contains(&member) {
-                continue;
-            }
             let mut bought = false;
-            for (_, order) in orders_of.iter().filter(|(c, _)| c == &member) {
-                if dispatch::<_, Option<ActionHash>>("order_settlement", order.clone())?.is_some() {
+            for link in member_order_links(&member, &catalog_ref, &me, None)? {
+                let Some((_, order)) = parse_member_order_tag(&link.tag.0) else { continue };
+                if dispatch::<_, Option<ActionHash>>("order_settlement", order)?.is_some() {
                     bought = true;
                     break;
                 }
@@ -150,6 +136,17 @@ pub fn celebrate_birthdays(_: ()) -> ExternResult<u32> {
         }
     }
     Ok(given)
+}
+
+/// The caller's stores, by their original actions -- from their links, not
+/// their chain.
+fn my_catalogs() -> ExternResult<Vec<ActionHash>> {
+    #[derive(Deserialize, Debug)]
+    struct CatalogView {
+        original_action: ActionHash,
+    }
+    let views: Vec<CatalogView> = call_local("catalog", "list_my_catalogs", ())?.map_err(|why| guest(format!("list_my_catalogs: {why}")))?;
+    Ok(views.into_iter().map(|v| v.original_action).collect())
 }
 
 #[derive(Serialize, Deserialize, Debug)]

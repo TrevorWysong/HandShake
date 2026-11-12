@@ -73,6 +73,8 @@ export const REFUSALS = {
   "refusal.only-the-store-records-an-order-it": "Only the store records an order it was waiting to hand over as uncollected.",
   "refusal.only-the-store-s-owner-can-give": "Only the store's owner can give its points.",
   "refusal.only-the-store-s-owner-can-run": "Only the store's owner can run its rewards program.",
+  "refusal.only-the-store-s-owner-carries-its": "Only the store's owner carries its program.",
+  "refusal.only-the-store-s-owner-keeps-its": "Only the store's owner keeps its first-order deal.",
   "refusal.only-this-order-s-customer-and-its": "Only this order's customer and its driver can chat about it.",
   "refusal.only-this-order-s-customer-and-its-2": "Only this order's customer and its store can chat about it.",
   "refusal.only-whoever-held-a-payment-settles-it": "Only whoever held a payment settles it.",

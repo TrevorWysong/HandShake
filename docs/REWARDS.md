@@ -24,7 +24,7 @@ The program is versioned: changing it writes a new version. Each order cites the
 
 No points ledger is published, so there is no balance to forge, and nothing to read. A member's points at a store follow from what the store itself holds:
 
-- the orders it accepted from them that joined its program (`MemberOrder`, a private entry on the store's chain, written as it accepts each one);
+- the orders it accepted from them that joined its program, each linked publicly from the member as it accepts it (`MemberToOrder`), like the orders themselves;
 - its settlement of each, once the refund period is over;
 - the rewards those orders spent;
 - its own grants to them.
@@ -48,10 +48,20 @@ Playing a member's whole history every time costs every order they ever placed, 
 - **What's folded can't change.** An order is folded into the total once nothing about it can: its store settled it and its refund period is over (an appeal ruled), or it ended without the store accepting it. Until then it stays open, and every read plays it on top.
 - **Everything folded came before everything open** (`through`): nothing at or after the oldest open order's placing is folded, nor anything after an event of a done order that can't be folded whole. So the rules always play one history, in order, and a folded total plus the open orders is exactly what playing everything would give. The unit tests hold it to that against a full replay, read every simulated day, for 501, 5,000 and 50,000 orders (`cargo test --release -p rewards_types -- --ignored` for the last). The program they use has tiers rolling by year, expiry, a welcome and caps.
 - **Played afresh when it must be:** the first time an account is read (accounts from before they were kept, too); when the store changes its program, since every point plays under its current rules; and when a grant turns up dated before what's folded. Afresh means from every record, however many. Nothing is ever cut off at a count.
-- **Kept where the records change.** The store carries a member's account forward as it accepts their order or gives them points, in the same call. The member's is noted as they place an order. A card read that folds something keeps it in a call of its own, only if no newer version was written meanwhile, so a race costs a repeat, never a lost order. Recording an accepted order twice records it once: the record is the same each time, so it's found by its own hash.
+- **Kept where the records change.** The store carries a member's account forward as it accepts their order or gives them points, in the same call. The member's is noted as they place an order. A card read that folds something keeps it in a call of its own, only if no newer version was written meanwhile, so a race costs a repeat, never a lost order. Recording an accepted order twice records it once: its link is found by its exact tag.
+- **Behind an open order.** An order still open holds back folding everything after it: a refund or a cancellation could still change what came later. Those later orders stay in the account with what's been learned of each (accepted, settled), kept whenever a read learns something new. A settled order is checked once a read for an appeal, until its window has closed, plus a day for an appeal filed at the last moment to arrive (`ledger::CLOSED_AFTER`). From then on it costs nothing to read.
+- **Only a cache.** What an account folds is public: the store's links to its acceptances (`MemberToOrder`), its settlements, its grants (opened with its own key), and the member's own orders. A device restored from the network has none of the private totals, and plays them all again from those, gifts included.
 - **Found without walking the chain.** Each version is written whole, followed by a marker whose content is only *which account, which version*. Its hash is the same every time, so the latest version is found by looking a few markers up (doubling, then halving between), however many versions there are. The version is the action just before its marker. Private entries can't be updated on this network (an update needs the network to see what it updates), which is why versions are new entries.
 
 A read then costs what's still open (at most a few weeks of orders, the refund period), plus a handful of lookups, at any account's age.
+
+## When a store moves
+
+- **To a restored device, same key:** nothing is lost. Its accounts play again from the public records, its member list (`StoreToMember`) and its links to their orders come back with the network, and the birth months it had read are read again, in turn.
+- **To its owner's new key, after a recovery** (`catalog::move_store`): the program is copied to the new store, naming the copies of its items and choice groups. Members' points carry on by themselves: the new store plays each member's history across its whole line of stores (the old store, as `catalog::store_line` says, and any before it), so earning, spending, tier and all go on. **Gifts the old key gave stay behind**: they're sealed to the old key, which is gone. Both sides leave them out, so card and store still agree. The member's wallet shows the store once, as it is now.
+- **To a new network** (`catalog::import_store`, docs/MIGRATION.md): the program is copied, read from the previous network. On a member's first order at the new store, its app asks the old store, which is the same person's old key on this device's `previous` role, what the member held there, gifts included. It grants them that, as points carried over (`GrantReason::Carried`), citing the order: once, and tried again on their next order if the old network couldn't be reached. Tier and history start again on the new network, the balance doesn't.
+
+Tested on real conductors: `tests/tryorama/src/rewards-continuity.test.ts` restores a store's device and moves a store to its owner's new key, checking the member's card and the store's count against each other to the point. The carry to a new network isn't covered by a test yet.
 
 ## Time can't be faked
 
@@ -76,7 +86,7 @@ People choose their own entries' timestamps, so no rule depends on one where fak
 | Fake accounts farming birthdays | 30 days of membership, once a year |
 | A store and a customer colluding | They can only give away the store's own food |
 | Earning on an order, then getting it refunded | Points are earned only after the refund period, on what was finally paid |
-| Learning someone's points or birthday | Neither is published. A grant's and a birthday's contents are sealed; a store's member records are private to its device |
+| Learning someone's points or birthday | Neither is published. A grant's and a birthday's contents are sealed; a store's running totals and the birth months it has read are private to its device. Its links to members' orders reveal no more than the orders themselves |
 | A stranger's store filling someone's wallet or inbox with gifts | A grant must cite an order its recipient placed at that store, by its owner (validation), so only a store's own customers can be sent one. A store's grants are read by its owner's key, so nobody else's can hide them |
 | Flooding a store with birthday shares | A share must cite an order its author placed there; the store reads only its own buying members', by key |
 | Two acceptances recording the same order, or a card read racing an order being placed | The record is found by its own hash, so a repeat records nothing; a read keeps its fold only if no version was written meanwhile |
@@ -86,7 +96,6 @@ People choose their own entries' timestamps, so no rule depends on one where fak
 ## What's left
 
 - **Orders are public.** Anyone can see who ordered from whom, and so could estimate someone's points at a store from their orders. The balance itself, the gifts, the rewards and the birth month aren't published.
-- **A lost store key** loses its member records with it: a store that recovers its account starts its members' points afresh.
 - **A store could refuse a reward its member can afford.** It's the store's own program, and the refusal is recorded on the order, so the customer knows.
 - **A store's program stats and birthday sweep still read its whole chain**: the stats on its dashboard, and the birthday sweep a few times a day (one walk for all members, not one each). Neither decides anyone's points. Both are worth an index of members if stores grow very large.
 - **An order open a long time holds its member's account back**: an appeal waiting months keeps everything after it unfolded, so reads of that member cost more until it's ruled. It never makes them wrong.

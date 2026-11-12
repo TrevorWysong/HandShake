@@ -12,7 +12,7 @@
 //! - **Points are private, between a member and a store.** No points ledger
 //!   is published. A member's points at a store follow from what the store
 //!   itself holds: the orders it accepted from them that joined its program
-//!   (its private `MemberOrder` records), its settlements of them once their
+//!   (linked from the member, `MemberToOrder`), its settlements of them once their
 //!   refund period is over, the rewards it accepted, and its own grants
 //!   (sealed to the member). The store works them out with the pure rules
 //!   in `points` before honouring a reward; the member's app works out the
@@ -34,7 +34,7 @@ pub mod ledger;
 pub mod points;
 
 // The private records a running total is kept in (`ledger`).
-pub use ledger::{KeptRecord, KeptVersion, MemberAccount, MemberStores};
+pub use ledger::{KeptRecord, KeptVersion, MemberAccount, MemberBirthdays, MemberStores};
 
 pub use earn::*;
 pub use points::*;
@@ -228,6 +228,9 @@ pub enum GrantReason {
     Goodwill { note: String },
     /// A member's birthday month, in `year`.
     Birthday { year: i32 },
+    /// What the member held at the store `from` on the network before this
+    /// one, carried over when the store moved here (docs/MIGRATION.md).
+    Carried { from: ActionHash },
 }
 
 /// The month a member was born in -- kept on their own device only
@@ -258,39 +261,16 @@ pub struct BirthdayShare {
     pub sealed_month: XSalsa20Poly1305EncryptedData,
 }
 
-/// A store's own record of a member's birth month, once it has read what
-/// they told it (`BirthdayShare`) -- private on its chain, so its birthday
-/// sweep needs no lookups for members it knows.
-#[hdk_entry_helper]
-#[derive(Clone, PartialEq, Eq)]
-// Decodes only from its own fields: a record of another type that
-// happens to share these can never pass for this one.
-#[serde(deny_unknown_fields)]
-pub struct MemberBirthday {
-    pub catalog_ref: ActionHash,
-    pub customer: AgentPubKey,
-    /// 1 (January) to 12.
-    pub month: u8,
+/// The tag on a store's link from a member to its acceptance of one of
+/// their orders (`MemberToOrder`): the store, then the order -- so a read
+/// filters to one store, or to one order, by prefix.
+pub fn member_order_tag(catalog_ref: &ActionHash, order: &ActionHash) -> Vec<u8> {
+    [catalog_ref.get_raw_39(), order.get_raw_39()].concat()
 }
 
-/// A store's own record of an order that joined its program, kept private
-/// on its chain: what it works out its members' points from, alongside its
-/// settlements and grants. Written as it accepts the order.
-#[hdk_entry_helper]
-#[derive(Clone, PartialEq, Eq)]
-// Decodes only from its own fields: a record of another type that
-// happens to share these can never pass for this one.
-#[serde(deny_unknown_fields)]
-pub struct MemberOrder {
-    /// The store it was placed at.
-    pub catalog_ref: ActionHash,
-    pub customer: AgentPubKey,
-    /// The order's original action.
-    pub order: ActionHash,
-    /// The store's acceptance of it.
-    pub accepted: ActionHash,
-    /// The reward it spent, and what it cost then, if it spent one.
-    pub reward: Option<(u16, u32, u8)>,
+/// A `member_order_tag`'s store and order.
+pub fn parse_member_order_tag(tag: &[u8]) -> Option<(ActionHash, ActionHash)> {
+    (tag.len() == 78).then(|| (ActionHash::from_raw_39(tag[..39].to_vec()), ActionHash::from_raw_39(tag[39..].to_vec())))
 }
 
 impl RewardsProgram {
@@ -413,6 +393,18 @@ impl RewardsProgram {
     }
 
     /// Every menu item it names, for validation to check are its store's.
+    /// The program for another store's copies of its items and choice groups
+    /// (each original to its copy): for a store republished by its owner's
+    /// new key, or on a new network. A bonus or reward naming something not
+    /// copied is left out.
+    pub fn remapped(&self, catalog_ref: ActionHash, item: impl Fn(&ActionHash) -> Option<ActionHash>, group: impl Fn(&ActionHash) -> Option<ActionHash>) -> Self {
+        let mut program = self.clone();
+        program.catalog_ref = catalog_ref;
+        program.earn.item_bonuses = self.earn.item_bonuses.iter().filter_map(|b| Some(ItemBonus { item_ref: item(&b.item_ref)?, ..b.clone() })).collect();
+        program.rewards = self.rewards.iter().filter_map(|r| Some(Reward { benefit: r.benefit.remapped(&item, &group)?, ..r.clone() })).collect();
+        program
+    }
+
     pub fn items(&self) -> Vec<&ActionHash> {
         let mut items: Vec<&ActionHash> = self.earn.item_bonuses.iter().map(|b| &b.item_ref).collect();
         for reward in &self.rewards {

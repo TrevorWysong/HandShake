@@ -53,6 +53,7 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
         LinkTypes::OpenOrderGeohashAnchor => validate_open_order_link(&link),
         LinkTypes::OrderToIssue | LinkTypes::IssueToResponse | LinkTypes::OrderToDecision | LinkTypes::OrderToCollectRequest | LinkTypes::OrderToDropoffShare => validate_issue_link(&link),
         LinkTypes::StoreToReport => validate_report_link(&link),
+        LinkTypes::StoreToNewcomerCard => validate_newcomer_card_link(&link),
         LinkTypes::DriverToVerification => crate::verification::validate_verification_link(&link),
         LinkTypes::OrderToAppeal | LinkTypes::ArbiterToAppeal | LinkTypes::AppealToAnswer | LinkTypes::AppealToRuling | LinkTypes::StoreOwnerToRuling | LinkTypes::StoreOwnerToAppeal => crate::appeals::validate_appeal_link(&link),
         LinkTypes::OwnerToTemplate => {
@@ -170,6 +171,7 @@ pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
             require(record.action().author() == link.author, "only its verifier unlinks a verification")
         }
         LinkTypes::OrderToIssue | LinkTypes::IssueToResponse | LinkTypes::OrderToDecision | LinkTypes::OrderToCollectRequest | LinkTypes::OrderToDropoffShare => invalid("an order's issues, requests and settlement are a permanent record"),
+        LinkTypes::StoreToNewcomerCard => invalid("a card that took a store's first-order deal stays on its record"),
         // The report itself stays under its order; only the store's
         // reminder of it goes, cleared by the store.
         LinkTypes::StoreToReport => {
@@ -185,6 +187,17 @@ pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
 /// or a different entry type.
 fn target_entry<T: TryFrom<SerializedBytes, Error = SerializedBytesError>>(target: &AnyLinkableHash) -> ExternResult<Option<T>> {
     Ok(linked_record(target)?.and_then(|record| decode::<T>(&record)))
+}
+
+/// A card that took a store's first-order deal: listed by the store's owner,
+/// under the store, naming an order placed there, tagged with a 32-byte
+/// digest of the card (the fingerprint itself is never published).
+fn validate_newcomer_card_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
+    let Some(store) = link.base.clone().into_action_hash() else { return invalid("a store's deal cards are listed under the store") };
+    let owned = must_get_valid_record(store.clone())?.action().author() == link.author;
+    let Some(order) = linked_record(link.target)? else { return invalid("a deal card names the order that took the deal") };
+    let catalog = decode::<DeliveryOrder>(&order).map(|o| o.catalog_ref).or_else(|| decode::<PickupOrder>(&order).map(|o| o.catalog_ref));
+    require(owned && catalog == Some(store) && link.tag.0.len() == 32, "only a store's owner lists the cards that took its first-order deal, each on an order placed there")
 }
 
 /// A customer's report, listed under the store its order was placed at by

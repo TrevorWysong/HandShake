@@ -78,9 +78,24 @@ pub struct Settled {
     pub base: u64,
     /// When its refund period ends.
     pub available_at: Timestamp,
+    /// Its appeal window closed, with no appeal, long enough ago for any
+    /// appeal to have reached everyone (`CLOSED_AFTER`): nothing can change
+    /// it now, so it's never read again.
+    #[serde(default)]
+    pub closed: bool,
 }
 
+/// How long past an order's appeal window an appeal filed in its last
+/// moment could still be on its way to a reader: after this, none found is
+/// none to come.
+pub const CLOSED_AFTER: i64 = 86_400_000_000;
+
 impl Settled {
+    /// Whether, with no appeal found at `now`, none can come.
+    pub fn closes(&self, now: Timestamp) -> bool {
+        now.as_micros() > self.available_at.as_micros().max(self.settled_at.as_micros()).saturating_add(CLOSED_AFTER)
+    }
+
     /// Whether its refund period is over at `now`.
     pub fn ended(&self, now: Timestamp) -> bool {
         if self.available_at > self.settled_at {
@@ -104,6 +119,7 @@ pub struct OpenGrant {
 pub enum GrantKind {
     Gift { note: Option<String> },
     Birthday,
+    Carried,
 }
 
 /// What one event moved, for a member's history.
@@ -123,6 +139,7 @@ pub enum LineKind {
     Spent,
     Gift { note: Option<String> },
     Birthday,
+    Carried,
 }
 
 /// A member's points at a store as a running total (`Ledger`), kept
@@ -146,6 +163,11 @@ pub struct MemberAccount {
     /// The member's latest order there: what a store's grant cites, and
     /// what a member's birthday share does.
     pub latest_order: Option<ActionHash>,
+    /// The store's side: it has checked whether this member held points at
+    /// the store this one was brought over from, on the network before, and
+    /// carried them if so.
+    #[serde(default)]
+    pub carried_checked: bool,
 }
 
 /// The stores a member keeps an account at (`MemberAccount`), for their
@@ -164,6 +186,19 @@ pub struct MemberStores {
 pub enum KeptRecord {
     Account { catalog_ref: ActionHash, member: AgentPubKey, kept_by_store: bool },
     Stores { member: AgentPubKey },
+    Birthdays { catalog_ref: ActionHash },
+}
+
+/// The birth months a store has read from its members' sealed shares
+/// (`BirthdayShare`), kept privately so a sweep needn't open them all again
+/// -- a cache: a device that loses it reads them again, in turn.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MemberBirthdays {
+    pub catalog_ref: ActionHash,
+    /// Each member's month, 1 to 12, as they first told the store.
+    pub months: Vec<(AgentPubKey, u8)>,
 }
 
 /// Marks the `n`th version (from 1) of a record its author keeps privately,
@@ -193,7 +228,9 @@ pub struct OrderFacts {
 #[derive(Debug, Clone)]
 pub struct Folded {
     pub ledger: Ledger,
-    /// Whether anything was folded in or let go: worth keeping.
+    /// Whether anything was folded in or let go, or an open order learned
+    /// something (its acceptance, its settlement, its window closing):
+    /// worth keeping, so the next read needn't learn it again.
     pub moved: bool,
     /// Where the member stands now: everything played, rolled to now.
     pub state: Option<PointsState>,
@@ -258,6 +295,7 @@ pub fn fold(program: &RewardsProgram, version: &ActionHash, prior: Option<&Ledge
             Event::Spend { .. } => LineKind::Spent,
             Event::Credit { .. } => match kinds.iter().find(|(g, _)| g == &entry).map(|(_, k)| k) {
                 Some(GrantKind::Birthday) => LineKind::Birthday,
+                Some(GrantKind::Carried) => LineKind::Carried,
                 Some(GrantKind::Gift { note }) => LineKind::Gift { note: note.clone() },
                 None => LineKind::Gift { note: None },
             },
@@ -265,7 +303,8 @@ pub fn fold(program: &RewardsProgram, version: &ActionHash, prior: Option<&Ledge
         LedgerLine { entry, at: event.at(), kind, points }
     };
 
-    let moved = prior.is_none() || !folding.is_empty() || !folding_grants.is_empty();
+    let learned = prior.is_some_and(|l| l.open_orders.len() != open.len() || open.iter().any(|o| !l.open_orders.contains(&o.order)));
+    let moved = prior.is_none() || !folding.is_empty() || !folding_grants.is_empty() || learned;
     let folded_events: Vec<(Event, ActionHash)> = folding.iter().flat_map(events_of).chain(folding_grants.iter().map(grant_event)).collect();
     let (state, folded_log) = replay_from(program, prior.and_then(|l| l.state.clone()), folded_events);
     let mut recent = prior.map(|l| l.recent.clone()).unwrap_or_default();
