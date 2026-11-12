@@ -87,7 +87,9 @@ pub struct Closed {
 pub fn chain_closed(agent: AgentPubKey) -> ExternResult<Option<Closed>> {
     // A chain's close is its last action.
     let Some(last) = handshake_coordinator_support::chain::chain_head_of(&agent)? else { return Ok(None) };
-    let Some(record) = get(last.clone(), GetOptions::default())? else { return Ok(None) };
+    // Its activity names it, so it exists: one not read yet is an error,
+    // never a chain still open.
+    let record = handshake_coordinator_support::arrived(&last)?;
     Ok(match &record.action().data {
         ActionData::CloseChain(close) => Some(Closed {
             network: match &close.new_target {
