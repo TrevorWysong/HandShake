@@ -7,41 +7,12 @@
 // it opens the parcel, brings the account's store over, and counts its
 // history -- each checked on the old network.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { dhtSync, enableAndGetAgentApp, runScenario, type CallableCell, type Conductor, type PlayerApp } from "@holochain-open-dev/tryorama";
-import { type AgentPubKey, type Record as HcRecord } from "@holochain/client";
-import { HAPP_PATH, shareAgentsOn, ST_PETE, TEST_PROPERTIES, actionHash, decodeEntry, retryUntil, useTestCoordinators, retryingCaller } from "./helpers.js";
+import { dhtSync, runScenario, type CallableCell } from "@holochain-open-dev/tryorama";
+import { type Record as HcRecord } from "@holochain/client";
+import { HAPP_PATH, shareAgentsOn, ST_PETE, actionHash, decodeEntry, installOn as install, networkSettings as settings, retryUntil, twoNetworkHapp, useTestCoordinators, retryingCaller } from "./helpers.js";
 
-const DNA_PATH = fileURLToPath(new URL("../../../dnas/handshake/workdir/handshake.dna", import.meta.url));
 const OLD = "handshake-v1";
 const NEW = "handshake-v2";
-
-/// The next version's app: its own network, and the previous one as its
-/// `previous` role.
-function twoNetworkHapp(): string {
-  const dir = mkdtempSync(path.join(tmpdir(), "handshake-next-"));
-  const role = (name: string) => ({ name, provisioning: { strategy: "create", deferred: false }, dna: { path: DNA_PATH, modifiers: { network_seed: null, properties: null }, clone_limit: 0 } });
-  writeFileSync(path.join(dir, "happ.yaml"), JSON.stringify({ manifest_version: "0", name: "handshake-next", description: null, roles: [role("handshake"), role("previous")] }));
-  execFileSync("hc", ["app", "pack", dir, "-o", path.join(dir, "handshake-next.happ")]);
-  return path.join(dir, "handshake-next.happ");
-}
-
-const settings = (seed: string, properties: Record<string, unknown>) => ({ type: "provisioned" as const, value: { membrane_proof: undefined, modifiers: { network_seed: seed, properties: { ...TEST_PROPERTIES, ...properties } } } });
-
-/// Installs an app for `agent` on `conductor`, as a player.
-async function install(conductor: Conductor, agent: AgentPubKey, happ: string, rolesSettings: Record<string, unknown>, appId: string): Promise<PlayerApp> {
-  const port = await conductor.attachAppInterface();
-  const adminWs = conductor.adminWs();
-  const appInfo = await conductor.installApp({ appBundleSource: { type: "path", value: happ }, options: { agentPubKey: agent, installedAppId: appId, rolesSettings } } as never);
-  const issued = await adminWs.issueAppAuthenticationToken({ installed_app_id: appInfo.installed_app_id });
-  const appWs = await conductor.connectAppWs(issued.token, port);
-  const agentApp = await enableAndGetAgentApp(adminWs, appWs, appInfo);
-  return { conductor, appWs, ...agentApp };
-}
 
 await runScenario(async (scenario) => {
   const [peerHost, aliceHost, bobHost] = [await scenario.addConductor(), await scenario.addConductor(), await scenario.addConductor()];

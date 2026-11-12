@@ -90,18 +90,21 @@ pub(crate) fn store_standing(catalog_ref: &ActionHash, customer: &AgentPubKey, p
     let now = sys_time()?;
     let found = account(catalog_ref, customer, true)?;
     let prior = found.value.as_ref().and_then(|a| a.ledger.as_ref()).filter(|l| l.program == program.version);
+    // Gifts an earlier key of the store gave, that the member has shown.
+    let earlier = carried::earlier_gifts(catalog_ref, customer)?;
     if let Some(ledger) = prior {
         let orders: Vec<OpenOrder> = ledger.open_orders.iter().cloned().chain(also_orders.iter().cloned()).collect();
-        let grants = unique_grants(ledger.open_grants.iter().cloned().chain(also_grants.iter().cloned()));
-        if let Ok((folded, _)) = play(program, Some(ledger), &orders, grants, None, now)? {
+        let shown = earlier.iter().filter(|g| !ledger.folded_grants.contains(&g.grant)).cloned();
+        let grants = unique_grants(ledger.open_grants.iter().cloned().chain(also_grants.iter().cloned()).chain(shown));
+        if let Ok((folded, _)) = play(program, Some(ledger), &orders, grants, false, now)? {
             return Ok((found, folded));
         }
     }
     // Afresh, from the public records -- with what this call has just
     // recorded, should the network not show it yet.
     let orders: Vec<OpenOrder> = member_orders(catalog_ref, customer)?.into_iter().chain(also_orders).collect();
-    let grants = unique_grants(my_grants_to(catalog_ref, customer)?.into_iter().chain(also_grants));
-    let (folded, _) = play(program, None, &orders, grants, None, now)?.map_err(|_| guest("couldn't play this member's history"))?;
+    let grants = unique_grants(my_grants_to(catalog_ref, customer)?.into_iter().chain(also_grants).chain(earlier));
+    let (folded, _) = play(program, None, &orders, grants, false, now)?.map_err(|_| guest("couldn't play this member's history"))?;
     Ok((found, folded))
 }
 
@@ -177,14 +180,17 @@ pub fn record_member_order(input: MemberOrderInput) -> ExternResult<()> {
     list_member(&placed.catalog_ref, &placed.requester)?;
     let program = my_running_program(&placed.catalog_ref)?;
     let order = OpenOrder { order: input.order.clone(), placed_at: record.action().timestamp(), accepted: Some(input.accepted), reward: rewards.reward, settled: None };
-    let checked = account(&placed.catalog_ref, &placed.requester, true)?.value.is_some_and(|a| a.carried_checked);
     // Their points at the store's earlier self on the network before, if it
-    // was brought over: carried once, citing this order.
-    let carried = if checked { Ok(None) } else { carried::carry_previous_points(&placed.catalog_ref, &placed.requester, &input.order) };
+    // was brought over: carried on their first order here, and again
+    // whenever they've shown it more of their gifts from there.
+    let carried_at = account(&placed.catalog_ref, &placed.requester, true)?.value.and_then(|a| a.carried_at);
+    let shown = carried::reveals_shown(&placed.catalog_ref, &placed.requester)?;
+    let carried = if carried_at.is_some_and(|at| at >= shown) { Ok(None) } else { carried::carry_previous_points(&placed.catalog_ref, &placed.requester, &input.order) };
     let also_grants: Vec<OpenGrant> = carried.as_ref().ok().cloned().flatten().into_iter().collect();
     let (found, folded) = store_standing(&placed.catalog_ref, &placed.requester, &program, vec![order], also_grants)?;
     // A carry that couldn't reach the network before is tried again next time.
-    keep(&found, MemberAccount { catalog_ref: placed.catalog_ref, member: placed.requester, kept_by_store: true, ledger: Some(folded.ledger), latest_order: Some(input.order), carried_checked: checked || carried.is_ok() })
+    let carried_at = if carried.is_ok() { Some(shown) } else { carried_at };
+    keep(&found, MemberAccount { catalog_ref: placed.catalog_ref, member: placed.requester, kept_by_store: true, ledger: Some(folded.ledger), latest_order: Some(input.order), carried_at })
 }
 
 /// Puts `member` on the caller's store's list of members, once.
@@ -226,6 +232,6 @@ pub(crate) fn store_members(catalog_ref: &ActionHash) -> ExternResult<Vec<(Agent
 pub(crate) fn record_grant(catalog_ref: &ActionHash, to: &AgentPubKey, grant: OpenGrant) -> ExternResult<()> {
     let Some(program) = program_of(catalog_ref.clone())? else { return Ok(()) };
     let (found, folded) = store_standing(catalog_ref, to, &program, Vec::new(), vec![grant])?;
-    let (latest_order, carried_checked) = found.value.as_ref().map_or((None, false), |a| (a.latest_order.clone(), a.carried_checked));
-    keep(&found, MemberAccount { catalog_ref: catalog_ref.clone(), member: to.clone(), kept_by_store: true, ledger: Some(folded.ledger), latest_order, carried_checked })
+    let (latest_order, carried_at) = found.value.as_ref().map_or((None, None), |a| (a.latest_order.clone(), a.carried_at));
+    keep(&found, MemberAccount { catalog_ref: catalog_ref.clone(), member: to.clone(), kept_by_store: true, ledger: Some(folded.ledger), latest_order, carried_at })
 }

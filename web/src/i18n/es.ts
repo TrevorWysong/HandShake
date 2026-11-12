@@ -1304,6 +1304,7 @@ export const es: Catalog = {
   "pay.declined.ActionFailed": "No se completó la comprobación de tu banco. Vuelve a intentarlo o usa otra tarjeta.",
   "pay.declined.NoSavedCard": "La tarjeta que guardaste ahí ya no funciona. Añade una tarjeta.",
   "pay.declined.TooManyAttempts": "Demasiados intentos con tarjeta. Espera un rato y vuelve a intentarlo.",
+  "pay.declined.WorkNeeded": "Esta tienda está viendo actividad inusual con tarjetas, así que los dispositivos de clientes nuevos hacen antes una comprobación rápida. Vuelve a intentarlo: el tuyo la hará.",
   "pay.declined.NotEligible": "Esta tarjeta ya usó la oferta de primer pedido de esta tienda. Usa otra tarjeta o pide sin la oferta.",
   "pay.declined.Unavailable": "No se pudo contactar con el procesador de tarjetas. Vuelve a intentarlo en un momento.",
   "payments.choose": "Tu procesador de tarjetas",

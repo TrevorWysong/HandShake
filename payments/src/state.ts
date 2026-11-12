@@ -27,11 +27,13 @@ export interface State {
   /// Payers (hex) whose card this payee has held before.
   known: Record<string, true>;
   /// When each recent decline of a card from a payer with no history was
-  /// (ms): a burst of them is cards being tested, and slows such payers.
+  /// (ms): a burst of them is cards being tested, and asks such payers for
+  /// work.
   declines: number[];
-  /// When the last payer with no history was let through during a burst
-  /// (ms), or `null`.
-  trickleAt: number | null;
+  /// The busy record payers with no history do work for while cards are
+  /// being tested here (hex), what it asks, how many doublings past the
+  /// network's first ask, and until when (ms) -- or `null`.
+  busy: { record: string; bits: number; level: number; until: number } | null;
   /// The processor account the saved cards above were kept with
   /// (`accountId`): another account can't charge them.
   account: string | null;
@@ -43,7 +45,7 @@ export interface State {
   legacy: string | null;
 }
 
-export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [], trickleAt: null, account: null, heldWith: {}, legacy: null });
+export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [], busy: null, account: null, heldWith: {}, legacy: null });
 
 export interface StateStore {
   load(): Promise<State>;

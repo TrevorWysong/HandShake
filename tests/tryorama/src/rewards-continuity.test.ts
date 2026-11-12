@@ -8,8 +8,11 @@
 //   member's card to the point;
 // - a store recovered onto its owner's new key, and moved there, carries
 //   its program (naming the copies of its items) and its members' points:
-//   their orders' history plays on at the new store. Only gifts the old key
-//   gave stay behind -- sealed to it -- and both sides leave them out alike.
+//   their orders' history plays on at the new store, and the gifts the old
+//   key gave -- sealed to it -- count once the member shows them to the new
+//   key, proven against each grant's public commitment, on both sides
+//   alike; and a card that took its first-order deal under the old key
+//   still can't take it again.
 import assert from "node:assert/strict";
 import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
 import type { ActionHash, Record as HcRecord } from "@holochain/client";
@@ -99,6 +102,10 @@ await runScenario(async (scenario) => {
   await agree(owner, store, program, 305, "restored");
   console.log("[PASS] a store whose device is restored works out its members' points again, gifts and all, and agrees with their cards");
 
+  // A card took the store's first-order deal on that order.
+  assert.equal(await call(owner, "dispatch")<boolean>("claim_newcomer_card", { store, fingerprint: "fp_card_1", order }), true);
+  await sync();
+
   // ===== The store recovered onto its owner's new key, and moved there =====
   const phrase = phraseKey();
   const plan = await call(owner, "account")<{ plan: Uint8Array }>("set_recovery_plan", { phrase_key: phrase.key, guardians: [], threshold: 0 });
@@ -111,9 +118,18 @@ await runScenario(async (scenario) => {
   const carried = await retryUntil(() => card(moved), (c) => c.program !== null, 60, 1000);
   const [copiedBread] = (await call(successor, "catalog")<{ items: { original_action: Uint8Array; record: HcRecord }[] }>("list_menu_items", { catalog_ref: moved, after: null })).items.filter((v) => decodeEntry<{ name: string }>(v.record).name === "Bread").map((v) => v.original_action);
   assert.ok(same(carried.program!.program.rewards[0].benefit.FreeItem?.item_ref, copiedBread), "the program moves with the store, naming the copied bread");
-  // The orders' 230 carry on; the old key's 75 stays behind, on both sides.
-  await agree(successor, moved, carried.program!.version, 230, "moved");
+  // The orders' 230 carry on, and the old key's 75: the member's card shows
+  // it to the new key as it first plays the store, and both count it.
+  await settledCard(moved, 305);
+  await sync();
+  await agree(successor, moved, carried.program!.version, 305, "moved");
+  // The card that took the old store's first-order deal is still known.
+  const later = actionHash(await retryUntilOk(() => call(member, "dispatch")<HcRecord>("request_pickup_order", { merchant: successor.agentPubKey, catalog_ref: moved, items: [{ item_ref: copiedBread, quantity: 1 }], order_total: 400 })));
+  await sync();
+  const claim = (fingerprint: string) => call(successor, "dispatch")<boolean>("claim_newcomer_card", { store: moved, fingerprint, order: later });
+  assert.equal(await claim("fp_card_1"), false, "a card that took the deal before the move can't take it again after");
+  assert.equal(await claim("fp_card_2"), true, "another card can");
   const wallet = await call(member, "rewards")<Card[]>("my_cards", null);
   assert.ok(wallet.length === 1 && same(wallet[0].catalog_ref, moved), "the member's wallet shows the store once, as it is now");
-  console.log("[PASS] a store moved to its owner's new key carries its program and its members' points; only the old key's gifts stay behind");
+  console.log("[PASS] a store moved to its owner's new key carries its program, its members' points -- the old key's gifts included -- and the cards that took its first-order deal");
 });

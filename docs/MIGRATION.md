@@ -50,7 +50,8 @@ A release made while people move carries the previous network as a second app ro
 - **The parcel** is opened on the previous network, and the profile is re-created from it plus the old public profile.
 - **Stores** are republished by `catalog::import_store`, reading the old store through the bridge: details, choice groups, menu and live promo codes, every reference remapped. A `StoreImport` records where each one came from.
 - **Ratings and reputation**, for people and for stores, add the previous network's summaries once `arrived_from` / `imported_from` confirm the link.
-- **Rewards:** the import copies the store's program, its items and groups remapped (`rewards::carry_program`). Each member's balance at the old store, gifts included, is granted at the new one on their first order there, as points carried over (`GrantReason::Carried`): once each, asked of the old store through the bridge (`carried_balance`). Tier and history start again; docs/REWARDS.md, "When a store moves".
+- **Rewards:** the import copies the store's program, its items and groups remapped (`rewards::carry_program`). As a member's account leaves, `migrate_out` seals the grants it was given to its new key (`rewards::carry_my_gifts`). On their first order at the store that came over, their app shows the store those grants. The store's new key then asks the old network what the member held (`carried_balance`), played from its public records and those gifts. The old network answers only the store's owner, or the key its owner's migration names. The member is granted that as points carried over (`GrantReason::Carried`). Tier and history start again; docs/REWARDS.md, "When a store moves".
+- **First-order deal cards:** a store that came over still knows which cards took its first-order deal: each new claim is checked against the old store's, through the bridge (`newcomer_card_claim`).
 
 ### What doesn't move, and the limits
 

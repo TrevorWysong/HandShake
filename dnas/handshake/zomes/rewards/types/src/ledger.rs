@@ -79,21 +79,18 @@ pub struct Settled {
     /// When its refund period ends.
     pub available_at: Timestamp,
     /// Its appeal window closed, with no appeal, long enough ago for any
-    /// appeal to have reached everyone (`CLOSED_AFTER`): nothing can change
-    /// it now, so it's never read again.
+    /// appeal to have reached everyone (`appeal_arrival`): nothing can
+    /// change it now, so it's never read again.
     #[serde(default)]
     pub closed: bool,
 }
 
-/// How long past an order's appeal window an appeal filed in its last
-/// moment could still be on its way to a reader: after this, none found is
-/// none to come.
-pub const CLOSED_AFTER: i64 = 86_400_000_000;
-
 impl Settled {
-    /// Whether, with no appeal found at `now`, none can come.
+    /// Whether, with no appeal found at `now`, none can come: its window
+    /// closed longer ago than an appeal takes to arrive.
     pub fn closes(&self, now: Timestamp) -> bool {
-        now.as_micros() > self.available_at.as_micros().max(self.settled_at.as_micros()).saturating_add(CLOSED_AFTER)
+        let arrival = i64::try_from(handshake_governance::appeal_arrival().as_micros()).unwrap_or(i64::MAX);
+        now.as_micros() > self.available_at.as_micros().max(self.settled_at.as_micros()).saturating_add(arrival)
     }
 
     /// Whether its refund period is over at `now`.
@@ -163,11 +160,12 @@ pub struct MemberAccount {
     /// The member's latest order there: what a store's grant cites, and
     /// what a member's birthday share does.
     pub latest_order: Option<ActionHash>,
-    /// The store's side: it has checked whether this member held points at
-    /// the store this one was brought over from, on the network before, and
-    /// carried them if so.
+    /// The store's side: how many of the member's reveals it had when it
+    /// last carried what they held at the store this one was brought over
+    /// from, on the network before -- `None` if it never has. A reveal
+    /// since means more to carry.
     #[serde(default)]
-    pub carried_checked: bool,
+    pub carried_at: Option<u32>,
 }
 
 /// The stores a member keeps an account at (`MemberAccount`), for their

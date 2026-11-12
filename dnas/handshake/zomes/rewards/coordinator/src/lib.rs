@@ -96,9 +96,9 @@ mod test_utils {
     /// pretending to be a store would write.
     #[hdk_extern]
     pub fn create_raw_points_grant_for_testing(input: GrantInput) -> ExternResult<ActionHash> {
-        let sealed = seal(&input.to, &GrantPayload { points: input.points, reason: GrantReason::Goodwill { note: input.note } })?;
         let order = input.order.ok_or(guest("a raw grant names its order"))?;
-        let hash = create_entry(&EntryTypes::PointsGrant(PointsGrant { to: input.to.clone(), catalog_ref: input.catalog_ref, order, sealed }))?;
+        let payload = crate::grants::payload(input.points, GrantReason::Goodwill { note: input.note })?;
+        let hash = create_entry(&EntryTypes::PointsGrant(crate::grants::sealed_grant(&input.to, &input.catalog_ref, order, &payload)?))?;
         create_link(input.to, hash.clone(), LinkTypes::AgentToGrant, ())?;
         Ok(hash)
     }

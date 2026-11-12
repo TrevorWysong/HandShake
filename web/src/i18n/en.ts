@@ -1309,6 +1309,7 @@ export const en = {
   "pay.declined.ActionFailed": "Your bank's check wasn't completed. Try again, or use another card.",
   "pay.declined.NoSavedCard": "The card you saved there no longer works. Add a card.",
   "pay.declined.TooManyAttempts": "Too many card attempts. Wait a while, then try again.",
+  "pay.declined.WorkNeeded": "This store is seeing unusual card activity, so new customers' devices do a quick check first. Try again: yours will do it.",
   "pay.declined.NotEligible": "This card has already had this store's first-order deal. Use another card, or order without the deal.",
   "pay.declined.Unavailable": "The card processor couldn't be reached. Try again in a moment.",
   "payments.choose": "Your card processor",

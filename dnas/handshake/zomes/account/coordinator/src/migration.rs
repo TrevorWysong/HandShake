@@ -59,6 +59,10 @@ pub fn migrate_out(input: MigrateInput) -> ExternResult<ActionHash> {
     if input.parcel.len() > MAX_PARCEL_BYTES {
         return Err(guest("There's too much to carry over at once."));
     }
+    // The points stores gave this account, for the stores that come over to
+    // count there (rewards' `carry_my_gifts`): sealed to the new key, in a
+    // call of its own, before the chain closes on them.
+    call_local::<_, ()>("rewards", "carry_my_gifts", input.successor.clone())?.map_err(|_| guest("This account's rewards couldn't be packed to carry over, so it hasn't moved. Try again in a moment."))?;
     if !input.parcel.is_empty() {
         let sealed = seal_chunked(&input.successor, &input.parcel)?;
         let hash = create_entry(&EntryTypes::Parcel(Parcel { successor: input.successor.clone(), sealed }))?;

@@ -120,13 +120,14 @@ pub(crate) fn keep_read(found: &Kept<MemberAccount>, next: MemberAccount, folded
 
 /// An open order as it stands now -- for `fold`, and what its earning is
 /// waiting on.
-pub(crate) fn facts(order: &OpenOrder, merchant: Option<&AgentPubKey>, now: Timestamp) -> ExternResult<(OrderFacts, OrderNow)> {
-    // The member's side learns the store accepted from the network; the
+pub(crate) fn facts(order: &OpenOrder, learn_acceptance: bool, now: Timestamp) -> ExternResult<(OrderFacts, OrderNow)> {
+    // The member's side learns the store accepted from the network -- by the
+    // order's own store owner, whichever key holds the store now; the
     // store's knew when it did.
-    let accepted = match (&order.accepted, merchant) {
-        (Some(accepted), _) => Some(accepted.clone()),
-        (None, Some(merchant)) => acceptance(&order.order, merchant)?,
-        (None, None) => None,
+    let accepted = match &order.accepted {
+        Some(accepted) => Some(accepted.clone()),
+        None if learn_acceptance => acceptance_by_its_store(&order.order)?,
+        None => None,
     };
     // Settled before, and still unappealed: what's left is its refund
     // period ending -- one read, not the order's whole story again; none,
@@ -162,7 +163,7 @@ pub(crate) fn play(
     prior: Option<&rewards_integrity::ledger::Ledger>,
     orders: &[OpenOrder],
     grants: Vec<OpenGrant>,
-    merchant: Option<&AgentPubKey>,
+    learn_acceptance: bool,
     now: Timestamp,
 ) -> ExternResult<Played> {
     let mut seen: Vec<&ActionHash> = Vec::new();
@@ -172,7 +173,7 @@ pub(crate) fn play(
             continue;
         }
         seen.push(&order.order);
-        standing.push(facts(order, merchant, now)?);
+        standing.push(facts(order, learn_acceptance, now)?);
     }
     let facts = standing.iter().map(|(f, _)| f.clone()).collect();
     Ok(fold(&program.program, &program.version, prior, facts, grants, now, HISTORY).map(|folded| (folded, standing)))

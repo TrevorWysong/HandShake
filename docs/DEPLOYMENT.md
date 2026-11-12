@@ -51,6 +51,11 @@ Every other setting is optional, and the defaults suit most networks. Set only t
 | `max_driver_changes` | 6 | How many times an order may change drivers (each one leaving or moved on). Past it, the order can only be collected or cancelled -- which bounds the history validation walks. |
 | `max_offers_per_order` | 20 | How many bids an order's customer may accept in all, counting offers drivers let lapse -- so a ring of throwaway drivers can't exhaust an order, and its history stays bounded. |
 | `max_ranked_bids` | 30 | How many of an order's bids its customer's app weighs, earliest first, so a flood of bids can't slow matching. |
+| `established_payer_lookback` | 200 | How many of a payer's most recent orders the check above reads at most, so one payment's check costs the same however long their history. |
+| `appeal_arrival_secs` | 86400 | How long after an appeal window closes an appeal filed at its last moment may still be reaching peers. After this, a member's settled order is final and never read again. |
+| `established_payer_days` | 7 | How long ago a completed order must have been placed to count towards `established_payer_stores`, so accounts made for an attack can't build a record the same day. |
+| `newcomer_work_bits` | 18 | The proof of work a store's payment agent first asks of payers with no history while it sees cards tested, in zero bits of a hash: about a second on a phone. |
+| `newcomer_work_max_bits` | 22 | The most it asks however long the testing goes on; each bit doubles the work. |
 | `established_payer_stores` | 2 | How many different store owners (not the payer) a payer must have completed orders with, in their recent history, for a store's payment agent to count them established: never slowed when declined cards from new accounts look like card testing. |
 | `max_listed_orders` | 100 | How many open orders a driver's feed lists at once, oldest first, so a busy area costs each read the same and no order waits behind newer ones. |
 | `min_reporter_stores` | 3 | How many different stores a driver must have completed deliveries for before their report that a store wouldn't check them in counts on the store's record. |

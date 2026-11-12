@@ -31,6 +31,14 @@ fn open_order(order: &ActionHash, placed_at: Timestamp) -> ExternResult<Option<O
     Ok(Some(OpenOrder { order: order.clone(), placed_at, accepted: None, reward: placed.rewards.as_ref().and_then(|r| r.reward), settled: None }))
 }
 
+/// The acceptance of an order by the store owner it names -- the key that
+/// held the store when it was placed, which may since have moved it on.
+pub(crate) fn acceptance_by_its_store(order: &ActionHash) -> ExternResult<Option<ActionHash>> {
+    let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
+    let Some(placed) = OrderForRewards::of(&record) else { return Ok(None) };
+    acceptance(order, &placed.merchant)
+}
+
 /// The store's acceptance of an order: its earliest update from `Placed`
 /// that doesn't call it off (a decline is an update from `Placed` too).
 pub(crate) fn acceptance(order: &ActionHash, merchant: &AgentPubKey) -> ExternResult<Option<ActionHash>> {
@@ -106,9 +114,16 @@ impl From<rewards_integrity::ledger::LedgerLine> for PointsLine {
     }
 }
 
-/// The store's grants to the caller not folded into their account yet.
+/// The store's grants to the caller not folded into their account yet --
+/// its own, and those of its earlier keys the caller has shown it.
 fn grants_to_play(owner: &AgentPubKey, catalog_ref: &ActionHash, folded: &[ActionHash]) -> ExternResult<Vec<OpenGrant>> {
-    Ok(grants_from(owner, catalog_ref, folded)?.into_iter().map(|g| open_grant(g.grant, g.at, &g.payload)).collect())
+    let mut grants: Vec<OpenGrant> = grants_from(owner, catalog_ref, folded)?.into_iter().map(|g| open_grant(g.grant, g.at, &g.payload)).collect();
+    for shown in carried::earlier_gifts(catalog_ref, &me()?)? {
+        if !folded.contains(&shown.grant) && !grants.iter().any(|g| g.grant == shown.grant) {
+            grants.push(shown);
+        }
+    }
+    Ok(grants)
 }
 
 /// The caller's card at `catalog_ref`, from their account there: carried
@@ -125,23 +140,26 @@ pub(crate) fn card_for(catalog_ref: &ActionHash) -> ExternResult<CardView> {
     let kept = found.value.clone();
     let prior = kept.as_ref().and_then(|a| a.ledger.as_ref()).filter(|l| l.program == program.version);
     let carried = match prior {
-        Some(ledger) => play(&program, Some(ledger), &ledger.open_orders, grants_to_play(&store_info.owner, catalog_ref, &ledger.folded_grants)?, Some(&store_info.owner), now)?.ok(),
+        Some(ledger) => play(&program, Some(ledger), &ledger.open_orders, grants_to_play(&store_info.owner, catalog_ref, &ledger.folded_grants)?, true, now)?.ok(),
         None => None,
     };
     let (folded, standing) = match carried {
         Some(carried) => carried,
         None => {
+            // Played for the first time here: any gifts from the store's
+            // earlier keys, or its network before, shown to it first.
+            let _ = isolated::<_, u32>("reveal_my_gifts", catalog_ref.clone());
             let mut orders = Vec::new();
             // Their orders at the store and every store it carries on from.
             let line = store_line(catalog_ref)?;
             for (order, _, at) in my_orders()?.into_iter().filter(|(_, c, _)| line.contains(c)) {
                 orders.extend(open_order(&order, at)?);
             }
-            play(&program, None, &orders, grants_to_play(&store_info.owner, catalog_ref, &[])?, Some(&store_info.owner), now)?.map_err(|_| guest("couldn't play this card's history"))?
+            play(&program, None, &orders, grants_to_play(&store_info.owner, catalog_ref, &[])?, true, now)?.map_err(|_| guest("couldn't play this card's history"))?
         }
     };
     let latest_order = kept.as_ref().and_then(|a| a.latest_order.clone()).or_else(|| standing.iter().map(|(f, _)| &f.order).max_by_key(|o| o.placed_at).map(|o| o.order.clone()));
-    keep_read(&found, MemberAccount { catalog_ref: catalog_ref.clone(), member: me, kept_by_store: false, ledger: Some(folded.ledger.clone()), latest_order, carried_checked: false }, &folded);
+    keep_read(&found, MemberAccount { catalog_ref: catalog_ref.clone(), member: me, kept_by_store: false, ledger: Some(folded.ledger.clone()), latest_order, carried_at: None }, &folded);
 
     // Held for orders still waiting on the store, and what each order still
     // to earn should bring, in turn -- a welcome counts once.
@@ -260,6 +278,9 @@ pub fn note_my_order(order: ActionHash) -> ExternResult<()> {
     if placed.requester != me {
         return Ok(());
     }
+    // The store sees every gift it should count before it answers: shown,
+    // in a call of its own, so it never stands in the order's way.
+    let _ = isolated::<_, u32>("reveal_my_gifts", placed.catalog_ref.clone());
     let found = account(&placed.catalog_ref, &me, false)?;
     let kept = match found.value.clone() {
         Some(mut kept) => {
@@ -275,7 +296,7 @@ pub fn note_my_order(order: ActionHash) -> ExternResult<()> {
         // Their first order here: the store goes on their list of cards.
         None => {
             add_my_stores(std::slice::from_ref(&placed.catalog_ref))?;
-            MemberAccount { catalog_ref: placed.catalog_ref.clone(), member: me, kept_by_store: false, ledger: None, latest_order: Some(order), carried_checked: false }
+            MemberAccount { catalog_ref: placed.catalog_ref.clone(), member: me, kept_by_store: false, ledger: None, latest_order: Some(order), carried_at: None }
         }
     };
     keep(&found, kept)
@@ -294,7 +315,7 @@ pub fn order_points(order: ActionHash) -> ExternResult<Option<OrderPoints>> {
     let Some(program) = card.program.as_ref() else { return Ok(None) };
     let Some(open) = open_order(&order, record.action().timestamp())? else { return Ok(None) };
     let now = sys_time()?;
-    let (facts, now_) = facts(&open, Some(&placed.merchant), now)?;
+    let (facts, now_) = facts(&open, true, now)?;
     if facts.order.accepted.is_none() {
         return Ok(None);
     }

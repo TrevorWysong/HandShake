@@ -54,6 +54,10 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
         LinkTypes::OrderToIssue | LinkTypes::IssueToResponse | LinkTypes::OrderToDecision | LinkTypes::OrderToCollectRequest | LinkTypes::OrderToDropoffShare => validate_issue_link(&link),
         LinkTypes::StoreToReport => validate_report_link(&link),
         LinkTypes::StoreToNewcomerCard => validate_newcomer_card_link(&link),
+        LinkTypes::PayeeToBusy => {
+            let Some(record) = linked_record(link.target)? else { return invalid("a payee's busy record is a record") };
+            require(decode::<PayeeBusy>(&record).is_some() && record.action().author() == link.author && link.base == &AnyLinkableHash::from(link.author.clone()), "a payee lists only its own busy records, under itself")
+        }
         LinkTypes::DriverToVerification => crate::verification::validate_verification_link(&link),
         LinkTypes::OrderToAppeal | LinkTypes::ArbiterToAppeal | LinkTypes::AppealToAnswer | LinkTypes::AppealToRuling | LinkTypes::StoreOwnerToRuling | LinkTypes::StoreOwnerToAppeal => crate::appeals::validate_appeal_link(&link),
         LinkTypes::OwnerToTemplate => {
@@ -172,6 +176,7 @@ pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
         }
         LinkTypes::OrderToIssue | LinkTypes::IssueToResponse | LinkTypes::OrderToDecision | LinkTypes::OrderToCollectRequest | LinkTypes::OrderToDropoffShare => invalid("an order's issues, requests and settlement are a permanent record"),
         LinkTypes::StoreToNewcomerCard => invalid("a card that took a store's first-order deal stays on its record"),
+        LinkTypes::PayeeToBusy => invalid("a payee's busy records stay as they were"),
         // The report itself stays under its order; only the store's
         // reminder of it goes, cleared by the store.
         LinkTypes::StoreToReport => {

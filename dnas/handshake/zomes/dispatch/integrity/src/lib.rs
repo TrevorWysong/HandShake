@@ -43,7 +43,7 @@ use links::{validate_create_link, validate_delete_link, OpLinkFields};
 // The entry structs live in dispatch_types so other integrity zomes can
 // decode them -- see that crate's doc comment. Re-exported here so the
 // coordinator crate imports everything via `dispatch_integrity::*`.
-pub use dispatch_types::{ArrivalEvidence, ArrivalNote, SavedCardForgotten, CarryEnded, Claim, DeclineCode, PaymentLeg, Part, PaymentAction, PaymentDeclined, PaymentHold, PaymentOffer, PaymentProfile, PaymentRefund, PaymentSettlement, Processor, Appeal, AppealAnswer, Ruling, OrderConfirmation, DeclineNoted, DriverVerification, VerificationCheck, lineage, DropoffShare, VehicleDetails, VehicleShare, LinePricer, Chosen, ChosenInput, OrderItem, Selection, SelectionInput, CollectRequest, claimed_value, CarryRefusal, InHand, PinSecret, DROPOFF_GEOHASH_PRECISION, OPEN_ORDER_PRECISION, IssueEvidence, IssueKind, IssueLine, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome, hold_terms, required_collateral, split_delivery_fee, Bid, BidStatus, Cancellation, DeclineReason, DeliveryOrder, DeliveryStatus, DropoffDetails, DropoffPreference, HoldPurpose, OrderLine, OrderRewards, OrderTerms, PickupOrder, PickupStatus, Portion, RequiredAuthor, waits_from};
+pub use dispatch_types::{ArrivalEvidence, ArrivalNote, SavedCardForgotten, CarryEnded, Claim, DeclineCode, PaymentLeg, Part, PaymentAction, PaymentDeclined, PaymentHold, PaymentOffer, PaymentProfile, PaymentRefund, PaymentSettlement, PayeeBusy, WorkProof, work_bits, Processor, Appeal, AppealAnswer, Ruling, OrderConfirmation, DeclineNoted, DriverVerification, VerificationCheck, lineage, DropoffShare, VehicleDetails, VehicleShare, LinePricer, Chosen, ChosenInput, OrderItem, Selection, SelectionInput, CollectRequest, claimed_value, CarryRefusal, InHand, PinSecret, DROPOFF_GEOHASH_PRECISION, OPEN_ORDER_PRECISION, IssueEvidence, IssueKind, IssueLine, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome, hold_terms, required_collateral, split_delivery_fee, Bid, BidStatus, Cancellation, DeclineReason, DeliveryOrder, DeliveryStatus, DropoffDetails, DropoffPreference, HoldPurpose, OrderLine, OrderRewards, OrderTerms, PickupOrder, PickupStatus, Portion, RequiredAuthor, waits_from};
 
 // Built once per write and dropped -- boxing the large order would only
 // add an allocation.
@@ -75,6 +75,8 @@ pub enum EntryTypes {
     PaymentDeclined(PaymentDeclined),
     PaymentSettlement(PaymentSettlement),
     PaymentRefund(PaymentRefund),
+    /// A payee asking newcomers for work while it sees card testing.
+    PayeeBusy(PayeeBusy),
     /// An order leaving its driver's hands -- see `carry`.
     CarryEnded(CarryEnded),
     /// A payer withdrawing the card they kept with a payee -- see
@@ -171,6 +173,8 @@ pub enum LinkTypes {
     /// make of the card's processor fingerprint (`claim_newcomer_card`): one
     /// card, one deal, kept where a store's device can't lose it.
     StoreToNewcomerCard,
+    /// A payee's busy records, base = the payee.
+    PayeeToBusy,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -226,6 +230,10 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::PaymentDeclined(d) => payments::validate_declined(&d, action.author(), action.prev_action()),
             EntryTypes::PaymentSettlement(settlement) => payments::validate_settlement(&settlement, action.author(), action.prev_action()),
             EntryTypes::PaymentRefund(refund) => payments::validate_refund(&refund, action.author(), action.prev_action()),
+            EntryTypes::PayeeBusy(busy) => {
+                let (least, most) = (handshake_governance::newcomer_work_bits(), handshake_governance::newcomer_work_max_bits());
+                require(busy.until > action.timestamp() && (least..=most).contains(&busy.bits), "a payee asks newcomers for work it can do, for a while from now")
+            }
             EntryTypes::CarryEnded(ended) => carry::validate_carry_ended(&ended, action.author(), action.prev_action()),
             // Only by a payer who has a card kept with them: nobody piles
             // withdrawals on a payee whose agent reads each one.
@@ -254,7 +262,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                 }
                 payments::validate_profile(&profile)
             }
-            EntryTypes::PaymentOffer(_) | EntryTypes::PaymentHold(_) | EntryTypes::PaymentAction(_) | EntryTypes::PaymentDeclined(_) | EntryTypes::PaymentSettlement(_) | EntryTypes::PaymentRefund(_) => {
+            EntryTypes::PaymentOffer(_) | EntryTypes::PaymentHold(_) | EntryTypes::PaymentAction(_) | EntryTypes::PaymentDeclined(_) | EntryTypes::PaymentSettlement(_) | EntryTypes::PaymentRefund(_) | EntryTypes::PayeeBusy(_) => {
                 Ok(ValidateCallbackResult::Invalid("a payment's records are permanent".into()))
             }
             EntryTypes::CarryEnded(_) => Ok(ValidateCallbackResult::Invalid("a carry's end is a permanent record".into())),

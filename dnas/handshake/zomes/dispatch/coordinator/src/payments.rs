@@ -12,7 +12,7 @@
 use crate::settlement::{holds_on, settlement_due, settlements_on, DueClaim};
 use dispatch_integrity::payments::{leg_context, LegContext};
 use dispatch_integrity::*;
-use handshake_coordinator_support::{decode_or, guest, open, original_action_of, seal};
+use handshake_coordinator_support::{call_local, call_role, decode_or, guest, open, original_action_of, seal};
 use hdk::prelude::*;
 use std::collections::BTreeSet;
 
@@ -30,6 +30,10 @@ pub struct PaymentInput {
     /// Let the payee keep this card for the payer's later payments to them.
     #[serde(default)]
     pub save: bool,
+    /// Work done for the payee, while it's asking newcomers for some
+    /// (`work_needed`).
+    #[serde(default)]
+    pub work: Option<WorkProof>,
 }
 
 fn me() -> ExternResult<AgentPubKey> {
@@ -59,7 +63,7 @@ fn offer_resuming(order: &ActionHash, leg_of: PaymentLeg, input: PaymentInput, r
         Some(token) => Some(seal(&context.payee, token)?),
         None => None,
     };
-    let offer = PaymentOffer { order: order.clone(), leg: leg_of, payee: context.payee.clone(), sealed_token, save: input.save && input.token.is_some(), resumes };
+    let offer = PaymentOffer { order: order.clone(), leg: leg_of, payee: context.payee.clone(), sealed_token, save: input.save && input.token.is_some(), resumes, work: input.work };
     let hash = create_entry(&EntryTypes::PaymentOffer(offer))?;
     create_link(order.clone(), hash.clone(), LinkTypes::OrderToPayment, ())?;
     let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, vec![context.payee]);
@@ -159,7 +163,8 @@ pub(crate) fn offer_saved(order: &ActionHash, leg_of: PaymentLeg) -> ExternResul
     if offered || saved_with(&context.payee)?.is_none() {
         return Ok(false);
     }
-    offer(order, leg_of, PaymentInput { token: None, save: false })?;
+    // A card kept with the payee: one it has held before, never asked for work.
+    offer(order, leg_of, PaymentInput { token: None, save: false, work: None })?;
     Ok(true)
 }
 
@@ -252,9 +257,13 @@ pub enum PaymentDue {
         /// fingerprint (on-chain, a first order is one per account).
         newcomer_deal: Option<ActionHash>,
         /// The payer has completed orders with several stores before
-        /// (`established_payer_stores`): someone with a record, never slowed
-        /// when declined cards from new accounts look like card testing.
+        /// (`established_payer_stores`): someone with a record, never asked
+        /// for work when declined cards from new accounts look like card
+        /// testing.
         payer_established: bool,
+        /// The work the payer did for one of the payee's busy records, if
+        /// any (`WorkProof`): which, and how many bits it proves.
+        work: Option<WorkShown>,
         /// When the payer made the offer: what a kept card is dated by.
         offered_at: Timestamp,
     },
@@ -384,7 +393,8 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
         };
         let newcomer_deal = if offer.leg == PaymentLeg::Customer { newcomer_deal(order)? } else { None };
         let payer_established = established(&payer);
-        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, newcomer_deal, payer_established, offered_at });
+        let work = offer.work.as_ref().map(|proof| WorkShown { busy: proof.busy.clone(), bits: work_bits(&payer, me, proof) });
+        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, newcomer_deal, payer_established, work, offered_at });
     }
     // Each of my holds, once nothing can change what it's owed.
     for (hold_ref, hold) in my_holds {
@@ -401,26 +411,28 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
 
 /// The store, when `order` cites a version of a promo for first orders
 /// there.
-/// How far back `established` reads a payer's history, in pages of its
-/// most: the newest few hundred orders, so a payer with a long history
-/// costs a bounded read.
-const ESTABLISHED_PAGES: usize = 4;
-
 /// Whether `payer` has completed orders with the network's
 /// `established_payer_stores` different store owners, none of them the
-/// payer, in their recent history. That's someone with a record: a new
-/// account has none, and making one takes as many stores, each finishing an
-/// order. Not established if the history can't be read.
+/// payer, placed at least `established_payer_days` ago, in their most
+/// recent `established_payer_lookback` orders. That's someone with a
+/// record: a new account has none, and making one takes as many stores,
+/// each finishing an order, and time. Not established if the history can't
+/// be read.
 fn established(payer: &AgentPubKey) -> bool {
     let needed = handshake_governance::established_payer_stores() as usize;
+    let mut left = handshake_governance::established_payer_lookback() as usize;
+    let days = i64::from(handshake_governance::established_payer_days());
+    let Ok(now) = sys_time() else { return false };
+    let settled_before = Timestamp::from_micros(now.as_micros().saturating_sub(days.saturating_mul(86_400_000_000)));
     let mut owners = BTreeSet::new();
     let mut before = None;
-    for _ in 0..ESTABLISHED_PAGES {
-        let Ok(page) = crate::order_queues::history_page(QueueOwner::Customer(payer), before, Some(u32::MAX)) else { return false };
+    while left > 0 {
+        let Ok(page) = crate::order_queues::history_page(QueueOwner::Customer(payer), before, Some(u32::try_from(left).unwrap_or(u32::MAX))) else { return false };
+        left = left.saturating_sub(page.orders.len().max(1));
         for entry in &page.orders {
             let completed = match (decode_or::<DeliveryOrder>(&entry.record), decode_or::<PickupOrder>(&entry.record)) {
-                (Some(o), _) => matches!(o.status, DeliveryStatus::Delivered | DeliveryStatus::Collected).then_some(o.merchant),
-                (None, Some(o)) => (o.status == PickupStatus::PickedUp).then_some(o.merchant),
+                (Some(o), _) => (matches!(o.status, DeliveryStatus::Delivered | DeliveryStatus::Collected) && o.requested_at <= settled_before).then_some(o.merchant),
+                (None, Some(o)) => (o.status == PickupStatus::PickedUp && o.requested_at <= settled_before).then_some(o.merchant),
                 _ => None,
             };
             if let Some(owner) = completed.filter(|owner| owner != payer) {
@@ -436,6 +448,76 @@ fn established(payer: &AgentPubKey) -> bool {
     false
 }
 
+/// Work a payer showed for one of the payee's busy records.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WorkShown {
+    pub busy: ActionHash,
+    pub bits: u8,
+}
+
+/// What a busy payee asks of a payer with no history: work for its record
+/// `busy`, of `bits`.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WorkAsked {
+    pub payee: AgentPubKey,
+    pub busy: ActionHash,
+    pub bits: u8,
+}
+
+/// The payee's busy record in force now, if there is one: its newest.
+fn busy_now(payee: &AgentPubKey) -> ExternResult<Option<(ActionHash, PayeeBusy)>> {
+    let query = LinkQuery::try_new(payee.clone(), LinkTypes::PayeeToBusy)?.author(payee.clone());
+    let Some(link) = get_links(query, GetStrategy::default())?.into_iter().filter(|link| &link.author == payee).max_by_key(|link| link.timestamp) else { return Ok(None) };
+    let Some(record) = link.target.into_action_hash().map(|hash| get(hash, GetOptions::default())).transpose()?.flatten() else { return Ok(None) };
+    let now = sys_time()?;
+    Ok(decode_or::<PayeeBusy>(&record).filter(|busy| busy.until > now && record.action().author() == payee).map(|busy| (record.action_address().clone(), busy)))
+}
+
+/// The work the caller must do before offering `payee` a card, if any: only
+/// while the payee is seeing card testing, and only of a payer with no
+/// record (`established`). Their app does it, and sends the proof with the
+/// card (`PaymentInput::work`).
+#[hdk_extern]
+pub fn work_needed(payee: AgentPubKey) -> ExternResult<Option<WorkAsked>> {
+    let Some((busy, record)) = busy_now(&payee)? else { return Ok(None) };
+    if established(&me()?) {
+        return Ok(None);
+    }
+    Ok(Some(WorkAsked { payee, busy, bits: record.bits }))
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WorkForLeg {
+    pub order: ActionHash,
+    pub leg: PaymentLeg,
+}
+
+/// `work_needed`, for a leg of an order already placed: its payee's.
+#[hdk_extern]
+pub fn work_needed_for_leg(input: WorkForLeg) -> ExternResult<Option<WorkAsked>> {
+    let order = original_action_of(input.order)?;
+    work_needed(leg(&order, &input.leg)?.payee)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct BusyInput {
+    /// How far past the network's first ask for work: each step doubles it.
+    pub level: u8,
+    pub until: Timestamp,
+}
+
+/// The caller's payment agent asking payers with no record for work, until
+/// `until`, as it sees cards being tested: the network's first ask, doubled
+/// `level` times, no more than its most. The record payers do it for.
+#[hdk_extern]
+pub fn record_busy(input: BusyInput) -> ExternResult<WorkAsked> {
+    let me = me()?;
+    let bits = handshake_governance::newcomer_work_bits().saturating_add(input.level).min(handshake_governance::newcomer_work_max_bits());
+    let busy = create_entry(&EntryTypes::PayeeBusy(PayeeBusy { until: input.until, bits }))?;
+    create_link(me.clone(), busy.clone(), LinkTypes::PayeeToBusy, ())?;
+    Ok(WorkAsked { payee: me, busy, bits })
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NewcomerCardInput {
     /// The store whose first-order deal it is.
@@ -446,13 +528,53 @@ pub struct NewcomerCardInput {
     pub order: ActionHash,
 }
 
+/// A card's digest, as a store's claim of it is tagged: a hash of its
+/// processor fingerprint. A fingerprint is an opaque id that only the
+/// payee's processor account gives out, never the card's number, so the
+/// digest tells nobody else which card it is -- and it's the same whichever
+/// key the store's owner holds, so a store recovered onto a new key, or
+/// brought to a new network, still knows its cards.
+fn card_digest(fingerprint: &str) -> Vec<u8> {
+    holo_hash::encode::blake2b_256(format!("handshake-newcomer-card:v2:{fingerprint}").as_bytes())
+}
+
+/// The order a card took `store`'s first-order deal on, if it has: under
+/// the store, or any store it carries on from (catalog's `store_line`),
+/// each claimed by whoever owned that store.
+fn claimed_in_line(store: &ActionHash, digest: &[u8]) -> ExternResult<Option<ActionHash>> {
+    let earlier: Vec<ActionHash> = call_local("catalog", "store_line", store.clone())?.map_err(|why| guest(format!("store_line: {why}")))?;
+    for catalog in std::iter::once(store.clone()).chain(earlier) {
+        let Some(record) = get(catalog.clone(), GetOptions::default())? else { continue };
+        let owner = record.action().author().clone();
+        let query = LinkQuery::try_new(catalog, LinkTypes::StoreToNewcomerCard)?.author(owner.clone()).tag_prefix(LinkTag::new(digest.to_vec()));
+        if let Some(link) = get_links(query, GetStrategy::default())?.into_iter().find(|link| link.author == owner && link.tag.0 == digest) {
+            return Ok(link.target.into_action_hash());
+        }
+    }
+    Ok(None)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NewcomerCardClaim {
+    pub store: ActionHash,
+    pub digest: Vec<u8>,
+}
+
+/// The order a card, by its digest, took `store`'s first-order deal on
+/// here, if it has -- asked by the next network, through its `previous`
+/// role, for a store brought over from here.
+#[hdk_extern]
+pub fn newcomer_card_claim(input: NewcomerCardClaim) -> ExternResult<Option<ActionHash>> {
+    claimed_in_line(&input.store, &input.digest)
+}
+
 /// Claims a store's first-order deal for a card, on `order`: `true` if the
 /// card hasn't taken it before (now it has) or took it on this same order;
-/// `false` if it took it on another. Kept on the network (a
-/// `StoreToNewcomerCard` link), so no device the store loses forgets it;
-/// tagged with a digest only the store's key can make -- its signature of
-/// the fingerprint, hashed -- so the fingerprint is never published, and
-/// nobody else can tell which card it was.
+/// `false` if it took it on another -- at this store, at one it carries on
+/// from, or at the store it was brought over from on the network before.
+/// Kept on the network (a `StoreToNewcomerCard` link, tagged with the
+/// card's digest), so no device the store loses forgets it, nor a key its
+/// owner recovers from. Errs if the network before can't say just now.
 #[hdk_extern]
 pub fn claim_newcomer_card(input: NewcomerCardInput) -> ExternResult<bool> {
     let me = me()?;
@@ -460,11 +582,16 @@ pub fn claim_newcomer_card(input: NewcomerCardInput) -> ExternResult<bool> {
     if store.action().author() != &me {
         return Err(guest("Only the store's owner keeps its first-order deal."));
     }
-    let signature = sign_raw(me.clone(), format!("handshake-newcomer-card:v1:{}", input.fingerprint).into_bytes())?;
-    let digest = holo_hash::encode::blake2b_256(&signature.0);
-    let query = LinkQuery::try_new(input.store.clone(), LinkTypes::StoreToNewcomerCard)?.author(me.clone()).tag_prefix(LinkTag::new(digest.clone()));
-    if let Some(link) = get_links(query, GetStrategy::default())?.into_iter().find(|link| link.author == me && link.tag.0 == digest) {
-        return Ok(link.target.into_action_hash().as_ref() == Some(&input.order));
+    let digest = card_digest(&input.fingerprint);
+    if let Some(took) = claimed_in_line(&input.store, &digest)? {
+        return Ok(took == input.order);
+    }
+    let origin: Option<ActionHash> = call_local("catalog", "imported_from", input.store.clone())?.map_err(|why| guest(format!("imported_from: {why}")))?;
+    if let Some(origin) = origin {
+        let before: Option<ActionHash> = call_role("previous", "dispatch", "newcomer_card_claim", NewcomerCardClaim { store: origin, digest: digest.clone() })?.map_err(|why| guest(format!("couldn't read the previous network: {why}")))?;
+        if before.is_some() {
+            return Ok(false);
+        }
     }
     create_link(input.store, input.order, LinkTypes::StoreToNewcomerCard, LinkTag::new(digest))?;
     Ok(true)

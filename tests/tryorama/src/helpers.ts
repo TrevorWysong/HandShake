@@ -2,6 +2,10 @@
 // "a couple of lines" and started being copy-pasted three times over.
 import assert from "node:assert/strict";
 import { createPrivateKey, generateKeyPairSync, sign } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { decode } from "@msgpack/msgpack";
 import type { CallableCell, Conductor, PlayerApp, Scenario } from "@holochain-open-dev/tryorama";
@@ -91,6 +95,38 @@ export async function retryUntil<T>(fn: () => Promise<T>, done: (value: T) => bo
 /// report window short enough to wait out, so a store's payment for the
 /// food settles within a test. A test of it sets its own.
 export const TEST_PROPERTIES = { report_window_secs: 2 };
+
+// --- two networks: an old version and the next (docs/MIGRATION.md) ---
+
+const DNA_PATH = fileURLToPath(new URL("../../../dnas/handshake/workdir/handshake.dna", import.meta.url));
+
+/// The next version's app: its own network, and the previous one as its
+/// `previous` role -- the same DNA, each under the seed it's installed with.
+export function twoNetworkHapp(): string {
+  const dir = mkdtempSync(path.join(tmpdir(), "handshake-next-"));
+  const role = (name: string) => ({ name, provisioning: { strategy: "create", deferred: false }, dna: { path: DNA_PATH, modifiers: { network_seed: null, properties: null }, clone_limit: 0 } });
+  writeFileSync(path.join(dir, "happ.yaml"), JSON.stringify({ manifest_version: "0", name: "handshake-next", description: null, roles: [role("handshake"), role("previous")] }));
+  execFileSync("hc", ["app", "pack", dir, "-o", path.join(dir, "handshake-next.happ")]);
+  return path.join(dir, "handshake-next.happ");
+}
+
+/// A role's settings on the network `seed` names.
+export const networkSettings = (seed: string, properties: Record<string, unknown> = {}) => ({ type: "provisioned" as const, value: { membrane_proof: undefined, modifiers: { network_seed: seed, properties: { ...TEST_PROPERTIES, ...properties } } } });
+
+/// Installs an app for `agent` on `conductor`, as a player.
+export async function installOn(conductor: Conductor, agent: Uint8Array, happ: string, rolesSettings: Record<string, unknown>, appId: string): Promise<PlayerApp> {
+  const port = await conductor.attachAppInterface();
+  const adminWs = conductor.adminWs();
+  const appInfo = await conductor.installApp({ appBundleSource: { type: "path", value: happ }, options: { agentPubKey: agent, installedAppId: appId, rolesSettings } } as never);
+  const issued = await adminWs.issueAppAuthenticationToken({ installed_app_id: appInfo.installed_app_id });
+  const appWs = await conductor.connectAppWs(issued.token, port);
+  const agentApp = await enableAndGetAgentApp(adminWs, appWs, appInfo);
+  return { conductor, appWs, ...agentApp };
+}
+
+/// `player`, as one of a network's players: with `cell` -- its cell there --
+/// first.
+export const onCell = (player: PlayerApp, cell: CallableCell): PlayerApp => ({ ...player, cells: [cell] });
 
 /// The `RoleSettings` installing with `properties` (merged over
 /// `TEST_PROPERTIES`). Discovered against the real admin API: it's tagged

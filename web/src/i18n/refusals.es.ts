@@ -86,6 +86,8 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.only-the-store-s-owner-can-run": "Solo el dueño de la tienda puede gestionar su programa de recompensas.",
   "refusal.only-the-store-s-owner-carries-its": "Solo el dueño de la tienda puede llevarse su programa.",
   "refusal.only-the-store-s-owner-keeps-its": "Solo el dueño de la tienda guarda su oferta de primer pedido.",
+  "refusal.only-the-store-s-owner-or-the": "Solo el dueño de la tienda, o la clave a la que la movió, calcula los puntos de sus miembros.",
+  "refusal.this-account-s-rewards-couldn-t-be": "No se pudieron preparar las recompensas de esta cuenta para llevarlas, así que no se ha movido. Inténtalo de nuevo en un momento.",
   "refusal.only-this-order-s-customer-and-its": "Solo el cliente de este pedido y su repartidor pueden chatear sobre él.",
   "refusal.only-this-order-s-customer-and-its-2": "Solo el cliente de este pedido y su tienda pueden chatear sobre él.",
   "refusal.only-whoever-held-a-payment-settles-it": "Solo quien retuvo un pago lo liquida.",

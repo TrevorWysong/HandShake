@@ -2,6 +2,7 @@
 // a card to the payee of one leg of an order; the payee's payment agent
 // holds it on its own processor, asks for more, or declines it -- and later
 // captures exactly what it's owed. Amounts are always the network's.
+import { workedForLeg } from "../../lib/payments/work";
 import { callZome } from "../client";
 import type { ActionHash, AgentPubKey, OrderPayment, PaymentHistoryItem, PaymentInput, PaymentLeg, PaymentOwed, PaymentProfile, PaymentStanding, SavedCard } from "../types";
 
@@ -9,7 +10,7 @@ import type { ActionHash, AgentPubKey, OrderPayment, PaymentHistoryItem, Payment
 /// processor's card form (or `null` for the card saved with them), sealed to
 /// the payee. `resumes`: the `PaymentAction` this answers, once done.
 export async function offerPayment(order: ActionHash, leg: PaymentLeg, payment: PaymentInput, resumes: ActionHash | null = null): Promise<ActionHash> {
-  return callZome("dispatch", "offer_payment", { order, leg, payment, resumes });
+  return callZome("dispatch", "offer_payment", { order, leg, payment: await workedForLeg(order, leg, payment), resumes });
 }
 
 /// Where the caller's payment for a leg of an order stands -- `null` before

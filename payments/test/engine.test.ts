@@ -4,7 +4,7 @@
 // payer shouldn't get (card testing, a first-order deal twice on one card).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Engine, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_TRICKLE_MS, NEW_PAYER_WINDOW_MS, Refused, Retry, SAVED_CARD_MS, idempotencyKey, retryingCollisions, type Dispatch } from "../src/engine.ts";
+import { Engine, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, SAVED_CARD_MS, idempotencyKey, retryingCollisions, type Dispatch } from "../src/engine.ts";
 import { testProcessor } from "../src/adapters/test.ts";
 import { emptyState, memoryStore } from "../src/state.ts";
 import type { PaymentDue } from "../src/types.ts";
@@ -19,10 +19,18 @@ function zome() {
   const calls: { fn: string; payload: Record<string, unknown> }[] = [];
   let failNext: string | null = null;
   let actions = 0;
+  /// The newest busy record the agent published, and how many it has.
+  let busy: Uint8Array | null = null;
+  let busies = 0;
   /// The network's record of which card took each store's first-order deal.
   const dealCards = new Map<string, Uint8Array>();
   const dispatch = async <T,>(fn: string, payload: unknown): Promise<T> => {
     if (fn === "payments_due") return due as T;
+    if (fn === "record_busy") {
+      calls.push({ fn, payload: payload as Record<string, unknown> });
+      busy = h(400 + busies++);
+      return { payee: h(1), busy, bits: 18 + Number((payload as { level: number }).level) } as T;
+    }
     if (fn === "claim_newcomer_card") {
       const { store, fingerprint, order } = payload as { store: Uint8Array; fingerprint: string; order: Uint8Array };
       const key = `${Buffer.from(store).toString("hex")}:${fingerprint}`;
@@ -49,6 +57,9 @@ function zome() {
       failNext = fn;
     },
     recorded: (fn: string) => calls.filter((c) => c.fn === fn).map((c) => c.payload),
+    get busy() {
+      return busy;
+    },
   };
 }
 /// Whether recording `fn` answers `d`, so it's no longer due.
@@ -60,7 +71,7 @@ function answers(d: PaymentDue, fn: string, payload: Record<string, unknown>) {
 }
 
 const authorize = (offer: number, order: number, more: Partial<Extract<PaymentDue, { Authorize: unknown }>["Authorize"]> = {}): PaymentDue => ({
-  Authorize: { offer: h(offer), order: h(order), leg: "Customer", amount: 2500, payer, token: "tok_test_4242", save: false, resumes: null, newcomer_deal: null, payer_established: false, offered_at: Date.now() * 1000, ...more },
+  Authorize: { offer: h(offer), order: h(order), leg: "Customer", amount: 2500, payer, token: "tok_test_4242", save: false, resumes: null, newcomer_deal: null, payer_established: false, work: null, offered_at: Date.now() * 1000, ...more },
 });
 
 function setup() {
@@ -176,7 +187,7 @@ test("cards a device kept for first-order deals before are claimed on the networ
   assert.equal(z.recorded("claim_newcomer_card").length, 1, "once");
 });
 
-test("a burst of declines from accounts with no history slows only them -- never a payer with one, and never to a stop", async () => {
+test("during a burst of declines from accounts with no history, only they are asked for work -- and with it, never turned away", async () => {
   const z = zome();
   const processor = testProcessor("USD");
   let clock = 1_000_000;
@@ -189,28 +200,38 @@ test("a burst of declines from accounts with no history slows only them -- never
     z.due = [authorize(100 + i, 150 + i, { payer: h(120 + i), token: "tok_test_0002" })];
     await engine.round();
   }
-  // Established elsewhere on the network: as ever, whoever caused the burst.
-  z.due = [authorize(59, 89, { payer: h(190), payer_established: true })];
-  await engine.round();
-  assert.equal(z.recorded("record_hold").length, 2, "someone with a history is held, unslowed");
-  z.due = [authorize(61, 91, { payer: h(80) })];
-  await engine.round();
-  assert.equal(z.recorded("record_hold").length, 3, "and so is the store's regular");
-  // No history: one through, then the next waits its turn.
+  // A newcomer without work is asked for it, unseen by the processor.
+  const seen = processor.held.size;
   z.due = [authorize(60, 90, { payer: h(200) })];
   await engine.round();
-  assert.equal(z.recorded("record_hold").length, 4, "a newcomer is let through");
-  const seen = processor.held.size;
-  z.due = [authorize(62, 92, { payer: h(201) })];
-  await engine.round();
-  assert.equal(z.recorded("record_declined").at(-1)?.code, "TooManyAttempts", "the next, straight after, waits");
+  assert.equal(z.recorded("record_declined").at(-1)?.code, "WorkNeeded", "a newcomer is asked for work");
   assert.equal(processor.held.size, seen, "unseen by the processor");
-  clock += NEW_PAYER_TRICKLE_MS;
-  z.due = [authorize(63, 93, { payer: h(202) })];
+  const [busy] = z.recorded("record_busy");
+  assert.equal(busy?.level, 0, "the network's first ask");
+  // With it, held -- however many newcomers come, one after another.
+  for (const [i, payer] of [201, 202, 203].entries()) {
+    z.due = [authorize(61 + i, 91 + i, { payer: h(payer), work: { busy: z.busy!, bits: 18 } })];
+    await engine.round();
+  }
+  assert.equal(z.recorded("record_hold").length, 4, "every newcomer with the work is held, none kept waiting");
+  z.due = [authorize(70, 100, { payer: h(204), work: { busy: z.busy!, bits: 17 } })];
   await engine.round();
-  assert.equal(z.recorded("record_hold").length, 5, "a moment later, the next newcomer is through");
+  assert.equal(z.recorded("record_declined").at(-1)?.code, "WorkNeeded", "less than it asks isn't enough");
+  // A payer with a record, or the store's regular, as ever.
+  z.due = [authorize(71, 101, { payer: h(190), payer_established: true }), authorize(72, 102, { payer: h(80) })];
+  await engine.round();
+  assert.equal(z.recorded("record_hold").length, 6, "someone with a record, and the regular, are held without work");
+  // Declines doubling: the ask doubles, and work for the old record is stale.
+  for (let i = 0; i < MAX_NEW_PAYER_DECLINES; i++) {
+    z.due = [authorize(300 + i, 350 + i, { payer: h(220 + i), token: "tok_test_0002", work: { busy: z.busy!, bits: 18 } })];
+    await engine.round();
+  }
+  z.due = [authorize(80, 110, { payer: h(240), work: { busy: z.busy!, bits: 18 } })];
+  await engine.round();
+  assert.equal(z.recorded("record_busy").at(-1)?.level, 1, "twice the declines, twice the work");
+  assert.equal(z.recorded("record_declined").at(-1)?.code, "WorkNeeded", "work for the earlier ask is asked again");
   clock += NEW_PAYER_WINDOW_MS;
-  z.due = [authorize(64, 94, { payer: h(203) }), authorize(65, 95, { payer: h(204) })];
+  z.due = [authorize(81, 111, { payer: h(241) })];
   await engine.round();
   assert.equal(z.recorded("record_hold").length, 7, "and once the burst has passed, newcomers as ever");
 });

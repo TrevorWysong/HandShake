@@ -79,6 +79,12 @@ pub const MAX_PERK_CHARS: usize = 120;
 pub const MAX_GRANT_NOTE_CHARS: usize = 200;
 /// The most a sealed grant may weigh.
 pub const MAX_SEALED_GRANT_BYTES: usize = 1_024;
+/// The most a list of grants one entry carries may weigh, unsealed (a
+/// `GiftReveal`, `CarriedGifts`): half of what Holochain lets an entry
+/// weigh, the rest left for the boxes and the entry around them. A longer
+/// list goes in as many entries as it takes, so none is ever cut short.
+pub const MAX_GIFT_LIST_BYTES: usize = 2_000_000;
+const _: () = assert!(MAX_GIFT_LIST_BYTES * 2 == ENTRY_SIZE_LIMIT, "half of what Holochain lets an entry weigh");
 
 /// A store's rewards program, as one version of it stands.
 #[hdk_entry_helper]
@@ -201,6 +207,11 @@ pub struct Reward {
 /// inbox with them. The store counts its own grants when it works out a
 /// member's points; the member's app, opening it, knows it's the store's
 /// (a sealed box names its sender).
+///
+/// `commitment` is a salted hash of what it says (`grant_commitment`):
+/// it gives nothing away, but lets the member show a grant to someone it
+/// wasn't sealed to -- the store's next key, or its store on the next
+/// network -- who can tell it's what the store said (`RevealedGrant`).
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq, Eq)]
 // Decodes only from its own fields: a record of another type that
@@ -213,6 +224,7 @@ pub struct PointsGrant {
     /// An order `to` placed there (its original action).
     pub order: ActionHash,
     pub sealed: XSalsa20Poly1305EncryptedData,
+    pub commitment: Vec<u8>,
 }
 
 /// What a `PointsGrant` says, sealed.
@@ -220,6 +232,67 @@ pub struct PointsGrant {
 pub struct GrantPayload {
     pub points: u32,
     pub reason: GrantReason,
+    /// Random, so its commitment can't be guessed by trying every amount.
+    pub salt: Vec<u8>,
+}
+
+/// The bytes of salt a grant's payload carries.
+pub const GRANT_SALT_BYTES: usize = 16;
+
+/// A grant's commitment to `payload`: a hash of who it's to, from which
+/// store, and what it says, salt and all.
+pub fn grant_commitment(to: &AgentPubKey, catalog_ref: &ActionHash, payload: &GrantPayload) -> ExternResult<Vec<u8>> {
+    let said = holochain_serialized_bytes::encode(payload).map_err(|e| wasm_error!(WasmErrorInner::Serialize(e)))?;
+    let bytes = [b"handshake-grant:v1:".as_slice(), to.get_raw_39(), catalog_ref.get_raw_39(), &said].concat();
+    Ok(hdi::prelude::holo_hash::encode::blake2b_256(&bytes))
+}
+
+/// A grant shown by the member it's to, to a store it wasn't sealed to:
+/// the grant (its action), and what it said. True if it matches the
+/// grant's commitment (`RevealedGrant::proves`).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct RevealedGrant {
+    pub grant: ActionHash,
+    pub payload: GrantPayload,
+}
+
+impl RevealedGrant {
+    /// Whether `grant`, the record it names, says what it reveals.
+    pub fn proves(&self, grant: &PointsGrant) -> bool {
+        grant_commitment(&grant.to, &grant.catalog_ref, &self.payload).is_ok_and(|c| c == grant.commitment)
+    }
+}
+
+/// A member showing the store `catalog_ref`'s owner grants they were given
+/// by an earlier key of the store (one lost, then recovered), or by its
+/// store on the network before (a migration): `Vec<RevealedGrant>`, sealed
+/// to the owner. The store counts each one it can prove; so does the
+/// member's card, alike.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GiftReveal {
+    pub catalog_ref: ActionHash,
+    pub sealed: handshake_integrity_support::SealedChunks,
+}
+
+/// Every grant a member was given here, sealed to their key on the next
+/// network as their account leaves this one: `Vec<CarriedGift>`. Their new
+/// key reads it here, through its `previous` role, and shows each store
+/// that came over the grants it gave them (`GiftReveal`).
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CarriedGifts {
+    pub sealed: handshake_integrity_support::SealedChunks,
+}
+
+/// A grant carried to the next network: the store that gave it, and the
+/// grant shown.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct CarriedGift {
+    pub catalog_ref: ActionHash,
+    pub revealed: RevealedGrant,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

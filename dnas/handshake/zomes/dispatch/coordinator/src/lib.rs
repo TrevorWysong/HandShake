@@ -411,6 +411,20 @@ mod test_utils {
     /// Updates one specific version of a delivery -- branching its history,
     /// as two parties writing at once can -- past every check the
     /// coordinator makes, so a test can prove each branch's payments bind.
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct WorkBitsInput {
+        pub payer: AgentPubKey,
+        pub payee: AgentPubKey,
+        pub proof: dispatch_integrity::WorkProof,
+    }
+
+    /// How many bits of work `proof` shows -- for a test to find a nonce
+    /// the way a payer's app does (web `lib/payments/work.ts`).
+    #[hdk_extern]
+    pub fn work_bits_for_testing(input: WorkBitsInput) -> ExternResult<u8> {
+        Ok(dispatch_integrity::work_bits(&input.payer, &input.payee, &input.proof))
+    }
+
     #[hdk_extern]
     pub fn branch_order_for_testing(input: BranchInput) -> ExternResult<ActionHash> {
         let version = handshake_coordinator_support::version_at(input.version)?;

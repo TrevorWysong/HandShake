@@ -15,7 +15,7 @@ const OFF = 100;
 const EARLY_CANCELS = 4;
 
 await runScenario(async (scenario) => {
-  const [known, fresh, merchant] = await setupPlayersWithProperties(scenario, 3, () => ({ max_daily_early_cancels: EARLY_CANCELS, max_pending_orders: 20 }));
+  const [known, fresh, merchant] = await setupPlayersWithProperties(scenario, 3, () => ({ max_daily_early_cancels: EARLY_CANCELS, max_pending_orders: 20, newcomer_work_bits: 4, newcomer_work_max_bits: 6 }));
   const all = [known, fresh, merchant];
   for (const p of [known, fresh]) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, known.cells[0].cell_id[0]);
@@ -67,6 +67,30 @@ await runScenario(async (scenario) => {
   assert.equal(await claim(merchant, "fp_card_2", orderB), true, "another card is welcome");
   await assert.rejects(claim(known, "fp_card_3", orderA), /Only the store's owner/, "and only the store keeps its deal");
   console.log("[PASS] a store's first-order deal is one per card, remembered by the network rather than a device");
+
+  // ===== A store seeing cards tested asks newcomers for work =====
+  assert.equal(await call(fresh, "dispatch")("work_needed", merchant.agentPubKey), null, "nothing asked of anyone before");
+  const asked = await call(merchant, "dispatch")<{ busy: ActionHash; bits: number }>("record_busy", { level: 9, until: (Date.now() + 15 * 60_000) * 1000 });
+  assert.equal(asked.bits, 6, "doubled as asked, but never past the network's most");
+  await sync();
+  const need = await call(fresh, "dispatch")<{ payee: Uint8Array; busy: ActionHash; bits: number } | null>("work_needed", merchant.agentPubKey);
+  assert.ok(need && Buffer.from(need.busy).equals(Buffer.from(asked.busy)) && need.bits === 6, "a payer with no record is asked for the work");
+  let nonce = 0;
+  while ((await call(fresh, "dispatch")<number>("work_bits_for_testing", { payer: fresh.agentPubKey, payee: merchant.agentPubKey, proof: { busy: need.busy, nonce } })) < need.bits) nonce++;
+  const worked = actionHash(await retryUntilOk(() => order(fresh)));
+  await sync();
+  await call(fresh, "dispatch")("offer_payment", { order: worked, leg: "Customer", payment: { token: "tok_test_4242", save: false, work: { busy: need.busy, nonce } }, resumes: null });
+  await sync();
+  type Due = { Authorize?: { order: Uint8Array; work: { busy: Uint8Array; bits: number } | null } };
+  const due = await retryUntil(() => call(merchant, "dispatch")<Due[]>("payments_due", null), (d) => d.some((x) => x.Authorize && Buffer.from(x.Authorize.order).equals(Buffer.from(worked))), 30, 1000);
+  const shown = due.find((x) => x.Authorize && Buffer.from(x.Authorize.order).equals(Buffer.from(worked)))!.Authorize!.work;
+  assert.ok(shown && shown.bits >= 6 && Buffer.from(shown.busy).equals(Buffer.from(asked.busy)), "the store's agent sees the work done, for its record");
+  // Someone else's busy record never stands for the store's.
+  await call(fresh, "dispatch")("record_busy", { level: 0, until: (Date.now() + 15 * 60_000) * 1000 });
+  await sync();
+  const still = await call(known, "dispatch")<{ busy: ActionHash } | null>("work_needed", merchant.agentPubKey);
+  assert.ok(still && Buffer.from(still.busy).equals(Buffer.from(asked.busy)), "only the store's own record asks work for it");
+  console.log("[PASS] a store seeing cards tested asks payers with no record for work, which its agent can check");
 
   // An order a modified app writes raw, called off below.
   const raw = actionHash(await rawPickup(fresh, null));

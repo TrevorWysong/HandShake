@@ -1,3 +1,4 @@
+import { workedFor } from "../../lib/payments/work";
 import { callZome } from "../client";
 import type { AllergySet, ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VehicleDetails, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
 
@@ -44,6 +45,7 @@ export async function requestDelivery(input: {
   /// The customer's card, offered to the store with the order.
   payment?: PaymentInput | null;
 }): Promise<HcRecord> {
+  const payment = input.payment ? await workedFor(input.merchant, input.payment) : input.payment;
   return callZome("dispatch", "request_delivery", {
     kitchen_notes: "",
     dropoff_notes: "",
@@ -55,6 +57,7 @@ export async function requestDelivery(input: {
     door_risk_accepted: false,
     priority: false,
     ...input,
+    payment,
   });
 }
 
@@ -340,10 +343,12 @@ export async function requestPickupOrder(input: {
   /// The customer's card, offered to the store with the order.
   payment?: PaymentInput | null;
 }): Promise<HcRecord> {
+  const payment = input.payment ? await workedFor(input.merchant, input.payment) : input.payment;
   return callZome("dispatch", "request_pickup_order", {
     kitchen_notes: "",
     promo_code_ref: null,
     ...input,
+    payment,
   });
 }
 

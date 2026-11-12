@@ -2,6 +2,7 @@
 //! for an order the member placed there.
 
 use super::*;
+use rewards_integrity::ledger::OpenGrant;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GrantInput {
@@ -27,7 +28,22 @@ pub(crate) fn latest_member_order(catalog_ref: &ActionHash, customer: &AgentPubK
     Ok(newest.and_then(|link| parse_member_order_tag(&link.tag.0)).map(|(_, order)| order))
 }
 
+/// What a grant of `points` for `reason` says, freshly salted.
+pub(crate) fn payload(points: u32, reason: GrantReason) -> ExternResult<GrantPayload> {
+    Ok(GrantPayload { points, reason, salt: random_bytes(GRANT_SALT_BYTES as u32)?.to_vec() })
+}
+
+/// A grant of `payload` to `to`, sealed between the two and committed to.
+pub(crate) fn sealed_grant(to: &AgentPubKey, catalog_ref: &ActionHash, order: ActionHash, payload: &GrantPayload) -> ExternResult<PointsGrant> {
+    Ok(PointsGrant { to: to.clone(), catalog_ref: catalog_ref.clone(), order, sealed: seal(to, payload)?, commitment: grant_commitment(to, catalog_ref, payload)? })
+}
+
 pub(crate) fn grant(to: AgentPubKey, catalog_ref: ActionHash, order: Option<ActionHash>, points: u32, reason: GrantReason) -> ExternResult<ActionHash> {
+    give(to, catalog_ref, order, points, reason).map(|given| given.grant)
+}
+
+/// `grant`, handing back the grant as a ledger plays it.
+pub(crate) fn give(to: AgentPubKey, catalog_ref: ActionHash, order: Option<ActionHash>, points: u32, reason: GrantReason) -> ExternResult<OpenGrant> {
     // A gift or a birthday is bounded; a balance carried over is what it was.
     let given = !matches!(reason, GrantReason::Carried { .. });
     if points == 0 || (given && points > MAX_GRANT_POINTS) {
@@ -37,14 +53,14 @@ pub(crate) fn grant(to: AgentPubKey, catalog_ref: ActionHash, order: Option<Acti
         Some(order) => order,
         None => latest_member_order(&catalog_ref, &to)?.ok_or(guest("You can give points only to customers who've ordered here."))?,
     };
-    let payload = GrantPayload { points, reason };
-    let sealed = seal(&to, &payload)?;
-    let hash = create_entry(&EntryTypes::PointsGrant(PointsGrant { to: to.clone(), catalog_ref: catalog_ref.clone(), order, sealed }))?;
+    let payload = payload(points, reason)?;
+    let hash = create_entry(&EntryTypes::PointsGrant(sealed_grant(&to, &catalog_ref, order, &payload)?))?;
     create_link(to.clone(), hash.clone(), LinkTypes::AgentToGrant, ())?;
     // Dated as the member reads it: by the grant's own record.
     let at = get(hash.clone(), GetOptions::local())?.map_or(sys_time()?, |r| r.action().timestamp());
-    record_grant(&catalog_ref, &to, open_grant(hash.clone(), at, &payload))?;
-    Ok(hash)
+    let given = open_grant(hash, at, &payload);
+    record_grant(&catalog_ref, &to, given.clone())?;
+    Ok(given)
 }
 
 /// The caller's store giving a customer points -- an apology, a thank-you.

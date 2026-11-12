@@ -19,16 +19,17 @@ export type Dispatch = <T>(fn: string, payload: unknown) => Promise<T>;
 export const MAX_ATTEMPTS_PER_ORDER = 5;
 export const MAX_ATTEMPTS_PER_PAYER_HOUR = 10;
 /// New accounts are free, so the per-payer caps don't stop cards being
-/// tested across many of them. Only payers with no history count, and only
-/// they are slowed: one whose card held here before, or who has completed
-/// orders with several stores (`payer_established`), carries on as
-/// ever. This many declines of such payers' cards within the window is a
-/// burst; during one they're let through one at a time, a try every
-/// `NEW_PAYER_TRICKLE_MS` -- too slow to test cards with, but never closed
-/// to a real newcomer, whoever starts the burst.
+/// tested across many of them. Only payers with no history count: one
+/// whose card held here before, or who has a record on the network
+/// (`payer_established`), carries on as ever. This many declines of the
+/// others' cards within the window is a burst. During one, the agent asks
+/// payers with no history for proof of work (`record_busy`; their app does
+/// it as it sends the card), doubling it each time the declines double. A
+/// real newcomer spends a moment of their device's time and is never
+/// turned away for someone else's attack; testing cards costs that work
+/// again for every account, and more the longer it goes on.
 export const MAX_NEW_PAYER_DECLINES = 10;
 export const NEW_PAYER_WINDOW_MS = 15 * 60_000;
-export const NEW_PAYER_TRICKLE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 /// Attempts older than an authorization can live are forgotten.
 const ATTEMPTS_KEPT_MS = 8 * 24 * HOUR_MS;
@@ -152,6 +153,18 @@ export class Engine {
     }
   }
 
+  /// The busy record payers with no history do work for now: the one in
+  /// force, if it asks as much as `level` -- or a new one, kept for the
+  /// window.
+  async #busy(state: State, level: number): Promise<NonNullable<State["busy"]>> {
+    const { dispatch, now } = this.#o;
+    if (state.busy && state.busy.until > now() && state.busy.level >= level) return state.busy;
+    const until = now() + NEW_PAYER_WINDOW_MS;
+    const asked = await dispatch<{ busy: ActionHash; bits: number }>("record_busy", { level, until: until * 1000 });
+    state.busy = { record: hex(asked.busy), bits: asked.bits, level, until };
+    return state.busy;
+  }
+
   async #authorize(due: Extract<PaymentDue, { Authorize: unknown }>["Authorize"], state: State) {
     const { dispatch, processor, currency, now } = this.#o;
     const decline = async (code: DeclineCode) => {
@@ -181,8 +194,9 @@ export class Engine {
       }
       state.declines = state.declines.filter((at) => now() - at < NEW_PAYER_WINDOW_MS);
       if (!established && state.declines.length >= MAX_NEW_PAYER_DECLINES) {
-        if (state.trickleAt !== null && now() - state.trickleAt < NEW_PAYER_TRICKLE_MS) return decline("TooManyAttempts");
-        state.trickleAt = now();
+        const busy = await this.#busy(state, Math.floor(Math.log2(state.declines.length / MAX_NEW_PAYER_DECLINES)));
+        const proved = due.work !== null && hex(due.work.busy) === busy.record && due.work.bits >= busy.bits;
+        if (!proved) return decline("WorkNeeded");
       }
       const savedAs = due.token === null ? (state.saved[payer] ?? null) : null;
       if (due.token === null && !savedAs) return decline("NoSavedCard");

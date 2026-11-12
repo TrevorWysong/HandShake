@@ -62,9 +62,18 @@ await runScenario(async (scenario) => {
   await assert.rejects(catalog(carol)("move_store", store), /hasn't taken over an account/, "only a key that took over an account moves its stores");
   const stores = await retryUntil(() => catalog(bob)<View[]>("catalogs_of", alice.agentPubKey), (list) => list.length === 1);
   assert.ok(same(stores[0].original_action, store), "the new key sees the stores the account ran");
+  // Three moves at once -- a double tap, a retry while the first still runs:
+  // the chain is written in strict order, so only one lands; the others
+  // fail as it moves under them, and tried again, find it.
+  const attempts = await Promise.allSettled([0, 1, 2].map(() => bob.cells[0].callZome<Uint8Array>({ zome_name: "catalog", fn_name: "move_store", payload: store })));
+  const landed = attempts.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+  assert.ok(landed.length >= 1, "at least one lands");
   const moved = await catalog(bob)<Uint8Array>("move_store", store);
+  for (const each of landed) assert.ok(same(each, moved), "every move that landed made the same store");
   assert.deepEqual(await catalog(bob)<Uint8Array>("move_store", store), moved, "safe to repeat: one new store");
-  console.log("[PASS] the account's new key moves its store, once");
+  const owned = await catalog(bob)<View[]>("list_my_catalogs", null);
+  assert.equal(owned.length, 1, "and the new key owns exactly one store: no copy left half-made or twice");
+  console.log("[PASS] the account's new key moves its store once, however many times it's asked at once");
 
   // ===== A faithful copy, every reference remapped =====
   const copy = decodeEntry<{ owner: Uint8Array; business_name: string; dietary_tags: string[] }>(await catalog(bob)<HcRecord>("get_catalog", moved));

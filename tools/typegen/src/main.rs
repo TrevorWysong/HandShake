@@ -82,7 +82,7 @@ const SOURCES: &[Source] = &[
     only("dnas/handshake/zomes/dispatch/coordinator/src/verification.rs", &["VerificationView", "VerificationTerms"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/appeals.rs", &["AppealView", "RulingView", "AppealsPage"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/receipts.rs", &["Receipt", "ReceiptLine", "ReceiptPayment"]),
-    only("dnas/handshake/zomes/dispatch/coordinator/src/payments.rs", &["PaymentInput", "OfferPaymentInput", "PaymentDue", "RecordHoldInput", "RecordActionInput", "RecordDeclinedInput", "RecordSettlementInput", "RecordRefundInput", "PaymentStanding", "MyPaymentInput", "PaymentHoldInput", "OrderPayment", "ChargedPart", "PaymentHistoryItem", "PaymentOwed", "SavedCard"]),
+    only("dnas/handshake/zomes/dispatch/coordinator/src/payments.rs", &["PaymentInput", "OfferPaymentInput", "PaymentDue", "RecordHoldInput", "RecordActionInput", "RecordDeclinedInput", "RecordSettlementInput", "RecordRefundInput", "PaymentStanding", "MyPaymentInput", "PaymentHoldInput", "OrderPayment", "ChargedPart", "PaymentHistoryItem", "PaymentOwed", "SavedCard", "WorkShown", "WorkAsked", "WorkForLeg", "BusyInput"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/settlement.rs", &["DueClaim"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/deliveries.rs", &["OrderTiming", "StoreStep", "StoreStepDue"]),
     only("dnas/handshake/zomes/dispatch/coordinator/src/matching.rs", &["RankedBid", "BidWeight"]),

@@ -157,6 +157,16 @@ pub struct HandShakeDnaProperties {
     /// How long after a store settles an order its customer may appeal.
     #[serde(default)]
     pub appeal_window_secs: Option<u64>,
+    #[serde(default)]
+    pub appeal_arrival_secs: Option<u64>,
+    #[serde(default)]
+    pub established_payer_lookback: Option<u32>,
+    #[serde(default)]
+    pub established_payer_days: Option<u32>,
+    #[serde(default)]
+    pub newcomer_work_bits: Option<u8>,
+    #[serde(default)]
+    pub newcomer_work_max_bits: Option<u8>,
 }
 
 /// Services an app uses beside the network itself.
@@ -251,6 +261,13 @@ pub fn arbiters() -> Vec<AgentPubKey> {
 /// weeks unless the network says.
 pub fn appeal_window() -> Duration {
     Duration::from_secs(setting(|p| p.appeal_window_secs, 14 * 86_400))
+}
+
+/// How long after an appeal window closes an appeal filed at its last
+/// moment may still be reaching other peers: after this, a reader that
+/// finds none can take it that none is coming.
+pub fn appeal_arrival() -> Duration {
+    Duration::from_secs(setting(|p| p.appeal_arrival_secs, 86_400))
 }
 
 /// Whether bidding needs a current driver verification.
@@ -456,6 +473,33 @@ pub fn max_ranked_bids() -> u32 {
 /// can't vouch for itself with one store of its own.
 pub fn established_payer_stores() -> u32 {
     setting(|p| p.established_payer_stores, 2).max(1)
+}
+
+/// How many of a payer's most recent orders `established_payer_stores` is
+/// looked for in -- what one payment's check costs at most, however long
+/// their history.
+pub fn established_payer_lookback() -> u32 {
+    setting(|p| p.established_payer_lookback, 200).max(1)
+}
+
+/// How long ago a completed order must have been placed to count towards
+/// `established_payer_stores`: a record takes time to build, so accounts
+/// made for an attack can't build one the same day.
+pub fn established_payer_days() -> u32 {
+    setting(|p| p.established_payer_days, 7)
+}
+
+/// The work a payee seeing card testing first asks of a payer with no
+/// history, in zero bits of a hash: 2^bits tries on average, about a second
+/// on a phone at the default.
+pub fn newcomer_work_bits() -> u8 {
+    setting(|p| p.newcomer_work_bits, 18).clamp(1, 32)
+}
+
+/// The most work it asks, however long the testing goes on: each step past
+/// `newcomer_work_bits` doubles it.
+pub fn newcomer_work_max_bits() -> u8 {
+    setting(|p| p.newcomer_work_max_bits, 22).clamp(newcomer_work_bits(), 32)
 }
 
 /// How many open orders a driver's feed lists at once, oldest first -- so a

@@ -346,6 +346,14 @@ export interface BirthdayShare {
   sealed_month: XSalsa20Poly1305EncryptedData;
 }
 
+export interface BusyInput {
+  /**
+   * How far past the network's first ask for work: each step doubles it.
+   */
+  level: number;
+  until: Timestamp;
+}
+
 /**
  * Why an order was cancelled. Validation checks each reason against its
  * author, so the customer's view of what happened can be trusted.
@@ -445,6 +453,25 @@ export interface CardView {
    * `HISTORY` of them.
    */
   history: PointsLine[];
+}
+
+/**
+ * A grant carried to the next network: the store that gave it, and the
+ * grant shown.
+ */
+export interface CarriedGift {
+  catalog_ref: ActionHash;
+  revealed: RevealedGrant;
+}
+
+/**
+ * Every grant a member was given here, sealed to their key on the next
+ * network as their account leaves this one: `Vec<CarriedGift>`. Their new
+ * key reads it here, through its `previous` role, and shows each store
+ * that came over the grants it gave them (`GiftReveal`).
+ */
+export interface CarriedGifts {
+  sealed: SealedChunks;
 }
 
 /**
@@ -577,6 +604,12 @@ export type DeclineCode =
    * The payee's limit on attempts was reached.
    */
   | "TooManyAttempts"
+  /**
+   * The payee is seeing cards tested, and asks payers with no history
+   * for proof of work with their card (`PayeeBusy`): the app does it on
+   * the next try.
+   */
+  | "WorkNeeded"
   /**
    * This card can't take this offer: a first-order deal it has used here.
    */
@@ -1132,9 +1165,26 @@ export interface EarnRules {
   happy_hours: HappyHour[];
 }
 
+/**
+ * The bytes of salt a grant's payload carries.
+ */
+export const GRANT_SALT_BYTES = 16;
+
 export interface GeoPoint {
   lat: number;
   lon: number;
+}
+
+/**
+ * A member showing the store `catalog_ref`'s owner grants they were given
+ * by an earlier key of the store (one lost, then recovered), or by its
+ * store on the network before (a migration): `Vec<RevealedGrant>`, sealed
+ * to the owner. The store counts each one it can prove; so does the
+ * member's card, alike.
+ */
+export interface GiftReveal {
+  catalog_ref: ActionHash;
+  sealed: SealedChunks;
 }
 
 /**
@@ -1188,6 +1238,10 @@ export interface GrantInput {
 export interface GrantPayload {
   points: number;
   reason: GrantReason;
+  /**
+   * Random, so its commitment can't be guessed by trying every amount.
+   */
+  salt: Uint8Array;
 }
 
 export type GrantReason =
@@ -1590,6 +1644,14 @@ export const MAX_DIETARY_TAGS = 32;
 export const MAX_EMAIL_CHARS = 254;
 
 export const MAX_EXPIRY_DAYS = 1095;
+
+/**
+ * The most a list of grants one entry carries may weigh, unsealed (a
+ * `GiftReveal`, `CarriedGifts`): half of what Holochain lets an entry
+ * weigh, the rest left for the boxes and the entry around them. A longer
+ * list goes in as many entries as it takes, so none is ever cut short.
+ */
+export const MAX_GIFT_LIST_BYTES = 2000000;
 
 export const MAX_GRANT_NOTE_CHARS = 200;
 
@@ -2603,6 +2665,18 @@ export interface Part {
 }
 
 /**
+ * A payee's agent saying it's seeing card testing: until `until`, it lets
+ * a payer with no history (`established_payer_stores`) try a card only
+ * with proof of `bits` of work (`WorkProof`). A real newcomer spends a
+ * moment of their device's time; someone testing cards spends it again for
+ * every account, and more the longer they keep at it.
+ */
+export interface PayeeBusy {
+  until: Timestamp;
+  bits: number;
+}
+
+/**
  * What a payee's processor needs the payer to do before it authorizes --
  * 3-D Secure's challenge -- sealed to the payer.
  */
@@ -2656,10 +2730,16 @@ export type PaymentDue =
         newcomer_deal: ActionHash | null;
         /**
          * The payer has completed orders with several stores before
-         * (`established_payer_stores`): someone with a record, never slowed
-         * when declined cards from new accounts look like card testing.
+         * (`established_payer_stores`): someone with a record, never asked
+         * for work when declined cards from new accounts look like card
+         * testing.
          */
         payer_established: boolean;
+        /**
+         * The work the payer did for one of the payee's busy records, if
+         * any (`WorkProof`): which, and how many bits it proves.
+         */
+        work: WorkShown | null;
         /**
          * When the payer made the offer: what a kept card is dated by.
          */
@@ -2778,6 +2858,11 @@ export interface PaymentInput {
    * Let the payee keep this card for the payer's later payments to them.
    */
   save: boolean;
+  /**
+   * Work done for the payee, while it's asking newcomers for some
+   * (`work_needed`).
+   */
+  work: WorkProof | null;
 }
 
 /**
@@ -2834,6 +2919,10 @@ export interface PaymentOffer {
    * The `PaymentAction` this answers, once the payer has done it.
    */
   resumes: ActionHash | null;
+  /**
+   * Work the payer did for a payee seeing card testing (`PayeeBusy`).
+   */
+  work: WorkProof | null;
 }
 
 /**
@@ -3105,6 +3194,11 @@ export interface PlanView {
  * inbox with them. The store counts its own grants when it works out a
  * member's points; the member's app, opening it, knows it's the store's
  * (a sealed box names its sender).
+ *
+ * `commitment` is a salted hash of what it says (`grant_commitment`):
+ * it gives nothing away, but lets the member show a grant to someone it
+ * wasn't sealed to -- the store's next key, or its store on the next
+ * network -- who can tell it's what the store said (`RevealedGrant`).
  */
 export interface PointsGrant {
   to: AgentPubKey;
@@ -3117,6 +3211,7 @@ export interface PointsGrant {
    */
   order: ActionHash;
   sealed: XSalsa20Poly1305EncryptedData;
+  commitment: Uint8Array;
 }
 
 /**
@@ -3909,6 +4004,16 @@ export type ReputationTarget =
   | { Customer: AgentPubKey };
 
 /**
+ * A grant shown by the member it's to, to a store it wasn't sealed to:
+ * the grant (its action), and what it said. True if it matches the
+ * grant's commitment (`RevealedGrant::proves`).
+ */
+export interface RevealedGrant {
+  grant: ActionHash;
+  payload: GrantPayload;
+}
+
+/**
  * A star rating + free-text comment against a real, completed order --
  * deliberately its own entry type rather than a `ReputationEventKind`
  * variant, since a review is customer-facing content (shown on a store's
@@ -4400,4 +4505,36 @@ export interface WarrantSummary {
   count: number;
   has_chain_fork: boolean;
   has_invalid_chain_op: boolean;
+}
+
+/**
+ * What a busy payee asks of a payer with no history: work for its record
+ * `busy`, of `bits`.
+ */
+export interface WorkAsked {
+  payee: AgentPubKey;
+  busy: ActionHash;
+  bits: number;
+}
+
+export interface WorkForLeg {
+  order: ActionHash;
+  leg: PaymentLeg;
+}
+
+/**
+ * Work done for a payee's `busy` record: a nonce whose hash, with who's
+ * paying whom and that record, starts with as many zero bits as it asks.
+ */
+export interface WorkProof {
+  busy: ActionHash;
+  nonce: number;
+}
+
+/**
+ * Work a payer showed for one of the payee's busy records.
+ */
+export interface WorkShown {
+  busy: ActionHash;
+  bits: number;
 }

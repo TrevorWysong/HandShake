@@ -61,7 +61,7 @@ export function PaySheet({
     (node: HTMLDivElement | null) => {
       if (!node) return;
       let gone = false;
-      const wallet = { onToken: (token: string) => void run(() => offerWallet({ token, save: false })), onError: (err: unknown) => !gone && setError(describeError(err)) };
+      const wallet = { onToken: (token: string) => void run(() => offerWallet({ token, save: false, work: null })), onError: (err: unknown) => !gone && setError(describeError(err)) };
       form.mount(node, wallet).then(
         () => !gone && setReady(true),
         (err) => !gone && setError(describeError(err)),
@@ -77,7 +77,7 @@ export function PaySheet({
   const pay = () =>
     action.run(async () => {
       const token = await form.tokenize();
-      await onCard({ token, save: offerToSave && save });
+      await onCard({ token, save: offerToSave && save, work: null });
     });
 
   return (

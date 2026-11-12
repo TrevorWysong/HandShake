@@ -34,6 +34,8 @@ pub enum EntryTypes {
     MemberStores(MemberStores),
     #[entry_type(visibility = "private")]
     KeptVersion(KeptVersion),
+    GiftReveal(GiftReveal),
+    CarriedGifts(CarriedGifts),
 }
 
 #[hdk_link_types]
@@ -55,6 +57,12 @@ pub enum LinkTypes {
     /// A member of a store's program, base = the store, target and tag = the
     /// member: the store's list of members, for its birthdays and stats.
     StoreToMember,
+    /// A member's reveal of grants from the store's earlier key or network,
+    /// base = the store, tagged with the member.
+    StoreToReveal,
+    /// A member's gifts, sealed to their key on the next network as they
+    /// leave this one, base = the member.
+    MemberToCarriedGifts,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -66,7 +74,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::RewardsProgram(program) => validate_new_program(&program, action.author(), action.prev_action()),
             EntryTypes::PointsGrant(grant) => match store_owner(&grant.catalog_ref)? {
                 Some((owner, _)) if &owner == action.author() => match ordered_there(&grant.order, &grant.to, &grant.catalog_ref)? {
-                    true => sealed_problem("a grant", &grant.sealed),
+                    true if grant.commitment.len() == 32 => sealed_problem("a grant", &grant.sealed),
+                    true => invalid("a grant commits to what it says"),
                     false => invalid("a store grants points only to someone who's ordered there, citing their order"),
                 },
                 _ => invalid("only a store's owner grants its points"),
@@ -78,6 +87,17 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             // reckoning: nobody else reads or relies on it.
             EntryTypes::MemberAccount(_) | EntryTypes::MemberStores(_) | EntryTypes::KeptVersion(_) => valid(),
             EntryTypes::MemberBirthdays(b) => require(b.months.iter().all(|(_, m)| (1..=12).contains(m)), "a birth month is between 1 and 12"),
+            EntryTypes::GiftReveal(reveal) => match store_owner(&reveal.catalog_ref)? {
+                Some(_) => match handshake_integrity_support::sealed_chunks_problem("a reveal", &reveal.sealed, MAX_GIFT_LIST_BYTES) {
+                    Some(problem) => invalid(&problem),
+                    None => valid(),
+                },
+                None => invalid("grants are revealed to a store, by its original action"),
+            },
+            EntryTypes::CarriedGifts(gifts) => match handshake_integrity_support::sealed_chunks_problem("carried gifts", &gifts.sealed, MAX_GIFT_LIST_BYTES) {
+                Some(problem) => invalid(&problem),
+                None => valid(),
+            },
         },
         Checked::Update { entry: EntryTypes::RewardsProgram(program), action } => validate_program_update(&program, action.author(), &action.original_action_address),
         Checked::Update { .. } => invalid("only a program changes"),
@@ -196,6 +216,10 @@ fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target: &A
         LinkTypes::CatalogToProgram => decode::<RewardsProgram>(&record).filter(|_| matches!(record.action().data, ActionData::Create(_))).map(|p| p.catalog_ref.into()),
         LinkTypes::AgentToGrant => decode::<PointsGrant>(&record).map(|g| g.to.into()),
         LinkTypes::CatalogToBirthday => decode::<BirthdayShare>(&record).map(|b| b.catalog_ref.into()),
+        // Tagged with the member who wrote it, so a store finds each
+        // member's by prefix.
+        LinkTypes::StoreToReveal => decode::<GiftReveal>(&record).filter(|_| tag.0 == author.get_raw_39()).map(|r| r.catalog_ref.into()),
+        LinkTypes::MemberToCarriedGifts => decode::<CarriedGifts>(&record).map(|_| author.clone().into()),
         LinkTypes::MemberToOrder | LinkTypes::StoreToMember => None,
     };
     match expected {
