@@ -98,6 +98,20 @@ A longer timeout is right only when the step is genuinely slow, never to make a 
 
 **Browser smoke tests (Playwright)** -- `npm run test:e2e` (from `web/`) signs in as the seeded people and walks each role's main screens against the dev conductor, so run `npm run dev:reset` first. They add an order or two to the seeded world.
 
+**Benchmarks** -- `npx tsx bench/scale.ts` (from `tests/tryorama/`) times calls on real conductors as a menu, an account and a moment get busy: a menu read whole as it grows; one customer's Nth order at a store, settled as the store's app would, with a program change at each size to time a rebuild; an order left open to hold an account back; and a crowd's orders open at once, to hundreds, with the driver's feed checked against its limit. Each read is timed cold and warm (p50, p95, slowest); `--json` writes the numbers. It takes an hour or more at its default sizes, so it isn't part of CI; `bench/chain-cost.ts` times validation walks over long chains.
+
+Measured on a laptop, November 2026, for a member's card and the store's reward check:
+
+| Orders at the store | Before the running total (card / check) | After (card / check) |
+| --- | --- | --- |
+| 10 | 231 / 218 ms | 16 / 27 ms |
+| 50 | 1,687 / 1,114 ms | 35 / 48 ms |
+| 150 | (not run: minutes) | 87 / 91 ms |
+
+The remaining rise tracks the conductor's database growing, not the history: reads that do constant work rose by about the same factor (the store's active queue 7 to 36 ms, a history page 15 to 41 ms). Placing and accepting an order grow with the customer's orders that day, which the daily limits read: here, every order, placed minutes apart.
+
+A menu of 250 items reads whole (page by page) in 68 ms, against 9 ms for 25. Adding an item rises from 77 ms to 139 ms over the same range, because each edit reads the whole menu again to work out the store's dietary tags (`catalog::menu::recompute_dietary_tags`). That's fine at these sizes; it's the first thing to index if stores carry thousands of items.
+
 **Unit tests** -- `npm test` (from `web/`) for the UI's pure logic (`web/test/`); `cargo test --workspace --lib` from the repo root for Rust.
 
 CI (`.github/workflows/ci.yml`) runs all of these, plus the zome build, the generated-types check, and the web typecheck, lint and build.
