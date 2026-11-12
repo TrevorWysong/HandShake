@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { createAgent } from "../src/agent.ts";
 import { processorFor } from "../src/adapters/index.ts";
 import { memoryCredentials } from "../src/credentials.ts";
-import { LOCK_FILE, holdFolder, startOf } from "../src/lock.ts";
+import { LOCK_FILE, holdFolder, holderFrom, startOf } from "../src/lock.ts";
 import { fileStore } from "../src/state.ts";
 
 const folder = () => mkdtemp(path.join(tmpdir(), "handshake-agent-"));
@@ -105,4 +105,16 @@ test("a process id the system gave someone else is a dead holder's; the holder i
   } finally {
     other.kill();
   }
+});
+
+test("a lock record that isn't a real holder's is damaged, and taken over: never left to keep the agent from starting", async () => {
+  for (const record of [{ pid: 0, token: "x" }, { pid: -1, token: "x" }, { pid: 1.5, token: "x" }, { pid: "42", token: "x" }, { pid: 42, token: "" }, { pid: 42, token: 7 }, { pid: 42, token: "x", started: 5 }, { pid: 42, token: "x", started: "" }, null, [], "pid"]) {
+    assert.equal(holderFrom(record), "unreadable", JSON.stringify(record));
+    const dir = await folder();
+    await writeFile(path.join(dir, `${LOCK_FILE}.1`), JSON.stringify(record));
+    // Alive by any test, were it read as a holder: taken over all the same.
+    const release = await holdFolder(dir, () => true);
+    await release();
+  }
+  assert.deepEqual(holderFrom({ pid: 42, token: "x" }), { pid: 42, token: "x", started: null, since: 0 }, "one from before start times were kept");
 });

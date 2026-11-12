@@ -56,7 +56,9 @@ export function running(pid: number): boolean {
 /// When process `pid` started, as this system tells it -- the same however
 /// often it's asked, and different for another process the id is given to
 /// later -- or `null` where that can't be told. Linux: its start tick since
-/// boot, and which boot. macOS: `ps`'s start time. Windows: PowerShell's.
+/// boot, and which boot. Windows: PowerShell's start time, to the tick.
+/// macOS: `ps`'s, to the second, with the program's name -- an id reused
+/// within the same second would have to be the same program as well.
 export function startOf(pid: number): string | null {
   try {
     if (process.platform === "linux") {
@@ -70,7 +72,7 @@ export function startOf(pid: number): string | null {
     const [command, args] =
       process.platform === "win32"
         ? ["powershell", ["-NoProfile", "-Command", `(Get-Process -Id ${pid}).StartTime.ToUniversalTime().ToString('o')`]]
-        : ["ps", ["-o", "lstart=", "-p", String(pid)]];
+        : ["ps", ["-o", "lstart=,comm=", "-p", String(pid)]];
     const answer = spawnSync(command, args, { encoding: "utf8", timeout: 5_000 });
     const text = answer.status === 0 ? answer.stdout.trim() : "";
     return text || null;
@@ -109,12 +111,25 @@ async function holderOf(path: string): Promise<Holder | "gone" | "unreadable"> {
     throw err;
   }
   try {
-    const holder = JSON.parse(text) as Partial<Holder>;
-    // One from before start times were kept names none: its id alone, then.
-    return typeof holder.pid === "number" && typeof holder.token === "string" ? { ...(holder as Holder), started: holder.started ?? null } : "unreadable";
+    return holderFrom(JSON.parse(text));
   } catch {
     return "unreadable";
   }
+}
+
+/// A generation's record as a holder, if it's a well-formed one: a real
+/// process id (a positive whole number -- never 0, which names this
+/// process's group, nor below), a token, and a start or none. Anything
+/// else is damaged, and taken over like a dead holder's lock: never left
+/// standing to keep an account's agent from starting.
+export function holderFrom(record: unknown): Holder | "unreadable" {
+  if (typeof record !== "object" || record === null) return "unreadable";
+  const { pid, token, started, since } = record as Record<string, unknown>;
+  if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return "unreadable";
+  if (typeof token !== "string" || token.length === 0) return "unreadable";
+  // One from before start times were kept names none: its id alone, then.
+  if (started !== undefined && started !== null && (typeof started !== "string" || started.length === 0)) return "unreadable";
+  return { pid, token, started: started ?? null, since: typeof since === "number" ? since : 0 };
 }
 
 /// Puts `holder` in place as generation `path`, whole, in one step --
