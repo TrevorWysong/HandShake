@@ -8,7 +8,7 @@
 //! stake from the new key's balance.
 
 use crate::*;
-use handshake_coordinator_support::{call_local, call_role, chain::mine};
+use handshake_coordinator_support::{all_arrived, call_local, call_role, chain::mine, record_targets};
 use std::collections::BTreeMap;
 
 /// How far back a store's line is followed.
@@ -206,8 +206,10 @@ fn copy_promos(source: &Source, from: &ActionHash, to: &ActionHash, items: &BTre
 /// last.
 fn standing_moves(catalog: &ActionHash, link_type: LinkTypes) -> ExternResult<Vec<StoreSuccession>> {
     let mut moves = Vec::new();
+    // Every move linked, or an error: one left out would end a store's
+    // line short, or send nobody on from it.
     let links = get_links(LinkQuery::try_new(catalog.clone(), link_type)?, GetStrategy::default())?;
-    for record in resolve_links_to_records_with_original(links).into_iter().map(|(_, r)| r) {
+    for record in all_arrived(&record_targets(links), GetStrategy::default())? {
         let Some(moved) = decode_or::<StoreSuccession>(&record) else { continue };
         // Validated against the store it moved from, so that store's record
         // exists: one not here yet, or an owner whose successor can't be
