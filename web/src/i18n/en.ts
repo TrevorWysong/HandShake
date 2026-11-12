@@ -1357,6 +1357,7 @@ export const en = {
   "payments.trouble.Forget": "A saved card couldn't be deleted",
   "payments.trouble.Unreadable": "An order's payments couldn't be read from the network",
   "payments.trouble.WithdrawalUnreadable": "A card someone kept with you was withdrawn, and can't be deleted until their withdrawal reaches this device",
+  "payments.trouble.RefundUnreadable": "A refund an arbiter awarded can't be made until its ruling reaches this device",
   "payments.trouble.round": "Payments couldn't be checked",
   "payments.trouble.detail": "This device keeps trying. If it goes on, look at your processor's dashboard: a key revoked or an account closed there stops payments here.",
   "payments.gettingPaidDetail": "Stores and drivers are paid straight into their own Stripe, Square or Clover account. HandShake never touches the money, and takes nothing.",

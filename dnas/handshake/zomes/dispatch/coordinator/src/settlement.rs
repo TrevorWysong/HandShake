@@ -13,7 +13,7 @@ use dispatch_integrity::basis::{basis_of, chain_check, part_bid};
 use dispatch_integrity::direct::{entitlement, part_share, Entitlement, Part, PaymentLeg};
 use dispatch_integrity::*;
 use handshake_coordinator_support::chain::mine;
-use handshake_coordinator_support::{decode_or, guest, original_action_of};
+use handshake_coordinator_support::{decode_or, guest, original_action_of, read_records};
 use hdk::prelude::*;
 
 // --- what's known about an order, for settling it ---
@@ -60,11 +60,15 @@ impl Facts {
 
 /// Every version of an order, original first then each update, across any
 /// branches.
+///
+/// Every version, or an error: one the network lists that hasn't reached
+/// this device yet would leave out what it says -- a cancellation, a
+/// delivery -- and the order would be settled on the rest.
 fn versions(order: &ActionHash) -> ExternResult<Vec<Record>> {
     let mut out = Vec::new();
     let mut frontier = vec![order.clone()];
     while let Some(hash) = frontier.pop() {
-        let Some(Details::Record(details)) = get_details(hash, GetOptions::default())? else { continue };
+        let Some(Details::Record(details)) = get_details(hash.clone(), GetOptions::default())? else { return Err(guest(format!("order version {hash} hasn't reached this device yet"))) };
         frontier.extend(details.updates.iter().map(|u| u.action_address().clone()));
         out.push(details.record);
     }
@@ -73,7 +77,7 @@ fn versions(order: &ActionHash) -> ExternResult<Vec<Record>> {
 
 fn facts(order: &ActionHash) -> ExternResult<Option<Facts>> {
     let all = versions(order)?;
-    let Some(original) = all.first() else { return Ok(None) };
+    let Some(original) = all.first() else { return Err(guest("the order hasn't reached this device yet")) };
     let delivery = decode_or::<DeliveryOrder>(original).is_some();
     let mut facts = Facts { decisions: crate::issues::decisions_of(order)?, cancellations: Vec::new(), releases: Vec::new(), replaced: Vec::new(), finished: false, received: false };
     let mut delivered = false;
@@ -138,23 +142,38 @@ pub struct DueClaim {
 }
 
 /// A payment record on an order, with its author.
-fn payment_records(order: &ActionHash) -> ExternResult<Vec<Record>> {
-    let mut out = Vec::new();
-    for link in get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToPayment)?, GetStrategy::default())? {
-        let Some(hash) = link.target.into_action_hash() else { continue };
-        if let Some(record) = get(hash, GetOptions::default())? {
-            out.push(record);
-        }
+/// Every payment record on `order` -- offers, holds, answers, settlements,
+/// refunds -- or only `author`'s; read on this device (`GetStrategy::Local`)
+/// or from the network, as their links are.
+///
+/// All of them, or an error. Validation links only a payment record of this
+/// order, so a link whose record can't be read is one whose record hasn't
+/// reached this device yet -- links and records travel apart, as after a
+/// restore. Left out, a hold would look unplaced (and be placed again), a
+/// settlement unmade, an answer unanswered; so every reader here waits for
+/// it instead, and the agent reports the order as unreadable meanwhile.
+pub(crate) fn payment_records(order: &ActionHash, author: Option<&AgentPubKey>, strategy: GetStrategy) -> ExternResult<Vec<Record>> {
+    let mut query = LinkQuery::try_new(order.clone(), LinkTypes::OrderToPayment)?;
+    if let Some(author) = author {
+        query = query.author(author.clone());
     }
-    Ok(out)
+    let hashes: Vec<ActionHash> = get_links(query, strategy)?.into_iter().filter_map(|link| link.target.into_action_hash()).collect();
+    let records = match strategy {
+        GetStrategy::Local => hashes.iter().map(|hash| get(hash.clone(), GetOptions::local())).collect::<ExternResult<Vec<_>>>()?,
+        _ => read_records(&hashes)?,
+    };
+    hashes.into_iter().zip(records).map(|(hash, record)| record.ok_or_else(|| guest(format!("payment record {hash} is linked but hasn't reached this device yet")))).collect()
 }
 
 /// The holds on `order`, by leg, each with its hash and author.
 pub(crate) fn holds_on(order: &ActionHash) -> ExternResult<Vec<(ActionHash, AgentPubKey, PaymentHold, PaymentOffer)>> {
     let mut out = Vec::new();
-    for record in payment_records(order)? {
+    for record in payment_records(order, None, GetStrategy::default())? {
         let Some(hold) = decode_or::<PaymentHold>(&record) else { continue };
-        let Some(offer) = get(hold.offer.clone(), GetOptions::default())?.and_then(|r| decode_or::<PaymentOffer>(&r)) else { continue };
+        // Validated as answering an offer: one not here yet is an error, as
+        // its hold's would be.
+        let offer_record = get(hold.offer.clone(), GetOptions::default())?.ok_or_else(|| guest(format!("the offer hold {} answers hasn't reached this device yet", record.action_address())))?;
+        let Some(offer) = decode_or::<PaymentOffer>(&offer_record) else { continue };
         if &offer.order == order {
             out.push((record.action_address().clone(), record.action().author().clone(), hold, offer));
         }
@@ -164,15 +183,16 @@ pub(crate) fn holds_on(order: &ActionHash) -> ExternResult<Vec<(ActionHash, Agen
 
 /// The settlements on `order`, each with its hash and author.
 pub(crate) fn settlements_on(order: &ActionHash) -> ExternResult<Vec<(ActionHash, AgentPubKey, PaymentSettlement)>> {
-    Ok(payment_records(order)?
+    Ok(payment_records(order, None, GetStrategy::default())?
         .into_iter()
         .filter_map(|record| decode_or::<PaymentSettlement>(&record).map(|s| (record.action_address().clone(), record.action().author().clone(), s)))
         .collect())
 }
 
-/// The order's terms, its store, and whether it's a delivery.
+/// The order's terms, its store, and whether it's a delivery; `None` for a
+/// record that isn't an order, and an error for one not here yet.
 fn order_terms(order: &ActionHash) -> ExternResult<Option<OrderTerms>> {
-    let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
+    let record = get(order.clone(), GetOptions::default())?.ok_or(guest("the order hasn't reached this device yet"))?;
     Ok(decode_or::<DeliveryOrder>(&record).map(|o| OrderTerms::of_delivery(&o)).or_else(|| decode_or::<PickupOrder>(&record).map(|o| OrderTerms::of_pickup(&o))))
 }
 
@@ -214,14 +234,17 @@ fn settled_enough(leg: &PaymentLeg, facts: &Facts) -> bool {
 /// What the caller's hold `hold_ref` settles with, once nothing can change
 /// it: the claims to capture, each with what it takes (none: release it
 /// all). `None` while it might still change -- or if it isn't the caller's.
+/// What it rests on that hasn't reached this device is an error, never
+/// "not yet": a hold waiting on a read is reported, not left to lapse.
 pub(crate) fn settlement_due(hold_ref: &ActionHash) -> ExternResult<Option<Vec<DueClaim>>> {
     let me = agent_info()?.agent_initial_pubkey;
-    let Some(record) = get(hold_ref.clone(), GetOptions::default())? else { return Ok(None) };
+    let record = get(hold_ref.clone(), GetOptions::default())?.ok_or(guest("the hold hasn't reached this device yet"))?;
     let Some(hold) = decode_or::<PaymentHold>(&record) else { return Ok(None) };
     if record.action().author() != &me {
         return Ok(None);
     }
-    let Some(offer) = get(hold.offer.clone(), GetOptions::default())?.and_then(|r| decode_or::<PaymentOffer>(&r)) else { return Ok(None) };
+    let offer_record = get(hold.offer.clone(), GetOptions::default())?.ok_or(guest("the offer a hold answers hasn't reached this device yet"))?;
+    let Some(offer) = decode_or::<PaymentOffer>(&offer_record) else { return Ok(None) };
     let order = offer.order;
     let (Some(facts), Some(terms)) = (facts(&order)?, order_terms(&order)?) else { return Ok(None) };
     if !settled_enough(&offer.leg, &facts) {

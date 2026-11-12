@@ -411,10 +411,11 @@ test("an order the network couldn't read is the payee's to hear about, never tak
   const z = zome();
   const problems: string[] = [];
   const engine = new Engine({ dispatch: z.dispatch, processor: testProcessor("USD"), state: memoryStore(), currency: "USD", account: "Test:test:", onProblem: (what) => problems.push(what) });
-  z.due = [{ Unreadable: { order: h(70), reason: "its record isn't here yet" } }, authorize(12, 52)];
+  z.due = [{ Unreadable: { order: h(70), reason: "its record isn't here yet" } }, { RefundUnreadable: { ruling: h(71), reason: "its ruling isn't here yet" } }, authorize(12, 52)];
   assert.equal(await engine.round(), 1, "the order that could be read is held");
   assert.equal(z.recorded("record_hold").length, 1);
-  assert.deepEqual(problems, ["Unreadable"], "and the one that couldn't is reported, not passed over");
+  assert.deepEqual(z.recorded("record_refund"), [], "and nothing is refunded on what couldn't be read");
+  assert.deepEqual(problems.sort(), ["RefundUnreadable", "Unreadable"], "each that couldn't is reported, not passed over");
 });
 
 test("a withdrawal that couldn't be read keeps its payer's kept card from being charged, and is reported until it's read", async () => {

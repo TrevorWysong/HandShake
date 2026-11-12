@@ -128,6 +128,7 @@ export class Engine {
         // Nothing to do on it yet -- but never taken for "nothing due".
         if ("Unreadable" in item) throw new Error(`what's due on an order couldn't be read: ${item.Unreadable.reason}`);
         if ("WithdrawalUnreadable" in item) throw new Error(`a withdrawn card's withdrawal couldn't be read: ${item.WithdrawalUnreadable.reason}`);
+        if ("RefundUnreadable" in item) throw new Error(`an award to refund couldn't be read: ${item.RefundUnreadable.reason}`);
         // Waits, unanswered: declining it would be the withdrawal's answer
         // before it's known, and the next round reads it again.
         if ("Authorize" in item && item.Authorize.token === null && withdrawing.has(hex(item.Authorize.payer))) throw new Error("the payer withdrew their kept card, and the withdrawal can't be read yet");

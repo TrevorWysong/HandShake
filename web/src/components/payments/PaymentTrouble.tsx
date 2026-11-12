@@ -12,6 +12,7 @@ const KIND: Record<string, MessageKey> = {
   Forget: "payments.trouble.Forget",
   Unreadable: "payments.trouble.Unreadable",
   WithdrawalUnreadable: "payments.trouble.WithdrawalUnreadable",
+  RefundUnreadable: "payments.trouble.RefundUnreadable",
 };
 
 /// A payment due that this device's agent couldn't carry out lately: it

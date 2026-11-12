@@ -2822,6 +2822,18 @@ export type PaymentDue =
         payer: AgentPubKey;
         reason: string;
       };
+    }
+  /**
+   * An arbiter's award against one of the caller's stores whose ruling,
+   * or what it rests on, couldn't be read this time (`reason`): the
+   * refund waits, and the agent says so rather than taking it for none
+   * owed.
+   */
+  | {
+      RefundUnreadable: {
+        ruling: ActionHash;
+        reason: string;
+      };
     };
 
 /**

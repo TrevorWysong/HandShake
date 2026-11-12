@@ -1352,6 +1352,7 @@ export const es: Catalog = {
   "payments.trouble.Forget": "No se pudo borrar una tarjeta guardada",
   "payments.trouble.Unreadable": "No se pudieron leer de la red los pagos de un pedido",
   "payments.trouble.WithdrawalUnreadable": "Se retiró una tarjeta que alguien guardó contigo, y no se puede borrar hasta que su retiro llegue a este dispositivo",
+  "payments.trouble.RefundUnreadable": "No se puede hacer un reembolso que otorgó un árbitro hasta que su resolución llegue a este dispositivo",
   "payments.trouble.round": "No se pudieron revisar los pagos",
   "payments.trouble.detail": "Este dispositivo sigue intentándolo. Si continúa, mira el panel de tu procesador: una clave revocada o una cuenta cerrada allí detiene los pagos aquí.",
   "payments.gettingPaidDetail": "Las tiendas y los repartidores cobran directamente en su propia cuenta de Stripe, Square o Clover. HandShake nunca toca el dinero ni se queda con nada.",

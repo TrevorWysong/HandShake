@@ -9,7 +9,7 @@
 //! writes back is validated against the order. An app that only *asks*
 //! can't move money -- so neither can anything injected into its page.
 
-use crate::settlement::{holds_on, settlement_due, settlements_on, DueClaim};
+use crate::settlement::{holds_on, payment_records, settlement_due, settlements_on, DueClaim};
 use dispatch_integrity::payments::{leg_context, LegContext};
 use dispatch_integrity::*;
 use handshake_coordinator_support::{call_local, call_role, decode_or, find_latest, guest, open, original_action_of, seal};
@@ -159,12 +159,7 @@ pub(crate) fn offer_saved(order: &ActionHash, leg_of: PaymentLeg) -> ExternResul
     let me = me()?;
     // My own offers, from this device: one that can't be read is an error,
     // never "not offered yet" -- which would offer the card twice.
-    let mut offered = false;
-    for link in get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToPayment)?.author(me), GetStrategy::Local)? {
-        let Some(hash) = link.target.into_action_hash() else { continue };
-        let record = get(hash, GetOptions::local())?.ok_or(guest("one of my payment records isn't on this device"))?;
-        offered |= decode_or::<PaymentOffer>(&record).is_some_and(|o| o.leg == leg_of);
-    }
+    let offered = payment_records(order, Some(&me), GetStrategy::Local)?.iter().any(|record| decode_or::<PaymentOffer>(record).is_some_and(|o| o.leg == leg_of));
     if offered || saved_with(&context.payee)?.is_none() {
         return Ok(false);
     }
@@ -290,6 +285,11 @@ pub enum PaymentDue {
     /// their kept card for nothing meanwhile, and says so, and the next
     /// round reads it again -- then it's a `Forget`.
     WithdrawalUnreadable { payer: AgentPubKey, reason: String },
+    /// An arbiter's award against one of the caller's stores whose ruling,
+    /// or what it rests on, couldn't be read this time (`reason`): the
+    /// refund waits, and the agent says so rather than taking it for none
+    /// owed.
+    RefundUnreadable { ruling: ActionHash, reason: String },
 }
 
 /// How many days of orders the agent looks through: a card authorization
@@ -366,9 +366,8 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
     let mut held_legs: Vec<PaymentLeg> = Vec::new();
     let mut settled: Vec<ActionHash> = Vec::new();
     let mut my_holds: Vec<(ActionHash, PaymentHold)> = Vec::new();
-    for link in get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToPayment)?, GetStrategy::default())? {
-        let Some(hash) = link.target.into_action_hash() else { continue };
-        let Some(record) = get(hash.clone(), GetOptions::default())? else { continue };
+    for record in payment_records(order, None, GetStrategy::default())? {
+        let hash = record.action_address().clone();
         let author = record.action().author().clone();
         if let Some(offer) = decode_or::<PaymentOffer>(&record) {
             offers.push((record.action().timestamp(), hash, author, offer));
@@ -500,7 +499,9 @@ pub struct WorkAsked {
 fn busy_now(payee: &AgentPubKey) -> ExternResult<Option<(ActionHash, PayeeBusy)>> {
     let query = LinkQuery::try_new(payee.clone(), LinkTypes::PayeeToBusy)?.author(payee.clone());
     let Some(link) = get_links(query, GetStrategy::default())?.into_iter().filter(|link| &link.author == payee).max_by_key(|link| link.timestamp) else { return Ok(None) };
-    let Some(record) = link.target.into_action_hash().map(|hash| get(hash, GetOptions::default())).transpose()?.flatten() else { return Ok(None) };
+    let Some(hash) = link.target.into_action_hash() else { return Ok(None) };
+    // Linked, so written: not here yet is an error, never "not busy".
+    let record = get(hash, GetOptions::default())?.ok_or(guest("the payee's busy record hasn't reached this device yet"))?;
     let now = sys_time()?;
     Ok(decode_or::<PayeeBusy>(&record).filter(|busy| busy.until > now && record.action().author() == payee).map(|busy| (record.action_address().clone(), busy)))
 }
@@ -587,7 +588,8 @@ fn line_of(store: &ActionHash) -> ExternResult<Vec<ActionHash>> {
 fn claimed_in_line(line: &[ActionHash], fingerprint: &str) -> ExternResult<Option<ActionHash>> {
     let digest = card_digest(line.last().expect("a line holds its store"), fingerprint);
     for catalog in line {
-        let Some(record) = get(catalog.clone(), GetOptions::default())? else { continue };
+        // A store left out could hide where the card already took the deal.
+        let record = get(catalog.clone(), GetOptions::default())?.ok_or(guest("a store in the line hasn't reached this device yet"))?;
         let owner = record.action().author().clone();
         let query = LinkQuery::try_new(catalog.clone(), LinkTypes::StoreToNewcomerCard)?.author(owner.clone()).tag_prefix(LinkTag::new(digest.clone()));
         if let Some(link) = get_links(query, GetStrategy::default())?.into_iter().find(|link| link.author == owner && link.tag.0 == digest) {
@@ -650,42 +652,56 @@ pub fn claim_newcomer_card(input: NewcomerCardInput) -> ExternResult<bool> {
     Ok(true)
 }
 
+/// What the order cites that isn't here yet is an error: taken for "no
+/// deal", the card would go unchecked against the store's one per card.
 fn newcomer_deal(order: &ActionHash) -> ExternResult<Option<ActionHash>> {
-    let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
+    let record = get(order.clone(), GetOptions::default())?.ok_or(guest("the order hasn't reached this device yet"))?;
     let (promo, store) = match (decode_or::<DeliveryOrder>(&record), decode_or::<PickupOrder>(&record)) {
         (Some(o), _) => (o.promo_code_ref, o.catalog_ref),
         (None, Some(o)) => (o.promo_code_ref, o.catalog_ref),
         _ => return Ok(None),
     };
     let Some(promo) = promo else { return Ok(None) };
-    let first_only = get(promo, GetOptions::default())?.and_then(|r| decode_or::<catalog_types::PromoCode>(&r)).is_some_and(|p| p.limits.first_order_only);
+    let promo = get(promo, GetOptions::default())?.ok_or(guest("the promo an order cites hasn't reached this device yet"))?;
+    let first_only = decode_or::<catalog_types::PromoCode>(&promo).is_some_and(|p| p.limits.first_order_only);
     Ok(first_only.then_some(store))
 }
 
-/// Awards against the caller's stores not yet refunded in full.
+/// Awards against the caller's stores not yet refunded in full -- each on
+/// its own: one that can't be read is reported (`RefundUnreadable`), and
+/// the rest go on.
 fn refunds_due(me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>> {
     let mut due = Vec::new();
     for link in get_links(LinkQuery::try_new(me.clone(), LinkTypes::StoreOwnerToRuling)?, GetStrategy::default())? {
         let Some(ruling_ref) = link.target.into_action_hash() else { continue };
-        let Some(ruling) = get(ruling_ref.clone(), GetOptions::default())?.and_then(|r| decode_or::<Ruling>(&r)) else { continue };
-        if ruling.award == 0 {
-            continue;
-        }
-        let Some(appeal) = get(ruling.appeal.clone(), GetOptions::default())?.and_then(|r| decode_or::<Appeal>(&r)) else { continue };
-        // The store's settlement of the customer's payment, and what it's
-        // refunded from it.
-        let holds = holds_on(&appeal.order)?;
-        let Some((hold_ref, _, hold, _)) = holds.into_iter().find(|(_, author, _, offer)| author == me && offer.leg == PaymentLeg::Customer) else { continue };
-        let Some((settlement_ref, _, settlement)) = settlements_on(&appeal.order)?.into_iter().find(|(_, author, s)| author == me && s.hold == hold_ref) else { continue };
-        let refunds: Vec<PaymentRefund> = refunds_on(&appeal.order, me)?;
-        let paid: u64 = refunds.iter().filter(|r| r.ruling == ruling_ref).map(|r| r.amount).sum();
-        let from_settlement: u64 = refunds.iter().filter(|r| r.settlement == settlement_ref).map(|r| r.amount).sum();
-        let amount = ruling.award.saturating_sub(paid).min(settlement.captured.saturating_sub(from_settlement));
-        if amount > 0 {
-            due.push(PaymentDue::Refund { settlement: settlement_ref, reference: hold.reference, ruling: ruling_ref, amount });
+        match refund_due(me, &ruling_ref) {
+            Ok(refund) => due.extend(refund),
+            Err(err) => due.push(PaymentDue::RefundUnreadable { ruling: ruling_ref, reason: err.to_string() }),
         }
     }
     Ok(due)
+}
+
+/// What's still to refund of the award `ruling_ref`, if anything. The
+/// ruling is validated against its appeal, and that against its order, so
+/// any of them not here yet is an error, never "nothing owed".
+fn refund_due(me: &AgentPubKey, ruling_ref: &ActionHash) -> ExternResult<Option<PaymentDue>> {
+    let record = get(ruling_ref.clone(), GetOptions::default())?.ok_or(guest("the ruling hasn't reached this device yet"))?;
+    let Some(ruling) = decode_or::<Ruling>(&record) else { return Ok(None) };
+    if ruling.award == 0 {
+        return Ok(None);
+    }
+    let appeal = get(ruling.appeal.clone(), GetOptions::default())?.ok_or(guest("the appeal a ruling answers hasn't reached this device yet"))?;
+    let Some(appeal) = decode_or::<Appeal>(&appeal) else { return Ok(None) };
+    // The store's settlement of the customer's payment, and what it's
+    // refunded from it. None yet: the award waits for the settlement.
+    let Some((hold_ref, _, hold, _)) = holds_on(&appeal.order)?.into_iter().find(|(_, author, _, offer)| author == me && offer.leg == PaymentLeg::Customer) else { return Ok(None) };
+    let Some((settlement_ref, _, settlement)) = settlements_on(&appeal.order)?.into_iter().find(|(_, author, s)| author == me && s.hold == hold_ref) else { return Ok(None) };
+    let refunds: Vec<PaymentRefund> = refunds_on(&appeal.order, me)?;
+    let paid: u64 = refunds.iter().filter(|r| r.ruling == *ruling_ref).map(|r| r.amount).sum();
+    let from_settlement: u64 = refunds.iter().filter(|r| r.settlement == settlement_ref).map(|r| r.amount).sum();
+    let amount = ruling.award.saturating_sub(paid).min(settlement.captured.saturating_sub(from_settlement));
+    Ok((amount > 0).then(|| PaymentDue::Refund { settlement: settlement_ref, reference: hold.reference, ruling: ruling_ref.clone(), amount }))
 }
 
 /// What `payee` charged of their hold `hold_ref` on `order` -- its
@@ -698,14 +714,7 @@ pub(crate) fn charged_of(order: &ActionHash, payee: &AgentPubKey, hold_ref: &Act
 }
 
 fn refunds_on(order: &ActionHash, author: &AgentPubKey) -> ExternResult<Vec<PaymentRefund>> {
-    let mut out = Vec::new();
-    for link in get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToPayment)?.author(author.clone()), GetStrategy::default())? {
-        let Some(hash) = link.target.into_action_hash() else { continue };
-        if let Some(refund) = get(hash, GetOptions::default())?.and_then(|r| decode_or::<PaymentRefund>(&r)) {
-            out.push(refund);
-        }
-    }
-    Ok(out)
+    Ok(payment_records(order, Some(author), GetStrategy::default())?.iter().filter_map(decode_or::<PaymentRefund>).collect())
 }
 
 // --- what a payee's agent did ---
@@ -1080,9 +1089,8 @@ pub fn my_payment(input: MyPaymentInput) -> ExternResult<Option<PaymentStanding>
     // My newest offer on the leg, and the payee's answer to it.
     let mut newest: Option<(Timestamp, ActionHash)> = None;
     let mut answers: Vec<(ActionHash, Record)> = Vec::new();
-    for link in get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToPayment)?, GetStrategy::default())? {
-        let Some(hash) = link.target.into_action_hash() else { continue };
-        let Some(record) = get(hash.clone(), GetOptions::default())? else { continue };
+    for record in payment_records(&order, None, GetStrategy::default())? {
+        let hash = record.action_address().clone();
         if record.action().author() == &me {
             if decode_or::<PaymentOffer>(&record).is_some_and(|o| o.leg == input.leg) && newest.as_ref().is_none_or(|(at, _)| record.action().timestamp() > *at) {
                 newest = Some((record.action().timestamp(), hash));
