@@ -131,7 +131,9 @@ pub(crate) fn saw_start(order: &ActionHash, requester: &AgentPubKey, merchant: &
 /// -- and spent no points (the rewards zome).
 #[hdk_extern]
 pub fn cancelled_in_time(order: ActionHash) -> ExternResult<bool> {
-    let Some(original) = get(order.clone(), GetOptions::default())? else { return Ok(false) };
+    // An order not read yet is an error, never one that wasn't called off:
+    // the points it spent would stay spent.
+    let original = handshake_coordinator_support::arrived(&order)?;
     let Some(Fields { requester, merchant, .. }) = fields(&original) else { return Ok(false) };
     let by_customer = versions_of(&order)?.iter().any(|r| r.action().author() == &requester && fields(r).is_some_and(|f| f.cancellation == Some(Cancellation::ByCustomer)));
     Ok(by_customer && !saw_start(&order, &requester, &merchant)?)

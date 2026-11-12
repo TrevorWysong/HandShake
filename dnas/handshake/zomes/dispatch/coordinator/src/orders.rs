@@ -783,6 +783,8 @@ pub(crate) fn record_cancellation(version: &Record, order_ref: &ActionHash) -> E
     // Only the update that cancelled it: before it, the order still waiting
     // on its store, or taken on.
     let ActionData::Update(update) = &version.action().data else { return Ok(()) };
+    // Best-effort, in the cancelling call itself: a prior not read yet
+    // skips the event rather than undo the cancellation.
     let Some(prior) = get(update.original_action_address.clone(), GetOptions::default())? else { return Ok(()) };
     let waiting = match (decode_or::<DeliveryOrder>(&prior), decode_or::<PickupOrder>(&prior)) {
         (Some(p), _) if p.status != DeliveryStatus::Cancelled => matches!(p.status, DeliveryStatus::Scheduled | DeliveryStatus::Placed),

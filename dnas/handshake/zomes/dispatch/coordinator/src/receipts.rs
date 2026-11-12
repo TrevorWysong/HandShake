@@ -141,8 +141,7 @@ fn my_payments(order_ref: &ActionHash) -> ExternResult<Vec<ReceiptPayment>> {
     let settlements = crate::settlement::settlements_on(&order)?;
     let mut out = Vec::new();
     for (hold_ref, payee, hold, offer) in crate::settlement::holds_on(&order)? {
-        let payer = get(hold.offer.clone(), GetOptions::default())?.map(|r| r.action().author().clone());
-        if payer.as_ref() != Some(&me) {
+        if handshake_coordinator_support::arrived(&hold.offer)?.action().author() != &me {
             continue;
         }
         let charged = crate::payments::charged_of(&order, &payee, &hold_ref, &settlements)?;
