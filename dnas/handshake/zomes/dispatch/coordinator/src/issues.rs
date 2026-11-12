@@ -204,7 +204,9 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
 fn store_answer(issue: &ActionHash, merchant: &AgentPubKey) -> ExternResult<Option<bool>> {
     for link in get_links(LinkQuery::try_new(issue.clone(), LinkTypes::IssueToResponse)?.author(merchant.clone()), GetStrategy::default())? {
         let Some(hash) = link.target.into_action_hash() else { continue };
-        if let Some(response) = get(hash, GetOptions::default())?.and_then(|r| decode_or::<IssueResponse>(&r)) {
+        // Validated, by the store: one not here yet is an error, never an
+        // issue left unanswered.
+        if let Some(response) = decode_or::<IssueResponse>(&arrived(&hash)?) {
             return Ok(Some(response.accept));
         }
     }
@@ -384,7 +386,7 @@ pub(crate) fn report_dismissed(version: &Record) -> ExternResult<bool> {
     if !ready {
         return Ok(false);
     }
-    Ok(get(update.original_action_address.clone(), GetOptions::default())?.and_then(|r| decode_or::<PickupOrder>(&r)).is_some_and(|prior| prior.status == PickupStatus::Disputed))
+    Ok(decode_or::<PickupOrder>(&arrived(&update.original_action_address)?).is_some_and(|prior| prior.status == PickupStatus::Disputed))
 }
 
 /// `handshake_governance::claim_grace`, in microseconds. The store can decide
@@ -538,7 +540,7 @@ pub fn decide_order(order: ActionHash) -> ExternResult<bool> {
     let (cited, issues_refund) = refund_owed(&terms, &issues);
     // A customer who collected their delivery themselves is refunded the
     // store's share of the fee it would have paid a driver, too.
-    let collected_owed = match get(basis.clone(), GetOptions::default())?.and_then(dispatch_integrity::lineage::Version::of) {
+    let collected_owed = match dispatch_integrity::lineage::Version::of(arrived(&basis)?) {
         Some(version) if version.order.status == DeliveryStatus::Collected => dispatch_integrity::lineage::collection_owed(&version)?,
         _ => 0,
     };
@@ -557,8 +559,8 @@ fn no_show_word(latest: &Record) -> ExternResult<Option<Record>> {
         Some(DeliveryStatus::Unanswered) => Ok(Some(latest.clone())),
         Some(DeliveryStatus::Disputed) => {
             let ActionData::Update(update) = &latest.action().data else { return Ok(None) };
-            let prior = get(update.original_action_address.clone(), GetOptions::default())?;
-            Ok(prior.filter(|p| status(p) == Some(DeliveryStatus::Unanswered)))
+            let prior = arrived(&update.original_action_address)?;
+            Ok((status(&prior) == Some(DeliveryStatus::Unanswered)).then_some(prior))
         }
         _ => Ok(None),
     }
@@ -581,7 +583,7 @@ fn delivered_on(order: &ActionHash, delivery: &DeliveryOrder, outcome: &ActionHa
 /// never arrived.
 fn came_out_of_claim(delivered: &Record) -> ExternResult<bool> {
     let ActionData::Update(update) = &delivered.action().data else { return Ok(false) };
-    Ok(get(update.original_action_address.clone(), GetOptions::default())?.and_then(|r| decode_or::<DeliveryOrder>(&r)).is_some_and(|prior| prior.status == DeliveryStatus::Disputed))
+    Ok(decode_or::<DeliveryOrder>(&arrived(&update.original_action_address)?).is_some_and(|prior| prior.status == DeliveryStatus::Disputed))
 }
 
 /// The store deciding the order never arrived, on the customer's claim
@@ -590,7 +592,7 @@ fn came_out_of_claim(delivered: &Record) -> ExternResult<bool> {
 fn not_delivered(order: &ActionHash, claim: &Record, delivery: &DeliveryOrder) -> ExternResult<ActionHash> {
     let hash = record_decision(DecisionWire::Outcome(OrderOutcome { order: order.clone(), outcome: Outcome::NotDelivered { claim: claim.action_address().clone() } , beacon: None }))?;
     if let Some(bid_ref) = &delivery.accepted_bid {
-        if let Some(bid) = get(bid_ref.clone(), GetOptions::default())?.and_then(|r| decode_or::<Bid>(&r)) {
+        if let Some(bid) = decode_or::<Bid>(&arrived(bid_ref)?) {
             let driver = bid.bidder;
             record_reputation_event(&driver, ReputationTargetWire::Driver(driver.clone()), order.clone(), ReputationEventKindWire::DisputeResolvedAgainst, hash.clone())?;
             record_reputation_event(&driver, ReputationTargetWire::Driver(driver.clone()), order.clone(), ReputationEventKindWire::CollateralForfeited { amount: bid.collateral }, hash.clone())?;

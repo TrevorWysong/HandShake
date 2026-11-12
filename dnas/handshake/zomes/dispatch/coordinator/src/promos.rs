@@ -150,7 +150,9 @@ pub(crate) fn ensure_promo_allowed(promo_ref: &ActionHash, catalog_ref: &ActionH
 /// with it.
 pub(crate) fn promo_used_up(order: &ActionHash, promo_ref: Option<&ActionHash>) -> ExternResult<bool> {
     let Some(promo_ref) = promo_ref else { return Ok(false) };
-    let Some(promo) = get(promo_ref.clone(), GetOptions::default())?.and_then(|r| decode_or::<PromoCode>(&r)) else { return Ok(false) };
+    // Validated as the order's code: one not here yet is an error, never a
+    // code with uses left.
+    let Some(promo) = decode_or::<PromoCode>(&handshake_coordinator_support::arrived(promo_ref)?) else { return Ok(false) };
     let Some(total) = promo.limits.total else { return Ok(false) };
     let identity = original_action_of(promo_ref.clone())?;
     let me = agent_info()?.agent_initial_pubkey;
