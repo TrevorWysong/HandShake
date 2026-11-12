@@ -568,7 +568,9 @@ fn no_show_word(latest: &Record) -> ExternResult<Option<Record>> {
 /// reaches the driver: their completed delivery, and the pay they collect
 /// on it. Finished: off every queue, the driver's included.
 fn delivered_on(order: &ActionHash, delivery: &DeliveryOrder, outcome: &ActionHash) -> ExternResult<()> {
-    if let Some(bid) = delivery.accepted_bid.as_ref().and_then(|b| get(b.clone(), GetOptions::default()).ok().flatten()).and_then(|r| decode_or::<Bid>(&r)) {
+    // The bid the order names, validated: one not here yet holds the
+    // decision back, rather than leave the driver's delivery uncounted.
+    if let Some(bid) = delivery.accepted_bid.as_ref().map(arrived).transpose()?.and_then(|r| decode_or::<Bid>(&r)) {
         record_reputation_event(&bid.bidder, ReputationTargetWire::Driver(bid.bidder.clone()), order.clone(), ReputationEventKindWire::OrderCompleted, outcome.clone())?;
         let _ = send_remote_signal(crate::signals::RemoteSignal::Payment { order_hash: order.clone() }, vec![bid.bidder]);
     }

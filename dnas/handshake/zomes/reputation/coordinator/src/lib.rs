@@ -16,7 +16,7 @@
 //! doc comment for why.
 
 use hdk::prelude::*;
-use handshake_coordinator_support::{arrived, call_local, call_role, decode_or, get_links_many, guest, original_action_of, read_records, resolve_latest, written};
+use handshake_coordinator_support::{all_arrived, arrived, call_local, call_role, decode_or, get_links_many, guest, original_action_of, read_records, resolve_latest, written};
 use std::collections::BTreeMap;
 use reputation_integrity::*;
 
@@ -437,7 +437,9 @@ pub fn get_rating_summary(target: ReviewTarget) -> ExternResult<RatingSummary> {
     let owners: Option<Vec<AgentPubKey>> = match &target {
         ReviewTarget::Store(_) => {
             let catalogs: Vec<ActionHash> = bases.iter().filter_map(|base| base.clone().into_action_hash()).collect();
-            Some(read_records(&catalogs)?.into_iter().flatten().map(|record| record.action().author().clone()).collect())
+            // Every one of them: an owner left out would have their own
+            // accounts' reviews counted.
+            Some(all_arrived(&catalogs, GetStrategy::default())?.into_iter().map(|record| record.action().author().clone()).collect())
         }
         ReviewTarget::Driver(_) => None,
     };

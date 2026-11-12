@@ -582,7 +582,16 @@ pub(crate) fn end_carries() -> ExternResult<u32> {
     let mut recorded = 0;
     for (committed, order) in commits.into_iter().filter(|(c, _)| !ended.contains(c)) {
         let latest = resolve_latest(order.clone())?;
-        let left = decode_or::<DeliveryOrder>(&latest).is_some_and(|o| o.status.is_terminal() || o.status == DeliveryStatus::Unanswered || driver_of(&o).ok().flatten().is_none_or(|(_, bid)| bid.bidder != me));
+        // A driver whose bid can't be read yet hasn't been seen to leave:
+        // tried again next round, never recorded on a guess.
+        let left = match decode_or::<DeliveryOrder>(&latest) {
+            Some(o) if o.status.is_terminal() || o.status == DeliveryStatus::Unanswered => true,
+            Some(o) => match driver_of(&o) {
+                Ok(driver) => driver.is_none_or(|(_, bid)| bid.bidder != me),
+                Err(_) => continue,
+            },
+            None => false,
+        };
         let basis = if left {
             Some(latest.action_address().clone())
         } else {
