@@ -7,7 +7,7 @@ import App from "./App";
 import { HOST } from "./holochain/host";
 import { loadLocale } from "./i18n";
 import { resumeSession } from "./store/session";
-import { teachServiceWorker, forgetPending } from "./lib/network/push";
+import { teachServiceWorker, forgetPending, keepWakeable } from "./lib/network/push";
 import { followTheme } from "./lib/ui/theme";
 
 // Light or dark, as they chose, before anything's drawn.
@@ -20,6 +20,8 @@ void resumeSession();
 teachServiceWorker();
 // Registrations let go of while the relay couldn't be reached: told now.
 void forgetPending().catch(() => {});
+// Fresh wake tokens before the ones held run out.
+keepWakeable();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

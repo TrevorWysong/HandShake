@@ -21,9 +21,18 @@ if (config.webPush) senders.webpush = webPushSender(config.webPush, fetcher);
 if (config.apns) senders.apns = apnsSender(config.apns);
 if (config.fcm) senders.fcm = fcmSender(config.fcm, fetcher);
 
+const store = new Store(config.dbPath);
+// Devices none of whose tokens still work, forgotten now and every hour.
+const forgetStale = () => {
+  const forgotten = store.forgetUnseenSince(Date.now() - config.tokenTtlMs);
+  log(`holding ${store.count()} of at most ${config.maxDevices} devices${forgotten ? `; forgot ${forgotten} unseen in a token's lifetime` : ""}`);
+};
+forgetStale();
+setInterval(forgetStale, 60 * 60 * 1000).unref();
+
 serve(
   {
-    store: new Store(config.dbPath),
+    store,
     tokenKey: config.tokenKey,
     senders,
     vapidPublicKey: config.webPush ? vapidPublicKey(config.webPush.privateKey) : null,
@@ -31,6 +40,8 @@ serve(
     wakesPerMinute: config.wakesPerMinute,
     wakesPerDay: config.wakesPerDay,
     requestsPerIpPerHour: config.requestsPerIpPerHour,
+    registrationsPerIpPerDay: config.registrationsPerIpPerDay,
+    maxDevices: config.maxDevices,
     wakeRequestsPerIpPerMinute: config.wakeRequestsPerIpPerMinute,
     appOrigins: config.appOrigins,
     trustProxy: config.trustProxy,

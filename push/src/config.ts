@@ -17,6 +17,8 @@ export interface Config {
   wakesPerDay: number;
   wakeRequestsPerIpPerMinute: number;
   requestsPerIpPerHour: number;
+  registrationsPerIpPerDay: number;
+  maxDevices: number;
   appOrigins: string[];
   /// Whether the service is behind one proxy that adds the caller's address
   /// to X-Forwarded-For -- whose entry, the last, it then trusts.
@@ -61,6 +63,8 @@ export function loadConfig(): Config {
     wakesPerMinute: number("WAKES_PER_MINUTE", 4),
     wakesPerDay: number("WAKES_PER_DAY", 150),
     requestsPerIpPerHour: number("REQUESTS_PER_IP_PER_HOUR", 60),
+    registrationsPerIpPerDay: number("REGISTRATIONS_PER_IP_PER_DAY", 10),
+    maxDevices: number("MAX_DEVICES", 500_000),
     wakeRequestsPerIpPerMinute: number("WAKE_REQUESTS_PER_IP_PER_MINUTE", 120),
     appOrigins: required("APP_ORIGINS")
       .split(",")

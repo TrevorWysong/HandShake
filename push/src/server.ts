@@ -1,8 +1,8 @@
 // The relay's HTTP face, for the app:
 //
 //   GET    /config                               -> {channels, vapidPublicKey}
-//   POST   /devices          {channel, address}  -> {device, secret, tokens}
-//   POST   /devices/tokens   {device, secret}    -> {tokens}   (a fresh batch)
+//   POST   /devices          {channel, address}  -> {device, secret, tokens, expiresAt}
+//   POST   /devices/tokens   {device, secret}    -> {tokens, expiresAt}   (a fresh batch)
 //   DELETE /devices          {device, secret}    -> {}         (forget it)
 //   POST   /wake             {token}             -> {}         (always the same)
 //   GET    /health
@@ -15,6 +15,14 @@
 // most, and so often a day; each address may ask for only so many wakes a
 // minute; and wakes are delivered a few at a time, from a bounded queue, so
 // a flood of requests -- valid tokens or not -- can't exhaust the relay.
+//
+// Registering needs no account, so nothing stops someone making up
+// addresses that look real. What bounds them: each address registers only
+// so many devices a day; the relay holds only so many in all, and past that
+// refuses new ones rather than grow; and a device that hasn't asked for
+// tokens in a token's lifetime -- so none of its tokens still work -- is
+// forgotten (`Store.forgetUnseenSince`, run by main.ts). The app asks for
+// a fresh batch before its tokens run out.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Outcome, Sender } from "./channels/channel.ts";
 import type { Channel, Store } from "./store.ts";
@@ -26,6 +34,10 @@ const TOKENS_PER_BATCH = 20;
 /// Wakes delivered at once, and waiting to be: past that, a wake is dropped.
 const SENDING = 16;
 const WAITING = 1024;
+/// The addresses each limit remembers at once. Past that the longest-known
+/// is let go, so a flood from many addresses can't grow the relay's memory
+/// -- and frees only addresses that flood itself crowded out.
+const ADDRESSES_REMEMBERED = 100_000;
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
@@ -43,8 +55,14 @@ export interface Deps {
   wakesPerDay: number;
   /// Registrations and token batches one address may ask for an hour.
   requestsPerIpPerHour: number;
+  /// Devices one address may register a day.
+  registrationsPerIpPerDay: number;
+  /// The most devices the relay holds: past it, registering is refused.
+  maxDevices: number;
   /// Wakes one address may ask for a minute, valid tokens or not.
   wakeRequestsPerIpPerMinute: number;
+  /// How many addresses each limit remembers -- for tests.
+  addressesRemembered?: number;
   /// How many wakes are delivered at once, and may wait -- for tests.
   wakeQueue?: { sending: number; waiting: number };
   appOrigins: string[];
@@ -100,7 +118,7 @@ export function requester(ip: string): string {
 }
 
 export function handler(deps: Deps) {
-  const { store, tokenKey, senders, log = () => {}, onWake = () => {}, wakeQueue = { sending: SENDING, waiting: WAITING } } = deps;
+  const { store, tokenKey, senders, log = () => {}, onWake = () => {}, wakeQueue = { sending: SENDING, waiting: WAITING }, addressesRemembered = ADDRESSES_REMEMBERED } = deps;
   const channels = Object.keys(senders) as Channel[];
 
   /// When each device was last woken, for its limits. Kept in memory: a
@@ -131,11 +149,15 @@ export function handler(deps: Deps) {
       const address = requester(forwarded || req.socket.remoteAddress || "unknown");
       const recent = (requests.get(address) ?? []).filter((at) => at > now - windowMs);
       if (recent.length >= limit) throw new HttpError(429, "Too many requests from here. Try again later.");
+      // Kept newest last, so the first is the one known longest.
+      requests.delete(address);
+      if (requests.size >= addressesRemembered) requests.delete(requests.keys().next().value!);
       requests.set(address, [...recent, now]);
     };
   }
   const throttle = perAddress(deps.requestsPerIpPerHour, HOUR_MS);
   const throttleWakes = perAddress(deps.wakeRequestsPerIpPerMinute, MINUTE_MS);
+  const throttleRegistrations = perAddress(deps.registrationsPerIpPerDay, DAY_MS);
 
   // Wakes waiting to be delivered, a few at a time.
   const waiting: string[] = [];
@@ -155,9 +177,12 @@ export function handler(deps: Deps) {
     }
   }
 
+  /// A fresh batch of tokens, and when they stop working -- so the app
+  /// knows to ask for more before then.
   const batch = (device: string) => {
     const expiresAt = Date.now() + deps.tokenTtlMs;
-    return Array.from({ length: TOKENS_PER_BATCH }, () => mintToken(tokenKey, { device, expiresAt }));
+    store.seen(device);
+    return { tokens: Array.from({ length: TOKENS_PER_BATCH }, () => mintToken(tokenKey, { device, expiresAt })), expiresAt };
   };
 
   function authenticated(body: Record<string, unknown>) {
@@ -194,12 +219,17 @@ export function handler(deps: Deps) {
       if (!channels.includes(channel)) throw new HttpError(400, "This relay doesn't deliver that way.");
       const address = text(body.address, "address", MAX_ADDRESS_CHARS);
       if (!senders[channel]!.accepts(address)) throw new HttpError(400, "That isn't an address this relay delivers to.");
+      throttleRegistrations(req);
+      if (store.count() >= deps.maxDevices) {
+        log(`full: ${deps.maxDevices} devices held, a registration refused`);
+        throw new HttpError(503, "This relay can't take more devices just now. Try again later.");
+      }
       const { id, secret } = store.register(channel, address);
-      return { device: id, secret, tokens: batch(id) };
+      return { device: id, secret, ...batch(id) };
     },
     "POST /devices/tokens": async (req) => {
       throttle(req);
-      return { tokens: batch(authenticated(await json(req)).id) };
+      return batch(authenticated(await json(req)).id);
     },
     "DELETE /devices": async (req) => {
       store.forget(authenticated(await json(req)).id);

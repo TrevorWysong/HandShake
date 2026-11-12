@@ -55,13 +55,38 @@ export class Store {
       address TEXT NOT NULL,
       registered_at INTEGER NOT NULL
     )`);
+    // When it last asked for tokens: a relay from before this was kept
+    // counts each device as seen when it registered.
+    const columns = this.db.prepare("PRAGMA table_info(devices)").all() as { name: string }[];
+    if (!columns.some((c) => c.name === "seen_at")) this.db.exec("ALTER TABLE devices ADD COLUMN seen_at INTEGER NOT NULL DEFAULT 0; UPDATE devices SET seen_at = registered_at");
+    this.db.exec("CREATE INDEX IF NOT EXISTS devices_seen_at ON devices (seen_at)");
+  }
+
+  /// How many devices it holds.
+  count(): number {
+    return (this.db.prepare("SELECT COUNT(*) AS n FROM devices").get() as { n: number }).n;
+  }
+
+  /// The device asked for tokens just now.
+  seen(id: string, at = Date.now()) {
+    this.db.prepare("UPDATE devices SET seen_at = ? WHERE id = ?").run(at, id);
+  }
+
+  /// Forgets every device that hasn't asked for tokens since `before`, and
+  /// says how many. Run with a token's lifetime ago, it forgets only devices
+  /// none of whose tokens still work -- nobody can wake them anyway -- so a
+  /// registration that's never used, an abandoned install or a made-up
+  /// address, doesn't stay for good.
+  forgetUnseenSince(before: number): number {
+    return Number(this.db.prepare("DELETE FROM devices WHERE seen_at < ?").run(before).changes);
   }
 
   /// A new device, and the secret only it will hold.
   register(channel: Channel, address: string): { id: string; secret: string } {
+    const now = Date.now();
     const id = randomBytes(16).toString("base64url");
     const secret = randomBytes(32).toString("base64url");
-    this.db.prepare("INSERT INTO devices (id, secret_hash, channel, address, registered_at) VALUES (?, ?, ?, ?, ?)").run(id, hash(secret), channel, address, Date.now());
+    this.db.prepare("INSERT INTO devices (id, secret_hash, channel, address, registered_at, seen_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, hash(secret), channel, address, now, now);
     return { id, secret };
   }
 

@@ -24,18 +24,43 @@ declare global {
   }
 }
 
+/// A wake token, and when the relay stops honouring it.
+interface HeldToken {
+  token: string;
+  expiresAt: number;
+}
+
 interface Registration {
   relay: string;
   device: string;
   secret: string;
+  tokens: HeldToken[];
+}
+
+/// A batch of tokens, as the relay hands them out.
+interface Batch {
   tokens: string[];
+  expiresAt: number;
 }
 
 const KEY = "handshake.push";
 /// Fetch a new batch before the last few are handed out.
 const REFILL_BELOW = 8;
+/// What a token handed to an order has left to live, at least: enough for
+/// the order to run its course, scheduled ahead or slow to settle.
+const LIFE_LEFT_MS = 7 * 24 * 60 * 60 * 1000;
 
-const registration = () => readStoredJson<Registration>(KEY);
+/// This device's registration, holding only tokens that will still work
+/// through an order -- and none from before batches said when they expire.
+function registration(): Registration | null {
+  const stored = readStoredJson<Omit<Registration, "tokens"> & { tokens: unknown[] }>(KEY);
+  if (!stored) return null;
+  const until = Date.now() + LIFE_LEFT_MS;
+  const tokens = stored.tokens.filter((held): held is HeldToken => typeof held === "object" && held !== null && typeof (held as HeldToken).token === "string" && (held as HeldToken).expiresAt > until);
+  return { ...stored, tokens };
+}
+
+const held = ({ tokens, expiresAt }: Batch): HeldToken[] => tokens.map((token) => ({ token, expiresAt }));
 
 /// The relay the network runs, if any.
 function relayUrl(): string | null {
@@ -71,6 +96,12 @@ async function post<T>(url: string, body: unknown, method = "POST"): Promise<T> 
 /// Registers this device with the network's relay: asks for permission
 /// (the runtime's, or the browser's), then where the relay reaches it.
 export async function startWakingWhileClosed(): Promise<void> {
+  await register(false);
+}
+
+/// `startWakingWhileClosed`; `renew` for a device the relay has forgotten,
+/// whose browser subscription may be the reason, so it's made afresh.
+async function register(renew: boolean): Promise<void> {
   const relay = relayUrl();
   if (!relay) throw new Error(t("error.pushNoRelay"));
   let target: { channel: string; address: string };
@@ -81,11 +112,31 @@ export async function startWakingWhileClosed(): Promise<void> {
     if (!vapidPublicKey) throw new Error(t("error.pushNoBrowsers"));
     if ((await Notification.requestPermission()) !== "granted") throw new Error(t("error.pushBlocked"));
     const worker = await navigator.serviceWorker.ready;
-    const subscription = (await worker.pushManager.getSubscription()) ?? (await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytesFromBase64Url(vapidPublicKey) }));
+    const existing = await worker.pushManager.getSubscription();
+    if (renew) await existing?.unsubscribe();
+    const subscription = (!renew && existing) || (await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytesFromBase64Url(vapidPublicKey) }));
     target = { channel: "webpush", address: JSON.stringify(subscription) };
   }
-  const { device, secret, tokens } = await post<{ device: string; secret: string; tokens: string[] }>(`${relay}/devices`, target);
-  store(KEY, JSON.stringify({ relay, device, secret, tokens } satisfies Registration));
+  const { device, secret, ...batch } = await post<{ device: string; secret: string } & Batch>(`${relay}/devices`, target);
+  store(KEY, JSON.stringify({ relay, device, secret, tokens: held(batch) } satisfies Registration));
+}
+
+/// The relay forgot this device -- its address went stale, or it went
+/// unused for a token's lifetime. It's registered again, without asking
+/// anyone: only where permission's already given, else waking stops (the
+/// settings switch then shows off).
+function registerAgain(): void {
+  forget(KEY);
+  const permitted = !!window.__HANDSHAKE_PUSH__ || (webPushSupported() && Notification.permission === "granted");
+  if (permitted) void register(true).catch(() => forget(KEY));
+}
+
+/// Keeps this device wakeable: on every start, a fresh batch when the
+/// tokens it holds are running low or running out -- which also keeps the
+/// relay from forgetting it.
+export function keepWakeable(): void {
+  const current = registration();
+  if (current && current.relay === relayUrl() && current.tokens.length < REFILL_BELOW) refill(current);
 }
 
 /// A registration this device let go of, whose relay hasn't yet heard it
@@ -132,15 +183,15 @@ export async function forgetPending(): Promise<void> {
 let refilling: Promise<void> | null = null;
 
 /// Fetches a new batch of tokens -- or, if the relay has forgotten this
-/// device, stops waking it (the settings switch then shows off).
+/// device, registers it again (`registerAgain`).
 function refill(current: Registration) {
-  refilling ??= post<{ tokens: string[] }>(`${current.relay}/devices/tokens`, { device: current.device, secret: current.secret })
-    .then(({ tokens }) => {
+  refilling ??= post<Batch>(`${current.relay}/devices/tokens`, { device: current.device, secret: current.secret })
+    .then((batch) => {
       const latest = registration();
-      if (latest?.device === current.device) store(KEY, JSON.stringify({ ...latest, tokens: [...latest.tokens, ...tokens] }));
+      if (latest?.device === current.device) store(KEY, JSON.stringify({ ...latest, tokens: [...latest.tokens, ...held(batch)] }));
     })
     .catch((err: { status?: number }) => {
-      if (err.status === 404) forget(KEY);
+      if (err.status === 404 && registration()?.device === current.device) registerAgain();
     })
     .finally(() => (refilling = null));
 }
@@ -153,7 +204,7 @@ export interface OrderWakeTokens {
 }
 
 /// Takes `count` tokens from this device's pool, if it holds them.
-function takeTokens(count: number): string[] | null {
+function takeTokens(count: number): HeldToken[] | null {
   const current = registration();
   if (!current || current.relay !== relayUrl() || current.tokens.length < count) {
     if (current) refill(current);
@@ -168,7 +219,7 @@ function takeTokens(count: number): string[] | null {
 
 /// Puts tokens an order never used back in the pool -- still unseen by
 /// anyone, so still this device's alone.
-function giveBack(tokens: string[]): void {
+function giveBack(tokens: HeldToken[]): void {
   const current = registration();
   if (current) store(KEY, JSON.stringify({ ...current, tokens: [...tokens, ...current.tokens] }));
 }
@@ -180,7 +231,7 @@ function giveBack(tokens: string[]): void {
 /// in the pool: a failed checkout spends none.
 export async function withWakeTokens<T>(forDriver: boolean, place: (tokens: OrderWakeTokens) => Promise<T>, notWritten: (err: unknown) => boolean): Promise<T> {
   const taken = takeTokens(forDriver ? 2 : 1);
-  const tokens: OrderWakeTokens = { wake_for_store: taken?.[0] ?? null, wake_for_driver: forDriver ? (taken?.[1] ?? null) : null };
+  const tokens: OrderWakeTokens = { wake_for_store: taken?.[0]?.token ?? null, wake_for_driver: forDriver ? (taken?.[1]?.token ?? null) : null };
   try {
     return await place(tokens);
   } catch (err) {

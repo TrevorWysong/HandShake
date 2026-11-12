@@ -56,6 +56,8 @@ async function relay(overrides: Partial<Deps> = {}, outcome: Outcome = "sent") {
       wakesPerMinute: 2,
       wakesPerDay: 3,
       requestsPerIpPerHour: 100,
+      registrationsPerIpPerDay: 100,
+      maxDevices: 1000,
       wakeRequestsPerIpPerMinute: 100,
       appOrigins: ["http://app.test"],
       trustProxy: false,
@@ -69,8 +71,9 @@ async function relay(overrides: Partial<Deps> = {}, outcome: Outcome = "sent") {
   );
   await new Promise((resolve) => server.once("listening", resolve));
   const base = `http://localhost:${(server.address() as AddressInfo).port}`;
-  const call = async (method: string, path: string, body?: unknown) => {
-    const response = await fetch(base + path, { method, headers: { "Content-Type": "application/json", Origin: "http://app.test" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const call = async (method: string, path: string, body?: unknown, from?: string) => {
+    const headers: Record<string, string> = { "Content-Type": "application/json", Origin: "http://app.test", ...(from ? { "X-Forwarded-For": from } : {}) };
+    const response = await fetch(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, body: (await response.json()) as Record<string, unknown>, cors: response.headers.get("access-control-allow-origin") };
   };
   /// Asks for a wake and waits until the relay has dealt with it.
@@ -146,6 +149,67 @@ test("a device can have itself forgotten", async (t) => {
   assert.equal((await r.call("DELETE", "/devices", { device: registered.device, secret: registered.secret })).status, 200);
   await r.wake(registered.tokens[0]);
   assert.deepEqual(r.sent, []);
+});
+
+test("a batch says when its tokens stop working, and a device unseen for that long is forgotten", async (t) => {
+  const r = await relay();
+  t.after(r.close);
+  const before = Date.now();
+  const kept = (await r.call("POST", "/devices", { channel: "webpush", address: "kept" })).body as { device: string; secret: string; expiresAt: number };
+  const idle = (await r.call("POST", "/devices", { channel: "webpush", address: "idle" })).body as { device: string };
+  assert.ok(kept.expiresAt >= before + DAY_MS && kept.expiresAt <= Date.now() + DAY_MS, "a token's lifetime from now");
+  // A day on, the one that asked for a fresh batch is kept.
+  r.store.seen(idle.device, before - DAY_MS - 1);
+  r.store.seen(kept.device, before - DAY_MS - 1);
+  const fresh = await r.call("POST", "/devices/tokens", { device: kept.device, secret: kept.secret });
+  assert.equal(typeof fresh.body.expiresAt, "number");
+  assert.equal(r.store.forgetUnseenSince(before - DAY_MS), 1);
+  assert.equal(r.store.device(idle.device), null, "none of its tokens work, so nobody loses a wake");
+  assert.notEqual(r.store.device(kept.device), null);
+});
+
+test("an address registers only so many devices a day, and a full relay refuses more", async (t) => {
+  const limited = await relay({ registrationsPerIpPerDay: 2 });
+  t.after(limited.close);
+  for (const address of ["a", "b"]) assert.equal((await limited.call("POST", "/devices", { channel: "webpush", address })).status, 200);
+  assert.equal((await limited.call("POST", "/devices", { channel: "webpush", address: "c" })).status, 429);
+  assert.equal((await limited.call("POST", "/devices", { channel: "webpush", address: "nowhere" })).status, 400, "a refused address is refused for that, first");
+
+  const full = await relay({ maxDevices: 2 });
+  t.after(full.close);
+  const first = (await full.call("POST", "/devices", { channel: "webpush", address: "a" })).body as { device: string; secret: string };
+  await full.call("POST", "/devices", { channel: "webpush", address: "b" });
+  const refused = await full.call("POST", "/devices", { channel: "webpush", address: "c" });
+  assert.equal(refused.status, 503);
+  assert.equal(full.store.count(), 2);
+  assert.equal((await full.call("POST", "/devices/tokens", { device: first.device, secret: first.secret })).status, 200, "the devices it holds still get tokens");
+});
+
+test("each limit remembers only so many addresses, letting go of the longest-known", async (t) => {
+  const r = await relay({ trustProxy: true, addressesRemembered: 3, wakeRequestsPerIpPerMinute: 1 });
+  t.after(r.close);
+  assert.equal((await r.call("POST", "/wake", { token: "x" }, "10.0.0.1")).status, 200);
+  assert.equal((await r.call("POST", "/wake", { token: "x" }, "10.0.0.1")).status, 429, "remembered");
+  for (const ip of ["10.0.0.2", "10.0.0.3", "10.0.0.4"]) await r.call("POST", "/wake", { token: "x" }, ip);
+  assert.equal((await r.call("POST", "/wake", { token: "x" }, "10.0.0.4")).status, 429, "the newest still is");
+  assert.equal((await r.call("POST", "/wake", { token: "x" }, "10.0.0.1")).status, 200, "the longest-known was let go");
+});
+
+test("a relay's database from before seen times were kept counts each device seen when it registered", async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = path.join(mkdtempSync(path.join(tmpdir(), "relay-")), "data", "push.db");
+  new Store(db);
+  const raw = new DatabaseSync(db);
+  raw.exec("DROP TABLE devices; CREATE TABLE devices (id TEXT PRIMARY KEY, secret_hash TEXT NOT NULL, channel TEXT NOT NULL, address TEXT NOT NULL, registered_at INTEGER NOT NULL)");
+  raw.prepare("INSERT INTO devices VALUES ('old', 'h', 'webpush', 'a', 1000), ('new', 'h', 'webpush', 'b', 3000)").run();
+  raw.close();
+  const store = new Store(db);
+  assert.equal(store.forgetUnseenSince(2000), 1);
+  assert.equal(store.device("old"), null);
+  assert.notEqual(store.device("new"), null);
 });
 
 /// A fake fetch that records requests and answers from `reply`.
