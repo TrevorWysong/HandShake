@@ -6,7 +6,7 @@
 //   node run.ts --shard 2/4      the second of four even shares (for CI)
 //   node run.ts --record         also save each passing file's duration
 //   node run.ts --shard 2/4 --list   just print which files would run
-//   TEST_TIMEOUT_MIN=15 node run.ts
+//   TEST_TIMEOUT_MIN=15 node run.ts   the least any file is given
 //
 // Shards are balanced by how long each file takes on CI (durations.json),
 // so parallel CI jobs finish together. Those are CI's timings, 2-3 times a
@@ -31,7 +31,9 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../..");
 const logDir = join(here, ".logs");
-const timeoutMs = Number(process.env.TEST_TIMEOUT_MIN ?? 10) * 60_000;
+/// The least time any file is given before it's stopped. A file recorded
+/// as taking longer gets twice its recorded time (`timeoutFor`).
+const minimumTimeoutMs = Number(process.env.TEST_TIMEOUT_MIN ?? 10) * 60_000;
 const retries = Number(process.env.TEST_RETRIES ?? 1);
 const FAILURE = /error occurred during test run|AssertionError|Error: Request timed out/;
 
@@ -54,6 +56,36 @@ const durationsPath = join(here, "durations.json");
 const durations: Record<string, number> = existsSync(durationsPath) ? JSON.parse(readFileSync(durationsPath, "utf8")) : {};
 /// A file with no recorded duration counts as a typical one.
 const DEFAULT_SECONDS = 60;
+/// How much slower than its recorded time a file may run before it's taken
+/// for stuck: CI runners vary about this much from run to run.
+const SLOWDOWN_ALLOWED = 2;
+
+/// How long `name` may run: room for a slow runner on top of its recorded
+/// time, and never less than the minimum.
+function timeoutFor(name: string): number {
+  return Math.max(minimumTimeoutMs, (durations[name] ?? DEFAULT_SECONDS) * 1000 * SLOWDOWN_ALLOWED);
+}
+
+/// The file running now, so stopping the runner stops it too.
+let running: ReturnType<typeof spawn> | null = null;
+
+/// Stops a file and everything it started. `npx` runs `tsx`, which runs the
+/// test and its conductors: killing only `npx` would leave the rest running,
+/// holding the output open, so the file never finishes. Each file runs as
+/// its own process group, and the whole group goes.
+function stop(child: ReturnType<typeof spawn>) {
+  try {
+    if (child.pid) process.kill(-child.pid, "SIGKILL");
+  } catch {
+    child.kill("SIGKILL");
+  }
+}
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    if (running) stop(running);
+    process.exit(130);
+  });
+}
 
 /// Splits `names` into `count` shares of about equal total duration: longest
 /// first, each to the share with the least so far. Deterministic, so every
@@ -153,7 +185,9 @@ function runOnce(name: string, attempt: number) {
     const out = createWriteStream(log);
     const before = tempDirs();
     const started = Date.now();
-    const child = spawn("npx", ["tsx", `src/${name}.test.ts`], { cwd: here, env: process.env });
+    const child = spawn("npx", ["tsx", `src/${name}.test.ts`], { cwd: here, env: process.env, detached: true });
+    running = child;
+    const timeoutMs = timeoutFor(name);
     let output = "";
     // `runScenario` can report a failure and then leave its conductors
     // running; once it has, give it a moment to finish logging, then stop it
@@ -162,15 +196,16 @@ function runOnce(name: string, attempt: number) {
     const collect = (chunk: Buffer) => {
       output += chunk;
       out.write(chunk);
-      if (!reported && FAILURE.test(output)) reported = setTimeout(() => child.kill("SIGKILL"), 15_000);
+      if (!reported && FAILURE.test(output)) reported = setTimeout(() => stop(child), 15_000);
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
     const timer = setTimeout(() => {
-      output += `\nTimed out after ${timeoutMs / 60_000} minutes\n`;
-      child.kill("SIGKILL");
+      output += `\nTimed out after ${Math.round(timeoutMs / 60_000)} minutes\n`;
+      stop(child);
     }, timeoutMs);
     child.on("close", (code) => {
+      running = null;
       clearTimeout(timer);
       clearTimeout(reported);
       out.end();

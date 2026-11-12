@@ -117,6 +117,9 @@ export class Engine {
     // reported, kept for the next round, and the payments go on.
     await this.#claimKeptCards().catch((err) => onProblem("Claim kept cards", err));
     let done = await this.#expireSavedCards().catch((err) => (onProblem("Expire saved cards", err), 0));
+    // Payers who withdrew their kept card where the withdrawal couldn't be
+    // read: that card is charged for nothing until it is.
+    const withdrawing = new Set(due.flatMap((item) => ("WithdrawalUnreadable" in item ? [hex(item.WithdrawalUnreadable.payer)] : [])));
     // Withdrawals first: a card withdrawn is charged by no offer still waiting.
     for (const item of [...due].sort((a, b) => Number("Forget" in b) - Number("Forget" in a))) {
       // Each payment on its own: one failing never holds up the rest.
@@ -124,6 +127,10 @@ export class Engine {
       try {
         // Nothing to do on it yet -- but never taken for "nothing due".
         if ("Unreadable" in item) throw new Error(`what's due on an order couldn't be read: ${item.Unreadable.reason}`);
+        if ("WithdrawalUnreadable" in item) throw new Error(`a withdrawn card's withdrawal couldn't be read: ${item.WithdrawalUnreadable.reason}`);
+        // Waits, unanswered: declining it would be the withdrawal's answer
+        // before it's known, and the next round reads it again.
+        if ("Authorize" in item && item.Authorize.token === null && withdrawing.has(hex(item.Authorize.payer))) throw new Error("the payer withdrew their kept card, and the withdrawal can't be read yet");
         if ("Authorize" in item) await this.#authorize(item.Authorize, state);
         else if ("Settle" in item) await this.#settle(item.Settle, state);
         else if ("Refund" in item) await this.#refund(item.Refund, state);

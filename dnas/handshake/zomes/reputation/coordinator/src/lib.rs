@@ -45,7 +45,9 @@ fn bases_of(base: AnyLinkableHash, subject: Subject) -> ExternResult<Vec<AnyLink
         Subject::Person(agent) => call_local::<_, Vec<AgentPubKey>>("account", "lineage", agent.clone())?.map(|keys| keys.into_iter().map(Into::into).collect()),
         Subject::Store(catalog) => call_local::<_, Vec<ActionHash>>("catalog", "store_line", catalog.clone())?.map(|stores| stores.into_iter().map(Into::into).collect()),
     };
-    bases.extend(earlier.unwrap_or_default());
+    // A line that can't be read is an error, never "no earlier keys": that
+    // would show a record without the history it carries on from.
+    bases.extend(earlier.map_err(|why| guest(format!("couldn't read what this record carries on from: {why}")))?);
     Ok(bases)
 }
 
@@ -266,11 +268,11 @@ impl ReputationSummary {
 fn previous_target(target: &ReputationTarget) -> ExternResult<Option<ReputationTarget>> {
     Ok(match target {
         ReputationTarget::Store(catalog) => {
-            let found = call_local::<_, Option<ActionHash>>("catalog", "imported_from", catalog.clone())?.ok().flatten();
+            let found = call_local::<_, Option<ActionHash>>("catalog", "imported_from", catalog.clone())?.map_err(|why| guest(format!("imported_from: {why}")))?;
             found.map(ReputationTarget::Store)
         }
         ReputationTarget::Driver(agent) | ReputationTarget::Customer(agent) => {
-            let found = call_local::<_, Option<AgentPubKey>>("account", "arrived_from", agent.clone())?.ok().flatten();
+            let found = call_local::<_, Option<AgentPubKey>>("account", "arrived_from", agent.clone())?.map_err(|why| guest(format!("arrived_from: {why}")))?;
             found.map(|previous| match target {
                 ReputationTarget::Driver(_) => ReputationTarget::Driver(previous),
                 _ => ReputationTarget::Customer(previous),

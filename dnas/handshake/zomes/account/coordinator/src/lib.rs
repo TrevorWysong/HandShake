@@ -25,6 +25,15 @@ pub(crate) fn me() -> ExternResult<AgentPubKey> {
 /// The records `query`'s links point at, oldest first -- each read the
 /// way the links were: on this device (`GetStrategy::Local`) or from the
 /// network.
+///
+/// All of them, or an error. Every link here is validated against its
+/// target, so one whose record can't be found is one whose record hasn't
+/// reached this node yet -- links and records travel apart. And every
+/// caller decides something from the whole set: which plan is an
+/// account's current one, who carries it on, whether it arrived from the
+/// previous network. A set missing one would decide wrongly -- an older,
+/// replaced plan taken for current, or one of two successors for the only
+/// one -- so it's never handed over short.
 pub(crate) fn linked_records(query: LinkQuery, strategy: GetStrategy) -> ExternResult<Vec<Record>> {
     let mut links = get_links(query, strategy)?;
     links.sort_by_key(|l| l.timestamp);
@@ -32,9 +41,7 @@ pub(crate) fn linked_records(query: LinkQuery, strategy: GetStrategy) -> ExternR
     let mut records = Vec::with_capacity(links.len());
     for link in links {
         let Some(hash) = link.target.into_action_hash() else { continue };
-        if let Some(record) = get(hash, options.clone())? {
-            records.push(record);
-        }
+        records.push(get(hash.clone(), options.clone())?.ok_or_else(|| guest(format!("record {hash} is linked but hasn't reached this node yet")))?);
     }
     Ok(records)
 }

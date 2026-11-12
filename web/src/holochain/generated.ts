@@ -2809,6 +2809,19 @@ export type PaymentDue =
         order: ActionHash;
         reason: string;
       };
+    }
+  /**
+   * `payer` withdrew the card they kept here -- the network has their
+   * withdrawal's link -- but the withdrawal itself couldn't be read this
+   * time (`reason`). Never taken for "not withdrawn": the agent charges
+   * their kept card for nothing meanwhile, and says so, and the next
+   * round reads it again -- then it's a `Forget`.
+   */
+  | {
+      WithdrawalUnreadable: {
+        payer: AgentPubKey;
+        reason: string;
+      };
     };
 
 /**

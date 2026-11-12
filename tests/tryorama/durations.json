@@ -47,7 +47,7 @@
   "redemption-rules": 256,
   "reviews": 355,
   "rewards-concurrency": 400,
-  "rewards-contention": 900,
+  "rewards-contention": 2700,
   "saved-addresses": 107,
   "scale-anchors": 185,
   "scheduled-orders": 98,

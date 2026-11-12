@@ -67,6 +67,15 @@ pub fn resolve_latest(action_hash: ActionHash) -> ExternResult<Record> {
     Ok(resolve_version(action_hash)?.record)
 }
 
+/// `resolve_latest`, telling apart a record this device can't find --
+/// `None`: not written, or not reached here yet -- from one it couldn't
+/// read just now, which is an error. Where "not there" is an answer (an
+/// order not yet seen has nothing to authorize), a failed read mustn't be
+/// taken for one.
+pub fn find_latest(action_hash: ActionHash) -> ExternResult<Option<Record>> {
+    Ok(find_version(action_hash)?.map(|version| version.record))
+}
+
 /// An entry's current version, and where it stands among its updates --
 /// what the next update builds on (`update_version`).
 #[derive(Debug, Clone)]
@@ -104,7 +113,15 @@ impl EntryVersion {
 /// `ledger_integrity`) -- it's what screens show and what the next update
 /// builds on.
 pub fn resolve_version(action_hash: ActionHash) -> ExternResult<EntryVersion> {
-    let given = read_record(action_hash.clone())?;
+    find_version(action_hash)?.ok_or(guest("record not found"))
+}
+
+/// `resolve_version`, with `None` for a record found neither here nor on
+/// the network -- see `find_latest`. Once the record itself is found,
+/// anything its versions say that can't be read is an error: a version
+/// linked is a version written.
+pub fn find_version(action_hash: ActionHash) -> ExternResult<Option<EntryVersion>> {
+    let Some(given) = find_record(action_hash.clone())? else { return Ok(None) };
     let original = match given.action().data {
         ActionData::Update(_) => original_action_of(action_hash)?,
         _ => action_hash,
@@ -114,11 +131,11 @@ pub fn resolve_version(action_hash: ActionHash) -> ExternResult<EntryVersion> {
     // The network's answer, or -- when it can't be reached -- what this
     // device has seen: older, perhaps, but never nothing.
     let links = get_links(versions.clone(), GetStrategy::Network).or_else(|_| get_links(versions, GetStrategy::Local))?;
-    match tip_of(links) {
-        Some((depth, hash)) => Ok(EntryVersion { original, record: read_record(hash)?, depth }),
-        None if given.action_address() == &original => Ok(EntryVersion { original, record: given, depth: 0 }),
-        None => Ok(EntryVersion { record: read_record(original.clone())?, original, depth: 0 }),
-    }
+    Ok(Some(match tip_of(links) {
+        Some((depth, hash)) => EntryVersion { original, record: read_record(hash)?, depth },
+        None if given.action_address() == &original => EntryVersion { original, record: given, depth: 0 },
+        None => EntryVersion { record: read_record(original.clone())?, original, depth: 0 },
+    }))
 }
 
 /// `resolve_version`, decoded as a `T` -- or an error naming what was
@@ -209,9 +226,15 @@ pub fn current_of(links: Vec<Link>, original: &ActionHash) -> ActionHash {
 /// A record by its action, which never changes once written: from this
 /// device when it's here, else the network.
 fn read_record(action_hash: ActionHash) -> ExternResult<Record> {
+    find_record(action_hash)?.ok_or(guest("record not found"))
+}
+
+/// `read_record`, with `None` for one found neither here nor on the
+/// network; an error only for a read that failed.
+pub fn find_record(action_hash: ActionHash) -> ExternResult<Option<Record>> {
     match get(action_hash.clone(), GetOptions::local())? {
-        Some(record) => Ok(record),
-        None => get(action_hash, GetOptions::network())?.ok_or(guest("record not found")),
+        Some(record) => Ok(Some(record)),
+        None => get(action_hash, GetOptions::network()),
     }
 }
 

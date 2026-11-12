@@ -209,8 +209,11 @@ fn standing_moves(catalog: &ActionHash, link_type: LinkTypes) -> ExternResult<Ve
     let links = get_links(LinkQuery::try_new(catalog.clone(), link_type)?, GetStrategy::default())?;
     for record in resolve_links_to_records_with_original(links).into_iter().map(|(_, r)| r) {
         let Some(moved) = decode_or::<StoreSuccession>(&record) else { continue };
-        let Some(old) = get(moved.from.clone(), GetOptions::default())? else { continue };
-        let Ok(successor) = call_local::<_, Option<AgentPubKey>>("account", "successor_of", old.action().author().clone())? else { continue };
+        // Validated against the store it moved from, so that store's record
+        // exists: one not here yet, or an owner whose successor can't be
+        // told, is an error -- never a move that doesn't stand.
+        let old = get(moved.from.clone(), GetOptions::default())?.ok_or(guest("the store a move came from hasn't reached this node yet"))?;
+        let successor = call_local::<_, Option<AgentPubKey>>("account", "successor_of", old.action().author().clone())?.map_err(|why| guest(format!("successor_of: {why}")))?;
         if successor.as_ref() == Some(record.action().author()) {
             moves.push(moved);
         }
@@ -246,7 +249,7 @@ pub fn store_line(catalog: ActionHash) -> ExternResult<Vec<ActionHash>> {
 
 /// The account zome's answer for who an agent was on the previous network.
 fn arrived_from(agent: AgentPubKey) -> ExternResult<Option<AgentPubKey>> {
-    Ok(call_local("account", "arrived_from", agent)?.unwrap_or(None))
+    call_local("account", "arrived_from", agent)?.map_err(|why| guest(format!("arrived_from: {why}")))
 }
 
 /// The stores the caller's account ran on the previous network.

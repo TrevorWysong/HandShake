@@ -12,7 +12,7 @@
 use crate::settlement::{holds_on, settlement_due, settlements_on, DueClaim};
 use dispatch_integrity::payments::{leg_context, LegContext};
 use dispatch_integrity::*;
-use handshake_coordinator_support::{call_local, call_role, decode_or, guest, open, original_action_of, seal};
+use handshake_coordinator_support::{call_local, call_role, decode_or, find_latest, guest, open, original_action_of, seal};
 use hdk::prelude::*;
 use std::collections::BTreeSet;
 
@@ -157,9 +157,14 @@ pub(crate) fn offer_saved(order: &ActionHash, leg_of: PaymentLeg) -> ExternResul
         return Ok(false);
     }
     let me = me()?;
-    let offered = get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToPayment)?.author(me), GetStrategy::Local)?.into_iter().any(|link| {
-        link.target.into_action_hash().and_then(|h| get(h, GetOptions::local()).ok().flatten()).and_then(|r| decode_or::<PaymentOffer>(&r)).is_some_and(|o| o.leg == leg_of)
-    });
+    // My own offers, from this device: one that can't be read is an error,
+    // never "not offered yet" -- which would offer the card twice.
+    let mut offered = false;
+    for link in get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToPayment)?.author(me), GetStrategy::Local)? {
+        let Some(hash) = link.target.into_action_hash() else { continue };
+        let record = get(hash, GetOptions::local())?.ok_or(guest("one of my payment records isn't on this device"))?;
+        offered |= decode_or::<PaymentOffer>(&record).is_some_and(|o| o.leg == leg_of);
+    }
     if offered || saved_with(&context.payee)?.is_none() {
         return Ok(false);
     }
@@ -279,6 +284,12 @@ pub enum PaymentDue {
     /// nothing to do on it yet, and the agent says so rather than taking
     /// silence for "nothing due". The next round tries it again.
     Unreadable { order: ActionHash, reason: String },
+    /// `payer` withdrew the card they kept here -- the network has their
+    /// withdrawal's link -- but the withdrawal itself couldn't be read this
+    /// time (`reason`). Never taken for "not withdrawn": the agent charges
+    /// their kept card for nothing meanwhile, and says so, and the next
+    /// round reads it again -- then it's a `Forget`.
+    WithdrawalUnreadable { payer: AgentPubKey, reason: String },
 }
 
 /// How many days of orders the agent looks through: a card authorization
@@ -293,7 +304,11 @@ pub fn payments_due(_: ()) -> ExternResult<Vec<PaymentDue>> {
     let mut due = Vec::new();
     // One order that can't be read never hides the rest -- nor itself: it's
     // reported, for the agent to show as trouble until it reads again.
-    for order in crate::settlement::candidates(DUE_DAYS)? {
+    let candidates = crate::settlement::candidates(DUE_DAYS)?;
+    for (order, reason) in candidates.unreadable {
+        due.push(PaymentDue::Unreadable { order, reason });
+    }
+    for order in candidates.orders {
         match due_on(&order, &me) {
             Ok(on_it) => due.extend(on_it),
             Err(err) => due.push(PaymentDue::Unreadable { order, reason: err.to_string() }),
@@ -305,7 +320,9 @@ pub fn payments_due(_: ()) -> ExternResult<Vec<PaymentDue>> {
 }
 
 /// The cards payers have withdrawn from the caller, within the time a card
-/// could still stand: each payer's latest withdrawal.
+/// could still stand: each payer's latest withdrawal -- or, where one of
+/// theirs couldn't be read, that it couldn't. A link's author is its
+/// withdrawal's author (validation), so that's whose card waits.
 fn forgotten_cards(me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>> {
     let since = sys_time()?.as_micros() - dispatch_integrity::payments::SAVED_CARD_DAYS * 86_400_000_000;
     let mut due: Vec<PaymentDue> = Vec::new();
@@ -313,7 +330,19 @@ fn forgotten_cards(me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>> {
         if link.timestamp.as_micros() < since {
             continue;
         }
-        let Some(record) = link.target.into_action_hash().and_then(|hash| get(hash, GetOptions::default()).ok().flatten()) else { continue };
+        let Some(hash) = link.target.into_action_hash() else { continue };
+        let record = match get(hash, GetOptions::default()) {
+            Ok(Some(record)) => record,
+            // Linked, so written: not reached here yet, or the read failed.
+            Ok(None) => {
+                due.push(PaymentDue::WithdrawalUnreadable { payer: link.author, reason: "not reached this device yet".into() });
+                continue;
+            }
+            Err(err) => {
+                due.push(PaymentDue::WithdrawalUnreadable { payer: link.author, reason: err.to_string() });
+                continue;
+            }
+        };
         if decode_or::<SavedCardForgotten>(&record).is_none_or(|f| &f.payee != me) {
             continue;
         }
@@ -346,9 +375,10 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
         } else if author != *me {
             continue;
         } else if let Some(hold) = decode_or::<PaymentHold>(&record) {
-            if let Some(offer) = get(hold.offer.clone(), GetOptions::default())?.and_then(|r| decode_or::<PaymentOffer>(&r)) {
-                held_legs.push(offer.leg);
-            }
+            // Which leg a hold of mine is on, or this order can't be worked
+            // out: a leg taken for unheld would be authorized twice.
+            let offer = get(hold.offer.clone(), GetOptions::default())?.and_then(|r| decode_or::<PaymentOffer>(&r)).ok_or(guest("the offer one of my holds answers can't be read yet"))?;
+            held_legs.push(offer.leg);
             answered.push(hold.offer.clone());
             my_holds.push((hash, hold));
         } else if let Some(action) = decode_or::<PaymentAction>(&record) {
@@ -363,8 +393,9 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
     // driver's legs only for the driver it has -- so nobody can run cards
     // through a store's account by bidding on orders they'll never carry.
     // An order not yet seen here has nothing to authorize, but its holds
-    // still settle.
-    let latest = handshake_coordinator_support::resolve_latest(order.clone()).ok();
+    // still settle; one that can't be read just now is an error, reported
+    // (`Unreadable`) rather than taken for one that's over.
+    let latest = find_latest(order.clone())?;
     let (ongoing, accepted_bid) = match latest.as_ref().map(|r| (decode_or::<DeliveryOrder>(r), decode_or::<PickupOrder>(r))) {
         Some((Some(o), _)) => (!o.status.is_terminal(), o.accepted_bid),
         Some((None, Some(o))) => (!o.status.is_terminal(), None),
@@ -379,7 +410,7 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
         if seen.contains(&offer.leg) || held_legs.contains(&offer.leg) || answered.contains(&offer_ref) || !wanted(&offer.leg) {
             continue;
         }
-        let Ok(Ok(context)) = leg_context(order, &offer.leg) else { continue };
+        let Ok(context) = leg_context(order, &offer.leg)? else { continue };
         if &context.payee != me || context.payer != payer {
             continue;
         }
@@ -392,7 +423,7 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
             None => None,
         };
         let newcomer_deal = if offer.leg == PaymentLeg::Customer { newcomer_deal(order)? } else { None };
-        let payer_established = established(&payer);
+        let payer_established = established(&payer)?;
         let work = offer.work.as_ref().map(|proof| WorkShown { busy: proof.busy.clone(), bits: work_bits(&payer, me, proof) });
         due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, newcomer_deal, payer_established, work, offered_at });
     }
@@ -416,18 +447,19 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
 /// payer, placed at least `established_payer_days` ago, in their most
 /// recent `established_payer_lookback` orders. That's someone with a
 /// record: a new account has none, and making one takes as many stores,
-/// each finishing an order, and time. Not established if the history can't
-/// be read.
-fn established(payer: &AgentPubKey) -> bool {
+/// each finishing an order, and time. A history that can't be read is an
+/// error, never "no record": that would ask a regular for work, or turn
+/// them away, for a moment's network trouble.
+fn established(payer: &AgentPubKey) -> ExternResult<bool> {
     let needed = handshake_governance::established_payer_stores() as usize;
     let mut left = handshake_governance::established_payer_lookback() as usize;
     let days = i64::from(handshake_governance::established_payer_days());
-    let Ok(now) = sys_time() else { return false };
+    let now = sys_time()?;
     let settled_before = Timestamp::from_micros(now.as_micros().saturating_sub(days.saturating_mul(86_400_000_000)));
     let mut owners = BTreeSet::new();
     let mut before = None;
     while left > 0 {
-        let Ok(page) = crate::order_queues::history_page(QueueOwner::Customer(payer), before, Some(u32::try_from(left).unwrap_or(u32::MAX))) else { return false };
+        let page = crate::order_queues::history_page(QueueOwner::Customer(payer), before, Some(u32::try_from(left).unwrap_or(u32::MAX)))?;
         left = left.saturating_sub(page.orders.len().max(1));
         for entry in &page.orders {
             let completed = match (decode_or::<DeliveryOrder>(&entry.record), decode_or::<PickupOrder>(&entry.record)) {
@@ -438,14 +470,14 @@ fn established(payer: &AgentPubKey) -> bool {
             if let Some(owner) = completed.filter(|owner| owner != payer) {
                 owners.insert(owner);
                 if owners.len() >= needed {
-                    return true;
+                    return Ok(true);
                 }
             }
         }
         let Some(next) = page.next_before else { break };
         before = Some(next);
     }
-    false
+    Ok(false)
 }
 
 /// Work a payer showed for one of the payee's busy records.
@@ -480,7 +512,10 @@ fn busy_now(payee: &AgentPubKey) -> ExternResult<Option<(ActionHash, PayeeBusy)>
 #[hdk_extern]
 pub fn work_needed(payee: AgentPubKey) -> ExternResult<Option<WorkAsked>> {
     let Some((busy, record)) = busy_now(&payee)? else { return Ok(None) };
-    if established(&me()?) {
+    // My own record unreadable just now: doing the work is the safe side
+    // -- a moment of this device's time, which the payee takes either way
+    // -- where skipping it would have the card declined.
+    if established(&me()?).unwrap_or(false) {
         return Ok(None);
     }
     Ok(Some(WorkAsked { payee, busy, bits: record.bits }))
@@ -829,7 +864,7 @@ pub fn order_payments(order: ActionHash) -> ExternResult<Vec<OrderPayment>> {
     let settlements = settlements_on(&order)?;
     let mut out = Vec::new();
     for (hold_ref, payee, hold, offer) in holds_on(&order)? {
-        let Ok(Ok(context)) = leg_context(&order, &offer.leg) else { continue };
+        let Ok(context) = leg_context(&order, &offer.leg)? else { continue };
         if context.payee != payee {
             continue;
         }
@@ -845,7 +880,10 @@ pub fn order_payments(order: ActionHash) -> ExternResult<Vec<OrderPayment>> {
 #[hdk_extern]
 pub fn food_given_back(order: ActionHash) -> ExternResult<bool> {
     let order = original_action_of(order)?;
-    let Some((_, merchant)) = crate::issues::parties_of(&order).ok() else { return Ok(false) };
+    // An order that can't be read is an error -- the reward's fate waits
+    // on it -- and only something that isn't an order gave nothing back.
+    let record = get(order.clone(), GetOptions::default())?.ok_or(guest("the order can't be read yet"))?;
+    let Some((_, merchant)) = crate::issues::parties_in(&record) else { return Ok(false) };
     let Some((hold_ref, ..)) = holds_on(&order)?.into_iter().find(|(_, author, _, offer)| author == &merchant && offer.leg == PaymentLeg::Customer) else { return Ok(false) };
     Ok(settlements_on(&order)?.into_iter().any(|(_, author, s)| author == merchant && s.hold == hold_ref && !s.claims.iter().any(|c| c.part.portion == Portion::Food)))
 }
@@ -912,7 +950,7 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
         let Some((terms, catalog_ref)) = found else { continue };
         let store_name = crate::stores::current_catalog(&catalog_ref).map(|c| c.business_name).unwrap_or_default();
         for (hold_ref, payee, hold, offer) in holds_on(&order)? {
-            let Ok(Ok(context)) = leg_context(&order, &offer.leg) else { continue };
+            let Ok(context) = leg_context(&order, &offer.leg)? else { continue };
             if context.payee != payee || (payee != me && context.payer != me) {
                 continue;
             }
@@ -955,7 +993,9 @@ pub fn my_payment_history(days: u32) -> ExternResult<Vec<PaymentHistoryItem>> {
 pub fn my_unsettled_holds(_: ()) -> ExternResult<u32> {
     let me = me()?;
     let mut unsettled = 0;
-    for order in crate::settlement::candidates(DUE_DAYS)? {
+    // Every order, or no count: one missed could let the chain close on a
+    // hold still to settle.
+    for order in crate::settlement::candidates(DUE_DAYS)?.all()? {
         let settlements = settlements_on(&order)?;
         for (hold_ref, payee, ..) in holds_on(&order)? {
             if payee == me && !settlements.iter().any(|(_, author, s)| author == &me && s.hold == hold_ref) {
@@ -993,7 +1033,7 @@ pub fn my_payments_owed(order: ActionHash) -> ExternResult<Vec<PaymentOwed>> {
     }
     let mut owed = Vec::new();
     for leg in legs {
-        let Ok(Ok(context)) = leg_context(&order, &leg) else { continue };
+        let Ok(context) = leg_context(&order, &leg)? else { continue };
         if context.payer == me && context.required > 0 {
             owed.push(PaymentOwed { leg, payee: context.payee, amount: context.required });
         }

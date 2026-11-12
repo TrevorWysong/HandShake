@@ -46,6 +46,7 @@ Each key takes over at most one account. Ratings and reputation for drivers and 
 - **Where that falls short:**
   - A modified app can ignore the rule and show a contested account's history under either key.
   - While the network converges, two honest peers can briefly disagree: one has seen only one succession, the other both. Each settles once the second reaches it.
+    A peer that has a succession's link but not yet its record, or an account's newest plan's link but not that plan, can't tell who carries the account on, or which plan is current. It says so, as an error, and asks again. It never answers from what it could read, which would make the other successor the only one, or an older plan the current one (`linked_records`). Other zomes asking whether an account has moved pass that on, too: dealing with a key needs a clear "it hasn't", and background work holds off until the next run.
   - The losing key's own chain stays valid, as a lost key's does (*Residual risks*).
 
 So the phrase is as sensitive as the account itself. Keep it offline, and replace it at once if it may have been seen. Before relying on recovery for important business identities, the integrity rules here should have an independent review.

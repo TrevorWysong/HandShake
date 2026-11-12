@@ -12,8 +12,10 @@ use handshake_coordinator_support::{call_local, guest};
 pub(crate) fn has_moved(agent: &AgentPubKey) -> ExternResult<bool> {
     #[derive(Deserialize, Debug)]
     struct Moved {}
-    let successions: Result<Vec<Moved>, _> = call_local("account", "successions_of", agent.clone())?;
-    Ok(successions.is_ok_and(|moves| !moves.is_empty()))
+    // Couldn't tell is an error, never "hasn't": that would deal with a key
+    // whose account was recovered onto another.
+    let successions: Vec<Moved> = call_local("account", "successions_of", agent.clone())?.map_err(|why| guest(format!("couldn't tell whether this account has moved: {why}")))?;
+    Ok(!successions.is_empty())
 }
 
 /// Refuses to deal with `agent` if their account has moved on; `who` names

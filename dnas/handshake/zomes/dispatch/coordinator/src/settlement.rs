@@ -13,7 +13,7 @@ use dispatch_integrity::basis::{basis_of, chain_check, part_bid};
 use dispatch_integrity::direct::{entitlement, part_share, Entitlement, Part, PaymentLeg};
 use dispatch_integrity::*;
 use handshake_coordinator_support::chain::mine;
-use handshake_coordinator_support::{decode_or, original_action_of};
+use handshake_coordinator_support::{decode_or, guest, original_action_of};
 use hdk::prelude::*;
 
 // --- what's known about an order, for settling it ---
@@ -290,19 +290,42 @@ pub fn settle_order(order_original_action: ActionHash) -> ExternResult<u32> {
 
 // --- the sweep ---
 
-/// Orders the caller has a part in, from the last `days`: those they
-/// placed, bid on, or received at one of their stores.
-pub(crate) fn candidates(days: i64) -> ExternResult<Vec<ActionHash>> {
+/// Orders the caller has a part in, from the last `days`.
+pub(crate) struct Candidates {
+    /// Those they placed, bid on, or received at one of their stores, by
+    /// their original actions.
+    pub orders: Vec<ActionHash>,
+    /// Orders they bid on whose original couldn't be worked out this time
+    /// -- as the bid names them, with why. Never left out unsaid: the
+    /// driver's own payments ride on them.
+    pub unreadable: Vec<(ActionHash, String)>,
+}
+
+impl Candidates {
+    /// Every order, or an error if any can't be told -- for a count that
+    /// must miss none.
+    pub fn all(self) -> ExternResult<Vec<ActionHash>> {
+        match self.unreadable.into_iter().next() {
+            Some((order, reason)) => Err(guest(format!("order {order} can't be read yet: {reason}"))),
+            None => Ok(self.orders),
+        }
+    }
+}
+
+pub(crate) fn candidates(days: i64) -> ExternResult<Candidates> {
     let since = Timestamp::from_micros(sys_time()?.as_micros() - days * 86_400_000_000);
     let types = [EntryType::try_from(UnitEntryTypes::DeliveryOrder)?, EntryType::try_from(UnitEntryTypes::PickupOrder)?, EntryType::try_from(UnitEntryTypes::Bid)?];
     let mut orders: Vec<ActionHash> = Vec::new();
+    let mut unreadable = Vec::new();
     for record in mine(&types).since(since).records()? {
-        let order = match decode_or::<Bid>(&record) {
-            Some(bid) => original_action_of(bid.order_ref).ok(),
-            None if matches!(record.action().data, ActionData::Create(_)) => Some(record.action_address().clone()),
-            None => None,
-        };
-        orders.extend(order);
+        match decode_or::<Bid>(&record) {
+            Some(bid) => match original_action_of(bid.order_ref.clone()) {
+                Ok(order) => orders.push(order),
+                Err(err) => unreadable.push((bid.order_ref, err.to_string())),
+            },
+            None if matches!(record.action().data, ActionData::Create(_)) => orders.push(record.action_address().clone()),
+            None => {}
+        }
     }
     let today = history_day(sys_time()?);
     for store in my_stores()? {
@@ -313,7 +336,9 @@ pub(crate) fn candidates(days: i64) -> ExternResult<Vec<ActionHash>> {
     }
     orders.sort();
     orders.dedup();
-    Ok(orders)
+    unreadable.sort();
+    unreadable.dedup_by(|a, b| a.0 == b.0);
+    Ok(Candidates { orders, unreadable })
 }
 
 /// Has the store make its decisions on every recent order of the caller's
@@ -324,7 +349,10 @@ pub(crate) fn candidates(days: i64) -> ExternResult<Vec<ActionHash>> {
 fn sweep(days: i64) -> u32 {
     let _ = crate::confirmations::tend_confirmations();
     let mut decided = 0;
-    for order in candidates(days).unwrap_or_default() {
+    // The sweep runs again on its schedule: an order it can't read now is
+    // decided then.
+    let orders = candidates(days).map(|c| c.orders).unwrap_or_default();
+    for order in orders {
         decided += handshake_coordinator_support::isolated::<_, u32>("settle_order", order.clone()).unwrap_or(0);
     }
     decided
@@ -345,8 +373,11 @@ const SIGNALLED_SWEEP_DAYS: i64 = 30;
 /// wasn't theirs) moves the account back here, and its sweeps carry on.
 /// Whether this device's account has moved on -- or is being handed to a
 /// new phone right now: either way, it settles nothing of its own accord.
+/// One that can't tell just now holds off too: everything this gates runs
+/// again on its schedule, while acting would write for an account that may
+/// be someone else's now.
 pub(crate) fn moved_on() -> bool {
-    handshake_coordinator_support::handing_over() || agent_info().and_then(|info| crate::accounts::has_moved(&info.agent_initial_pubkey)).unwrap_or(false)
+    handshake_coordinator_support::handing_over() || agent_info().and_then(|info| crate::accounts::has_moved(&info.agent_initial_pubkey)).unwrap_or(true)
 }
 
 /// Every five minutes, for as long as the conductor runs: the store's

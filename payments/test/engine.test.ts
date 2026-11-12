@@ -417,6 +417,29 @@ test("an order the network couldn't read is the payee's to hear about, never tak
   assert.deepEqual(problems, ["Unreadable"], "and the one that couldn't is reported, not passed over");
 });
 
+test("a withdrawal that couldn't be read keeps its payer's kept card from being charged, and is reported until it's read", async () => {
+  const z = zome();
+  const forgotten: string[] = [];
+  const problems: string[] = [];
+  const processor = { ...testProcessor("USD"), forget: async (savedAs: string) => void forgotten.push(savedAs) };
+  let clock = 1_000_000;
+  const engine = new Engine({ dispatch: z.dispatch, processor, state: memoryStore(), currency: "USD", account: "Test:test:", now: () => clock, onProblem: (what) => problems.push(what) });
+  z.due = [authorize(10, 50, { save: true })];
+  await engine.round();
+  clock += 1000;
+  z.due = [authorize(11, 51, { token: null }), authorize(12, 52, { token: "tok_test_new" }), { WithdrawalUnreadable: { payer, reason: "not reached this device yet" } }];
+  assert.equal(await engine.round(), 1, "only a new card is held");
+  assert.equal(z.recorded("record_hold").length, 2);
+  assert.deepEqual(z.recorded("record_declined"), [], "the kept card's offer isn't answered either way");
+  assert.deepEqual(problems.sort(), ["Authorize", "WithdrawalUnreadable"], "and both are the payee's to hear about");
+  assert.equal(forgotten.length, 0);
+  // Read at last: the card is deleted, and the waiting offer declined.
+  z.due = [authorize(11, 51, { token: null }), { Forget: { payer, at: (clock - 500) * 1000 } }];
+  await engine.round();
+  assert.equal(forgotten.length, 1, "deleted from the processor");
+  assert.deepEqual(z.recorded("record_declined").map((d) => d.code), ["NoSavedCard"]);
+});
+
 test("rounds never overlap", async () => {
   const { z, engine } = setup();
   z.due = [authorize(10, 50)];

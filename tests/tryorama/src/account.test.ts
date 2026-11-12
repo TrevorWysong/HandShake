@@ -122,4 +122,24 @@ await runScenario(async (scenario) => {
   assert.deepEqual(await account(alice)<SuccessionView[]>("successions_of", dana.agentPubKey), [], "every recovery that rested on the replaced plan is void");
   assert.deepEqual(await account(alice)<Uint8Array[]>("lineage", carol.agentPubKey), [], "and carries no history");
   console.log("[PASS] a replaced plan no longer counts");
+
+  // ===== One leaked phrase, two recoveries at the same moment =====
+  // Each on its own conductor, before either has heard of the other: once
+  // they have, neither key carries the account on, wherever it's asked.
+  // (Before then a node can only know what's reached it -- RECOVERY.md.)
+  const leaked = phraseKey();
+  const alicePlan = await account(alice)<PlanView>("set_recovery_plan", { phrase_key: leaked.key, guardians: [], threshold: 0 });
+  await sync();
+  const aliceHead = await retryUntil(() => account(bob)<Uint8Array | null>("latest_action_of", alice.agentPubKey), (h) => !!h);
+  const recover = (successor: typeof alice) => account(successor)("take_over", { predecessor: alice.agentPubKey, authority: { Phrase: { plan: alicePlan.plan, head: aliceHead, signature: leaked.sign(phraseMessage(alice.agentPubKey, successor.agentPubKey, aliceHead!)) } } });
+  await Promise.all([recover(bob), recover(frank)]);
+  await sync();
+  for (const asker of all) {
+    const both = await retryUntil(() => account(asker)<SuccessionView[]>("successions_of", alice.agentPubKey), (list) => list.length === 2);
+    assert.equal(both.length, 2, "both recoveries reach everyone");
+    assert.equal(await account(asker)<Uint8Array | null>("successor_of", alice.agentPubKey), null, "and nobody takes either key for the account");
+    assert.deepEqual(await account(asker)<Uint8Array[]>("lineage", bob.agentPubKey), [], "nor gives the first its history");
+    assert.deepEqual(await account(asker)<Uint8Array[]>("lineage", frank.agentPubKey), [], "nor the second");
+  }
+  console.log("[PASS] two recoveries made at once with one phrase cancel out on every node");
 });

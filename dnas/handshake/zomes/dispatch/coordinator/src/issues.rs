@@ -304,10 +304,16 @@ pub(crate) fn decisions_of(order: &ActionHash) -> ExternResult<Decisions> {
 /// An order's customer and store.
 pub(crate) fn parties_of(order: &ActionHash) -> ExternResult<(AgentPubKey, AgentPubKey)> {
     let record = get(order.clone(), GetOptions::default())?.ok_or(guest("order not found"))?;
-    match (decode_or::<DeliveryOrder>(&record), decode_or::<PickupOrder>(&record)) {
-        (Some(o), _) => Ok((o.requester, o.merchant)),
-        (None, Some(o)) => Ok((o.requester, o.merchant)),
-        _ => Err(guest("that isn't an order")),
+    parties_in(&record).ok_or(guest("that isn't an order"))
+}
+
+/// An order record's customer and store; `None` for a record that isn't an
+/// order.
+pub(crate) fn parties_in(record: &Record) -> Option<(AgentPubKey, AgentPubKey)> {
+    match (decode_or::<DeliveryOrder>(record), decode_or::<PickupOrder>(record)) {
+        (Some(o), _) => Some((o.requester, o.merchant)),
+        (None, Some(o)) => Some((o.requester, o.merchant)),
+        _ => None,
     }
 }
 

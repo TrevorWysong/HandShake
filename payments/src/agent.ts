@@ -26,7 +26,8 @@ export interface Status {
   /// The last round that couldn't carry out a payment due, if no round
   /// has gone cleanly since: what kind (`Authorize`, `Settle`, `Refund`,
   /// `Forget`, `Unreadable` for an order the network couldn't say what's
-  /// due on, or `round` for the round itself), and when (ms). Never the
+  /// due on, `WithdrawalUnreadable` for a withdrawn card whose withdrawal
+  /// it couldn't read, or `round` for the round itself), and when (ms). Never the
   /// processor's own words -- they're the payee's to read in its dashboard,
   /// not the app's pages'.
   trouble: { what: string; at: number } | null;

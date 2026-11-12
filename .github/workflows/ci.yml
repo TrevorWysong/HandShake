@@ -133,14 +133,15 @@ jobs:
 
   tryorama:
     # Ten jobs, each a share of the files balanced by their recorded CI
-    # duration (tests/tryorama/durations.json) -- about 25 minutes each.
+    # duration (tests/tryorama/durations.json) -- about 40 minutes each.
     # Files within a job still run one at a time, since conductors sharing a
     # machine contend.
     name: Tryorama suite (${{ matrix.shard }}/10)
     needs: [checks]
     runs-on: ubuntu-24.04
-    # Room for a flaky file's retry or two on top of the ~25 minutes.
-    timeout-minutes: 60
+    # Room on top of a share's ~40 minutes for its longest file's retry
+    # (rewards-contention: about 45 minutes alone).
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -174,8 +175,9 @@ jobs:
         run: tests/tryorama/scripts/previous-release.sh
       - name: Run the suite
         working-directory: tests/tryorama
-        # CI runs a file 2-3 times slower than a laptop; the longest takes
-        # about 20 minutes here.
+        # CI runs a file 2-3 times slower than a laptop. Each file may run
+        # twice its recorded time here (durations.json), and never less
+        # than this.
         env:
           TEST_TIMEOUT_MIN: 25
         run: |
