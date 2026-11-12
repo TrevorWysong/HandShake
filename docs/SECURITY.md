@@ -332,6 +332,11 @@ The rule from the last review, applied across every zome that adds up money, poi
 
 - **A payee's agent kept every hold's account and every bank challenge for good**, in a file it reads and writes whole for every payment. Now a challenge is forgotten once its authorization can't live (8 days), and a hold's account 180 days after it's placed, past any refund. Ones kept from before are dated from when the agent first sees them.
 
+- **More decisions waited on nothing.** The store's answer to an issue read as none; a settlement's basis not read refunded a customer who collected their own delivery none of the driver's share of the fee; the bid behind a not-delivered decision, and behind a delivered one, left the driver's forfeit or completion unrecorded for good; a code's uses left read as some when its promo hadn't arrived; an order not read counted as not called off, so a serial canceller went uncounted. Each now errs, and every store decision runs in a call of its own and is tried again.
+- **A store's moves, and a chain's close.** A move not yet arrived ended a store's line short -- its earlier owners' points, and the owners its rating leaves out -- and a chain whose head couldn't be read counted as open, so a moved account looked as if it was still here. Both now err.
+- **Payment history and receipts** left out a payment, or priced a driver's part at nothing, for a record not yet arrived. They now err.
+- **What a person sees meanwhile:** "Some of what this needs hasn't reached this device yet. Try again in a moment." -- a sentence, translated, not "something went wrong".
+
 Reads that only show something -- menus, bags and promos while browsing, a birthday looked up for a gift that's tried again later -- still skip what isn't here.
 
 ## Store contact details and pickup chat
