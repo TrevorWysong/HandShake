@@ -63,16 +63,24 @@ export function apnsSender(config: ApnsConfig, request: ApnsRequest = http2Reque
 }
 
 /// Requests over one HTTP/2 connection to Apple, opened as needed. Each is
-/// given up at the deadline: its stream cancelled, and the connection
-/// dropped -- one that stopped answering is opened afresh for the next --
-/// so a hung request never ties up a delivery slot for long.
+/// given up at its deadline, counted from its start however slowly its
+/// answer trickles in: its stream cancelled, and the connection dropped --
+/// one that stopped answering is opened afresh for the next -- so a hung
+/// request never ties up a delivery slot for long.
 export function http2Request(sandbox: boolean, timeoutMs = DELIVERY_TIMEOUT_MS, origin = sandbox ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com"): ApnsRequest {
   let session: ClientHttp2Session | null = null;
   return (path, headers, body) =>
     new Promise((settle, fail) => {
       let settled = false;
-      const resolve = (answer: { status: number; reason?: string }) => !settled && ((settled = true), settle(answer));
-      const reject = (err: unknown) => !settled && ((settled = true), fail(err));
+      // From the request's start, however its answer trickles in: a wall
+      // clock, not an idle timer one byte at a time can keep resetting.
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      const done = () => {
+        settled = true;
+        clearTimeout(deadline);
+      };
+      const resolve = (answer: { status: number; reason?: string }) => !settled && (done(), settle(answer));
+      const reject = (err: unknown) => !settled && (done(), fail(err));
       if (!session || session.closed || session.destroyed) {
         const opened = connect(origin);
         opened.on("error", () => session === opened && (session = null));
@@ -80,12 +88,12 @@ export function http2Request(sandbox: boolean, timeoutMs = DELIVERY_TIMEOUT_MS, 
       }
       const using = session;
       const stream = using.request({ ":method": "POST", ":path": path, ...headers });
-      stream.setTimeout(timeoutMs, () => {
+      deadline = setTimeout(() => {
+        reject(new Error(`Apple didn't answer within ${timeoutMs} ms`));
         stream.close(constants.NGHTTP2_CANCEL);
         if (session === using) session = null;
         using.destroy();
-        reject(new Error(`Apple didn't answer within ${timeoutMs} ms`));
-      });
+      }, timeoutMs);
       let status = 0;
       let text = "";
       stream.on("response", (head) => (status = Number(head[":status"])));

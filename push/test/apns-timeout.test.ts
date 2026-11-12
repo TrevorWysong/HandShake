@@ -41,3 +41,26 @@ test("FCM and Web Push requests are given up at their deadline too", async () =>
   await assert.rejects(withDeadline(hung, 50)("https://fcm.googleapis.com/", { method: "POST", headers: {} }), (err: Error) => err.name === "TimeoutError");
   assert.ok(Date.now() - started < 2_000);
 });
+
+test("an answer that trickles in, a byte at a time, is given up at the deadline all the same", async () => {
+  const sessions = new Set<{ destroy(): void }>();
+  const server = createServer();
+  server.on("session", (session) => sessions.add(session));
+  const drips: ReturnType<typeof setInterval>[] = [];
+  server.on("stream", (stream: ServerHttp2Stream) => {
+    stream.respond({ ":status": 200 });
+    // Never finishes: a byte well inside any idle timeout, forever.
+    drips.push(setInterval(() => !stream.destroyed && stream.write(" "), 20));
+  });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const request = http2Request(false, 200, `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+  try {
+    const started = Date.now();
+    await assert.rejects(request("/3/device/aa", {}, "{}"), /didn't answer within 200 ms/);
+    assert.ok(Date.now() - started < 1_500, "at the deadline from its start, not kept alive by the trickle");
+  } finally {
+    for (const drip of drips) clearInterval(drip);
+    for (const session of sessions) session.destroy();
+    await new Promise((done) => server.close(done));
+  }
+});

@@ -52,7 +52,7 @@ export function loadConfig(): Config {
   const fcmAccount = process.env.FCM_SERVICE_ACCOUNT;
   const config: Config = {
     port: number("PORT", 8892),
-    dbPath: process.env.DB_PATH ?? "./push.db",
+    dbPath: process.env.DB_PATH ?? "./data/push.db",
     tokenKey,
     tokenTtlMs: number("TOKEN_TTL_DAYS", 30) * 24 * 60 * 60 * 1000,
     webPush: vapidKey ? { privateKey: vapidKey, subject: required("VAPID_SUBJECT") } : null,

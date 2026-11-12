@@ -16,6 +16,7 @@ import { CodeCard } from "./AccountCode";
 import { Button } from "../ui";
 import { useT } from "../../i18n";
 import { takeBack } from "../../holochain/zomes/account";
+import { TakeBackRefused, takeAccountBack } from "../../lib/account/handover";
 import { useAction } from "../../lib/hooks/useAction";
 
 type Step = "show" | "done" | "stay" | "removed" | "tooLate";
@@ -30,15 +31,16 @@ export function Departure({ sealed }: { sealed: string }) {
   const act = (command: "retire" | "stay") => action.run(async () => {
     const runtime = await deviceRuntime();
     if (!runtime) throw new Error(t("move.unsupported"));
-    await runtime[command]();
     if (command === "stay") {
       // Running again, but still handing over: it writes nothing until the
-      // network says the new phone never did.
-      const refused = await takeBack(!!runtime.oneNode).then(() => null, (err: unknown) => err);
-      if (refused) {
-        setStep("tooLate");
-        throw refused;
-      }
+      // network says the new phone never did. Refused for good only once
+      // the new phone has written; "not yet" stays here, to try again.
+      await takeAccountBack(runtime, takeBack).catch((err: unknown) => {
+        if (err instanceof TakeBackRefused && err.refusal === "tooLate") setStep("tooLate");
+        throw err instanceof TakeBackRefused ? err.cause : err;
+      });
+    } else {
+      await runtime.retire();
     }
     clear();
     // Taken back: the app starts again as it was. Let go: in development

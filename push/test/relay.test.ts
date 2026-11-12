@@ -298,11 +298,23 @@ test("the relay's database, and the files SQLite makes beside it, are readable b
     store.register("webpush", JSON.stringify({ endpoint: "https://fcm.googleapis.com/fcm/send/x", keys: { p256dh: "p", auth: "a" } }));
     assert.equal(statSync(dir).mode & 0o777, 0o700, "its folder");
     assert.equal(statSync(db).mode & 0o777, 0o600, "its file, despite a permissive umask");
-    // A file from before, left readable, is narrowed when the relay opens it.
-    const old = path.join(dir, "old.db");
+    // A folder of its own from before, left readable, is narrowed with the
+    // file in it.
+    const before = path.join(mkdtempSync(path.join(tmpdir(), "relay-")), "kept");
+    const { mkdirSync, chmodSync } = await import("node:fs");
+    mkdirSync(before, { mode: 0o755 });
+    chmodSync(before, 0o755);
+    const old = path.join(before, "push.db");
     writeFileSync(old, "", { mode: 0o644 });
     new Store(old);
     assert.equal(statSync(old).mode & 0o777, 0o600, "an existing file, narrowed");
+    assert.equal(statSync(before).mode & 0o777, 0o700, "and its folder");
+    // A folder others can read, holding other things too, isn't the relay's.
+    const shared = mkdtempSync(path.join(tmpdir(), "relay-shared-"));
+    chmodSync(shared, 0o755);
+    writeFileSync(path.join(shared, "someone-elses.txt"), "");
+    assert.throws(() => new Store(path.join(shared, "push.db")), /needs a folder of its own/);
+    assert.equal(statSync(shared).mode & 0o777, 0o755, "left as it was");
   } finally {
     process.umask(previous);
   }

@@ -70,7 +70,8 @@ await runScenario(async (scenario) => {
   const was = await on(bobHere, "account")<Uint8Array | null>("arrived_from", bobKey);
   assert.ok(was && Buffer.from(was).equals(Buffer.from(aliceKey)), "checked on the previous network");
   await useTestCoordinators(peerNew, ["account"]);
-  console.log(`[DIAG] an app with no previous network, asking it: ${await on(peerNew.cells[0], "account")<string>("previous_raw_for_testing", null)}`);
+  // What the bridge reads as "no previous network" (`coordinator_support::no_such_role`): Holochain's own words.
+  assert.match(await on(peerNew.cells[0], "account")<string>("previous_raw_for_testing", null), /Role not found/, "Holochain still says an app has no such role as the bridge expects");
   assert.equal(await on(peerNew.cells[0], "account")<Uint8Array | null>("arrived_from", bobKey), null, "an app without the previous network can't vouch for it -- told apart from one it couldn't reach");
   await assert.rejects(on(bobHere, "account")("create_raw_arrival_for_testing", { previous_network: newNetwork, previous_account: aliceKey, migration: request.close }), /another network/, "an arrival comes from another network");
 
