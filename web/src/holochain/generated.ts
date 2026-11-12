@@ -2723,6 +2723,17 @@ export type PaymentDue =
         payer: AgentPubKey;
         at: Timestamp;
       };
+    }
+  /**
+   * What's due on `order` couldn't be worked out this time (`reason`):
+   * nothing to do on it yet, and the agent says so rather than taking
+   * silence for "nothing due". The next round tries it again.
+   */
+  | {
+      Unreadable: {
+        order: ActionHash;
+        reason: string;
+      };
     };
 
 /**

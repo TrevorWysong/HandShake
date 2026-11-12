@@ -112,6 +112,8 @@ export class Engine {
       // Each payment on its own: one failing never holds up the rest.
       const state = await store.load();
       try {
+        // Nothing to do on it yet -- but never taken for "nothing due".
+        if ("Unreadable" in item) throw new Error(`what's due on an order couldn't be read: ${item.Unreadable.reason}`);
         if ("Authorize" in item) await this.#authorize(item.Authorize, state);
         else if ("Settle" in item) await this.#settle(item.Settle, state);
         else if ("Refund" in item) await this.#refund(item.Refund, state);

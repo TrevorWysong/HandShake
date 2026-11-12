@@ -296,6 +296,16 @@ test("one payment failing never holds up the others in its round", async () => {
   assert.deepEqual(problems, ["Settle"], "and the failed one is the payee's to hear about");
 });
 
+test("an order the network couldn't read is the payee's to hear about, never taken for nothing due", async () => {
+  const z = zome();
+  const problems: string[] = [];
+  const engine = new Engine({ dispatch: z.dispatch, processor: testProcessor("USD"), state: memoryStore(), currency: "USD", account: "Test:test:", onProblem: (what) => problems.push(what) });
+  z.due = [{ Unreadable: { order: h(70), reason: "its record isn't here yet" } }, authorize(12, 52)];
+  assert.equal(await engine.round(), 1, "the order that could be read is held");
+  assert.equal(z.recorded("record_hold").length, 1);
+  assert.deepEqual(problems, ["Unreadable"], "and the one that couldn't is reported, not passed over");
+});
+
 test("rounds never overlap", async () => {
   const { z, engine } = setup();
   z.due = [authorize(10, 50)];

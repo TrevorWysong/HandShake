@@ -26,7 +26,7 @@ Built on [Holochain](https://www.holochain.org)
 
 A delivery platform today sits between three groups of people who could deal with each other directly. It holds the menu, the order, the address and the money, sets the rules, and takes a share of every order from the store, the driver and the customer.
 
-HandShake removes the middle. Each customer, store and driver runs the app on their own device, and the app *is* the network: there is no application server, no company database and no account anyone can freeze. What the platform used to guarantee, that prices are honest, money is held until the food arrives, and nobody can rewrite what happened, is guaranteed instead by rules that every participant's app checks on everything it stores.
+HandShake removes the middle. Each customer, store and driver runs the app on their own device, and the app *is* the network: there is no application server, no company database and no account anyone can freeze. What the platform used to guarantee, that prices are honest, payments wait on the outcome, and nobody can rewrite what happened, is guaranteed instead by rules that every participant's app checks on everything it stores. Money is the one exception: it moves on each payee's own card processor, which the network can't control (see *Money*).
 
 The name is the transaction itself: two people agreeing, peer to peer, with nobody standing between them.
 
@@ -135,7 +135,7 @@ sequenceDiagram
     Customer->>Store: Places an order, priced from the store's own menu
     Peers-->>Peers: Check the price, the area, the limits
     Store->>Customer: Accepts within its response window
-    Note over Customer: The food's price is held in escrow
+    Note over Customer: The store holds the food's price on the customer's card
     Driver->>Customer: Bids a fee and an arrival time
     Customer->>Driver: Accepts a bid, or the app picks by the published rule
     Note over Customer: The driver's pay is held
@@ -167,7 +167,8 @@ flowchart LR
 ```
 
 - **Held at every step.** The customer's card is held by the store before it accepts; the driver's pay is held on the store's card, and the driver's collateral (the food's value) on theirs, before the driver commits. Each step must cite its hold, or validation refuses it.
-- **Charged by the outcome, once.** After an order ends, each payee charges exactly what the order's outcome entitles them to, and releases the rest. Every charge is a signed record anyone in the order can check.
+- **Charged by the outcome, once.** After an order ends, each payee's payment agent charges exactly what the order's outcome entitles them to, and releases the rest. Every charge is a signed record anyone in the order can check.
+- **Not escrow.** A hold sits in the payee's own processor account, not with a third party. The network enforces what each payee is *owed*, but it can't stop one from charging a card from their own processor dashboard, outside the app. The signed record of what was due is then the payer's evidence for a dispute with their card issuer. HandShake is a marketplace with card-network protections, not a trustless escrow ([docs/DIRECT_PAYMENTS.md](docs/DIRECT_PAYMENTS.md), "What the network enforces, and what it can't").
 - **No cut, no money server.** Processors charge their usual card fee on what's charged; releasing a hold is free; customers pay no fees.
 
 <br>

@@ -261,6 +261,10 @@ pub enum PaymentDue {
     /// Delete the card `payer` kept here from the processor -- they withdrew
     /// it `at`. A card they kept again after that stays.
     Forget { payer: AgentPubKey, at: Timestamp },
+    /// What's due on `order` couldn't be worked out this time (`reason`):
+    /// nothing to do on it yet, and the agent says so rather than taking
+    /// silence for "nothing due". The next round tries it again.
+    Unreadable { order: ActionHash, reason: String },
 }
 
 /// How many days of orders the agent looks through: a card authorization
@@ -273,8 +277,13 @@ const DUE_DAYS: i64 = 8;
 pub fn payments_due(_: ()) -> ExternResult<Vec<PaymentDue>> {
     let me = me()?;
     let mut due = Vec::new();
+    // One order that can't be read never hides the rest -- nor itself: it's
+    // reported, for the agent to show as trouble until it reads again.
     for order in crate::settlement::candidates(DUE_DAYS)? {
-        due.extend(due_on(&order, &me).unwrap_or_default());
+        match due_on(&order, &me) {
+            Ok(on_it) => due.extend(on_it),
+            Err(err) => due.push(PaymentDue::Unreadable { order, reason: err.to_string() }),
+        }
     }
     due.extend(refunds_due(&me)?);
     due.extend(forgotten_cards(&me)?);
