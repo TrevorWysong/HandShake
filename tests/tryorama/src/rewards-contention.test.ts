@@ -98,9 +98,11 @@ await runScenario(async (scenario) => {
     await sync();
     // Whatever was turned away -- its points, or its store's chain moving
     // under it -- is tried again, then declined as the store's app would.
+    // Its client repeats a write refused for a moved chain (the store's own
+    // background work can still be writing), so this does too.
     for (const { owner, order } of placed) {
       if ((await statusOf(owner, order)) !== "Placed") continue;
-      await accept(owner, order).catch((err) => assert.match(String(err), /points don't cover/, `round ${round}: refused for its points`));
+      await call(owner, "dispatch")("accept_pickup_order", { order_original_action: order }).catch((err) => assert.match(String(err), /points don't cover/, `round ${round}: refused for its points`));
       if ((await statusOf(owner, order)) === "Placed") await retryUntilOk(() => owner.cells[0].callZome({ zome_name: "dispatch", fn_name: "decline_pickup_order", payload: { order_original_action: order, reason: "RewardUnavailable" } }));
     }
     await sync();
