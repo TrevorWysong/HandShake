@@ -104,6 +104,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.promo-codes-and-rewards-apply-to-menu": "Los códigos promocionales y las recompensas se aplican a los artículos del menú, no a las bolsas sorpresa.",
   "refusal.record-that-you-ve-arrived-first-hand": "Primero registra que llegaste: entrégalo en la puerta y se le avisa al cliente de que estás ahí.",
   "refusal.show-the-code-from-this-phone-again": "Vuelve a mostrar el código de este teléfono: el que se usó para sellarla ya no existe.",
+  "refusal.some-of-what-this-needs-hasn-t": "Parte de lo que esto necesita aún no ha llegado a este dispositivo. Inténtalo de nuevo en un momento.",
   "refusal.something-on-this-order-couldn-t-be": "No se encontró algo de este pedido. Inténtalo de nuevo en un momento.",
   "refusal.square-didn-t-say-which-country-that": "Square no indicó en qué país está esa ubicación.",
   "refusal.square-no-longer-accepts-this-device-s": "Square ya no acepta el token de acceso de este dispositivo. Conéctalo de nuevo.",

@@ -233,8 +233,9 @@ pub fn record_targets(links: Vec<Link>) -> Vec<ActionHash> {
     links.into_iter().filter_map(|link| link.target.into_action_hash()).collect()
 }
 
-fn not_arrived(hash: &ActionHash) -> WasmError {
-    guest(format!("record {hash} is linked but hasn't reached this device yet"))
+/// A sentence, as the person sees it: it's a moment's wait, not a fault.
+fn not_arrived(_hash: &ActionHash) -> WasmError {
+    guest("Some of what this needs hasn't reached this device yet. Try again in a moment.")
 }
 
 /// Where each entry at `originals` (their original actions) is now -- its

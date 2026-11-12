@@ -84,6 +84,7 @@ export const REFUSALS = {
   "refusal.promo-codes-and-rewards-apply-to-menu": "Promo codes and rewards apply to menu items, not goodie bags.",
   "refusal.record-that-you-ve-arrived-first-hand": "Record that you've arrived first: hand it over at the door, and the customer is told you're there.",
   "refusal.show-the-code-from-this-phone-again": "Show the code from this phone again: the one it was sealed to is gone.",
+  "refusal.some-of-what-this-needs-hasn-t": "Some of what this needs hasn't reached this device yet. Try again in a moment.",
   "refusal.something-on-this-order-couldn-t-be": "Something on this order couldn't be found. Try again in a moment.",
   "refusal.square-didn-t-say-which-country-that": "Square didn't say which country that location is in.",
   "refusal.square-no-longer-accepts-this-device-s": "Square no longer accepts this device's access token. Connect again.",
