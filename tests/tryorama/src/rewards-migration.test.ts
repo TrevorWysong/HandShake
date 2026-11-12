@@ -12,9 +12,9 @@
 // grant. The member's card and the store's count agree, to the point. Only
 // the store's owner, or the key they moved to, can ask.
 import assert from "node:assert/strict";
-import { dhtSync, runScenario } from "@holochain-open-dev/tryorama";
+import { dhtSync, runScenario, type Conductor } from "@holochain-open-dev/tryorama";
 import type { ActionHash, Record as HcRecord } from "@holochain/client";
-import { HAPP_PATH, ST_PETE, actionHash, customerPaid, decodeEntry, installOn, networkSettings, onCell, retryUntil, retryUntilOk, retryingCaller, shareAgentsOn, twoNetworkHapp } from "./helpers.js";
+import { HAPP_PATH, ST_PETE, actionHash, customerPaid, decodeEntry, installOn, settleAll, networkSettings, onCell, retryUntil, retryUntilOk, retryingCaller, shareAgentsOn, twoNetworkHapp } from "./helpers.js";
 
 const OLD = "handshake-rewards-v1";
 const NEW = "handshake-rewards-v2";
@@ -26,9 +26,13 @@ interface Card {
 }
 
 await runScenario(async (scenario) => {
-  const hosts = await Promise.all([0, 1, 2, 3, 4].map(() => scenario.addConductor()));
+  // Started one at a time, as the migration test does.
+  const hosts: Conductor[] = [];
+  for (let i = 0; i < 5; i++) hosts.push(await scenario.addConductor());
   const [peerHost, aliceHost, caraHost, bobHost, danHost] = hosts;
-  const [peerKey, aliceKey, caraKey, bobKey, danKey] = await Promise.all(hosts.map((h) => h.adminWs().generateAgentPubKey()));
+  const keys: Uint8Array[] = [];
+  for (const host of hosts) keys.push(await host.adminWs().generateAgentPubKey());
+  const [peerKey, aliceKey, caraKey, bobKey, danKey] = keys;
   const next = twoNetworkHapp();
 
   // The old network: a peer, Alice's store, Cara who orders there. The
@@ -44,12 +48,20 @@ await runScenario(async (scenario) => {
   const [dan, danBefore] = [onCell(danApp, danApp.namedCells.get("handshake")!), onCell(danApp, danApp.namedCells.get("previous")!)];
   const oldNetwork = peerOld.cells[0].cell_id[0];
   const newNetwork = peerNew.cells[0].cell_id[0];
-  await shareAgentsOn([peerHost, aliceHost, caraHost, bobHost, danHost], oldNetwork);
-  await shareAgentsOn([peerHost, bobHost, danHost], newNetwork);
+  await shareAgentsOn([peerHost, aliceHost, caraHost, bobHost, danHost], oldNetwork, 5);
+  await shareAgentsOn([peerHost, bobHost, danHost], newNetwork, 3);
   const onOld = [peerOld, alice, cara, bobBefore, danBefore];
   const onNew = [peerNew, bob, dan];
-  const syncOld = () => dhtSync(onOld, oldNetwork);
-  const syncNew = () => dhtSync(onNew, newNetwork);
+  // Each network's peer records shared afresh before it syncs: a record
+  // shared as an agent first starts may not yet claim the arc it settles on.
+  const syncOld = async () => {
+    await shareAgentsOn([peerHost, aliceHost, caraHost, bobHost, danHost], oldNetwork, 5);
+    await dhtSync(onOld, oldNetwork);
+  };
+  const syncNew = async () => {
+    await shareAgentsOn([peerHost, bobHost, danHost], newNetwork, 3);
+    await dhtSync(onNew, newNetwork);
+  };
   const call = (p: typeof alice, zome: string) => retryingCaller(p.cells[0], zome);
   const now = Date.now() * 1000;
 
@@ -80,7 +92,9 @@ await runScenario(async (scenario) => {
   await syncOld();
   await retryUntilOk(() => call(cara, "dispatch")("complete_pickup", order), 40);
   await syncOld();
-  await retryUntil(() => call(alice, "dispatch")("settle_order", order).then(() => call(cara, "dispatch")<{ refund: number | null }>("get_order_decisions", order)), (d) => d.refund !== null, 60, 1000);
+  // Settled, and the hold charged: nothing left that would keep the store
+  // from moving.
+  await settleAll(onOld, order);
   await syncOld();
   await call(alice, "rewards")("grant_points", { to: caraKey, catalog_ref: store, points: 75, note: "Thanks for coming" });
   await syncOld();

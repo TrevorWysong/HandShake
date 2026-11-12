@@ -100,14 +100,29 @@ export const TEST_PROPERTIES = { report_window_secs: 2 };
 
 const DNA_PATH = fileURLToPath(new URL("../../../dnas/handshake/workdir/handshake.dna", import.meta.url));
 
+/// The DNA of an earlier release, to test moving from it: built from that
+/// release's commit by `scripts/previous-release.sh`.
+export const PREVIOUS_RELEASE_DNA = fileURLToPath(new URL("../fixtures/previous-release/handshake.dna", import.meta.url));
+
+/// An app of `roles`, each role's DNA by path, packed to a temporary file.
+function happOf(name: string, roles: [string, string][]): string {
+  const dir = mkdtempSync(path.join(tmpdir(), `${name}-`));
+  const role = ([role, dna]: [string, string]) => ({ name: role, provisioning: { strategy: "create", deferred: false }, dna: { path: dna, modifiers: { network_seed: null, properties: null }, clone_limit: 0 } });
+  writeFileSync(path.join(dir, "happ.yaml"), JSON.stringify({ manifest_version: "0", name, description: null, roles: roles.map(role) }));
+  execFileSync("hc", ["app", "pack", dir, "-o", path.join(dir, `${name}.happ`)]);
+  return path.join(dir, `${name}.happ`);
+}
+
 /// The next version's app: its own network, and the previous one as its
-/// `previous` role -- the same DNA, each under the seed it's installed with.
-export function twoNetworkHapp(): string {
-  const dir = mkdtempSync(path.join(tmpdir(), "handshake-next-"));
-  const role = (name: string) => ({ name, provisioning: { strategy: "create", deferred: false }, dna: { path: DNA_PATH, modifiers: { network_seed: null, properties: null }, clone_limit: 0 } });
-  writeFileSync(path.join(dir, "happ.yaml"), JSON.stringify({ manifest_version: "0", name: "handshake-next", description: null, roles: [role("handshake"), role("previous")] }));
-  execFileSync("hc", ["app", "pack", dir, "-o", path.join(dir, "handshake-next.happ")]);
-  return path.join(dir, "handshake-next.happ");
+/// `previous` role -- this build's DNA, or an earlier release's
+/// (`PREVIOUS_RELEASE_DNA`), each under the seed it's installed with.
+export function twoNetworkHapp(previousDna: string = DNA_PATH): string {
+  return happOf("handshake-next", [["handshake", DNA_PATH], ["previous", previousDna]]);
+}
+
+/// An app of one network, on `dna`: an earlier release's, say.
+export function oneNetworkHapp(dna: string): string {
+  return happOf("handshake-earlier", [["handshake", dna]]);
 }
 
 /// A role's settings on the network `seed` names.
@@ -582,12 +597,32 @@ export function retryingCaller(cell: CallableCell, zome: string) {
   };
 }
 
+/// The agent an encoded agent info record (kitsune2's) is for -- the record
+/// itself if it can't be read, so each still counts once.
+function agentOfInfo(encoded: string): string {
+  try {
+    const outer = JSON.parse(encoded) as { agentInfo?: string; agent?: string };
+    const inner = typeof outer.agentInfo === "string" ? (JSON.parse(outer.agentInfo) as { agent?: string }) : outer;
+    return inner.agent ?? encoded;
+  } catch {
+    return encoded;
+  }
+}
+
 /// Shares one network's peers among the conductors on it -- for a test that
 /// runs more than one network, where `scenario.shareAllAgents` fails: a
-/// conductor knows nothing of a network it isn't on.
-export async function shareAgentsOn(conductors: Conductor[], network: Uint8Array): Promise<void> {
-  const infos = (await Promise.all(conductors.map((c) => c.adminWs().agentInfo({ dna_hashes: [network] } as never)))).flat();
-  await Promise.all(conductors.map((c) => c.adminWs().addAgentInfo({ agent_infos: infos } as never)));
+/// conductor knows nothing of a network it isn't on. A cell just installed
+/// may not have published its own record yet, so with `agents` -- how many
+/// are on the network -- it shares again until every one is known.
+export async function shareAgentsOn(conductors: Conductor[], network: Uint8Array, agents = 0): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    const infos = (await Promise.all(conductors.map((c) => c.adminWs().agentInfo({ dna_hashes: [network] } as never)))).flat();
+    await Promise.all(conductors.map((c) => c.adminWs().addAgentInfo({ agent_infos: infos } as never)));
+    const known = new Set(infos.map(agentOfInfo)).size;
+    if (known >= agents) return;
+    assert.ok(attempt < 30, `only ${known} of ${agents} agents' records published on the network`);
+    await new Promise((done) => setTimeout(done, 1000));
+  }
 }
 
 /// A recovery phrase's key, as the app derives one: an Ed25519 key in the

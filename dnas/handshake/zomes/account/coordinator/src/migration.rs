@@ -154,6 +154,13 @@ pub(crate) fn on_previous<I: Serialize + std::fmt::Debug, O: for<'de> Deserializ
     Ok(call_role(PREVIOUS_ROLE, zome, function, input).ok().and_then(Result::ok))
 }
 
+/// What this version answers the next one through its `previous` role,
+/// beyond what every version does (`handshake_coordinator_support::bridge`).
+#[hdk_extern]
+pub fn bridge_features(_: ()) -> ExternResult<Vec<String>> {
+    Ok(handshake_coordinator_support::bridge::FEATURES.iter().map(|f| f.to_string()).collect())
+}
+
 /// This network's DNA -- what an app asks of its previous role.
 #[hdk_extern]
 pub fn network_hash(_: ()) -> ExternResult<DnaHash> {

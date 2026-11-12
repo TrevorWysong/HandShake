@@ -532,6 +532,43 @@ where
     answer(call(CallTargetCell::OtherRole(role.into()), zome.into(), function.into(), None, input)?)
 }
 
+// --- the bridge to the previous network ---
+
+/// What one version of the network answers the next through its `previous`
+/// role, beyond what every version has (docs/MIGRATION.md, "Across
+/// versions"). Each names the calls that make it up; a version lists the
+/// ones it has (account's `bridge_features`), and the next asks before it
+/// relies on any.
+pub mod bridge {
+    /// Rewards carried over: rewards' `carried_balance` (with the gifts the
+    /// member shows, asked by the owner or the key they moved to),
+    /// `carried_gifts_of` and `store_line_of`, and the gifts an account seals
+    /// to its next key as it leaves (`carry_my_gifts`).
+    pub const REWARDS_CARRY: &str = "rewards-carry:v2";
+    /// First-order deal cards, each claimed under a hash of its fingerprint
+    /// salted with its store's line: dispatch's `newcomer_card_claim`,
+    /// asked with the fingerprint by the same device's next version.
+    pub const DEAL_CARDS: &str = "deal-cards:v3";
+    /// Everything this version answers.
+    pub const FEATURES: &[&str] = &[REWARDS_CARRY, DEAL_CARDS];
+}
+
+/// Whether the previous network answers `feature` (`bridge`): `Ok(true)` or
+/// `Ok(false)` -- false from a version too old to list what it answers,
+/// which never changes -- or `Err` if it can't be asked just now, to try
+/// again later.
+pub fn previous_answers(feature: &str) -> ExternResult<Result<bool, String>> {
+    match call(CallTargetCell::OtherRole("previous".into()), ZomeName::from("account"), "bridge_features".into(), None, ()) {
+        Ok(ZomeCallResponse::Ok(io)) => Ok(Ok(io.decode::<Vec<String>>().map_err(|e| wasm_error!(e))?.iter().any(|f| f == feature))),
+        // No list: an older version, if it answers what every version does.
+        _ => match call(CallTargetCell::OtherRole("previous".into()), ZomeName::from("account"), "network_hash".into(), None, ()) {
+            Ok(ZomeCallResponse::Ok(_)) => Ok(Ok(false)),
+            Ok(other) => Ok(Err(format!("{other:?}"))),
+            Err(e) => Ok(Err(e.to_string())),
+        },
+    }
+}
+
 /// `call_local`, of `agent`'s own node, over the network -- the inner error
 /// when it can't be reached.
 pub fn call_agent<I, O>(agent: AgentPubKey, zome: impl Into<ZomeName>, function: &str, input: I) -> ExternResult<Result<O, String>>

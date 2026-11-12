@@ -51,7 +51,21 @@ A release made while people move carries the previous network as a second app ro
 - **Stores** are republished by `catalog::import_store`, reading the old store through the bridge: details, choice groups, menu and live promo codes, every reference remapped. A `StoreImport` records where each one came from.
 - **Ratings and reputation**, for people and for stores, add the previous network's summaries once `arrived_from` / `imported_from` confirm the link.
 - **Rewards:** the import copies the store's program, its items and groups remapped (`rewards::carry_program`). As a member's account leaves, `migrate_out` seals the grants it was given to its new key (`rewards::carry_my_gifts`). On their first order at the store that came over, their app shows the store those grants. The store's new key then asks the old network what the member held (`carried_balance`), played from its public records and those gifts. The old network answers only the store's owner, or the key its owner's migration names. The member is granted that as points carried over (`GrantReason::Carried`). Tier and history start again; docs/REWARDS.md, "When a store moves".
-- **First-order deal cards:** a store that came over still knows which cards took its first-order deal: each new claim is checked against the old store's, through the bridge (`newcomer_card_claim`).
+- **First-order deal cards:** a store that came over still knows which cards took its first-order deal: each new claim is checked against the old store's, through the bridge (`newcomer_card_claim`), by fingerprint, on the same device.
+
+### Across versions
+
+The old network runs whatever release it was, which may be older than the bridge a new version would like to use. So each version lists what it answers beyond what every version does (account's `bridge_features`; `coordinator_support::bridge`). The next version asks before relying on any of it, and tells three answers apart:
+- **It answers the feature:** used.
+- **It's too old to list anything,** but answers what every version does: a final no. The new version does without, once, and never retries.
+- **It can't be asked just now:** tried again later.
+
+| Feature | From a release that has it | From one that doesn't |
+| --- | --- | --- |
+| `rewards-carry:v2` | members' points, earned and given, are carried as a grant on their first order at the store that came over | the program comes over; points don't: members start afresh, and the store can give them points itself |
+| `deal-cards:v3` | the store's first-order deal checks the cards its old store claimed | its claims start afresh on the new network; one first order per account still holds |
+
+Releases 0.1.0 and 0.2.0 have neither: this release is the first to list them. `tests/tryorama/src/cross-version.test.ts` moves a store and a member from an earlier release's real DNA (`fixtures/previous-release`, built from its commit by `scripts/previous-release.sh`; rebuild it as each release ships). It checks that everything this version does without fails nothing. `rewards-migration.test.ts` covers the carry between two networks that both have it.
 
 ### What doesn't move, and the limits
 

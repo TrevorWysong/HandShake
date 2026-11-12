@@ -528,25 +528,33 @@ pub struct NewcomerCardInput {
     pub order: ActionHash,
 }
 
-/// A card's digest, as a store's claim of it is tagged: a hash of its
-/// processor fingerprint. A fingerprint is an opaque id that only the
-/// payee's processor account gives out, never the card's number, so the
-/// digest tells nobody else which card it is -- and it's the same whichever
-/// key the store's owner holds, so a store recovered onto a new key, or
-/// brought to a new network, still knows its cards.
-fn card_digest(fingerprint: &str) -> Vec<u8> {
-    holo_hash::encode::blake2b_256(format!("handshake-newcomer-card:v2:{fingerprint}").as_bytes())
+/// A card's digest, as a store's claims of it are tagged: a hash of its
+/// processor fingerprint, salted with the store's line (`line_root`). A
+/// fingerprint is an opaque id only the payee's processor account gives
+/// out, never the card's number, so nobody else can work back from the
+/// digest; and salted, the same card's digests at two stores never match,
+/// whatever ids their processors give. No key goes into it, so the store's
+/// owner finds its claims whichever key they hold.
+fn card_digest(root: &ActionHash, fingerprint: &str) -> Vec<u8> {
+    holo_hash::encode::blake2b_256(&[b"handshake-newcomer-card:v3:".as_slice(), root.get_raw_39(), fingerprint.as_bytes()].concat())
 }
 
-/// The order a card took `store`'s first-order deal on, if it has: under
-/// the store, or any store it carries on from (catalog's `store_line`),
-/// each claimed by whoever owned that store.
-fn claimed_in_line(store: &ActionHash, digest: &[u8]) -> ExternResult<Option<ActionHash>> {
+/// `store` and every store it carries on from here, newest first: its line
+/// (catalog's `store_line`), whose last is the root every claim is salted
+/// with.
+fn line_of(store: &ActionHash) -> ExternResult<Vec<ActionHash>> {
     let earlier: Vec<ActionHash> = call_local("catalog", "store_line", store.clone())?.map_err(|why| guest(format!("store_line: {why}")))?;
-    for catalog in std::iter::once(store.clone()).chain(earlier) {
+    Ok(std::iter::once(store.clone()).chain(earlier).collect())
+}
+
+/// The order a card took a store's first-order deal on, if it has: under
+/// any store in its `line`, each claimed by whoever owned that store.
+fn claimed_in_line(line: &[ActionHash], fingerprint: &str) -> ExternResult<Option<ActionHash>> {
+    let digest = card_digest(line.last().expect("a line holds its store"), fingerprint);
+    for catalog in line {
         let Some(record) = get(catalog.clone(), GetOptions::default())? else { continue };
         let owner = record.action().author().clone();
-        let query = LinkQuery::try_new(catalog, LinkTypes::StoreToNewcomerCard)?.author(owner.clone()).tag_prefix(LinkTag::new(digest.to_vec()));
+        let query = LinkQuery::try_new(catalog.clone(), LinkTypes::StoreToNewcomerCard)?.author(owner.clone()).tag_prefix(LinkTag::new(digest.clone()));
         if let Some(link) = get_links(query, GetStrategy::default())?.into_iter().find(|link| link.author == owner && link.tag.0 == digest) {
             return Ok(link.target.into_action_hash());
         }
@@ -557,15 +565,17 @@ fn claimed_in_line(store: &ActionHash, digest: &[u8]) -> ExternResult<Option<Act
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NewcomerCardClaim {
     pub store: ActionHash,
-    pub digest: Vec<u8>,
+    pub fingerprint: String,
 }
 
-/// The order a card, by its digest, took `store`'s first-order deal on
-/// here, if it has -- asked by the next network, through its `previous`
-/// role, for a store brought over from here.
+/// The order a card took `store`'s first-order deal on here, if it has --
+/// asked by the next version of the network on the same device, through
+/// its `previous` role, for a store brought over from here. The fingerprint
+/// never leaves the device: it's salted and hashed here, as this network
+/// keeps its claims.
 #[hdk_extern]
 pub fn newcomer_card_claim(input: NewcomerCardClaim) -> ExternResult<Option<ActionHash>> {
-    claimed_in_line(&input.store, &input.digest)
+    claimed_in_line(&line_of(&input.store)?, &input.fingerprint)
 }
 
 /// Claims a store's first-order deal for a card, on `order`: `true` if the
@@ -582,17 +592,25 @@ pub fn claim_newcomer_card(input: NewcomerCardInput) -> ExternResult<bool> {
     if store.action().author() != &me {
         return Err(guest("Only the store's owner keeps its first-order deal."));
     }
-    let digest = card_digest(&input.fingerprint);
-    if let Some(took) = claimed_in_line(&input.store, &digest)? {
+    let line = line_of(&input.store)?;
+    if let Some(took) = claimed_in_line(&line, &input.fingerprint)? {
         return Ok(took == input.order);
     }
-    let origin: Option<ActionHash> = call_local("catalog", "imported_from", input.store.clone())?.map_err(|why| guest(format!("imported_from: {why}")))?;
-    if let Some(origin) = origin {
-        let before: Option<ActionHash> = call_role("previous", "dispatch", "newcomer_card_claim", NewcomerCardClaim { store: origin, digest: digest.clone() })?.map_err(|why| guest(format!("couldn't read the previous network: {why}")))?;
+    // The store it was brought over from, if the network before keeps its
+    // cards this way: a version too old to has none this one can read --
+    // they were kept another way, or on its devices.
+    let origin: Option<ActionHash> = call_local("catalog", "imported_from", line.last().expect("a line holds its store").clone())?.map_err(|why| guest(format!("imported_from: {why}")))?;
+    let answers = match &origin {
+        Some(_) => handshake_coordinator_support::previous_answers(handshake_coordinator_support::bridge::DEAL_CARDS)?.map_err(|why| guest(format!("couldn't reach the previous network: {why}")))?,
+        None => false,
+    };
+    if let Some(origin) = origin.filter(|_| answers) {
+        let before: Option<ActionHash> = call_role("previous", "dispatch", "newcomer_card_claim", NewcomerCardClaim { store: origin, fingerprint: input.fingerprint.clone() })?.map_err(|why| guest(format!("couldn't read the previous network: {why}")))?;
         if before.is_some() {
             return Ok(false);
         }
     }
+    let digest = card_digest(line.last().expect("a line holds its store"), &input.fingerprint);
     create_link(input.store, input.order, LinkTypes::StoreToNewcomerCard, LinkTag::new(digest))?;
     Ok(true)
 }

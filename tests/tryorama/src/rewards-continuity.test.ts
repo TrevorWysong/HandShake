@@ -32,7 +32,12 @@ await runScenario(async (scenario) => {
   const players = await setupPlayersWithProperties(scenario, 4, () => ({}));
   let [owner] = players;
   const [, member, neighbour, successor] = players;
-  const everyone = () => [owner, member, neighbour, successor];
+  // A node restored from the network never holds exactly the ops the rest
+  // do, which is what `dhtSync` asks (device-move.test.ts): once the
+  // store's device is restored, the others sync, and it reads what it
+  // needs as it comes.
+  let restored = false;
+  const everyone = () => (restored ? [member, neighbour, successor] : [owner, member, neighbour, successor]);
   const dna = member.cells[0].cell_id[0];
   const sync = () => dhtSync(everyone(), dna);
   const call = (p: typeof member, zome: string) => retryingCaller(p.cells[0], zome);
@@ -88,16 +93,18 @@ await runScenario(async (scenario) => {
   const program = (await settledCard(store, 305)).program!.version;
   const agree = async (by: typeof member, catalog: Uint8Array, version: ActionHash, balance: number, why: string) => {
     assert.equal((await settledCard(catalog, balance)).balance, balance, `${why}: the member's card`);
-    const covered = await Promise.all([1, 2, 3, 4].map((reward) => storeAllows(by, catalog, version, reward)));
-    assert.deepEqual(covered, [100, 230, 305, 306].map((cost) => cost <= balance), `${why}: the store's count agrees, to the point`);
+    const expected = [100, 230, 305, 306].map((cost) => cost <= balance);
+    const covered = await retryUntil(() => Promise.all([1, 2, 3, 4].map((reward) => storeAllows(by, catalog, version, reward))), (c) => c.every((ok, i) => ok === expected[i]), 30, 1000);
+    assert.deepEqual(covered, expected, `${why}: the store's count agrees, to the point`);
   };
   await agree(owner, store, program, 305, "before");
 
   // ===== The store's device restored from the network =====
   await retryUntil(() => call(owner, "account")<{ ready: boolean }>("ready_to_move", null), (r) => r.ready, 60, 1000);
   owner = await restoreInPlace(owner);
-  await sync();
-  const after = await call(owner, "rewards")<{ members: number; orders: number }>("program_stats", store);
+  restored = true;
+  await scenario.shareAllAgents();
+  const after = await retryUntil(() => call(owner, "rewards")<{ members: number; orders: number }>("program_stats", store), (s) => s.members === 1 && s.orders === 1, 60, 1000);
   assert.deepEqual([after.members, after.orders], [1, 1], "its members and their orders, read again from the network");
   await agree(owner, store, program, 305, "restored");
   console.log("[PASS] a store whose device is restored works out its members' points again, gifts and all, and agrees with their cards");

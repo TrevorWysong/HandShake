@@ -19,7 +19,7 @@
 //!   old key seals its gifts to its new key as it leaves (`carry_my_gifts`).
 
 use super::*;
-use handshake_coordinator_support::{call_role, open_chunked, seal_chunked};
+use handshake_coordinator_support::{bridge, call_role, open_chunked, previous_answers, seal_chunked};
 use rewards_integrity::ledger::OpenGrant;
 use std::collections::BTreeMap;
 
@@ -131,10 +131,12 @@ pub(crate) fn earlier_gifts(catalog_ref: &ActionHash, member: &AgentPubKey) -> E
     Ok(out)
 }
 
-/// The caller's key on the previous network, and the store `catalog_ref`
-/// was brought over from there -- if both moved.
+/// The store `catalog_ref`'s line was brought over from on the previous
+/// network -- its first store's origin, however often it's moved here
+/// since -- and `member`'s key there: if both moved.
 fn came_over(catalog_ref: &ActionHash, member: &AgentPubKey) -> ExternResult<Option<(ActionHash, AgentPubKey)>> {
-    let from: Option<ActionHash> = call_local("catalog", "imported_from", catalog_ref.clone())?.map_err(|why| guest(format!("imported_from: {why}")))?;
+    let first = store_line(catalog_ref)?.pop().unwrap_or_else(|| catalog_ref.clone());
+    let from: Option<ActionHash> = call_local("catalog", "imported_from", first)?.map_err(|why| guest(format!("imported_from: {why}")))?;
     let Some(from) = from else { return Ok(None) };
     let before: Option<AgentPubKey> = call_local("account", "arrived_from", member.clone())?.map_err(|why| guest(format!("arrived_from: {why}")))?;
     Ok(before.map(|before| (from, before)))
@@ -165,7 +167,13 @@ pub fn reveal_my_gifts(catalog_ref: ActionHash) -> ExternResult<u32> {
             gifts.extend(grants_from(&owner_before, &store_before, &[])?.into_iter().map(|g| RevealedGrant { grant: g.grant, payload: g.payload }));
         }
     }
-    if let Some((from, before)) = came {
+    // From a version of the network too old to carry gifts, there are none
+    // to show: its members' gifts were never sealed on to their next keys.
+    let carries = match &came {
+        Some(_) => previous_answers(bridge::REWARDS_CARRY)?.map_err(|why| guest(format!("couldn't reach the previous network: {why}")))?,
+        None => false,
+    };
+    if let Some((from, before)) = came.filter(|_| carries) {
         let line: Vec<ActionHash> = call_role("previous", "rewards", "store_line_of", from)?.map_err(|why| guest(format!("couldn't read the previous network: {why}")))?;
         let carried: Vec<CarriedGift> = call_role("previous", "rewards", "carried_gifts_of", before)?.map_err(|why| guest(format!("couldn't read the previous network: {why}")))?;
         gifts.extend(carried.into_iter().filter(|g| line.contains(&g.catalog_ref)).map(|g| g.revealed));
@@ -295,6 +303,11 @@ pub(crate) fn reveals_shown(catalog_ref: &ActionHash, member: &AgentPubKey) -> E
 /// network couldn't say just now -- tried again on their next order.
 pub(crate) fn carry_previous_points(catalog_ref: &ActionHash, member: &AgentPubKey, order: &ActionHash) -> ExternResult<Option<OpenGrant>> {
     let Some((from, before)) = came_over(catalog_ref, member)? else { return Ok(None) };
+    // A version of the network too old to work it out carries nothing --
+    // for good: it never will.
+    if !previous_answers(bridge::REWARDS_CARRY)?.map_err(|why| guest(format!("couldn't reach the previous network: {why}")))? {
+        return Ok(None);
+    }
     let gifts = revealed(catalog_ref, member)?;
     let held: u64 = call_role("previous", "rewards", "carried_balance", CarriedBalanceInput { catalog_ref: from.clone(), member: before, gifts })?.map_err(|why| guest(format!("couldn't read the previous network: {why}")))?;
     let carried: u64 = my_grant_payloads_to(catalog_ref, member)?.iter().filter(|(_, _, g)| matches!(g.reason, GrantReason::Carried { .. })).map(|(_, _, g)| u64::from(g.points)).sum();
