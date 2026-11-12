@@ -86,7 +86,6 @@ pub const RESTORE_PATIENCE: Duration = Duration::from_secs(120);
 #[derive(Debug, serde::Serialize)]
 struct HandoverCheck {
     head: Option<ActionHash>,
-    one_node: bool,
 }
 
 /// One device's side of moving its account.
@@ -162,7 +161,7 @@ impl Device {
     /// while the network can't say -- try again.
     pub async fn stay(&self) -> Result<()> {
         node::thaw(&self.admin, &self.app).await?;
-        let answer: std::result::Result<(), String> = node::call_as_account(&self.admin, &self.lair, &self.app, "account", "take_back", HandoverCheck { head: None, one_node: false }).await?;
+        let answer: std::result::Result<(), String> = node::call_as_account(&self.admin, &self.lair, &self.app, "account", "take_back", HandoverCheck { head: None }).await?;
         match answer {
             Ok(()) => Ok(()),
             Err(why) => {
@@ -193,7 +192,7 @@ impl Device {
         // Before anything writes as the account here -- the app's signing
         // grant included -- its chain must still end where the old phone
         // handed it over. Asked as the account itself, which writes nothing.
-        let answer: std::result::Result<(), String> = node::call_as_account(&self.admin, &self.lair, &self.app, "account", "confirm_handover", HandoverCheck { head: Some(sealed.head.clone()), one_node: false }).await?;
+        let answer: std::result::Result<(), String> = node::call_as_account(&self.admin, &self.lair, &self.app, "account", "confirm_handover", HandoverCheck { head: Some(sealed.head.clone()) }).await?;
         match answer {
             Ok(()) => Ok(account),
             Err(why) if why.contains("took this account back") => {

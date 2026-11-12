@@ -59,6 +59,8 @@ struct Node {
     _conductor: Child,
     device: Device,
     admin: AdminWebsocket,
+    /// The keystore, as the runtime holds it: to call as the account.
+    lair: lair_keystore_api::LairClient,
     /// The app's connection, for the install it was made for.
     app_ws: tokio::sync::Mutex<Option<(holochain_types::prelude::CellId, AppWebsocket)>>,
 }
@@ -94,8 +96,8 @@ async fn node(services: &str) -> Node {
     let url = lair_config.lines().find_map(|l| l.trim().strip_prefix("connectionUrl:")).unwrap().trim().to_string();
     let passphrase = Arc::new(Mutex::new(sodoken::LockedArray::from(PASSPHRASE.as_bytes().to_vec())));
     let lair = ipc_keystore_connect(Url::parse(&url).unwrap(), passphrase).await.unwrap();
-    let device = Device::new(lair, AdminWebsocket::connect(("127.0.0.1", port), None).await.unwrap(), app());
-    Node { _dir: dir, _conductor: conductor, device, admin, app_ws: tokio::sync::Mutex::new(None) }
+    let device = Device::new(lair.clone(), AdminWebsocket::connect(("127.0.0.1", port), None).await.unwrap(), app());
+    Node { _dir: dir, _conductor: conductor, device, admin, lair, app_ws: tokio::sync::Mutex::new(None) }
 }
 
 /// Everyone knows everyone, rather than waiting on bootstrap.
@@ -193,6 +195,15 @@ async fn receive(node: &Node, sealed: &str) -> handshake_device::Result<AgentPub
     }
 }
 
+/// Where the account's chain ends on `node`, read from the conductor's own
+/// state -- no app call, which could itself write.
+async fn chain_head(node: &Node) -> ActionHash {
+    let info = app_info(&node.admin, &app()).await.unwrap().unwrap();
+    let Some(CellInfo::Provisioned(cell)) = info.cell_info["handshake"].first() else { panic!("no relay cell") };
+    let state = node.admin.dump_full_state(cell.cell_id.clone(), None, None).await.unwrap();
+    state.source_chain_dump.records.iter().max_by_key(|r| r.action.action_seq()).map(|r| r.action_address.clone()).expect("a chain")
+}
+
 async fn status(node: &Node) -> Option<AppStatus> {
     app_info(&node.admin, &app()).await.unwrap().map(|info| info.status)
 }
@@ -236,6 +247,10 @@ async fn an_account_moves_to_a_new_device_with_its_key() {
     let sealed = old.device.send(&invitation, &head).await.unwrap();
     let moved = receive(&new, &sealed).await.unwrap();
     assert_eq!(moved, account);
+    // Restored, enabled and checked -- and nothing written as the account
+    // here in all that: its chain ends where the old phone handed it over.
+    let sealed_head = handshake_device::code::SealedKey::decode(&sealed).unwrap().head;
+    assert_eq!(chain_head(&new).await, sealed_head, "the new phone wrote nothing before its handover was confirmed");
     let info = app_info(&new.admin, &app()).await.unwrap().unwrap();
     assert_eq!(info.agent_pub_key, account, "the new device runs the account, not its own first key");
     assert_ne!(info.agent_pub_key, throwaway);
@@ -247,6 +262,17 @@ async fn an_account_moves_to_a_new_device_with_its_key() {
     call::<_, ()>(&new, "dispatch", "prepare_device", ()).await.unwrap();
     wait_until_ready(&new).await;
     // Now the old phone tries to take it back: refused, never two writers.
+    // A client calling the zome itself, as a modified app could, gets no
+    // further: no flag of the caller's skips the network's word.
+    handshake_device::node::thaw(&old.admin, &app()).await.unwrap();
+    #[derive(Debug, serde::Serialize)]
+    struct ClaimsOneNode {
+        head: Option<ActionHash>,
+        one_node: bool,
+    }
+    let forged: Result<(), String> = handshake_device::node::call_as_account(&old.admin, &old.lair, &app(), "account", "take_back", ClaimsOneNode { head: None, one_node: true }).await.unwrap();
+    assert!(forged.is_err_and(|why| why.contains("started using this account")), "claiming to be one node takes nothing back");
+    handshake_device::node::freeze(&old.admin, &app()).await.unwrap();
     assert!(matches!(old.device.stay().await, Err(Error::TooLate)), "the old phone can't take back what the new phone uses");
     assert!(matches!(status(&old).await, Some(AppStatus::Disabled(_))), "and stops again: never two writers");
     println!("[PASS] once the new phone writes as the account, the old phone can't take it back");

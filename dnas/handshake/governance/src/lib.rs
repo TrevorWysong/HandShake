@@ -162,6 +162,8 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub established_payer_lookback: Option<u32>,
     #[serde(default)]
+    pub dev_one_node: Option<bool>,
+    #[serde(default)]
     pub established_payer_days: Option<u32>,
     #[serde(default)]
     pub newcomer_work_bits: Option<u8>,
@@ -478,6 +480,16 @@ pub fn established_payer_stores() -> u32 {
 /// How many of a payer's most recent orders `established_payer_stores` is
 /// looked for in -- what one payment's check costs at most, however long
 /// their history.
+/// Whether this is the dev host's network, where one node stands in for
+/// both phones of a move to a new phone (web/scripts/seed.ts): there, one
+/// chain is shared and there's no second writer to fork it with, so a
+/// handover's network checks don't apply. Set by the network itself, never
+/// by a caller -- and a network packaged for real use refuses it
+/// (web/scripts/package.ts).
+pub fn dev_one_node() -> bool {
+    setting(|p| p.dev_one_node, false)
+}
+
 pub fn established_payer_lookback() -> u32 {
     setting(|p| p.established_payer_lookback, 200).max(1)
 }

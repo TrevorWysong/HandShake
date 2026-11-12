@@ -27,9 +27,8 @@ export function Arrival({ head }: { head: string }) {
   const { error } = useResource(
     takenBack ? null : `arrival:${head}`,
     async () => {
-      const runtime = await deviceRuntime();
       try {
-        await confirmHandover(decodeHashFromBase64(head), !!runtime?.oneNode);
+        await confirmHandover(decodeHashFromBase64(head));
       } catch (err) {
         // Only the network's word that the old phone wrote past it is final;
         // anything else is checked again. Read from the zome's own words,

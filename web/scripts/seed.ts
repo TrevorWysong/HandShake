@@ -125,7 +125,10 @@ function itemOf(store: SeededStore, name: string) {
 
 /// The dev network's properties: reports close in five minutes, so its
 /// payments settle while you watch.
-const DEV_PROPERTIES = { report_window_secs: 300 };
+/// The dev network's own settings: a short report window, and that its one
+/// node stands in for both phones of a move (`dev_one_node`), which a real
+/// network never says (package.ts refuses it).
+const DEV_PROPERTIES = { report_window_secs: 300, dev_one_node: true };
 
 /// The test processor's card that always works, kept with whoever it pays.
 const TEST_CARD = { token: "tok_test_4242", save: false };

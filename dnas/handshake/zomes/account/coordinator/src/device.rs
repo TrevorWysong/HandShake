@@ -105,11 +105,14 @@ pub struct HandoverCheck {
     /// phone's, from the sealed key) -- unused when taking back.
     #[serde(default)]
     pub head: Option<ActionHash>,
-    /// Both "phones" are one node (the dev host): the network never reports
-    /// a chain only that node holds, and there's no other phone to fork it,
-    /// so only this device's own chain is checked.
-    #[serde(default)]
-    pub one_node: bool,
+}
+
+/// Both "phones" are one node: the dev host's network says so itself
+/// (`handshake_governance::dev_one_node`), never a caller. There the network
+/// never reports a chain only that node holds, and there's no other phone
+/// to fork it with, so its checks don't apply.
+fn one_node() -> bool {
+    handshake_governance::dev_one_node()
 }
 
 /// The old phone taking its account back from a handover: only if the
@@ -118,10 +121,10 @@ pub struct HandoverCheck {
 /// lives on the new phone, and this device can only let it go (`retire`).
 /// Two phones writing as one account would fork it for good.
 #[hdk_extern]
-pub fn take_back(check: HandoverCheck) -> ExternResult<()> {
+pub fn take_back(_: HandoverCheck) -> ExternResult<()> {
     let Some(handover) = handover_in_progress()? else { return Err(handshake_coordinator_support::guest("This device isn't handing its account over.")) };
     let (head, seq, _) = agent_info()?.chain_head;
-    if !check.one_node {
+    if !one_node() {
         match network_on(&head, seq)? {
             NetworkSays::EndsThere => {}
             NetworkSays::WrittenPast => return Err(handshake_coordinator_support::guest("Your new phone has started using this account, so this device can't take it back. Remove it from here: the account carries on on the new phone.")),
@@ -146,11 +149,11 @@ pub fn confirm_handover(check: HandoverCheck) -> ExternResult<()> {
     // writes its signing grant past the head before it can ask. Only the
     // handover's end, below. A real phone's runtime asks before anything
     // writes, as the account itself (runtime/device `receive`).
-    if !check.one_node && here != head {
+    if !one_node() && here != head {
         // Restored past the head: the old phone wrote after handing it over.
         return Err(refused());
     }
-    if !check.one_node {
+    if !one_node() {
         match network_on(&head, seq)? {
             NetworkSays::EndsThere => {}
             NetworkSays::WrittenPast => return Err(refused()),

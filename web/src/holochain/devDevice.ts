@@ -44,7 +44,7 @@ export const devDevice: DeviceRuntime = {
   stay: async () => {
     const identity = stored();
     await setIdentityRunning(identity.adminUrl, identity.installedAppId, true);
-    await takeBack(true);
+    await takeBack();
   },
 
   // The new browser runs the app now: this one only forgets it.

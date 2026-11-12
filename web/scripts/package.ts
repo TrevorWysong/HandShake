@@ -69,6 +69,11 @@ if (unknown.length) {
 // their own processor account (docs/DIRECT_PAYMENTS.md). A network says,
 // in so many words, whether those are live accounts or test ones: it's
 // never left to a default.
+// The dev host's own: one node standing in for two phones, whose handovers
+// skip the network's checks. Never on a network people use.
+if ("dev_one_node" in properties) {
+  fail("The network's settings name \"dev_one_node\": that's the dev host's alone. Remove it.");
+}
 if (typeof properties.live_payments !== "boolean") {
   fail("The network's settings need \"live_payments\": true for real money (stores and drivers connect live processor accounts), or false for a network of test accounts.");
 }
