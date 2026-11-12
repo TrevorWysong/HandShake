@@ -201,7 +201,7 @@ function FromDevice() {
       <h2 className="mb-1 text-lg font-bold">{scanning ? t("receive.scan") : t("receive.title")}</h2>
       <p className="mb-4 text-sm text-ink-500">{scanning ? t("receive.scanHow") : t("receive.how")}</p>
       {scanning ? (
-        <CodeReader accepts={(code) => sealedAccount(code) !== null} onCode={receive} prompt={t("receive.point")} refusal={t("receive.notSealed")} placeholder="handshake-key:1:…" />
+        <CodeReader accepts={(code) => sealedAccount(code) !== null} onCode={receive} prompt={t("receive.point")} refusal={t("receive.notSealed")} placeholder="handshake-key:2:…" />
       ) : invitation ? (
         <>
           <CodeCard code={invitation} fingerprint={invitationFingerprint(invitation)} note={t("receive.note")} />

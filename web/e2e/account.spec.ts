@@ -76,7 +76,7 @@ test("moving to a new phone brings the same account over, and the old phone lets
   // own passkey).
   await newPhone.getByRole("button", { name: "My old phone scanned it" }).click();
   await newPhone.getByRole("button", { name: "Paste the code instead" }).click();
-  await newPhone.getByPlaceholder("handshake-key:1:…").fill(sealed);
+  await newPhone.getByPlaceholder("handshake-key:2:…").fill(sealed);
   await newPhone.getByRole("button", { name: "Continue" }).click();
   await newPhone.getByRole("button", { name: "Unlock HandShake" }).click({ timeout: 150_000 });
   await expect(newPhone).toHaveURL(/#\/customer/);

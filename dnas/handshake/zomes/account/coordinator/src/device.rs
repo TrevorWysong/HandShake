@@ -141,8 +141,13 @@ pub fn confirm_handover(check: HandoverCheck) -> ExternResult<()> {
     let refused = || handshake_coordinator_support::guest("Your other phone took this account back, so it can't be used here. Remove it from this phone, or move it again.");
     let head = check.head.ok_or_else(refused)?;
     let (here, seq, _) = agent_info()?.chain_head;
-    // Restored past the head: the old phone wrote after handing it over.
-    if here != head {
+    // One node standing in for both phones (the dev host) shares one chain:
+    // there's no other phone to fork it with, and the app's own connecting
+    // writes its signing grant past the head before it can ask. Only the
+    // handover's end, below. A real phone's runtime asks before anything
+    // writes, as the account itself (runtime/device `receive`).
+    if !check.one_node && here != head {
+        // Restored past the head: the old phone wrote after handing it over.
         return Err(refused());
     }
     if !check.one_node {
