@@ -636,7 +636,7 @@ pub fn claim_newcomer_card(input: NewcomerCardInput) -> ExternResult<bool> {
     // The store it was brought over from, if the network before keeps its
     // cards this way: a version too old to has none this one can read --
     // they were kept another way, or on its devices.
-    let origin: Option<ActionHash> = call_local("catalog", "imported_from", line.last().expect("a line holds its store").clone())?.map_err(|why| guest(format!("imported_from: {why}")))?;
+    let origin: Option<ActionHash> = call_local("catalog", "imported_from_checked", line.last().expect("a line holds its store").clone())?.map_err(|why| guest(format!("imported_from_checked: {why}")))?;
     let answers = match &origin {
         Some(_) => handshake_coordinator_support::previous_answers(handshake_coordinator_support::bridge::DEAL_CARDS)?.map_err(|why| guest(format!("couldn't reach the previous network: {why}")))?,
         None => false,

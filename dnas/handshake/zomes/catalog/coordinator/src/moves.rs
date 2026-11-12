@@ -292,13 +292,35 @@ pub fn import_store(from: ActionHash) -> ExternResult<ActionHash> {
 
 /// The store on the previous network that `catalog` was brought over from,
 /// if its owner really did move their account to this store's owner --
-/// checked there. Its ratings are this store's too.
+/// checked there. Its ratings are this store's too. A previous network that
+/// can't be read just now reads as none: a rating shows without it.
 #[hdk_extern]
 pub fn imported_from(catalog: ActionHash) -> ExternResult<Option<ActionHash>> {
+    import_of(&catalog, false)
+}
+
+/// `imported_from`, for what money or points rest on: a previous network
+/// that can't be read just now, or an import not yet arrived here, is an
+/// error -- never a store that wasn't brought over, which would carry
+/// nothing over for good.
+#[hdk_extern]
+pub fn imported_from_checked(catalog: ActionHash) -> ExternResult<Option<ActionHash>> {
+    import_of(&catalog, true)
+}
+
+fn import_of(catalog: &ActionHash, checked: bool) -> ExternResult<Option<ActionHash>> {
     let links = get_links(LinkQuery::try_new(catalog.clone(), LinkTypes::CatalogToImport)?, GetStrategy::default())?;
-    let Some((_, record)) = resolve_links_to_records_with_original(links).into_iter().next() else { return Ok(None) };
+    let records = match checked {
+        true => all_arrived(&record_targets(links), GetStrategy::default())?,
+        false => resolve_links_to_records_with_original(links).into_iter().map(|(_, r)| r).collect(),
+    };
+    let Some(record) = records.into_iter().next() else { return Ok(None) };
     let Some(import) = decode_or::<StoreImport>(&record) else { return Ok(None) };
     let Some(previous) = arrived_from(record.action().author().clone())? else { return Ok(None) };
-    let Ok(old) = Source::Previous.read::<_, Record>("get_catalog", import.from.clone()) else { return Ok(None) };
+    let old = match Source::Previous.read::<_, Record>("get_catalog", import.from.clone()) {
+        Ok(old) => old,
+        Err(err) if checked => return Err(err),
+        Err(_) => return Ok(None),
+    };
     Ok(decode_or::<MerchantCatalog>(&old).filter(|store| store.owner == previous).map(|_| import.from))
 }

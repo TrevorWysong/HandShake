@@ -100,7 +100,7 @@ HandShake ships a network of independent copies, not a server: people run differ
 ## Where it lives
 
 - `dnas/handshake/zomes/account/coordinator/src/migration.rs`: `migrate_out`, `chain_closed`, `arrive`, `arrived_from`. The `Migration` and `Arrival` entries are in `account_types`.
-- `dnas/handshake/zomes/catalog/coordinator/src/moves.rs`: `import_store`, `imported_from` (and the shared store copy).
+- `dnas/handshake/zomes/catalog/coordinator/src/moves.rs`: `import_store`, `imported_from` (and the shared store copy). `imported_from_checked` errs where `imported_from` answers none -- a previous network that can't be read just now -- for the points carried over and the first-order deal's cards, which would otherwise be skipped for good.
 - `dnas/handshake/zomes/reputation/coordinator`: adds the previous network's summaries.
 - `web/scripts/package.ts`: `--previous`.
 - Web:

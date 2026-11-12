@@ -137,7 +137,7 @@ pub(crate) fn earlier_gifts(catalog_ref: &ActionHash, member: &AgentPubKey) -> E
 /// since -- and `member`'s key there: if both moved.
 fn came_over(catalog_ref: &ActionHash, member: &AgentPubKey) -> ExternResult<Option<(ActionHash, AgentPubKey)>> {
     let first = store_line(catalog_ref)?.pop().unwrap_or_else(|| catalog_ref.clone());
-    let from: Option<ActionHash> = call_local("catalog", "imported_from", first)?.map_err(|why| guest(format!("imported_from: {why}")))?;
+    let from: Option<ActionHash> = call_local("catalog", "imported_from_checked", first)?.map_err(|why| guest(format!("imported_from_checked: {why}")))?;
     let Some(from) = from else { return Ok(None) };
     let before: Option<AgentPubKey> = call_local("account", "arrived_from", member.clone())?.map_err(|why| guest(format!("arrived_from: {why}")))?;
     Ok(before.map(|before| (from, before)))
