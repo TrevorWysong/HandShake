@@ -117,42 +117,57 @@ export function requester(ip: string): string {
   return `${groups.slice(0, 4).map((g) => g.toLowerCase().replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
+/// A count of what happened since `from` (ms), in a window of fixed length.
+interface Window {
+  from: number;
+  n: number;
+}
+
+/// `counted` as it stands at `now`: a new window once its own has run.
+function current(counted: Window | undefined, windowMs: number, now: number): Window {
+  return counted && now - counted.from < windowMs ? counted : { from: now, n: 0 };
+}
+
 export function handler(deps: Deps) {
   const { store, tokenKey, senders, log = () => {}, onWake = () => {}, wakeQueue = { sending: SENDING, waiting: WAITING }, addressesRemembered = ADDRESSES_REMEMBERED } = deps;
   const channels = Object.keys(senders) as Channel[];
 
-  /// When each device was last woken, for its limits. Kept in memory: a
-  /// restart forgets it, which only ever loosens a limit for a while.
-  const wokenAt = new Map<string, number[]>();
+  /// How often each device was woken lately, for its limits: a count per
+  /// minute and per day, each from when its window began -- a few numbers a
+  /// device, however often it's woken. Kept in memory: a restart forgets
+  /// it, which only ever loosens a limit for a while.
+  const woken = new Map<string, { minute: Window; day: Window }>();
   function mayWake(device: string): boolean {
     const now = Date.now();
-    const recent = (wokenAt.get(device) ?? []).filter((at) => at > now - DAY_MS);
-    if (recent.length >= deps.wakesPerDay || recent.filter((at) => at > now - MINUTE_MS).length >= deps.wakesPerMinute) return false;
-    wokenAt.set(device, [...recent, now]);
+    const counts = woken.get(device) ?? { minute: { from: now, n: 0 }, day: { from: now, n: 0 } };
+    const minute = current(counts.minute, MINUTE_MS, now);
+    const day = current(counts.day, DAY_MS, now);
+    if (day.n >= deps.wakesPerDay || minute.n >= deps.wakesPerMinute) return false;
+    woken.set(device, { minute: { from: minute.from, n: minute.n + 1 }, day: { from: day.from, n: day.n + 1 } });
     return true;
   }
 
   /// Refuses an address its `limit`th request within `windowMs`.
   function perAddress(limit: number, windowMs: number) {
-    const requests = new Map<string, number[]>();
+    const requests = new Map<string, Window>();
     let swept = Date.now();
     return (req: IncomingMessage) => {
       const now = Date.now();
       if (now - swept > windowMs) {
-        for (const [address, times] of requests) if (times.every((at) => at <= now - windowMs)) requests.delete(address);
-        for (const [device, times] of wokenAt) if (times.every((at) => at <= now - DAY_MS)) wokenAt.delete(device);
+        for (const [address, counted] of requests) if (now - counted.from >= windowMs) requests.delete(address);
+        for (const [device, counts] of woken) if (now - counts.day.from >= DAY_MS) woken.delete(device);
         swept = now;
       }
       // The address the trusted proxy saw -- the last it added. Anything
       // before it came from the client, who can write what they like.
       const forwarded = deps.trustProxy ? (String(req.headers["x-forwarded-for"] ?? "").split(",").pop() ?? "").trim() : "";
       const address = requester(forwarded || req.socket.remoteAddress || "unknown");
-      const recent = (requests.get(address) ?? []).filter((at) => at > now - windowMs);
-      if (recent.length >= limit) throw new HttpError(429, "Too many requests from here. Try again later.");
+      const counted = current(requests.get(address), windowMs, now);
+      if (counted.n >= limit) throw new HttpError(429, "Too many requests from here. Try again later.");
       // Kept newest last, so the first is the one known longest.
       requests.delete(address);
       if (requests.size >= addressesRemembered) requests.delete(requests.keys().next().value!);
-      requests.set(address, [...recent, now]);
+      requests.set(address, { from: counted.from, n: counted.n + 1 });
     };
   }
   const throttle = perAddress(deps.requestsPerIpPerHour, HOUR_MS);
