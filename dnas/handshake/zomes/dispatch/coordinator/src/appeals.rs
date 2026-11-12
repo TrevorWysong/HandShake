@@ -6,7 +6,7 @@
 use crate::issues::{decisions_of, parties_of};
 use dispatch_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{decode_or, guest, open_chunked, original_action_of, seal_chunked};
+use handshake_coordinator_support::{arrived, decode_or, find_record, guest, open_chunked, original_action_of, seal_chunked};
 
 /// The arbiter an order's appeal goes to: one of the network's, chosen by
 /// the order itself -- so nobody picks the one they'd like.
@@ -114,7 +114,7 @@ pub fn rule_on_appeal(input: RuleInput) -> ExternResult<ActionHash> {
 }
 
 fn read_appeal(hash: &ActionHash) -> ExternResult<(Appeal, AgentPubKey, Timestamp)> {
-    let record = get(hash.clone(), GetOptions::default())?.ok_or(guest("No such appeal."))?;
+    let record = find_record(hash.clone())?.ok_or(guest("No such appeal."))?;
     let appeal = decode_or::<Appeal>(&record).ok_or(guest("That isn't an appeal."))?;
     Ok((appeal, record.action().author().clone(), record.action().timestamp()))
 }
@@ -129,10 +129,9 @@ fn appeal_of(order: &ActionHash) -> ExternResult<Option<ActionHash>> {
 fn ruling_of(appeal: &ActionHash, arbiter: &AgentPubKey) -> ExternResult<Option<(ActionHash, Ruling, Timestamp)>> {
     for link in get_links(LinkQuery::try_new(appeal.clone(), LinkTypes::AppealToRuling)?.author(arbiter.clone()), GetStrategy::default())? {
         let Some(hash) = link.target.into_action_hash() else { continue };
-        if let Some(record) = get(hash.clone(), GetOptions::default())? {
-            if let Some(ruling) = decode_or::<Ruling>(&record) {
-                return Ok(Some((hash, ruling, record.action().timestamp())));
-            }
+        let record = arrived(&hash)?;
+        if let Some(ruling) = decode_or::<Ruling>(&record) {
+            return Ok(Some((hash, ruling, record.action().timestamp())));
         }
     }
     Ok(None)
@@ -142,7 +141,7 @@ fn ruling_of(appeal: &ActionHash, arbiter: &AgentPubKey) -> ExternResult<Option<
 fn answer_of(appeal: &ActionHash, store_owner: &AgentPubKey) -> ExternResult<Option<AppealAnswer>> {
     for link in get_links(LinkQuery::try_new(appeal.clone(), LinkTypes::AppealToAnswer)?.author(store_owner.clone()), GetStrategy::default())? {
         let Some(hash) = link.target.into_action_hash() else { continue };
-        if let Some(answer) = get(hash, GetOptions::default())?.and_then(|r| decode_or::<AppealAnswer>(&r)) {
+        if let Some(answer) = decode_or::<AppealAnswer>(&arrived(&hash)?) {
             return Ok(Some(answer));
         }
     }
@@ -301,9 +300,11 @@ pub fn get_rulings_against(owner: AgentPubKey) -> ExternResult<Vec<RulingDue>> {
     let mut due = Vec::new();
     for link in get_links(LinkQuery::try_new(owner.clone(), LinkTypes::StoreOwnerToRuling)?, GetStrategy::Network)? {
         let Some(hash) = link.target.into_action_hash() else { continue };
-        let Some(record) = get(hash.clone(), GetOptions::network())? else { continue };
+        // Validated as a ruling on an appeal of this owner's order: one not
+        // here yet is an error, never left off what they owe.
+        let record = arrived(&hash)?;
         let Some(ruling) = decode_or::<Ruling>(&record) else { continue };
-        let Ok((appeal, customer, _)) = read_appeal(&ruling.appeal) else { continue };
+        let (appeal, customer, _) = read_appeal(&ruling.appeal)?;
         let (order_customer, store_owner) = parties_of(&appeal.order)?;
         if record.action().author() != &appeal.arbiter || store_owner != owner || customer != order_customer || ruling.award == 0 {
             continue;

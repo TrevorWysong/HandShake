@@ -17,6 +17,7 @@ pub use plans::*;
 pub use succession::*;
 
 pub(crate) use handshake_coordinator_support::guest;
+use handshake_coordinator_support::{all_arrived, record_targets};
 
 pub(crate) fn me() -> ExternResult<AgentPubKey> {
     Ok(agent_info()?.agent_initial_pubkey)
@@ -37,13 +38,7 @@ pub(crate) fn me() -> ExternResult<AgentPubKey> {
 pub(crate) fn linked_records(query: LinkQuery, strategy: GetStrategy) -> ExternResult<Vec<Record>> {
     let mut links = get_links(query, strategy)?;
     links.sort_by_key(|l| l.timestamp);
-    let options = if strategy == GetStrategy::Local { GetOptions::local() } else { GetOptions::default() };
-    let mut records = Vec::with_capacity(links.len());
-    for link in links {
-        let Some(hash) = link.target.into_action_hash() else { continue };
-        records.push(get(hash.clone(), options.clone())?.ok_or_else(|| guest(format!("record {hash} is linked but hasn't reached this node yet")))?);
-    }
-    Ok(records)
+    all_arrived(&record_targets(links), strategy)
 }
 
 /// `account`'s links of `link_type` from their own key, by them -- an

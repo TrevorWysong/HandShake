@@ -13,7 +13,7 @@ use dispatch_integrity::basis::{basis_of, chain_check, part_bid};
 use dispatch_integrity::direct::{entitlement, part_share, Entitlement, Part, PaymentLeg};
 use dispatch_integrity::*;
 use handshake_coordinator_support::chain::mine;
-use handshake_coordinator_support::{decode_or, guest, original_action_of, read_records};
+use handshake_coordinator_support::{all_arrived, arrived, decode_or, guest, original_action_of, record_targets};
 use hdk::prelude::*;
 
 // --- what's known about an order, for settling it ---
@@ -157,12 +157,7 @@ pub(crate) fn payment_records(order: &ActionHash, author: Option<&AgentPubKey>, 
     if let Some(author) = author {
         query = query.author(author.clone());
     }
-    let hashes: Vec<ActionHash> = get_links(query, strategy)?.into_iter().filter_map(|link| link.target.into_action_hash()).collect();
-    let records = match strategy {
-        GetStrategy::Local => hashes.iter().map(|hash| get(hash.clone(), GetOptions::local())).collect::<ExternResult<Vec<_>>>()?,
-        _ => read_records(&hashes)?,
-    };
-    hashes.into_iter().zip(records).map(|(hash, record)| record.ok_or_else(|| guest(format!("payment record {hash} is linked but hasn't reached this device yet")))).collect()
+    all_arrived(&record_targets(get_links(query, strategy)?), strategy)
 }
 
 /// The holds on `order`, by leg, each with its hash and author.
@@ -172,7 +167,7 @@ pub(crate) fn holds_on(order: &ActionHash) -> ExternResult<Vec<(ActionHash, Agen
         let Some(hold) = decode_or::<PaymentHold>(&record) else { continue };
         // Validated as answering an offer: one not here yet is an error, as
         // its hold's would be.
-        let offer_record = get(hold.offer.clone(), GetOptions::default())?.ok_or_else(|| guest(format!("the offer hold {} answers hasn't reached this device yet", record.action_address())))?;
+        let offer_record = arrived(&hold.offer)?;
         let Some(offer) = decode_or::<PaymentOffer>(&offer_record) else { continue };
         if &offer.order == order {
             out.push((record.action_address().clone(), record.action().author().clone(), hold, offer));
@@ -202,8 +197,7 @@ fn order_terms(order: &ActionHash) -> ExternResult<Option<OrderTerms>> {
 /// take nothing of a driver's collateral or pass on nothing of their pay,
 /// and once recorded it's never made again.
 fn bid_of(bid: &ActionHash) -> ExternResult<Bid> {
-    let record = get(bid.clone(), GetOptions::default())?.ok_or_else(|| guest(format!("bid {bid} hasn't reached this device yet")))?;
-    decode_or::<Bid>(&record).ok_or_else(|| guest(format!("{bid} isn't a bid")))
+    decode_or::<Bid>(&arrived(bid)?).ok_or_else(|| guest(format!("{bid} isn't a bid")))
 }
 
 /// The parts a leg's payee captures on their own entitlement -- every
@@ -249,7 +243,7 @@ pub(crate) fn settlement_due(hold_ref: &ActionHash) -> ExternResult<Option<Vec<D
     if record.action().author() != &me {
         return Ok(None);
     }
-    let offer_record = get(hold.offer.clone(), GetOptions::default())?.ok_or(guest("the offer a hold answers hasn't reached this device yet"))?;
+    let offer_record = arrived(&hold.offer)?;
     let Some(offer) = decode_or::<PaymentOffer>(&offer_record) else { return Ok(None) };
     let order = offer.order;
     let (Some(facts), Some(terms)) = (facts(&order)?, order_terms(&order)?) else { return Ok(None) };

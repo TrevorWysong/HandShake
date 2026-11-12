@@ -11,7 +11,7 @@
 
 use catalog_types::GoodieBag;
 use dispatch_integrity::*;
-use handshake_coordinator_support::{decode_or, guest, original_action_of};
+use handshake_coordinator_support::{arrived, decode_or, guest, original_action_of};
 use hdk::prelude::*;
 
 /// The goodie bags on an order's lines, as listed: each bag's identity and
@@ -19,8 +19,9 @@ use hdk::prelude::*;
 pub(crate) fn bags_on(lines: &[OrderLine]) -> ExternResult<Vec<(ActionHash, GoodieBag)>> {
     let mut bags = Vec::new();
     for line in lines {
-        let Some(record) = get(line.priced_version.clone(), GetOptions::default())? else { continue };
-        if let Some(bag) = decode_or::<GoodieBag>(&record) {
+        // Validated as the line's priced item: one not here yet would drop
+        // a bag from the count, and sell it past what's left.
+        if let Some(bag) = decode_or::<GoodieBag>(&arrived(&line.priced_version)?) {
             bags.push((line.item_ref.clone(), bag));
         }
     }

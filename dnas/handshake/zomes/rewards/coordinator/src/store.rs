@@ -45,7 +45,9 @@ pub(crate) fn member_orders(catalog_ref: &ActionHash, customer: &AgentPubKey) ->
             if out.iter().any(|o| o.order == order) {
                 continue;
             }
-            let Some(placed) = get(order.clone(), GetOptions::default())? else { continue };
+            // Validated as an acceptance of this order: one not here yet
+            // would leave a spend out, and the points it spent unspent.
+            let placed = arrived(&order)?;
             let reward = OrderForRewards::of(&placed).and_then(|o| o.rewards).and_then(|r| r.reward);
             out.push(OpenOrder { order, placed_at: placed.action().timestamp(), accepted: Some(accepted), reward, settled: None });
         }
@@ -62,7 +64,8 @@ pub(crate) fn my_grant_payloads_to(catalog_ref: &ActionHash, customer: &AgentPub
     let query = LinkQuery::try_new(customer.clone(), LinkTypes::AgentToGrant)?.author(me.clone());
     let mut out = Vec::new();
     for link in get_links(query, GetStrategy::default())?.into_iter().filter(|link| link.author == me) {
-        let Some(record) = link.target.into_action_hash().map(|hash| get(hash, GetOptions::default())).transpose()?.flatten() else { continue };
+        let Some(hash) = link.target.into_action_hash() else { continue };
+        let record = arrived(&hash)?;
         let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| &g.to == customer && &g.catalog_ref == catalog_ref && record.action().author() == &me) else { continue };
         if let Some(payload) = open::<GrantPayload>(customer, &grant.sealed)? {
             out.push((record.action_address().clone(), record.action().timestamp(), payload));

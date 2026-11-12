@@ -89,7 +89,7 @@ pub(crate) fn grants_from(owner: &AgentPubKey, catalog_ref: &ActionHash, folded:
         if folded.contains(&hash) {
             continue;
         }
-        let Some(record) = get(hash, GetOptions::default())? else { continue };
+        let record = arrived(&hash)?;
         let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| &g.catalog_ref == catalog_ref) else { continue };
         if record.action().author() != owner {
             continue;

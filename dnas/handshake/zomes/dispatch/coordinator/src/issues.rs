@@ -14,7 +14,7 @@ use crate::order_queues::{classify, order_store, OrderEntry};
 use crate::orders::{record_reputation_event, ReputationEventKindWire, ReputationTargetWire};
 use dispatch_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{call_local, decode_or, guest, open_chunked, original_action_of, resolve_latest, seal_chunked, written};
+use handshake_coordinator_support::{arrived, call_local, decode_or, guest, open_chunked, original_action_of, resolve_latest, seal_chunked, written};
 
 // --- the order, as issues need it ---
 
@@ -171,7 +171,7 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
     let mut views = Vec::new();
     for link in get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToIssue)?, GetStrategy::default())? {
         let Some(hash) = link.target.into_action_hash() else { continue };
-        let Some(record) = get(hash.clone(), GetOptions::default())? else { continue };
+        let record = arrived(&hash)?;
         let Some(issue) = decode_or::<ItemIssue>(&record).filter(|i| i.order == order && record.action().author() == &terms.requester) else { continue };
         // A report dated ahead of this clock isn't reported yet: counting it
         // would let a customer hold a settlement back, or have one cite a
@@ -287,12 +287,14 @@ pub(crate) fn decisions_of(order: &ActionHash) -> ExternResult<Decisions> {
     let mut decisions = Decisions::default();
     for link in get_links(LinkQuery::try_new(order.clone(), LinkTypes::OrderToDecision)?.author(merchant.clone()), GetStrategy::default())? {
         let Some(hash) = link.target.into_action_hash() else { continue };
-        let Some(record) = get(hash.clone(), GetOptions::default())? else { continue };
+        // Validated, and what each rests on with it: one not here yet would
+        // read as a decision never made, so it's an error instead.
+        let record = arrived(&hash)?;
         if let Some(outcome) = decode_or::<OrderOutcome>(&record).filter(|o| &o.order == order) {
-            let bid_at = |version: &ActionHash| get(version.clone(), GetOptions::default()).ok().flatten().and_then(|r| decode_or::<DeliveryOrder>(&r)).and_then(|o| o.accepted_bid);
+            let bid_at = |version: &ActionHash| arrived(version).map(|r| decode_or::<DeliveryOrder>(&r).and_then(|o| o.accepted_bid));
             match outcome.outcome {
-                Outcome::Delivered { proof } => decisions.delivered = Some((hash, bid_at(&proof))),
-                Outcome::NotDelivered { claim } => decisions.not_delivered = Some((hash, bid_at(&claim))),
+                Outcome::Delivered { proof } => decisions.delivered = Some((hash, bid_at(&proof)?)),
+                Outcome::NotDelivered { claim } => decisions.not_delivered = Some((hash, bid_at(&claim)?)),
             }
         } else if let Some(settlement) = decode_or::<ItemSettlement>(&record).filter(|s| &s.order == order) {
             decisions.settlement = Some((hash, settlement.refund));

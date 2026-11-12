@@ -93,7 +93,8 @@ fn revealed(catalog_ref: &ActionHash, member: &AgentPubKey) -> ExternResult<Vec<
     };
     let mut out: Vec<RevealedGrant> = Vec::new();
     for link in reveal_links(catalog_ref, member)? {
-        let Some(record) = link.target.into_action_hash().map(|hash| get(hash, GetOptions::default())).transpose()?.flatten() else { continue };
+        let Some(hash) = link.target.into_action_hash() else { continue };
+        let record = arrived(&hash)?;
         let Some(reveal) = decode_or::<GiftReveal>(&record).filter(|r| &r.catalog_ref == catalog_ref && record.action().author() == member) else { continue };
         for grant in open_chunked::<Vec<RevealedGrant>>(&counterpart, &reveal.sealed)?.unwrap_or_default() {
             if !out.iter().any(|g| g.grant == grant.grant) {
@@ -207,7 +208,8 @@ pub fn carry_my_gifts(successor: AgentPubKey) -> ExternResult<()> {
     let me = me()?;
     let mut gifts: Vec<CarriedGift> = Vec::new();
     for link in get_links(LinkQuery::try_new(me.clone(), LinkTypes::AgentToGrant)?, GetStrategy::default())? {
-        let Some(record) = link.target.into_action_hash().map(|hash| get(hash, GetOptions::default())).transpose()?.flatten() else { continue };
+        let Some(hash) = link.target.into_action_hash() else { continue };
+        let record = arrived(&hash)?;
         let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| g.to == me) else { continue };
         let giver = record.action().author();
         if gifts.iter().any(|g| &g.revealed.grant == record.action_address()) {
@@ -232,7 +234,8 @@ pub fn carried_gifts_of(account: AgentPubKey) -> ExternResult<Vec<CarriedGift>> 
     let query = LinkQuery::try_new(account.clone(), LinkTypes::MemberToCarriedGifts)?.author(account.clone());
     let mut out: Vec<CarriedGift> = Vec::new();
     for link in get_links(query, GetStrategy::default())?.into_iter().filter(|link| link.author == account) {
-        let Some(record) = link.target.into_action_hash().map(|hash| get(hash, GetOptions::default())).transpose()?.flatten() else { continue };
+        let Some(hash) = link.target.into_action_hash() else { continue };
+        let record = arrived(&hash)?;
         let Some(carried) = decode_or::<CarriedGifts>(&record).filter(|_| record.action().author() == &account) else { continue };
         for gift in open_chunked::<Vec<CarriedGift>>(&account, &carried.sealed)?.unwrap_or_default() {
             if !out.iter().any(|g| g.revealed.grant == gift.revealed.grant) {

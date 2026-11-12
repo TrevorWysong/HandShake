@@ -9,7 +9,7 @@
 //! whole history again to read it. See docs/REWARDS.md.
 
 use handshake_coordinator_support::chain::{my_current_version, my_versions, mine};
-use handshake_coordinator_support::{call_local, decode_or, guest, isolated, open, original_action_of, resolve_version, seal, update_version};
+use handshake_coordinator_support::{arrived, call_local, decode_or, guest, isolated, open, original_action_of, resolve_version, seal, update_version};
 use hdk::prelude::*;
 use rewards_integrity::*;
 

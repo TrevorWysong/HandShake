@@ -209,6 +209,34 @@ pub fn read_records(hashes: &[ActionHash]) -> ExternResult<Vec<Option<Record>>> 
     Ok(found)
 }
 
+/// The record at `hash`, which validation says exists -- a link's target,
+/// a hold's offer, a bid a payment names. One that can't be read hasn't
+/// reached this device yet: links and the records they point at travel
+/// apart, after a restore especially. So it's an error, never "not
+/// there", for anything that adds money, points or authority up.
+pub fn arrived(hash: &ActionHash) -> ExternResult<Record> {
+    find_record(hash.clone())?.ok_or_else(|| not_arrived(hash))
+}
+
+/// `arrived` for each of `hashes`, read together -- every one, or an
+/// error. Read from this device only, for `GetStrategy::Local`.
+pub fn all_arrived(hashes: &[ActionHash], strategy: GetStrategy) -> ExternResult<Vec<Record>> {
+    let records = match strategy {
+        GetStrategy::Local => HDK.with(|h| h.borrow().get(hashes.iter().map(|hash| GetInput::new(hash.clone().into(), GetOptions::local())).collect()))?,
+        _ => read_records(hashes)?,
+    };
+    hashes.iter().zip(records).map(|(hash, record)| record.ok_or_else(|| not_arrived(hash))).collect()
+}
+
+/// The targets of `links` that are records, in order.
+pub fn record_targets(links: Vec<Link>) -> Vec<ActionHash> {
+    links.into_iter().filter_map(|link| link.target.into_action_hash()).collect()
+}
+
+fn not_arrived(hash: &ActionHash) -> WasmError {
+    guest(format!("record {hash} is linked but hasn't reached this device yet"))
+}
+
 /// Where each entry at `originals` (their original actions) is now -- its
 /// current version's action, or the original itself if it's never been
 /// updated -- for many at once, in one read of their version links

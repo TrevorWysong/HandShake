@@ -16,7 +16,7 @@
 //! doc comment for why.
 
 use hdk::prelude::*;
-use handshake_coordinator_support::{call_local, call_role, decode_or, get_links_many, guest, original_action_of, read_records, resolve_latest, written};
+use handshake_coordinator_support::{arrived, call_local, call_role, decode_or, get_links_many, guest, original_action_of, read_records, resolve_latest, written};
 use std::collections::BTreeMap;
 use reputation_integrity::*;
 
@@ -311,7 +311,7 @@ fn my_reviews_for_order(order_original_action: &ActionHash) -> ExternResult<Vec<
     let mut out = Vec::new();
     for link in links {
         let Some(hash) = link.target.into_action_hash() else { continue };
-        let Some(record) = get(hash, GetOptions::default())? else { continue };
+        let record = arrived(&hash)?;
         if let Ok(Some(review)) = record.entry().to_app_option::<Review>() {
             out.push((record, review));
         }
