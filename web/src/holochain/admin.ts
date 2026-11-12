@@ -12,6 +12,7 @@
 // rather than requiring a CLI dance before every session.
 import { AdminWebsocket, CellType, encodeHashToBase64 } from "@holochain/client";
 import type { AgentPubKey, AppAuthenticationToken, AppInfo, CellId, InstalledAppId, WsClientOptions } from "@holochain/client";
+import { retryingWrite } from "./client";
 
 const ROLE_NAME = "handshake";
 
@@ -24,13 +25,17 @@ const ROLE_NAME = "handshake";
 /// freshly-provisioned identity's first zome call would fail with
 /// `NoSigningCredentialsForCell` -- caught by testing the actual contract
 /// end to end against a real conductor, not assumed.
+///
+/// The grant is a commit on the identity's chain, so it can lose a race
+/// with that identity's own background work (a store's auto-accept, an
+/// order's upkeep) and is tried again, as any refused write is.
 async function authorizeSigning(adminWs: AdminWebsocket, appInfo: AppInfo): Promise<void> {
   const cellInfo = appInfo.cell_info[ROLE_NAME]?.[0];
   if (!cellInfo || cellInfo.type !== CellType.Provisioned) {
     throw new Error(`no provisioned "${ROLE_NAME}" cell found on this app`);
   }
   const cellId: CellId = cellInfo.value.cell_id;
-  await adminWs.authorizeSigningCredentials(cellId);
+  await retryingWrite(() => adminWs.authorizeSigningCredentials(cellId));
 }
 
 const HAPP_URL = "/handshake.happ";

@@ -164,6 +164,12 @@ const CUT_OFF = /ClientClosedWithPendingRequests|client closed with pending requ
 const RETRYABLE = /could not be completed but may be retried|source chain head has moved/;
 const RETRY_DELAYS_MS = [500, 1500, 3000];
 
+/// Repeats `write` -- any commit, a zome call's or the admin API's -- while
+/// it's refused in one of those ways.
+export function retryingWrite<T>(write: () => Promise<T>): Promise<T> {
+  return retrying(write, RETRY_DELAYS_MS, (err) => RETRYABLE.test(err instanceof Error ? `${err.name}: ${err.message}` : String(err)));
+}
+
 /// Whether a failed call surely wrote nothing: it never reached the
 /// conductor, or the zome refused it (a refusal commits nothing). A call
 /// cut off mid-flight may have run, so it never counts -- nor anything else

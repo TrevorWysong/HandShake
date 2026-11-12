@@ -5,15 +5,25 @@
 # it as tests/tryorama/fixtures/previous-release/, with where it came from.
 #
 #   scripts/previous-release.sh <commit> <version>
+#   scripts/previous-release.sh           # again, from release.json
 #
 # Run it when a release ships, with that release's commit: the next version
-# is tested moving from it.
+# is tested moving from it. The DNA itself isn't kept in git; release.json
+# says which it is, and CI builds it from that (.github/workflows/ci.yml).
 set -euo pipefail
-commit="$1"
-version="$2"
 here="$(cd "$(dirname "$0")/.." && pwd)"
+if [ $# -eq 0 ]; then
+  kept="$here/fixtures/previous-release/release.json"
+  commit="$(node -p "require('$kept').commit")"
+  version="$(node -p "require('$kept').version")"
+else
+  commit="$1"
+  version="$2"
+fi
 repo="$(git -C "$here" rev-parse --show-toplevel)"
 work="$(mktemp -d)/release"
+# A shallow clone (CI's) may not have it yet.
+git -C "$repo" cat-file -e "$commit^{commit}" 2>/dev/null || git -C "$repo" fetch --quiet --depth 1 origin "$commit"
 git -C "$repo" worktree add --detach "$work" "$commit" >/dev/null
 trap 'git -C "$repo" worktree remove --force "$work"' EXIT
 (cd "$work" && cargo build --quiet --release --target wasm32-unknown-unknown && hc dna pack dnas/handshake/workdir >/dev/null)

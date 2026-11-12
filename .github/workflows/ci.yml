@@ -162,6 +162,16 @@ jobs:
           cargo build --release --target wasm32-unknown-unknown
           hc dna pack dnas/handshake/workdir
           hc app pack workdir
+      # The earlier release cross-version.test.ts moves from: built from the
+      # commit release.json names, once per release.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: previous-release
+        with:
+          path: tests/tryorama/fixtures/previous-release/handshake.dna
+          key: previous-release-${{ hashFiles('tests/tryorama/fixtures/previous-release/release.json') }}
+      - name: Build the earlier release's DNA
+        if: steps.previous-release.outputs.cache-hit != 'true'
+        run: tests/tryorama/scripts/previous-release.sh
       - name: Run the suite
         working-directory: tests/tryorama
         # CI runs a file 2-3 times slower than a laptop; the longest takes
