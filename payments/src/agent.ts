@@ -148,7 +148,7 @@ export function createAgent(options: AgentOptions) {
     // last ran, if it kept that, or else this one. Once set, it stays.
     const legacy = kept.legacy ?? kept.account ?? account;
     if (kept.account === account && kept.legacy === legacy) return;
-    if (kept.account !== null && kept.account !== account) Object.assign(kept, { saved: {}, savedAt: {}, challenged: {} });
+    if (kept.account !== null && kept.account !== account) Object.assign(kept, { saved: {}, savedAt: {}, challenged: {}, challengedAt: {} });
     kept.legacy = legacy;
     kept.account = account;
     await state.save(kept);

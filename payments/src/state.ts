@@ -18,6 +18,9 @@ export interface State {
   savedAt: Record<string, number>;
   /// A challenged authorization's reference, by the challenge's action (hex).
   challenged: Record<string, string>;
+  /// When each challenge was made (ms), by its action (hex): one older than
+  /// an authorization can live is forgotten.
+  challengedAt: Record<string, number>;
   /// First-order deal cards kept here by an agent from before they were
   /// kept on the network (`claim_newcomer_card`): the order (hex) each card
   /// fingerprint took it on, by store (hex). Claimed on the network on the
@@ -42,12 +45,15 @@ export interface State {
   /// The account each hold was placed with, by its reference: it's settled
   /// or refunded there and nowhere else.
   heldWith: Record<string, string>;
+  /// When each hold was placed (ms), by its reference: forgotten once no
+  /// refund could reach it (`HELD_KEPT_MS`).
+  heldAt: Record<string, number>;
   /// The account holds placed before they were bound to one (`heldWith`)
   /// belong to: the one this agent ran first after it began binding them.
   legacy: string | null;
 }
 
-export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, newcomers: {}, attempts: {}, known: {}, declines: [], busy: null, account: null, heldWith: {}, legacy: null });
+export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, challengedAt: {}, newcomers: {}, attempts: {}, known: {}, declines: [], busy: null, account: null, heldWith: {}, heldAt: {}, legacy: null });
 
 export interface StateStore {
   load(): Promise<State>;

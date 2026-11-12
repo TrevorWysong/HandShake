@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { Engine, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, SAVED_CARD_MS, idempotencyKey, retryingCollisions, type Dispatch } from "../src/engine.ts";
+import { Engine, HELD_KEPT_MS, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, SAVED_CARD_MS, idempotencyKey, retryingCollisions, type Dispatch } from "../src/engine.ts";
 import { testProcessor } from "../src/adapters/test.ts";
 import { emptyState, memoryStore } from "../src/state.ts";
 import type { PaymentDue } from "../src/types.ts";
@@ -499,6 +499,31 @@ test("a card kept here unused for six months is deleted; one in use stays", asyn
   clock += 2000;
   await engine.round();
   assert.equal(forgotten.length, 1, "six months unused: deleted");
+});
+
+test("what no payment can need again is forgotten: a challenge past an authorization's life, a hold's account past its last refund", async () => {
+  const z = zome();
+  let clock = 1_000_000;
+  const state = memoryStore({ ...emptyState(), heldWith: { ref_undated: "Test:test:" } });
+  const engine = new Engine({ dispatch: z.dispatch, processor: testProcessor("USD"), state, currency: "USD", account: "Test:test:", now: () => clock });
+  z.due = [authorize(10, 50, { token: "tok_test_3155" }), authorize(11, 51)];
+  await engine.round();
+  let kept = await state.load();
+  assert.equal(Object.keys(kept.challenged).length, 1);
+  assert.equal(Object.keys(kept.heldWith).length, 2, "this hold, and one from before holds were dated");
+  assert.equal(kept.heldAt.ref_undated, clock, "dated from when it's first seen");
+  z.due = [];
+  clock += 8 * 24 * 3_600_000;
+  await engine.round();
+  kept = await state.load();
+  assert.deepEqual(kept.challenged, {}, "its authorization is long gone");
+  assert.deepEqual(kept.challengedAt, {});
+  assert.equal(Object.keys(kept.heldWith).length, 2, "holds are kept for their refunds");
+  clock += HELD_KEPT_MS;
+  await engine.round();
+  kept = await state.load();
+  assert.deepEqual(kept.heldWith, {});
+  assert.deepEqual(kept.heldAt, {});
 });
 
 test("a withdrawal outranks an offer still waiting; a card replaced isn't left at the processor", async () => {

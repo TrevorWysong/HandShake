@@ -36,6 +36,10 @@ const ATTEMPTS_KEPT_MS = 8 * 24 * HOUR_MS;
 /// A card kept here and unused this long is deleted -- the network refuses
 /// it by then too (`dispatch_integrity::payments::SAVED_CARD_DAYS`).
 export const SAVED_CARD_MS = 180 * 24 * HOUR_MS;
+/// A hold's account is kept this long after it's placed: past the time it
+/// settles, an appeal is filed and ruled on, and its refund is made -- and
+/// past the time a card's processor still takes a refund for a charge.
+export const HELD_KEPT_MS = 180 * 24 * HOUR_MS;
 
 export interface EngineOptions {
   dispatch: Dispatch;
@@ -117,6 +121,7 @@ export class Engine {
     // reported, kept for the next round, and the payments go on.
     await this.#claimKeptCards().catch((err) => onProblem("Claim kept cards", err));
     let done = await this.#expireSavedCards().catch((err) => (onProblem("Expire saved cards", err), 0));
+    await this.#forgetPastUse().catch((err) => onProblem("Forget old payments", err));
     // Payers who withdrew their kept card where the withdrawal couldn't be
     // read: that card is charged for nothing until it is.
     const withdrawing = new Set(due.flatMap((item) => ("WithdrawalUnreadable" in item ? [hex(item.WithdrawalUnreadable.payer)] : [])));
@@ -227,6 +232,7 @@ export class Engine {
     if (result.status === "action") {
       const action = await dispatch<ActionHash>("record_action", { offer: due.offer, action: result.action });
       state.challenged[hex(action)] = result.reference;
+      state.challengedAt[hex(action)] = now();
       return;
     }
     // A first-order deal is one per card here: a card that took it on
@@ -252,6 +258,7 @@ export class Engine {
     // Bound to its account on disk before the network hears of it: a
     // crash between the two never leaves a hold no account claims.
     state.heldWith[result.reference] = this.#o.account;
+    state.heldAt[result.reference] = now();
     await this.#o.state.save(state);
     await dispatch("record_hold", { offer: due.offer, reference: result.reference });
   }
@@ -266,6 +273,37 @@ export class Engine {
     delete state.saved[payer];
     delete state.savedAt[payer];
     return true;
+  }
+
+  /// Forgets what no payment can need again, so what the agent keeps --
+  /// read and written whole for every payment -- doesn't grow for good: a
+  /// challenge past an authorization's life, a hold's account past its
+  /// last refund. Dated from now if kept before they were dated.
+  async #forgetPastUse() {
+    const { state: store, now } = this.#o;
+    const state = await store.load();
+    let changed = false;
+    const prune = (kept: Record<string, unknown>, at: Record<string, number>, keepMs: number) => {
+      for (const key of Object.keys(kept)) {
+        if (at[key] === undefined) {
+          at[key] = now();
+          changed = true;
+        } else if (now() - at[key] >= keepMs) {
+          delete kept[key];
+          delete at[key];
+          changed = true;
+        }
+      }
+      for (const key of Object.keys(at)) {
+        if (!(key in kept)) {
+          delete at[key];
+          changed = true;
+        }
+      }
+    };
+    prune(state.challenged, state.challengedAt, ATTEMPTS_KEPT_MS);
+    prune(state.heldWith, state.heldAt, HELD_KEPT_MS);
+    if (changed) await store.save(state);
   }
 
   /// Deletes each card kept here that's gone unused too long. Returns how

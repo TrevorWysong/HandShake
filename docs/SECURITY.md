@@ -330,6 +330,8 @@ The rule from the last review, applied across every zome that adds up money, poi
 
 - **The push relay could be filled with made-up devices.** Registering needs no account, and an address only has to look right. Fixed: each address registers so many devices a day, the relay holds at most `MAX_DEVICES` and refuses more rather than grow, and a device that hasn't asked for tokens in a token's lifetime is forgotten (none of its tokens work by then). The per-address limits remember at most 100,000 addresses each. The app now asks for fresh tokens on start before they run out, and never puts one with under a week left on an order -- before, a customer who hadn't ordered in a month handed out tokens that had already expired.
 
+- **A payee's agent kept every hold's account and every bank challenge for good**, in a file it reads and writes whole for every payment. Now a challenge is forgotten once its authorization can't live (8 days), and a hold's account 180 days after it's placed, past any refund. Ones kept from before are dated from when the agent first sees them.
+
 Reads that only show something -- menus, bags and promos while browsing, a birthday looked up for a gift that's tried again later -- still skip what isn't here.
 
 ## Store contact details and pickup chat
