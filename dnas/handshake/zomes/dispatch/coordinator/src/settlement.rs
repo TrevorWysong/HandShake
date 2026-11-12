@@ -196,8 +196,14 @@ fn order_terms(order: &ActionHash) -> ExternResult<Option<OrderTerms>> {
     Ok(decode_or::<DeliveryOrder>(&record).map(|o| OrderTerms::of_delivery(&o)).or_else(|| decode_or::<PickupOrder>(&record).map(|o| OrderTerms::of_pickup(&o))))
 }
 
-fn bid_of(bid: &ActionHash) -> ExternResult<Option<Bid>> {
-    Ok(get(bid.clone(), GetOptions::default())?.and_then(|r| decode_or::<Bid>(&r)))
+/// The bid a driver's leg names. Validation lets an offer name only a bid
+/// (`payments::leg_context`), so one that can't be read hasn't reached this
+/// device yet: an error, never "no bid" -- left out, a settlement would
+/// take nothing of a driver's collateral or pass on nothing of their pay,
+/// and once recorded it's never made again.
+fn bid_of(bid: &ActionHash) -> ExternResult<Bid> {
+    let record = get(bid.clone(), GetOptions::default())?.ok_or_else(|| guest(format!("bid {bid} hasn't reached this device yet")))?;
+    decode_or::<Bid>(&record).ok_or_else(|| guest(format!("{bid} isn't a bid")))
 }
 
 /// The parts a leg's payee captures on their own entitlement -- every
@@ -255,7 +261,7 @@ pub(crate) fn settlement_due(hold_ref: &ActionHash) -> ExternResult<Option<Vec<D
     let mut due = Vec::new();
     for part in own_parts(&offer.leg) {
         let bid = match part_bid(&part) {
-            Some(bid_ref) => bid_of(bid_ref)?,
+            Some(bid_ref) => Some(bid_of(bid_ref)?),
             None => None,
         };
         let Some((_, amount)) = part_share(&terms, &part, bid.as_ref()) else { continue };
@@ -280,7 +286,7 @@ pub(crate) fn settlement_due(hold_ref: &ActionHash) -> ExternResult<Option<Vec<D
         let mut waiting = false;
         for (driver_hold, driver, _, driver_offer) in holds_on(&order)? {
             let PaymentLeg::DriverPay { bid } = &driver_offer.leg else { continue };
-            let Some(bid_record) = bid_of(bid)? else { continue };
+            let bid_record = bid_of(bid)?;
             if driver != bid_record.bidder {
                 continue;
             }
