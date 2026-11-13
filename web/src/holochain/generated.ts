@@ -2508,6 +2508,12 @@ export interface NetworkTerms {
    */
   customer_rating_days: number;
   /**
+   * A customer's report pattern counts their last this-many orders, and
+   * is shown once they've placed `min_report_pattern_orders`.
+   */
+  report_pattern_orders: number;
+  min_report_pattern_orders: number;
+  /**
    * How far back ratings and records reach, in days.
    */
   reputation_window_days: number;

@@ -646,6 +646,10 @@ pub struct NetworkTerms {
     pub min_customer_ratings: u32,
     /// How many days after an order completes its customer may be rated.
     pub customer_rating_days: u32,
+    /// A customer's report pattern counts their last this-many orders, and
+    /// is shown once they've placed `min_report_pattern_orders`.
+    pub report_pattern_orders: u32,
+    pub min_report_pattern_orders: u32,
     /// How far back ratings and records reach, in days.
     pub reputation_window_days: u32,
     /// What a minute of a driver's arrival time counts for when matching.
@@ -724,6 +728,8 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         customer_rating_window: handshake_governance::customer_rating_window(),
         min_customer_ratings: handshake_governance::min_customer_ratings(),
         customer_rating_days: handshake_governance::customer_rating_days(),
+        report_pattern_orders: handshake_governance::report_pattern_orders(),
+        min_report_pattern_orders: handshake_governance::min_report_pattern_orders(),
         reputation_window_days: (handshake_governance::reputation_window().as_secs() / 86_400) as u32,
         minute_value_cents: handshake_governance::minute_value_cents(),
         time_relays: handshake_governance::time_source().relays,
