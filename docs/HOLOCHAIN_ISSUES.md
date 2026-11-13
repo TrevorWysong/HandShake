@@ -555,7 +555,7 @@ replaced with a first-party mechanism.
 
 **In this project:** the integration tests swap in the `test-utils` builds of coordinators (`useTestCoordinators` in `tests/tryorama/src/helpers.ts`), then call into them. `link-validation`, which swaps every coordinator for every player, failed this way on CI.
 
-**Workaround:** after a swap, warm the zome up with a harmless read. Retry it with a pause while it times out or reports `Missing WASM source`, and fail on any other error. Production cells never swap coordinators at runtime, so this only affects tests.
+**Workaround:** after a swap, warm the zome up with a harmless read. Retry it with a pause while it times out or reports `Missing WASM source`, and fail on any other error. Production cells never swap coordinators at runtime, so this only affects tests. It has also been seen tens of minutes after a swap, in a long run (`rewards-contention`, twice in November 2026), so the tests' retrying caller treats it as transient on every call, not only the warm-up.
 
 ## 9. A chain walk bounded by a timestamp reads the author's whole chain (0.7.1)
 

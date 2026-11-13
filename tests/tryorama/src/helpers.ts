@@ -585,7 +585,11 @@ export async function currentBeacon(): Promise<{ round: number; signature: Uint8
 /// the app's client does (web/src/holochain/client.ts `RETRYABLE`): a record
 /// validation needs that hasn't arrived, or the agent's own conductor (its
 /// scheduled upkeep, a store's auto-accept) writing to the chain mid-call.
-const RETRYABLE = /could not be completed but may be retried|source chain head has moved/;
+/// And one only tests meet: a coordinator a test swapped in whose code the
+/// conductor momentarily can't find ("Missing WASM source",
+/// docs/HOLOCHAIN_ISSUES.md #8) -- seen long after the swap too, in a long
+/// run, not only at once. Production cells never swap coordinators.
+const RETRYABLE = /could not be completed but may be retried|source chain head has moved|Missing WASM source/;
 
 /// A zome caller that, like the app's client, repeats a call Holochain
 /// refused before writing anything.

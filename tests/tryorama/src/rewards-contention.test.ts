@@ -64,7 +64,7 @@ await runScenario(async (scenario) => {
         return false;
       },
     );
-  const statusOf = async (owner: typeof ada, order: Uint8Array) => decodeEntry<{ status: string }>(await owner.cells[0].callZome<HcRecord>({ zome_name: "dispatch", fn_name: "get_pickup_order", payload: order })).status;
+  const statusOf = async (owner: typeof ada, order: Uint8Array) => decodeEntry<{ status: string }>(await call(owner, "dispatch")<HcRecord>("get_pickup_order", order)).status;
 
   for (const [round, many] of ROUNDS.entries()) {
     // Every member given exactly one reward's worth, at every store.
