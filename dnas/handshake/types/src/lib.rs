@@ -357,7 +357,7 @@ pub mod block_prints {
     /// Whether `list` holds the fingerprint of `key` under `salt`.
     pub fn lists(list: &[u8], salt: &[u8], key: &[u8]) -> bool {
         let print = print(salt, key);
-        list.chunks_exact(PRINT_BYTES).any(|candidate| candidate == print)
+        list.as_chunks::<PRINT_BYTES>().0.contains(&print)
     }
 
     /// The size a list of `real` fingerprints is padded to: the smallest
