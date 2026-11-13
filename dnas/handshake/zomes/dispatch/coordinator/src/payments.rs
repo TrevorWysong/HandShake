@@ -501,7 +501,7 @@ fn busy_now(payee: &AgentPubKey) -> ExternResult<Option<(ActionHash, PayeeBusy)>
     let Some(link) = get_links(query, GetStrategy::default())?.into_iter().filter(|link| &link.author == payee).max_by_key(|link| link.timestamp) else { return Ok(None) };
     let Some(hash) = link.target.into_action_hash() else { return Ok(None) };
     // Linked, so written: not here yet is an error, never "not busy".
-    let record = get(hash, GetOptions::default())?.ok_or(guest("the payee's busy record hasn't reached this device yet"))?;
+    let record = arrived(&hash)?;
     let now = sys_time()?;
     Ok(decode_or::<PayeeBusy>(&record).filter(|busy| busy.until > now && record.action().author() == payee).map(|busy| (record.action_address().clone(), busy)))
 }
@@ -589,7 +589,7 @@ fn claimed_in_line(line: &[ActionHash], fingerprint: &str) -> ExternResult<Optio
     let digest = card_digest(line.last().expect("a line holds its store"), fingerprint);
     for catalog in line {
         // A store left out could hide where the card already took the deal.
-        let record = get(catalog.clone(), GetOptions::default())?.ok_or(guest("a store in the line hasn't reached this device yet"))?;
+        let record = arrived(catalog)?;
         let owner = record.action().author().clone();
         let query = LinkQuery::try_new(catalog.clone(), LinkTypes::StoreToNewcomerCard)?.author(owner.clone()).tag_prefix(LinkTag::new(digest.clone()));
         if let Some(link) = get_links(query, GetStrategy::default())?.into_iter().find(|link| link.author == owner && link.tag.0 == digest) {
@@ -655,14 +655,14 @@ pub fn claim_newcomer_card(input: NewcomerCardInput) -> ExternResult<bool> {
 /// What the order cites that isn't here yet is an error: taken for "no
 /// deal", the card would go unchecked against the store's one per card.
 fn newcomer_deal(order: &ActionHash) -> ExternResult<Option<ActionHash>> {
-    let record = get(order.clone(), GetOptions::default())?.ok_or(guest("the order hasn't reached this device yet"))?;
+    let record = arrived(order)?;
     let (promo, store) = match (decode_or::<DeliveryOrder>(&record), decode_or::<PickupOrder>(&record)) {
         (Some(o), _) => (o.promo_code_ref, o.catalog_ref),
         (None, Some(o)) => (o.promo_code_ref, o.catalog_ref),
         _ => return Ok(None),
     };
     let Some(promo) = promo else { return Ok(None) };
-    let promo = get(promo, GetOptions::default())?.ok_or(guest("the promo an order cites hasn't reached this device yet"))?;
+    let promo = arrived(&promo)?;
     let first_only = decode_or::<catalog_types::PromoCode>(&promo).is_some_and(|p| p.limits.first_order_only);
     Ok(first_only.then_some(store))
 }
@@ -686,12 +686,12 @@ fn refunds_due(me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>> {
 /// ruling is validated against its appeal, and that against its order, so
 /// any of them not here yet is an error, never "nothing owed".
 fn refund_due(me: &AgentPubKey, ruling_ref: &ActionHash) -> ExternResult<Option<PaymentDue>> {
-    let record = get(ruling_ref.clone(), GetOptions::default())?.ok_or(guest("the ruling hasn't reached this device yet"))?;
+    let record = arrived(ruling_ref)?;
     let Some(ruling) = decode_or::<Ruling>(&record) else { return Ok(None) };
     if ruling.award == 0 {
         return Ok(None);
     }
-    let appeal = get(ruling.appeal.clone(), GetOptions::default())?.ok_or(guest("the appeal a ruling answers hasn't reached this device yet"))?;
+    let appeal = arrived(&ruling.appeal)?;
     let Some(appeal) = decode_or::<Appeal>(&appeal) else { return Ok(None) };
     // The store's settlement of the customer's payment, and what it's
     // refunded from it. None yet: the award waits for the settlement.

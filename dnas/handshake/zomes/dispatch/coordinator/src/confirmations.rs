@@ -17,18 +17,6 @@ fn me() -> ExternResult<AgentPubKey> {
     Ok(agent_info()?.agent_initial_pubkey)
 }
 
-/// Every version of an order, across any branches.
-fn versions_of(order: &ActionHash) -> ExternResult<Vec<Record>> {
-    let mut out = Vec::new();
-    let mut frontier = vec![order.clone()];
-    while let Some(hash) = frontier.pop() {
-        let Some(Details::Record(details)) = get_details(hash, GetOptions::default())? else { continue };
-        frontier.extend(details.updates.iter().map(|u| u.action_address().clone()));
-        out.push(details.record);
-    }
-    Ok(out)
-}
-
 /// The order's fields these care about, from any version.
 struct Fields {
     requester: AgentPubKey,
@@ -66,7 +54,7 @@ pub fn confirm_what_i_saw(order: ActionHash) -> ExternResult<Option<ActionHash>>
     if requester != me()? || settled_for(&order, original.action().timestamp())? {
         return Ok(None);
     }
-    let versions = versions_of(&order)?;
+    let versions = handshake_coordinator_support::all_versions(&order)?;
     let by_store = |r: &&Record| r.action().author() == &merchant && matches!(r.action().data, ActionData::Update(_));
     // The store declining it from Placed.
     for record in versions.iter().filter(by_store) {
@@ -117,7 +105,7 @@ pub(crate) fn saw_start(order: &ActionHash, requester: &AgentPubKey, merchant: &
     if customer_confirmed(order, requester)? {
         return Ok(true);
     }
-    for record in versions_of(order)? {
+    for record in handshake_coordinator_support::all_versions(order)? {
         let cancels = record.action().author() == requester && fields(&record).is_some_and(|f| f.cancellation.is_some());
         if cancels && dispatch_integrity::lineage::cancels_started(record.action_address(), merchant)? {
             return Ok(true);
@@ -135,7 +123,7 @@ pub fn cancelled_in_time(order: ActionHash) -> ExternResult<bool> {
     // the points it spent would stay spent.
     let original = handshake_coordinator_support::arrived(&order)?;
     let Some(Fields { requester, merchant, .. }) = fields(&original) else { return Ok(false) };
-    let by_customer = versions_of(&order)?.iter().any(|r| r.action().author() == &requester && fields(r).is_some_and(|f| f.cancellation == Some(Cancellation::ByCustomer)));
+    let by_customer = handshake_coordinator_support::all_versions(&order)?.iter().any(|r| r.action().author() == &requester && fields(r).is_some_and(|f| f.cancellation == Some(Cancellation::ByCustomer)));
     Ok(by_customer && !saw_start(&order, &requester, &merchant)?)
 }
 

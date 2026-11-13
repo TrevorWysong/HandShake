@@ -34,20 +34,18 @@ fn open_order(order: &ActionHash, placed_at: Timestamp) -> ExternResult<Option<O
 /// The acceptance of an order by the store owner it names -- the key that
 /// held the store when it was placed, which may since have moved it on.
 pub(crate) fn acceptance_by_its_store(order: &ActionHash) -> ExternResult<Option<ActionHash>> {
-    let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(None) };
-    let Some(placed) = OrderForRewards::of(&record) else { return Ok(None) };
+    let Some(placed) = OrderForRewards::of(&arrived(order)?) else { return Ok(None) };
     acceptance(order, &placed.merchant)
 }
 
 /// The store's acceptance of an order: its earliest update from `Placed`
 /// that doesn't call it off (a decline is an update from `Placed` too).
 pub(crate) fn acceptance(order: &ActionHash, merchant: &AgentPubKey) -> ExternResult<Option<ActionHash>> {
+    // Every version, or an error: one not read yet may be the acceptance,
+    // and the order would read as not accepted -- its spend left off the
+    // card, the balance high.
     let mut found: Option<(Timestamp, ActionHash)> = None;
-    let mut frontier = vec![order.clone()];
-    while let Some(hash) = frontier.pop() {
-        let Some(Details::Record(details)) = get_details(hash, GetOptions::default())? else { continue };
-        frontier.extend(details.updates.iter().map(|u| u.action_address().clone()));
-        let record = details.record;
+    for record in all_versions(order)? {
         let declines = decode_or::<dispatch_types::DeliveryOrder>(&record).map(|o| o.cancellation.is_some()).or_else(|| decode_or::<dispatch_types::PickupOrder>(&record).map(|o| o.cancellation.is_some())).unwrap_or(true);
         if record.action().author() == merchant && !declines && matches!(record.action().data, ActionData::Update(_)) && accepted_at(order, merchant, record.action_address())?.is_ok() && found.as_ref().is_none_or(|(at, _)| record.action().timestamp() < *at) {
             found = Some((record.action().timestamp(), record.action_address().clone()));
@@ -194,16 +192,10 @@ pub(crate) fn card_for(catalog_ref: &ActionHash) -> ExternResult<CardView> {
 
 /// Whether an order was called off: any of its versions cancels it.
 pub(crate) fn order_called_off(order: &ActionHash) -> ExternResult<bool> {
-    let mut frontier = vec![order.clone()];
-    while let Some(hash) = frontier.pop() {
-        let Some(Details::Record(details)) = get_details(hash, GetOptions::default())? else { continue };
-        frontier.extend(details.updates.iter().map(|u| u.action_address().clone()));
-        let cancelled = decode_or::<dispatch_types::DeliveryOrder>(&details.record).map(|o| o.cancellation.is_some()).or_else(|| decode_or::<dispatch_types::PickupOrder>(&details.record).map(|o| o.cancellation.is_some()));
-        if cancelled == Some(true) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    Ok(all_versions(order)?.iter().any(|record| {
+        let cancelled = decode_or::<dispatch_types::DeliveryOrder>(record).map(|o| o.cancellation.is_some()).or_else(|| decode_or::<dispatch_types::PickupOrder>(record).map(|o| o.cancellation.is_some()));
+        cancelled == Some(true)
+    }))
 }
 
 /// The stores the caller has a card at, newest first: their list, or --

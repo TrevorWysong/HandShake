@@ -228,6 +228,21 @@ pub fn all_arrived(hashes: &[ActionHash], strategy: GetStrategy) -> ExternResult
     hashes.iter().zip(records).map(|(hash, record)| record.ok_or_else(|| not_arrived(hash))).collect()
 }
 
+/// Every version of the entry at `original` (its original action), original
+/// first then each update, across any branches -- every one, or an error.
+/// A version its parent lists that hasn't reached this device yet would
+/// leave out what it says: a cancellation, an acceptance, a delivery.
+pub fn all_versions(original: &ActionHash) -> ExternResult<Vec<Record>> {
+    let mut out = Vec::new();
+    let mut frontier = vec![original.clone()];
+    while let Some(hash) = frontier.pop() {
+        let Some(Details::Record(details)) = get_details(hash.clone(), GetOptions::default())? else { return Err(not_arrived(&hash)) };
+        frontier.extend(details.updates.iter().map(|u| u.action_address().clone()));
+        out.push(details.record);
+    }
+    Ok(out)
+}
+
 /// The targets of `links` that are records, in order.
 pub fn record_targets(links: Vec<Link>) -> Vec<ActionHash> {
     links.into_iter().filter_map(|link| link.target.into_action_hash()).collect()
