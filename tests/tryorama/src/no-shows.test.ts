@@ -29,6 +29,10 @@ const COLLECT_WAIT = 15;
 /// Seconds a store has to answer before its silence does: past the wait to
 /// collect, which a report holds off until then.
 const ANSWER_GRACE = 45;
+/// Seconds a customer has to report a problem: past the store's time to
+/// answer, which is never longer (`answer_grace`) -- at 20, the store's
+/// conductor answered a pickup report before the wait to collect had run.
+const REPORT_WINDOW = 50;
 /// Seconds a store may go silent on a pickup before its customer may close it:
 /// never less than the wait to collect and the store's time to answer.
 const LAPSE = 70;
@@ -46,7 +50,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const DOOR = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 await runScenario(async (scenario) => {
-  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ dropoff_wait_secs: DOOR_WAIT, collection_window_secs: COLLECT_WAIT, answer_grace_secs: ANSWER_GRACE, order_lapse_secs: LAPSE, report_window_secs: 20 }));
+  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ dropoff_wait_secs: DOOR_WAIT, collection_window_secs: COLLECT_WAIT, answer_grace_secs: ANSWER_GRACE, order_lapse_secs: LAPSE, report_window_secs: REPORT_WINDOW }));
   const all = [customer, merchant, driver];
   for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
