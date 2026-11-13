@@ -1,29 +1,34 @@
 // A driver's own limits on what they're offered -- each within the
 // network's, which it enforces regardless -- the speed their bid ETAs are
-// estimated from, and their rule for bidding automatically. Kept on this
+// estimated from, their fee, and their rule for bidding automatically. Kept on this
 // device (`roleSettings`).
 import { useState } from "react";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Card, Chip, Input, Switch } from "../../components/ui";
-import { currencySymbol, formatCents, fromMinorUnits, toMinorUnits } from "../../lib/ui/format";
+import { centsTyped, currencySymbol, formatCents, fromMinorUnits } from "../../lib/ui/format";
 import { useTerms } from "../../store/network";
 import { DETOUR_CHOICES_KM, useDriverSettings } from "../../store/roleSettings";
 import { useT } from "../../i18n";
 import { TRAVEL_MODES } from "../../lib/driving/routing";
+import { orderedBands } from "../../lib/driving/feeSchedule";
+import { FeeScheduleEditor } from "./FeeScheduleEditor";
 
 export function DriverSettingsCard() {
   const t = useT();
   const terms = useTerms();
   const networkMax = terms.max_concurrent_deliveries;
-  const { limits, travelMode, setLimits, setTravelMode, autoBid, setAutoBid } = useDriverSettings();
+  const { limits, travelMode, setLimits, setTravelMode, autoBid, setAutoBid, fees } = useDriverSettings();
   const [open, setOpen] = useState(false);
   const atOnce = Math.min(limits.maxAtOnce ?? networkMax, networkMax);
   const summary = [
     t("driverSettings.upTo", { count: atOnce }),
     limits.takePriority ? t("driverSettings.priorityOn") : t("driverSettings.priorityOff"),
     limits.minFeeCents > 0 ? t("driverSettings.minFee", { amount: formatCents(limits.minFeeCents) }) : null,
-    autoBid.on ? t("driverSettings.bidding", { amount: formatCents(autoBid.perKmCents) }) : null,
+    fees.kind === "rate"
+      ? t("driverSettings.ratePer", { amount: formatCents(fees.perUnitCents), unit: t(fees.unit === "mi" ? "fees.mi" : "fees.km") })
+      : t("driverSettings.bandCount", { count: orderedBands(fees.bands).length }),
+    autoBid.on ? t("driverSettings.bidding") : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -100,6 +105,9 @@ export function DriverSettingsCard() {
                 </div>
                 <p className="mt-2 text-[11px] text-ink-400">{t("driverSettings.travelNote")}</p>
               </div>
+              <div className="border-t border-ink-100 pt-4 dark:border-ink-800">
+                <FeeScheduleEditor />
+              </div>
               <div className="flex items-center justify-between gap-3 border-t border-ink-100 pt-4 dark:border-ink-800">
                 <span>
                   <span className="block text-xs font-semibold text-ink-500">{t("driverSettings.autoBid")}</span>
@@ -108,24 +116,10 @@ export function DriverSettingsCard() {
                 <Switch checked={autoBid.on} onChange={(on) => setAutoBid({ on })} label={t("driverSettings.autoBidLabel")} />
               </div>
               {autoBid.on && (
-                <div className="flex gap-3">
-                  <label className="flex-1 text-xs font-semibold text-ink-500">
-                    {t("driverSettings.rate")}
-                    <Input
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={fromMinorUnits(autoBid.perKmCents)}
-                      onChange={(e) => setAutoBid({ perKmCents: centsTyped(e.target.value) })}
-                      prefix={currencySymbol()}
-                      className="mt-1 py-1.5 text-sm"
-                    />
-                  </label>
-                  <label className="flex-1 text-xs font-semibold text-ink-500">
-                    {t("driverSettings.skip")}
-                    <Input type="number" min={1} step={1} value={autoBid.skipRefusals} onChange={(e) => setAutoBid({ skipRefusals: Math.max(1, Math.round(Number(e.target.value)) || 1) })} suffix={t("driverSettings.times")} className="mt-1 py-1.5 text-sm" />
-                  </label>
-                </div>
+                <label className="block text-xs font-semibold text-ink-500">
+                  {t("driverSettings.skip")}
+                  <Input type="number" min={1} step={1} value={autoBid.skipRefusals} onChange={(e) => setAutoBid({ skipRefusals: Math.max(1, Math.round(Number(e.target.value)) || 1) })} suffix={t("driverSettings.times")} className="mt-1 py-1.5 text-sm" />
+                </label>
               )}
               {autoBid.on && <p className="text-[11px] text-ink-400">{t("driverSettings.autoBidNote")}</p>}
             </div>
@@ -134,11 +128,4 @@ export function DriverSettingsCard() {
       </AnimatePresence>
     </Card>
   );
-}
-
-/// An amount typed in, in cents -- none below zero, and nothing for what
-/// isn't a number, so a stray keystroke never leaves a setting unreadable.
-function centsTyped(value: string): number {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? Math.max(0, toMinorUnits(amount)) : 0;
 }

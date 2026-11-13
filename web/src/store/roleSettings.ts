@@ -7,6 +7,8 @@ import { persist } from "zustand/middleware";
 import { identityStorage, perIdentity } from "./identityScope";
 import type { DropoffPreference } from "../holochain/types";
 import type { TravelMode } from "../lib/driving/routing";
+import { defaultSchedule, soundSchedule, type FeeSchedule } from "../lib/driving/feeSchedule";
+import { usesMiles } from "../lib/ui/format";
 
 /// A customer's checkout as they last left it, offered again next time.
 export interface CheckoutDefaults {
@@ -60,12 +62,9 @@ export interface DriverLimits {
 export const DETOUR_CHOICES_KM = [0.5, 1, 2, 3, 5];
 
 /// A driver's rule for bidding automatically, as the big apps offer orders:
-/// on every order they're offered, at their own rate.
+/// on every order they're offered, at their fee (`FeeSchedule`).
 export interface AutoBid {
   on: boolean;
-  /// What they charge per km of the trip -- to the store and on to the
-  /// drop-off -- in minor units; never under their lowest fee.
-  perKmCents: number;
   /// Stores they skip: those with at least this many drivers' reports of
   /// refusing to check them in.
   skipRefusals: number;
@@ -73,6 +72,10 @@ export interface AutoBid {
 
 interface DriverSettings {
   limits: DriverLimits;
+  /// What they charge: by distance, for automatic bids and as the fee a bid
+  /// starts at.
+  fees: FeeSchedule;
+  setFees: (fees: Partial<FeeSchedule>) => void;
   autoBid: AutoBid;
   setAutoBid: (autoBid: Partial<AutoBid>) => void;
   /// How they get around -- which roads their bids' ETAs are timed on
@@ -86,19 +89,24 @@ export const useDriverSettings = create<DriverSettings>()(
   persist(
     (set) => ({
       limits: { maxAtOnce: null, takePriority: true, minFeeCents: 0, detourKm: null },
-      autoBid: { on: false, perKmCents: 100, skipRefusals: 3 },
+      fees: defaultSchedule(usesMiles() ? "mi" : "km"),
+      setFees: (fees) => set((state) => ({ fees: { ...state.fees, ...fees } })),
+      autoBid: { on: false, skipRefusals: 3 },
       setAutoBid: (autoBid) => set((state) => ({ autoBid: { ...state.autoBid, ...autoBid } })),
       travelMode: "car",
       setLimits: (limits) => set((state) => ({ limits: { ...state.limits, ...limits } })),
       setTravelMode: (travelMode) => set({ travelMode }),
     }),
-    // Settings saved before a field existed take its default.
+    // Settings saved before a field existed take its default; a rate per km
+    // from before fee schedules becomes one.
     {
       name: "handshake.driver-settings.v1",
       storage: identityStorage(),
       merge: (saved, current) => {
-        const stored = saved as Partial<DriverSettings> | undefined;
-        return { ...current, ...stored, limits: { ...current.limits, ...stored?.limits }, autoBid: { ...current.autoBid, ...stored?.autoBid } };
+        const stored = saved as (Partial<DriverSettings> & { autoBid?: { perKmCents?: number } }) | undefined;
+        const { perKmCents, ...autoBid } = stored?.autoBid ?? {};
+        const before = stored?.fees ?? (perKmCents !== undefined ? { kind: "rate", unit: "km", perUnitCents: perKmCents } : undefined);
+        return { ...current, ...stored, limits: { ...current.limits, ...stored?.limits }, fees: soundSchedule(before, current.fees), autoBid: { ...current.autoBid, ...autoBid } };
       },
     },
   ),

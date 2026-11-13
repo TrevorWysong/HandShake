@@ -21,12 +21,13 @@ import { HandoffStep } from "./HandoffStep";
 import { BidWeightBreakdown, HowBidsCompare } from "../../components/orders/BidWeights";
 import { StoreCheckIn, StorePickup } from "./AtTheStore";
 import { getReputationSummary } from "../../holochain/zomes/reputation";
-import { formatCents, formatDistance, formatEta, formatClockTime, toMinorUnits, fromMinorUnits, currencySymbol } from "../../lib/ui/format";
+import { formatCents, formatDistance, formatDistanceIn, formatEta, formatClockTime, toMinorUnits, fromMinorUnits, currencySymbol } from "../../lib/ui/format";
 import { useT } from "../../i18n";
 import { useResource } from "../../lib/hooks/useResource";
 import { CustomerHistory } from "../../components/orders/CustomerHistory";
 import type { DeliveryOrder, GeoPoint, MerchantCatalog } from "../../holochain/types";
 import { estimateTrip } from "../../lib/driving/eta";
+import { quote } from "../../lib/driving/autoBid";
 import { legMinutes } from "../../lib/driving/routing";
 import { currentBeacon } from "../../lib/network/timeSource";
 import { useClock } from "../../lib/hooks/useClock";
@@ -249,8 +250,14 @@ export function BidCard({
   // How the store treats drivers: kept them waiting, or refused to check
   // them in -- other drivers' records of it.
   const { data: store = null } = useResource(`store-record:${storeHex}`, () => getReputationSummary({ Store: order.catalog_ref }));
-  // The customer's cap, which no bid may exceed -- the driver lowers it to compete.
-  const [fee, setFee] = useState(order.max_delivery_fee ?? 0);
+  // Their own fee for it, by their schedule, within the customer's cap,
+  // which no bid may exceed -- until they type another.
+  const fees = useDriverSettings((s) => s.fees);
+  const minFeeCents = useDriverSettings((s) => s.limits.minFeeCents);
+  const quoted = storeAt && quote({ driver: location, store: storeAt, dropoff: geohashCenter(order.dropoff_geohash) }, fees, minFeeCents);
+  const cap = order.max_delivery_fee;
+  const [typedFee, setFee] = useState<number | null>(null);
+  const fee = typedFee ?? (quoted ? Math.min(quoted.feeCents, cap ?? quoted.feeCents) : (cap ?? 0));
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between">
@@ -321,6 +328,12 @@ export function BidCard({
           {t("drive.bid")}
         </Button>
       </div>
+      )}
+      {!sent && quoted && typedFee === null && (
+        <p className="mt-1.5 text-[11px] text-ink-400">
+          {t("drive.yourRate", { amount: formatCents(quoted.feeCents), distance: formatDistanceIn(quoted.km, fees.unit) })}
+          {cap !== null && quoted.feeCents > cap && <span className="font-semibold text-amber-600 dark:text-amber-400"> {t("drive.overCap", { cap: formatCents(cap) })}</span>}
+        </p>
       )}
       {!sent && eta !== null && <MyBidWeight fee={fee} etaMinutes={eta} />}
     </Card>

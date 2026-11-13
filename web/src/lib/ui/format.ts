@@ -41,6 +41,14 @@ export function toMinorUnits(amount: number): number {
   return Math.round(amount * minorUnitsPerUnit());
 }
 
+/// An amount typed in, in minor units -- none below zero, and nothing for
+/// what isn't a number, so a stray keystroke never leaves a setting
+/// unreadable.
+export function centsTyped(value: string): number {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.max(0, toMinorUnits(amount)) : 0;
+}
+
 /// A number field's text as a whole number between `min` and `max`: what
 /// it holds, rounded down, or `min` for nothing a number.
 export function wholeNumberIn(value: string, min: number, max: number): number {
@@ -124,18 +132,29 @@ export function formatClockTime(microseconds: number): string {
 /// Places whose road distances are in miles.
 const MILES_REGIONS = new Set(["US", "GB", "LR", "MM"]);
 
+function deviceLocale(): string {
+  return typeof navigator === "undefined" ? "en-US" : navigator.language;
+}
+
+/// Whether roads where `locale` is from are signed in miles.
+export function usesMiles(locale: string = deviceLocale()): boolean {
+  try {
+    const region = new Intl.Locale(locale).maximize().region;
+    return !!region && MILES_REGIONS.has(region);
+  } catch {
+    return false;
+  }
+}
+
 /// A distance as people where this device is read it: "1.2 km", or in
 /// miles where roads are signed in miles. `locale` for tests.
-export function formatDistance(km: number, locale: string = typeof navigator === "undefined" ? "en-US" : navigator.language): string {
-  let region: string | undefined;
-  try {
-    region = new Intl.Locale(locale).maximize().region;
-  } catch {
-    region = undefined;
-  }
-  const miles = !!region && MILES_REGIONS.has(region);
-  const value = miles ? km * 0.621371 : km;
-  const unit = miles ? "mi" : "km";
+export function formatDistance(km: number, locale: string = deviceLocale()): string {
+  return formatDistanceIn(km, usesMiles(locale) ? "mi" : "km", locale);
+}
+
+/// A distance in km as `unit`: "2.6 mi".
+export function formatDistanceIn(km: number, unit: "km" | "mi", locale: string = deviceLocale()): string {
+  const value = unit === "mi" ? km * 0.621371 : km;
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: value < 10 ? 1 : 0 }).format(value)} ${unit}`;
 }
 

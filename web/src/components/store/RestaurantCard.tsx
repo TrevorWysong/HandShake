@@ -33,9 +33,12 @@ interface Props {
   onToggleFavorite?: () => void;
   /// It has a deal on, for someone looking for one.
   deal?: boolean;
+  /// It's well past the other stores that deliver here (`fartherAway.ts`):
+  /// its delivery likely costs more.
+  farther?: boolean;
 }
 
-export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount, customer, driveMinutes = null, favorited, onToggleFavorite, deal = false }: Props) {
+export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount, customer, driveMinutes = null, favorited, onToggleFavorite, deal = false, farther = false }: Props) {
   const t = useT();
   const status = storeStatus(catalog, now);
   const estimate = customer ? deliveryEstimate(catalog, customer, driveMinutes) : null;
@@ -97,6 +100,7 @@ export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount,
             <span className="truncate">
               {status.open && pickupOnly ? t("card.pickupOnly") : status.open && estimate?.fromMinutes ? `${estimate.fromMinutes}–${estimate.toMinutes} min` : status.label}
               {estimate && <span className="text-ink-400"> · {formatDistance(estimate.km)}</span>}
+              {farther && !pickupOnly && <span className="font-semibold text-amber-600 dark:text-amber-400" title={t("card.fartherDetail")}> · {t("card.farther")}</span>}
             </span>
           </p>
         </div>

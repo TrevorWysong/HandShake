@@ -113,6 +113,7 @@ Holochain is agent-centric instead of ledger-centric. Each person's own chain is
 | **Pricing** | Menus can be marked up per platform | The price is the store's own menu, and validation refuses any other |
 | **Who holds the money** | The platform, until it pays out | Nobody in between: each card is held by whoever it pays, on their own processor account, and charged only what the order's outcome says |
 | **Choosing a driver** | An opaque dispatch algorithm | Drivers bid. The customer picks, or the app picks by a published rule |
+| **Delivery fees** | Set by the platform, by distance and order size | Set by each driver: a rate per mile or km, or up to ten distance bands. Customers and stores see only the fee for their order, in the bid |
 | **Your data** | The platform keeps everyone's orders and addresses | The exact address is sealed to the customer and their driver; only a 1 km area is public |
 | **Accounts** | The company can suspend you | No company can. Recovery is through guardians you choose, or a phrase you keep |
 | **Disputes** | Decided by the company's support team | Decided by the store under the network's rules, appealable to arbiters the network names |

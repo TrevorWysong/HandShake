@@ -341,6 +341,12 @@ The rule from the last review, applied across every zome that adds up money, poi
 
 Reads that only show something -- menus, bags and promos while browsing, a birthday looked up for a gift that's tried again later -- still skip what isn't here.
 
+## Driver fee schedules
+
+- **A driver's fee schedule stays on their device.** A rate per mile or km, or up to ten distance bands with what's asked past the last, only sets the price of the driver's own bids, by hand or automatically. Nothing about it is published, so customers and stores see only the fee for their order, and the network has nothing new to validate or store. Every bid is still bounded by validation: never zero, never over the customer's cap (`integrity/src/bids.rs`).
+- **A schedule read back is made sound** (`soundSchedule`): whole non-negative amounts, distances within bounds, at most ten bands. A band typed out of order is shown as such and left out of the price until it's put right.
+- **"Farther away" on a store** is worked out on the customer's device from the stores already shown: twice their median distance, and at least 3 km. It reads nothing more from the network.
+
 ## Store contact details and pickup chat
 
 - **Contact links can only be what they say.** A store's email must be a plain address (letters, digits and `._+-'`, so a `mailto:` link can't carry `?cc=` or anything else), and its website an `http(s)://` address with a real host. No `user@` before the host, which could dress one site up as another. No characters that could break out of a link. Validation holds every peer to this (`handshake_integrity_support::contact`). The app builds every link only from details that pass (`web/src/lib/storefront/contact.ts`), a phone link from its digits alone, and directions from the store's coordinates.

@@ -6,12 +6,12 @@ import { getCatalog } from "../../holochain/zomes/catalog";
 import { getReputationSummary } from "../../holochain/zomes/reputation";
 import { actionHash, bytesEqual, bytesToHex, decodeEntry } from "../../holochain/decode";
 import type { Bid, DeliveryOrder, GeoPoint, MerchantCatalog, NetworkTerms } from "../../holochain/types";
-import { distanceKm, geohashCenter } from "../places/geohash";
+import { geohashCenter } from "../places/geohash";
 import { useDriverSettings } from "../../store/roleSettings";
 import { useSentBids } from "../../store/sentBids";
 import { stillSignedIn } from "../../store/identityScope";
 import { offerable, offerRules, type Commitment } from "./addOns";
-import { autoBidPrice, skipsStore } from "./autoBid";
+import { autoBidPrice, quote, skipsStore } from "./autoBid";
 import { estimateTrip } from "./eta";
 import { legMinutes } from "./routing";
 import { commitmentOf, type OrderRow } from "./deliveryRows";
@@ -63,13 +63,13 @@ export async function sendBid(driverHex: string, orderRef: Uint8Array, trip: { e
 /// bids twice (the network refuses a second bid regardless).
 const autoBidOn = new Set<string>();
 
-/// Bids on each offered order the driver's rule takes, at their rate --
+/// Bids on each offered order the driver's rule takes, at their fee --
 /// skipping stores other drivers keep reporting, and any order the routing
 /// service can't time (its ETA is the driver's to type). What they're
 /// carrying is `carried` if it's been read, and read only when the rule's on
 /// and there's an order it hasn't tried.
 export async function bidAutomatically(driverHex: string, offered: OrderRow[], carried: OrderRow[] | undefined, location: GeoPoint, terms: NetworkTerms): Promise<void> {
-  const { autoBid, limits, travelMode } = useDriverSettings.getState();
+  const { autoBid, fees, limits, travelMode } = useDriverSettings.getState();
   const keyOf = (orderRef: Uint8Array) => `${driverHex}:${bytesToHex(orderRef)}`;
   const untried = offered.filter(({ hash }) => !autoBidOn.has(keyOf(hash)));
   if (!autoBid.on || untried.length === 0) return;
@@ -81,7 +81,7 @@ export async function bidAutomatically(driverHex: string, offered: OrderRow[], c
       if (skipsStore(store.check_in_refused_count, autoBid)) continue;
       const storeAt = decodeEntry<MerchantCatalog>(catalog).location;
       const dropoffAt = geohashCenter(order.dropoff_geohash);
-      const price = autoBidPrice(distanceKm(location, storeAt) + distanceKm(storeAt, dropoffAt), order.max_delivery_fee, { rule: autoBid, minFeeCents: limits.minFeeCents });
+      const price = autoBidPrice(quote({ driver: location, store: storeAt, dropoff: dropoffAt }, fees, limits.minFeeCents), order.max_delivery_fee);
       if (price === null) continue;
       const legs = await legMinutes(travelMode, [location, storeAt, dropoffAt]);
       if (!legs) continue;

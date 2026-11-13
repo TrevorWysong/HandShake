@@ -23,6 +23,7 @@ import { staggerContainer } from "../../lib/ui/motion";
 import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
 import { storeStatus } from "../../lib/storefront/storeHours";
+import { fartherThanKm } from "../../lib/storefront/fartherAway";
 import { useT } from "../../i18n";
 
 /// Stores read a page at a time while browsing.
@@ -136,6 +137,8 @@ export function Browse() {
       }),
     [rows, location, driveMinutes, now, favoritesHex, deals],
   );
+  // Among the stores that deliver here, those well past the rest.
+  const fartherKm = useMemo(() => fartherThanKm(stores.filter(({ row, facts }) => facts.km <= row.catalog.max_delivery_radius_km).map(({ facts }) => facts.km)), [stores]);
   // Exploring orders everything read; browsing orders each page on its own,
   // so reading the next never moves what's above it.
   const filtered = useMemo(() => {
@@ -277,6 +280,7 @@ export function Browse() {
               driveMinutes={driveMinutes?.[r.hex] ?? null}
               favorited={facts.favorite}
               deal={filters.deals && facts.deal}
+              farther={fartherKm !== null && facts.km > fartherKm}
               onToggleFavorite={() => toggleFavorite(r.hash)}
             />
           ))}
