@@ -103,7 +103,9 @@ await runScenario(async (scenario) => {
   console.log("[PASS] a rater who rates most customers down counts for nothing");
 
   // ===== The customer's report pattern =====
-  await call(customer, "dispatch")("report_issue", { order: second.order, lines: [{ line: 0, quantity: 1, kind: "Missing" }], note: "", photo_data_uri: "" });
+  // Reported as soon as it's collected, before its store settles it.
+  const reportedOrder = await pickup();
+  await call(customer, "dispatch")("report_issue", { order: reportedOrder.order, lines: [{ line: 0, quantity: 1, kind: "Missing" }], note: "", photo_data_uri: "" });
   await sync();
   const pattern = await retryUntil(() => call(merchant, "dispatch")<{ orders: number; reported: number; upheld: number; shown: boolean }>("get_report_pattern", customer.agentPubKey), (p) => p.reported === 1);
   assert.deepEqual([pattern.reported, pattern.orders >= 2, pattern.shown], [1, true, true], "one reported, of their recent orders");
