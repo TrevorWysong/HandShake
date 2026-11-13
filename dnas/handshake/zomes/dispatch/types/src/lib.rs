@@ -660,6 +660,28 @@ pub struct DeliveryOrder {
     /// network's published rule. Fixed when the order is placed.
     #[serde(default)]
     pub auto_match: bool,
+    /// What the order's lists of blocks are salted with
+    /// (`handshake_types::block_prints`): random, set when it's placed.
+    #[serde(default)]
+    pub block_salt: Vec<u8>,
+    /// The people its customer blocked, fingerprinted and padded -- no bid
+    /// from one is valid. Set when it's placed, never changed.
+    #[serde(default)]
+    pub blocked: Vec<u8>,
+    /// The people its store blocked: its listing's list and salt as they
+    /// stood when the store accepted the order, never changed after.
+    #[serde(default)]
+    pub store_block_salt: Vec<u8>,
+    #[serde(default)]
+    pub store_blocked: Vec<u8>,
+}
+
+impl DeliveryOrder {
+    /// Whether the customer or the store blocked the person with these raw
+    /// key bytes, as the order's lists say.
+    pub fn blocks(&self, key: &[u8]) -> bool {
+        handshake_types::block_prints::lists(&self.blocked, &self.block_salt, key) || handshake_types::block_prints::lists(&self.store_blocked, &self.store_block_salt, key)
+    }
 }
 
 /// The customer's app confirming it has seen its store start on the order --

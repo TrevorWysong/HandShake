@@ -257,8 +257,6 @@ pub enum LinkTypes {
     /// A rater's ratings of customers, under the rater -- how a rater who
     /// rates most customers down is found.
     RaterToRating,
-    /// A block, at its pair's key (`pair_key`).
-    PairToBlock,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -282,7 +280,6 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         Checked::DeleteLink { link_type: LinkTypes::Version, .. } => Ok(ValidateCallbackResult::Invalid("an entry's versions stay linked".into())),
         Checked::CreateLink { link_type, action } => links::validate_create_link(link_type, &action.base_address, &action.target_address, &action.tag, action.author()),
         // A block is lifted by whoever made it -- the only link here that is.
-        Checked::DeleteLink { link_type: LinkTypes::PairToBlock, original, action } => Ok(if original.author() == action.author() { ValidateCallbackResult::Valid } else { ValidateCallbackResult::Invalid("only whoever made a block lifts it".into()) }),
         Checked::DeleteLink { .. } => links::validate_delete_link(),
         Checked::Other => Ok(ValidateCallbackResult::Valid),
     }

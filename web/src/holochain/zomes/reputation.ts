@@ -1,6 +1,6 @@
 import { callZome } from "../client";
+import { blockListChanged } from "../../lib/reputation/myBlockList";
 import type { ActionHash, AgentPubKey, CustomerReason, CustomerScore, Finding, FindingView, HcRecord, MyCustomerRating, Party, RatingSummary, RecentDelivery, ReputationSummary, ReputationTarget, ReviewTarget, Timestamp } from "../types";
-import { forgetBlocks } from "../../lib/reputation/blockMemo";
 
 /// A UI-display cache only -- see `reputation_integrity`'s doc comment.
 /// Never the actual trust decision on its own; `check_warrants`
@@ -109,13 +109,13 @@ export async function getCustomerScore(customer: AgentPubKey): Promise<CustomerS
 /// The caller blocking a party, as themselves or as their store.
 export async function block(by: Party, blocked: Party): Promise<void> {
   await callZome("reputation", "block", { by, blocked });
-  forgetBlocks();
+  blockListChanged(by);
 }
 
 /// The caller lifting a block they made.
 export async function unblock(by: Party, blocked: Party): Promise<void> {
   await callZome("reputation", "unblock", { by, blocked });
-  forgetBlocks();
+  blockListChanged(by);
 }
 
 /// The caller's deliveries whose customer they can still rate, newest first.
@@ -128,7 +128,3 @@ export async function myBlocks(by: Party): Promise<Party[]> {
   return callZome("reputation", "my_blocks", by);
 }
 
-/// Whether each pair is blocked, either way -- read together.
-export async function blockedPairs(pairs: [Party, Party][]): Promise<boolean[]> {
-  return pairs.length === 0 ? [] : callZome("reputation", "blocked_pairs", pairs);
-}

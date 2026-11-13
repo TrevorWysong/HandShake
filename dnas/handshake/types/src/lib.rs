@@ -324,6 +324,143 @@ impl PinSecret {
     }
 }
 
+/// Blocks carried in the records they apply to (docs/REPUTATION.md, phase
+/// 4): an order lists the drivers its customer and its store blocked, a
+/// store's listing the people it blocked, each as a fingerprint --
+/// `sha256(BLOCK_PRINT_DOMAIN || salt || key)`, salted per record so lists
+/// can't be matched across records. Only someone who already knows a key
+/// can test for it. Lists are padded with random fingerprints to one of
+/// `BLOCK_PRINT_SIZES`, so a list doesn't tell how many blocks are real.
+pub mod block_prints {
+    use sha2::{Digest, Sha256};
+
+    /// What every fingerprint starts with, so none is ever mistaken for
+    /// another hash.
+    pub const DOMAIN: &[u8] = b"handshake-block:v1:";
+    /// A fingerprint's length.
+    pub const PRINT_BYTES: usize = 32;
+    /// A record's salt's length.
+    pub const SALT_BYTES: usize = 16;
+    /// How many fingerprints a list may hold: the fewest that fit, padded.
+    /// Empty only for a record from before blocks were carried.
+    pub const SIZES: [usize; 6] = [8, 16, 32, 64, 128, 256];
+
+    /// The fingerprint of `key` (a person's 39 raw bytes) under `salt`.
+    pub fn print(salt: &[u8], key: &[u8]) -> [u8; PRINT_BYTES] {
+        let mut hasher = Sha256::new();
+        hasher.update(DOMAIN);
+        hasher.update(salt);
+        hasher.update(key);
+        hasher.finalize().into()
+    }
+
+    /// Whether `list` holds the fingerprint of `key` under `salt`.
+    pub fn lists(list: &[u8], salt: &[u8], key: &[u8]) -> bool {
+        let print = print(salt, key);
+        list.chunks_exact(PRINT_BYTES).any(|candidate| candidate == print)
+    }
+
+    /// The size a list of `real` fingerprints is padded to: the smallest
+    /// that holds them, or the largest, keeping the first.
+    pub fn padded_size(real: usize) -> usize {
+        SIZES.iter().copied().find(|size| *size >= real).unwrap_or(SIZES[SIZES.len() - 1])
+    }
+
+    /// The most fingerprints a list holds that are real.
+    pub fn most_real() -> usize {
+        SIZES[SIZES.len() - 1]
+    }
+
+    /// How many random bytes `list` needs for `real` people: the decoys
+    /// that pad it.
+    pub fn decoy_bytes(real: usize) -> usize {
+        (padded_size(real) - real.min(most_real())) * PRINT_BYTES
+    }
+
+    /// A record's list: the fingerprints of `keys` under `salt` -- the
+    /// first `most_real()` of them, so the caller puts the ones that matter
+    /// most first -- padded with `decoys` (`decoy_bytes(keys.len())` random
+    /// bytes, which look just like fingerprints).
+    pub fn list(salt: &[u8], keys: &[&[u8]], decoys: &[u8]) -> Vec<u8> {
+        let real = keys.len().min(most_real());
+        let mut out = Vec::with_capacity(padded_size(real) * PRINT_BYTES);
+        for key in &keys[..real] {
+            out.extend_from_slice(&print(salt, key));
+        }
+        out.extend_from_slice(&decoys[..decoy_bytes(keys.len()).min(decoys.len())]);
+        out
+    }
+
+    /// Why a record's list and salt aren't well-formed, if they aren't.
+    pub fn problem(list: &[u8], salt: &[u8]) -> Option<&'static str> {
+        if list.is_empty() {
+            return None;
+        }
+        if salt.len() != SALT_BYTES {
+            return Some("a list of blocks is salted with 16 bytes");
+        }
+        if !list.len().is_multiple_of(PRINT_BYTES) || !SIZES.contains(&(list.len() / PRINT_BYTES)) {
+            return Some("a list of blocks holds 8, 16, 32, 64, 128 or 256 fingerprints of 32 bytes");
+        }
+        None
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// The same vector the web app's test checks: both sides must agree.
+        #[test]
+        fn a_known_fingerprint() {
+            let salt = [7u8; SALT_BYTES];
+            let key = [9u8; 39];
+            let hex: String = print(&salt, &key).iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(hex, KNOWN);
+        }
+
+        #[test]
+        fn lists_find_only_whats_there() {
+            let salt = [1u8; SALT_BYTES];
+            let mut list = vec![0u8; PRINT_BYTES * 8];
+            list[PRINT_BYTES * 3..PRINT_BYTES * 4].copy_from_slice(&print(&salt, &[2u8; 39]));
+            assert!(lists(&list, &salt, &[2u8; 39]));
+            assert!(!lists(&list, &salt, &[3u8; 39]));
+            assert!(!lists(&list, &[0u8; SALT_BYTES], &[2u8; 39]), "another record's salt doesn't match");
+        }
+
+        #[test]
+        fn sizes_and_shapes() {
+            assert_eq!(padded_size(0), 8);
+            assert_eq!(padded_size(9), 16);
+            assert_eq!(padded_size(1000), 256);
+            assert!(problem(&[], &[]).is_none());
+            assert!(problem(&[0; 32 * 8], &[0; 16]).is_none());
+            assert!(problem(&[0; 32 * 8], &[0; 15]).is_some());
+            assert!(problem(&[0; 32 * 9], &[0; 16]).is_some());
+        }
+
+        #[test]
+        fn a_list_is_padded_and_finds_its_people() {
+            let salt = [4u8; SALT_BYTES];
+            let keys: Vec<[u8; 39]> = (0..3u8).map(|i| [i; 39]).collect();
+            let refs: Vec<&[u8]> = keys.iter().map(|k| k.as_slice()).collect();
+            let decoys = vec![0xAB; decoy_bytes(refs.len())];
+            let made = list(&salt, &refs, &decoys);
+            assert_eq!(made.len(), 8 * PRINT_BYTES);
+            assert!(problem(&made, &salt).is_none());
+            assert!(refs.iter().all(|key| lists(&made, &salt, key)));
+            assert!(!lists(&made, &salt, &[9u8; 39]));
+            let many: Vec<[u8; 39]> = (0..300u16).map(|i| { let mut k = [0u8; 39]; k[..2].copy_from_slice(&i.to_be_bytes()); k }).collect();
+            let refs: Vec<&[u8]> = many.iter().map(|k| k.as_slice()).collect();
+            let full = list(&salt, &refs, &vec![0; decoy_bytes(refs.len())]);
+            assert_eq!(full.len(), 256 * PRINT_BYTES, "capped at the largest size, keeping the first");
+            assert!(lists(&full, &salt, refs[0]) && !lists(&full, &salt, refs[299]));
+        }
+
+        const KNOWN: &str = "b7cfd6e51ba00d3635e9b6c2d1b973186ecb9462643faf26dc20f6732c841051";
+    }
+}
+
 /// A round of the network's public time source (`handshake_governance::TimeSource`):
 /// its number and the signature published for it. A record carrying one
 /// wasn't made before that round was published -- the proof a deadline

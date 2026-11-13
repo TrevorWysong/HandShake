@@ -39,7 +39,8 @@ import { StoreArt } from "../../components/store/StoreArt";
 import { StoreRoute } from "./StoreRoute";
 import { storeRecordLines } from "../../lib/reputation/recordLines";
 import { BlockActions, type Blockable } from "../../components/reputation/BlockActions";
-import { blockedPairs } from "../../holochain/zomes/reputation";
+import { myBlockList } from "../../lib/reputation/myBlockList";
+import { storeHidden } from "../../lib/reputation/blockPrints";
 import { myAgentPubKey } from "../../holochain/client";
 import { useStoreStanding } from "../../lib/hooks/useStoreStanding";
 
@@ -81,9 +82,9 @@ function StorePage({ hash }: { hash: string }) {
   const now = useClock();
   const status = catalog ? storeStatus(catalog, now) : null;
   // Blocked either way, the store isn't there for this customer
-  // (docs/REPUTATION.md, phase 4).
+  // (docs/REPUTATION.md, phase 4): their own list, and the store's listing.
   const me = myAgentPubKey();
-  const { data: blocked = false, reload: reloadBlocked } = useResource(`store-blocked:${hash}`, async () => (await blockedPairs([[{ Person: me }, { Store: catalogHash }]]))[0] ?? false);
+  const { data: blocked = false, reload: reloadBlocked } = useResource(catalog ? `store-blocked:${hash}` : null, async () => (catalog ? storeHidden(catalog, catalogHash, me, await myBlockList({ Person: me })) : false));
   // As they sell right now: a sale's price, while it's running.
   const items = menu && catalog ? menu.items.map((row) => soldRow(row, catalog, now)) : null;
   const bags = menu?.bags ?? [];

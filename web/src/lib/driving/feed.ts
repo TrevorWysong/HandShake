@@ -5,7 +5,7 @@ import { getMyActiveDeliveries, getOpenOrdersNear, getOrderPrivateDetails, submi
 import { getCatalog } from "../../holochain/zomes/catalog";
 import { getCustomerScore, getReputationSummary } from "../../holochain/zomes/reputation";
 import { actionHash, bytesEqual, bytesToHex, decodeEntry } from "../../holochain/decode";
-import type { Bid, DeliveryOrder, GeoPoint, MerchantCatalog, NetworkTerms, Party } from "../../holochain/types";
+import type { Bid, DeliveryOrder, GeoPoint, MerchantCatalog, NetworkTerms } from "../../holochain/types";
 import { geohashCenter } from "../places/geohash";
 import { useDriverSettings } from "../../store/roleSettings";
 import { useSentBids } from "../../store/sentBids";
@@ -15,8 +15,9 @@ import { autoBidPrice, quote, skipsStore } from "./autoBid";
 import { estimateTrip } from "./eta";
 import { legMinutes } from "./routing";
 import { commitmentOf, type OrderRow } from "./deliveryRows";
-import { blockedAmong } from "../reputation/blockCache";
 import { below } from "../reputation/customers";
+import { blocksPerson } from "../reputation/blockPrints";
+import { myBlockList } from "../reputation/myBlockList";
 import { storeLocations } from "./storeLocations";
 
 /// The deliveries this driver is carrying, from their own active-delivery
@@ -42,18 +43,15 @@ async function withStores(rows: OrderRow[]): Promise<OrderRow[]> {
 
 /// The orders open near `geohash` that `driver` may bid on. A customer or
 /// store can't deliver their own order (validate_new_bid refuses it), so
-/// they're never offered one; nor is one from a customer or store the
-/// driver's blocked with, either way (docs/REPUTATION.md, phase 4) -- read
-/// from the kept answers, since this polls, while bidding checks for itself.
+/// they're never offered one. Nor is one blocked either way
+/// (docs/REPUTATION.md, phase 4): the network leaves out those whose customer
+/// or store blocked the driver, from the lists each order carries, and the
+/// driver's own list -- held in the app -- the rest.
 export async function fetchOffered(geohash: string, driver: Uint8Array): Promise<OrderRow[]> {
-  const rows = (await getOpenOrdersNear(geohash)).map((record) => ({ hash: actionHash(record), order: decodeEntry<DeliveryOrder>(record) }));
-  const theirs = rows.filter(({ order }) => !bytesEqual(order.requester, driver) && !bytesEqual(order.merchant, driver));
-  const me: Party = { Person: driver };
-  const pairs = theirs.flatMap(({ order }): [Party, Party][] => [[me, { Person: order.requester }], [me, { Store: order.catalog_ref }]]);
-  // A read that fails leaves the feed as it is rather than empty: bidding
-  // still refuses a blocked pair.
-  const blocked = await blockedAmong(pairs).catch(() => pairs.map(() => false));
-  return withStores(theirs.filter((_, i) => !blocked[i * 2] && !blocked[i * 2 + 1]));
+  const [records, mine] = await Promise.all([getOpenOrdersNear(geohash), myBlockList({ Person: driver })]);
+  const rows = records.map((record) => ({ hash: actionHash(record), order: decodeEntry<DeliveryOrder>(record) }));
+  const mineHidden = (order: DeliveryOrder) => blocksPerson(mine, order.requester) || mine.some((party) => "Store" in party && bytesEqual(party.Store, order.catalog_ref));
+  return withStores(rows.filter(({ order }) => !bytesEqual(order.requester, driver) && !bytesEqual(order.merchant, driver) && !mineHidden(order)));
 }
 
 /// Sends a bid, kept as this device's to take back.

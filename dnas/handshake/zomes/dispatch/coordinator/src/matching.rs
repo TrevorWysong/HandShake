@@ -50,19 +50,22 @@ pub fn get_open_orders_near(geohash: String) -> ExternResult<Vec<Record>> {
     let mut listed = std::collections::BTreeSet::new();
     let opened: Vec<ActionHash> = links.into_iter().filter_map(|link| link.target.into_action_hash()).filter(|target| listed.insert(target.clone())).collect();
     let most = handshake_governance::max_listed_orders() as usize;
+    // Not an order whose customer or store blocked the caller
+    // (docs/REPUTATION.md, phase 4), from the lists each order carries --
+    // nothing asked of the network, and none of the feed's room taken. Their
+    // own blocks their app applies, from the list it holds.
+    let me = agent_info()?.agent_initial_pubkey;
+    let offered = |order: &DeliveryOrder| order.status == DeliveryStatus::Open && !order.blocks(me.get_raw_39());
     let mut seen = std::collections::BTreeSet::new();
     let mut orders = Vec::new();
     for batch in opened.chunks(most) {
         let originals: Vec<ActionHash> = originals_of(batch)?.into_iter().flatten().filter(|o| seen.insert(o.clone())).collect();
-        orders.extend(resolve_many(&originals)?.into_iter().flatten().filter(|record| decode_or::<DeliveryOrder>(record).is_some_and(|order| order.status == DeliveryStatus::Open)));
+        orders.extend(resolve_many(&originals)?.into_iter().flatten().filter(|record| decode_or::<DeliveryOrder>(record).is_some_and(|order| offered(&order))));
         if orders.len() >= most {
             break;
         }
     }
     orders.truncate(most);
-    // Blocks (docs/REPUTATION.md, phase 4) aren't read here: this is polled
-    // every few seconds, so the driver's app filters it from its own cache of
-    // pairs, and `submit_bid` refuses a blocked pair whatever it shows.
     Ok(orders)
 }
 
@@ -179,13 +182,16 @@ fn ranked(order_ref: &ActionHash, latest: &Record, order: &dispatch_integrity::D
         }
         open.push((link, bid_ref, bid));
     }
-    // A driver blocked with the customer or the store, either way, isn't
-    // shown or matched (docs/REPUTATION.md, phase 4) -- read together.
+    // A driver the customer blocked since placing the order isn't shown or
+    // matched -- read from their own list, on their own device (one blocked
+    // before couldn't bid: validation refuses it; docs/REPUTATION.md, phase 4).
     use crate::blocks::Party;
-    let pairs = open.iter().flat_map(|(_, _, bid)| [(Party::Person(order.requester.clone()), Party::Person(bid.bidder.clone())), (Party::Store(order.catalog_ref.clone()), Party::Person(bid.bidder.clone()))]).collect();
-    let blocked = crate::blocks::blocked_each(pairs)?;
-    for ((link, bid_ref, bid), pair) in open.into_iter().zip(blocked.chunks(2)) {
-        if pair.contains(&true) {
+    let mine = match agent_info()?.agent_initial_pubkey == order.requester {
+        true => crate::blocks::my_own_blocks()?,
+        false => Vec::new(),
+    };
+    for (link, bid_ref, bid) in open {
+        if mine.contains(&Party::Person(bid.bidder.clone())) {
             continue;
         }
         let weight = weigh(bid.price_offer, bid.eta_seconds, &driver_record(&bid.bidder)?, handshake_governance::minute_value_cents());

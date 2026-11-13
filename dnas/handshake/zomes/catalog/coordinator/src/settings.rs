@@ -258,3 +258,29 @@ pub fn set_delivery_subsidy_percent(input: SetDeliverySubsidyPercentInput) -> Ex
     let updated = update_version(&current, &EntryTypes::MerchantCatalog(catalog), LinkTypes::Version)?;
     written(updated)
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SetBlockedPeopleInput {
+    pub original_action: ActionHash,
+    /// Everyone the store has blocked, most recent first: the list keeps
+    /// the first `block_prints::most_real()`.
+    pub people: Vec<AgentPubKey>,
+}
+
+/// Rewrites the store's list of the people it blocked (docs/REPUTATION.md,
+/// phase 4), freshly salted and padded, so the lists of two versions can't
+/// be compared. Called by the reputation zome as the store's owner blocks
+/// or unblocks someone; validation holds the update to the owner.
+#[hdk_extern]
+pub fn set_blocked_people(input: SetBlockedPeopleInput) -> ExternResult<Record> {
+    use handshake_types::block_prints;
+    let (current, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(input.original_action, "MerchantCatalog")?;
+    let salt = random_bytes(block_prints::SALT_BYTES as u32)?.into_vec();
+    let keys: Vec<&[u8]> = input.people.iter().map(|person| person.get_raw_39()).collect();
+    let decoys = random_bytes(block_prints::decoy_bytes(keys.len()) as u32)?.into_vec();
+    catalog.blocked = block_prints::list(&salt, &keys, &decoys);
+    catalog.block_salt = salt;
+    let updated = update_version(&current, &EntryTypes::MerchantCatalog(catalog), LinkTypes::Version)?;
+    written(updated)
+}
+

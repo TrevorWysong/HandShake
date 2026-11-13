@@ -2068,7 +2068,7 @@ export const es: Catalog = {
   "block.customerEffect": "No volverás a ver los pedidos de {name}, ni te verá. Sus pedidos que te lleguen igualmente se rechazan, y no se cobra a nadie.",
   "block.storeEffect": "No volverás a ver {name}, ni te verá: ni pedir, ni repartir para ella, ni pujas en sus pedidos.",
   "block.driverEffect": "No volverás a ver las pujas de {name}, ni verá tus pedidos.",
-  "block.quiet": "No se le avisa, aunque cualquiera que os conozca a ambos podría saberlo. Un bloqueo nunca es automático, nunca cuenta, y solo tú puedes quitarlo, desde tu perfil.",
+  "block.quiet": "No se le avisa, aunque cualquiera que os conozca a ambos podría saberlo. Un bloqueo vale para los pedidos a partir de ahora -- uno ya en marcha sigue --, nunca es automático ni cuenta, y solo tú puedes quitarlo, desde tu perfil.",
   "block.unblockEffect": "Tú y {name} os volveréis a ver.",
   "block.storeUnavailable": "Esta tienda no está disponible",
   "block.storeUnavailableDetail": "Tú y esta tienda no podéis veros.",

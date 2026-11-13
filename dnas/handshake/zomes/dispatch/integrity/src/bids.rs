@@ -36,6 +36,11 @@ pub(crate) fn validate_new_bid(bid: &Bid, author: &AgentPubKey, timestamp: Times
     if order.status != DeliveryStatus::Open {
         return Ok(ValidateCallbackResult::Invalid("bids can only be placed on an Open order".into()));
     }
+    // Not from someone the order's customer or store blocked
+    // (docs/REPUTATION.md, phase 4): the order carries both lists.
+    if order.blocks(author.get_raw_39()) {
+        return Ok(ValidateCallbackResult::Invalid("this order's customer or store isn't taking bids from this driver".into()));
+    }
     if bid.collateral != required_collateral(&order) {
         return Ok(ValidateCallbackResult::Invalid("a bid must commit the order's required collateral: the value of its food".into()));
     }

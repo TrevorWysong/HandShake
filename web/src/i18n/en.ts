@@ -2073,7 +2073,7 @@ export const en = {
   "block.customerEffect": "You won't see {name}'s orders again, and they won't see you. Their orders that reach you anyway are declined, and nobody's charged.",
   "block.storeEffect": "You won't see {name} again, and it won't see you: no ordering, no delivering for it, no bids on its orders.",
   "block.driverEffect": "You won't see {name}'s bids again, and they won't see your orders.",
-  "block.quiet": "They aren't told, though anyone who knows both of you could find out. A block is never automatic, never counted, and only you can lift it, from your profile.",
+  "block.quiet": "They aren't told, though anyone who knows both of you could find out. A block holds for orders from now on -- one already under way carries on -- is never automatic or counted, and only you can lift it, from your profile.",
   "block.unblockEffect": "You and {name} will see each other again.",
   "block.storeUnavailable": "This store isn't available",
   "block.storeUnavailableDetail": "You and this store can't see each other.",

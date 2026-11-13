@@ -318,7 +318,7 @@ fn answer_store_orders() -> ExternResult<Answers> {
                 continue;
             }
             let auto_accept_requests = catalog.allergy_policy.as_ref().is_some_and(|policy| policy.auto_accept_requests);
-            if isolated::<_, ()>("answer_one_order", AnswerInput { seen: SeenOrder::of(&entry), open_now, auto_accept_requests, hold_below: catalog.hold_below_customer_score }).is_none() {
+            if isolated::<_, ()>("answer_one_order", AnswerInput { seen: SeenOrder::of(&entry), open_now, auto_accept_requests, hold_below: catalog.hold_below_customer_score, block_salt: catalog.block_salt.clone(), blocked: catalog.blocked.clone() }).is_none() {
                 answers.failed += 1;
             }
         }
@@ -336,18 +336,23 @@ pub struct AnswerInput {
     /// Customers below this score are held for the store's review.
     #[serde(default)]
     pub hold_below: Option<u8>,
+    /// The store's listing's list of the people it blocked, and its salt.
+    #[serde(default)]
+    pub block_salt: Vec<u8>,
+    #[serde(default)]
+    pub blocked: Vec<u8>,
 }
 
 /// Answers one order waiting on one of the caller's stores, in a call of
 /// its own (see the module doc).
 #[hdk_extern]
 pub fn answer_one_order(input: AnswerInput) -> ExternResult<()> {
-    let AnswerInput { seen, open_now, auto_accept_requests, hold_below } = input;
+    let AnswerInput { seen, open_now, auto_accept_requests, hold_below, block_salt, blocked } = input;
     let order = seen.order.clone();
     let entry = seen.entry()?;
     let written_at = entry.as_ref().map(|entry| entry.record.action().timestamp().as_micros());
     let waiting = entry.as_ref().and_then(WaitingOrder::from_entry).ok_or(guest("that order isn't waiting on its store"))?;
-    waiting.answer(&order, open_now, auto_accept_requests, hold_below, written_at.unwrap_or_default())
+    waiting.answer(&order, open_now, auto_accept_requests, hold_below, (&block_salt, &blocked), written_at.unwrap_or_default())
 }
 
 const ALLERGY_DECLINE_MARGIN_MICROS: i64 = 90_000_000;
@@ -396,10 +401,11 @@ impl WaitingOrder {
     /// and, nobody having come, is declined before its window closes: left to
     /// lapse, anyone could mark an unattended store as never answering, by
     /// ordering with a sealed note its conductor won't accept.
-    fn answer(&self, order_ref: &ActionHash, open_now: bool, auto_accept_requests: bool, hold_below: Option<u8>, written_at: i64) -> ExternResult<()> {
+    fn answer(&self, order_ref: &ActionHash, open_now: bool, auto_accept_requests: bool, hold_below: Option<u8>, (block_salt, blocked): (&[u8], &[u8]), written_at: i64) -> ExternResult<()> {
         let bags_only = crate::bags::bags_on(&self.lines)?.len() == self.lines.len();
-        // Blocked either way: declined. A read that fails waits for the next round.
-        let blocked = crate::blocks::any_blocked(vec![(crate::blocks::Party::Store(self.catalog_ref.clone()), crate::blocks::Party::Person(self.requester.clone()))])?;
+        // A customer the store blocked, as its listing says: declined, nobody
+        // charged.
+        let blocked = handshake_types::block_prints::lists(blocked, block_salt, self.requester.get_raw_39());
         let decline = if blocked {
             Some(DeclineReason::NotServing)
         } else if !open_now && !bags_only {

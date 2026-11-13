@@ -31,6 +31,12 @@ pub(crate) fn validate_new_order(order: &DeliveryOrder, author: &AgentPubKey, ac
     if order.pin_commitment.len() != 32 {
         return Ok(ValidateCallbackResult::Invalid("a delivery commits to the customer's handoff code (32 bytes)".into()));
     }
+    if let Some(problem) = handshake_types::block_prints::problem(&order.blocked, &order.block_salt) {
+        return Ok(ValidateCallbackResult::Invalid(problem.into()));
+    }
+    if !order.store_blocked.is_empty() || !order.store_block_salt.is_empty() {
+        return Ok(ValidateCallbackResult::Invalid("a store's blocks join the order when it accepts it".into()));
+    }
     if !order.pickup_commitment.is_empty() || order.sealed_pickup_code.is_some() || order.pickup_proof.is_some() || order.collection_proof.is_some() {
         return Ok(ValidateCallbackResult::Invalid("the store's pickup code is set when it accepts the order".into()));
     }
@@ -385,6 +391,15 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
     if !accepted_terms_ok {
         return Ok(Some("the store sets its check-in code (32 bytes) and prep time, within the network's longest, when it accepts the order -- and never changes them".into()));
     }
+    // The store's blocks join the order as it accepts it -- its listing's
+    // list -- and never change after.
+    let store_blocks_ok = match step.store_accepting {
+        true => handshake_types::block_prints::problem(&order.store_blocked, &order.store_block_salt).is_none(),
+        false => prior.store_blocked == order.store_blocked && prior.store_block_salt == order.store_block_salt,
+    };
+    if !store_blocks_ok {
+        return Ok(Some("the store's blocks join the order, well-formed, when it accepts it -- and never change after".into()));
+    }
     if step.store_accepting && !update.within_response_window() {
         return Ok(Some("the store's window to accept this order has passed".into()));
     }
@@ -706,7 +721,9 @@ fn transition_problem(order: &DeliveryOrder, author: &AgentPubKey, original_acti
         && prior.priority == order.priority
         && prior.pin_commitment == order.pin_commitment
         && prior.sealed_pin == order.sealed_pin
-        && prior.auto_match == order.auto_match;
+        && prior.auto_match == order.auto_match
+        && prior.block_salt == order.block_salt
+        && prior.blocked == order.blocked;
     if !unchanged {
         return Ok(Some("an order update may only change its status and what that step sets -- every other field must stay the same".into()));
     }

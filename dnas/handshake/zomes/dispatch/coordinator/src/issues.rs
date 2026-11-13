@@ -808,24 +808,50 @@ fn reports_by(customer: &AgentPubKey, orders: &[ActionHash]) -> ExternResult<Vec
     handshake_coordinator_support::get_links_many(queries)
 }
 
-/// The most orders one `reported_at` reads: a page of a customer's ratings.
-const MAX_REPORTED_AT: usize = 200;
+/// The most orders one `reports_on` reads: a batch of a customer's ratings.
+const MAX_REPORTS_ON: usize = 200;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ReportedAtInput {
+pub struct ReportsOnInput {
     pub customer: AgentPubKey,
     pub orders: Vec<ActionHash>,
 }
 
-/// When the customer first reported a problem with each order, if they have
-/// -- what tells a rating that answered a report from one that came before
-/// it (docs/REPUTATION.md, phase 4). A report dated ahead of this clock
-/// isn't counted.
+/// What the customer reported about an order, whenever they did.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
+pub struct ReportsOn {
+    /// A problem with its items -- about its store.
+    pub items: bool,
+    /// A problem with the delivery itself -- about its driver.
+    pub service: bool,
+}
+
+/// What the customer reported about each order (docs/REPUTATION.md, phase
+/// 4): on a reported order, a thumbs-down from whoever the report is about
+/// doesn't count, whichever came first -- so no clock, theirs or the
+/// rater's, decides it. Only the customer's own reports on the order count;
+/// one that hasn't arrived yet counts once it has.
 #[hdk_extern]
-pub fn reported_at(input: ReportedAtInput) -> ExternResult<Vec<Option<Timestamp>>> {
-    if input.orders.len() > MAX_REPORTED_AT {
+pub fn reports_on(input: ReportsOnInput) -> ExternResult<Vec<ReportsOn>> {
+    if input.orders.len() > MAX_REPORTS_ON {
         return Err(guest("Too many orders to look up at once."));
     }
-    let now = sys_time()?;
-    Ok(reports_by(&input.customer, &input.orders)?.into_iter().map(|links| links.iter().map(|link| link.timestamp).filter(|at| *at <= now).min()).collect())
+    let links = reports_by(&input.customer, &input.orders)?;
+    let issues: Vec<ActionHash> = links.iter().flatten().filter_map(|link| link.target.clone().into_action_hash()).collect();
+    let records = handshake_coordinator_support::read_records(&issues)?;
+    let mut read = issues.iter().zip(records);
+    let mut out = Vec::with_capacity(input.orders.len());
+    for (order, order_links) in input.orders.iter().zip(&links) {
+        let mut on = ReportsOn::default();
+        for _ in order_links.iter().filter(|link| link.target.clone().into_action_hash().is_some()) {
+            let Some((_, Some(record))) = read.next() else { continue };
+            let Some(issue) = decode_or::<ItemIssue>(&record).filter(|issue| &issue.order == order && record.action().author() == &input.customer) else { continue };
+            match issue.service {
+                true => on.service = true,
+                false => on.items = true,
+            }
+        }
+        out.push(on);
+    }
+    Ok(out)
 }

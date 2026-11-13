@@ -2,9 +2,9 @@
 //! who served them, and blocks between any two parties. A customer's score
 //! is the share of thumbs-up over the latest word of their recent raters --
 //! established stores and drivers who don't rate most customers down, and
-//! never a thumbs-down given after the customer reported that order --
-//! shown once there are enough; a block hides a pair from each other,
-//! whichever made it.
+//! never a thumbs-down from whoever a report of the customer's on that order
+//! is about -- shown once there are enough; a block hides a pair from each
+//! other, whichever made it.
 
 use super::*;
 use dispatch_types::{DeliveryOrder, DeliveryStatus, PickupOrder, PickupStatus};
@@ -46,22 +46,40 @@ fn rating_open(done_at: Timestamp, at: Timestamp) -> bool {
 }
 
 #[derive(Serialize, Debug)]
-struct ReportedAtWire {
+struct ReportsOnWire {
     customer: AgentPubKey,
     orders: Vec<ActionHash>,
 }
 
-/// When the customer first reported a problem with each order, if they have.
-fn reported_at(customer: &AgentPubKey, orders: Vec<ActionHash>) -> ExternResult<Vec<Option<Timestamp>>> {
+/// What the customer reported about each order -- `dispatch::ReportsOn`.
+#[derive(Deserialize, Debug, Default, Clone, Copy)]
+struct ReportsOn {
+    items: bool,
+    service: bool,
+}
+
+impl ReportsOn {
+    /// Whether a report is about this rater: the store, for its items; the
+    /// driver, for the delivery.
+    fn about(&self, as_store: bool) -> bool {
+        match as_store {
+            true => self.items,
+            false => self.service,
+        }
+    }
+}
+
+fn reports_on(customer: &AgentPubKey, orders: Vec<ActionHash>) -> ExternResult<Vec<ReportsOn>> {
     if orders.is_empty() {
         return Ok(Vec::new());
     }
-    call_local::<_, Vec<Option<Timestamp>>>("dispatch", "reported_at", ReportedAtWire { customer: customer.clone(), orders })?.map_err(|why| guest(format!("couldn't read the customer's reports: {why}")))
+    call_local::<_, Vec<ReportsOn>>("dispatch", "reports_on", ReportsOnWire { customer: customer.clone(), orders })?.map_err(|why| guest(format!("couldn't read the customer's reports: {why}")))
 }
 
 /// The caller -- the order's store or its driver -- rating its customer,
-/// once, on the order completed, within days of it, and not once the
-/// customer's reported it: a report is answered, not rated.
+/// once, on the order completed and within days of it -- and not on an
+/// order the customer reported them about: that's answered (a store's
+/// answer, a finding), not rated.
 #[hdk_extern]
 pub fn rate_customer(input: RateCustomerInput) -> ExternResult<Record> {
     let order = original_action_of(input.order)?;
@@ -83,11 +101,15 @@ pub fn rate_customer(input: RateCustomerInput) -> ExternResult<Record> {
     if !rating_open(latest.action().timestamp(), sys_time()?) {
         return Err(guest("Customers are rated within a few days of their order, and this one's past that."));
     }
-    if reported_at(&terms.customer, vec![order.clone()])?.first().is_some_and(Option::is_some) {
-        return Err(guest("The customer reported a problem with this order: answer their report rather than rating them."));
-    }
     let me = agent_info()?.agent_initial_pubkey;
-    let store = (me == terms.merchant).then(|| terms.catalog_ref.clone());
+    let as_store = me == terms.merchant;
+    if reports_on(&terms.customer, vec![order.clone()])?.first().is_some_and(|on| on.about(as_store)) {
+        return Err(match as_store {
+            true => guest("The customer reported a problem with this order: answer their report rather than rating them."),
+            false => guest("The customer reported a problem with this delivery, so you don't rate them on it."),
+        });
+    }
+    let store = as_store.then(|| terms.catalog_ref.clone());
     let rating = CustomerRating { order_ref: order, completed: latest.action_address().clone(), customer: terms.customer.clone(), up: input.up, reason: input.reason, store };
     let hash = create_entry(&EntryTypes::CustomerRating(rating.clone()))?;
     create_link(terms.customer, hash.clone(), LinkTypes::CustomerToRating, customer_rating_tag(&rating))?;
@@ -131,7 +153,7 @@ pub struct RecentDelivery {
 /// The caller's deliveries they can still rate the customer of, newest
 /// first, at most `limit` (up to 50): each completion a store recorded for
 /// them within `customer_rating_days`, not yet rated, not disputed, and
-/// not reported by its customer.
+/// not one its customer reported the delivery of.
 #[hdk_extern]
 pub fn my_recent_deliveries(limit: u32) -> ExternResult<Vec<RecentDelivery>> {
     let me = agent_info()?.agent_initial_pubkey;
@@ -158,10 +180,11 @@ pub fn my_recent_deliveries(limit: u32) -> ExternResult<Vec<RecentDelivery>> {
         }
         out.push(RecentDelivery { order, customer: terms.customer, catalog_ref: terms.catalog_ref, delivered_at: latest.action().timestamp() });
     }
-    // Not one its customer reported: those are answered, not rated.
+    // Not one its customer reported the delivery of: that's answered, not
+    // rated.
     let mut kept = Vec::with_capacity(out.len());
     for delivery in out {
-        if reported_at(&delivery.customer, vec![delivery.order.clone()])?.first().is_some_and(Option::is_some) {
+        if reports_on(&delivery.customer, vec![delivery.order.clone()])?.first().is_some_and(|on| on.about(false)) {
             continue;
         }
         kept.push(delivery);
@@ -190,7 +213,6 @@ struct Word {
     order: ActionHash,
     /// The store, when its owner rated as the store.
     store: Option<ActionHash>,
-    at: Timestamp,
 }
 
 impl Word {
@@ -201,14 +223,14 @@ impl Word {
             None | Some([]) => None,
             Some(raw) => Some(ActionHash::try_from_raw_39(raw.to_vec()).ok()?),
         };
-        Some(Self { rater: link.author.clone(), up: *tag.first()? == 1, reason: *tag.get(1)?, order, store, at: link.timestamp })
+        Some(Self { rater: link.author.clone(), up: *tag.first()? == 1, reason: *tag.get(1)?, order, store })
     }
 }
 
 /// A customer's score: the latest rating from each rater, newest first,
 /// counting only established stores and drivers who don't rate most
-/// customers down, and no thumbs-down given after the customer reported
-/// that order -- until the window is full. Raters are judged a window's
+/// customers down, and no thumbs-down from whoever a report of the
+/// customer's on that order is about -- until the window is full. Raters are judged a window's
 /// worth at a time, each a batched read.
 #[hdk_extern]
 pub fn get_customer_score(customer: AgentPubKey) -> ExternResult<CustomerScore> {
@@ -225,14 +247,15 @@ pub fn get_customer_score(customer: AgentPubKey) -> ExternResult<CustomerScore> 
     for chunk in words.chunks(window.clamp(1, 100)) {
         let counts = counted(chunk)?;
         let downs: Vec<ActionHash> = chunk.iter().filter(|word| !word.up).map(|word| word.order.clone()).collect();
-        let reports: BTreeMap<ActionHash, Timestamp> = downs.iter().cloned().zip(reported_at(&customer, downs.clone())?).filter_map(|(order, at)| Some((order, at?))).collect();
+        let reports: BTreeMap<ActionHash, ReportsOn> = downs.iter().cloned().zip(reports_on(&customer, downs.clone())?).collect();
         for (word, counts) in chunk.iter().zip(counts) {
             if (score.up + score.down) as usize >= window {
                 break;
             }
-            // A thumbs-down given once the customer had reported the order
-            // answers the report: it doesn't count.
-            let answers_report = !word.up && reports.get(&word.order).is_some_and(|reported| *reported <= word.at);
+            // A thumbs-down from whoever the customer reported on that order
+            // is about doesn't count, whichever came first: that's settled by
+            // the report, not a rating.
+            let answers_report = !word.up && reports.get(&word.order).is_some_and(|on| on.about(word.store.is_some()));
             if !counts || answers_report {
                 continue;
             }
@@ -302,40 +325,58 @@ pub struct BlockInput {
 }
 
 /// The caller blocking a party, as themselves or as their store: the two no
-/// longer see or deal with each other.
+/// longer see or deal with each other. A store's block joins its listing at
+/// once; everyone's joins the orders placed or accepted after it.
 #[hdk_extern]
 pub fn block(input: BlockInput) -> ExternResult<()> {
     if input.by == input.blocked {
         return Err(guest("You can't block yourself."));
     }
-    // Blocked already: nothing more to do.
-    if !my_block_links(&input.by, &input.blocked)?.is_empty() {
+    if !speaks_for(&input.by, &agent_info()?.agent_initial_pubkey)? {
+        return Err(guest("You can block only as yourself, or as a store you own."));
+    }
+    let current = my_blocks(input.by.clone())?;
+    if current.contains(&input.blocked) {
         return Ok(());
     }
-    create_link(pair_key(&input.by, &input.blocked)?, input.blocked.as_target(), LinkTypes::PairToBlock, block_tag(&input.by, &input.blocked)?)?;
-    create_entry(&EntryTypes::PartyBlock(PartyBlock { by: input.by, blocked: input.blocked, on: true }))?;
-    Ok(())
+    create_entry(&EntryTypes::PartyBlock(PartyBlock { by: input.by.clone(), blocked: input.blocked.clone(), on: true }))?;
+    // Newest first: if a list is ever full, it's the oldest that drop off it.
+    let blocked: Vec<Party> = std::iter::once(input.blocked).chain(current).collect();
+    publish_store_list(&input.by, &blocked)
 }
 
 /// The caller lifting a block they made.
 #[hdk_extern]
 pub fn unblock(input: BlockInput) -> ExternResult<()> {
-    for link in my_block_links(&input.by, &input.blocked)? {
-        delete_link(link.create_link_hash, GetOptions::default())?;
+    let current = my_blocks(input.by.clone())?;
+    if !current.contains(&input.blocked) {
+        return Ok(());
     }
-    create_entry(&EntryTypes::PartyBlock(PartyBlock { by: input.by, blocked: input.blocked, on: false }))?;
+    create_entry(&EntryTypes::PartyBlock(PartyBlock { by: input.by.clone(), blocked: input.blocked.clone(), on: false }))?;
+    let blocked: Vec<Party> = current.into_iter().filter(|party| party != &input.blocked).collect();
+    publish_store_list(&input.by, &blocked)
+}
+
+#[derive(Serialize, Debug)]
+struct SetBlockedPeopleWire {
+    original_action: ActionHash,
+    people: Vec<AgentPubKey>,
+}
+
+/// A store's blocks, rewritten into its listing so the people it blocked
+/// don't see it; a person's blocks stay on their own device.
+fn publish_store_list(by: &Party, blocked: &[Party]) -> ExternResult<()> {
+    let Party::Store(catalog) = by else { return Ok(()) };
+    let people: Vec<AgentPubKey> = blocked.iter().filter_map(|party| match party {
+        Party::Person(agent) => Some(agent.clone()),
+        Party::Store(_) => None,
+    }).collect();
+    call_local::<_, Record>("catalog", "set_blocked_people", SetBlockedPeopleWire { original_action: catalog.clone(), people })?.map_err(|why| guest(format!("couldn't update your store's listing: {why}")))?;
     Ok(())
 }
 
-/// The caller's own links blocking `blocked` as `by`.
-fn my_block_links(by: &Party, blocked: &Party) -> ExternResult<Vec<Link>> {
-    let tag = block_tag(by, blocked)?;
-    let query = LinkQuery::try_new(pair_key(by, blocked)?, LinkTypes::PairToBlock)?.author(agent_info()?.agent_initial_pubkey);
-    Ok(get_links(query, GetStrategy::default())?.into_iter().filter(|link| link.tag == tag).collect())
-}
-
 /// Whom the caller has blocked as `by` (themselves, or a store of theirs),
-/// from their own private list: each party's latest word.
+/// from their own private list, most recent first: each party's latest word.
 #[hdk_extern]
 pub fn my_blocks(by: Party) -> ExternResult<Vec<Party>> {
     let mut latest: Vec<(Party, bool)> = Vec::new();
@@ -347,14 +388,6 @@ pub fn my_blocks(by: Party) -> ExternResult<Vec<Party>> {
         }
     }
     Ok(latest.into_iter().filter(|(_, on)| *on).map(|(party, _)| party).collect())
-}
-
-/// Whether each pair is blocked, either way -- read together, one query per
-/// pair, for a page of stores or bids at once.
-#[hdk_extern]
-pub fn blocked_pairs(pairs: Vec<(Party, Party)>) -> ExternResult<Vec<bool>> {
-    let queries = pairs.iter().map(|(a, b)| LinkQuery::try_new(pair_key(a, b)?, LinkTypes::PairToBlock)).collect::<ExternResult<Vec<_>>>()?;
-    Ok(get_links_many(queries)?.into_iter().map(|links| !links.is_empty()).collect())
 }
 
 #[cfg(test)]

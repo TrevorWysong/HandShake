@@ -309,20 +309,25 @@ pub(crate) fn ensure_promo_usable(promo_ref: &ActionHash, catalog_ref: &ActionHa
     Ok(())
 }
 
-/// The store's side of `ensure_store_serves`: it doesn't take an order from
-/// a customer blocked either way.
+/// The store's side of `ensure_store_serves` (docs/REPUTATION.md, phase 4):
+/// it doesn't take an order from a customer it blocked -- as its own
+/// listing says.
 pub(crate) fn ensure_customer_served(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResult<()> {
-    if crate::blocks::any_blocked(vec![(crate::blocks::Party::Store(catalog_ref.clone()), crate::blocks::Party::Person(customer.clone()))])? {
-        return Err(guest("You and this customer have blocked each other: decline the order."));
+    if crate::blocks::store_lists(&crate::stores::current_catalog(catalog_ref)?, customer) {
+        return Err(guest("You've blocked this customer: decline the order."));
     }
     Ok(())
 }
 
 /// That neither the customer nor the store has blocked the other
-/// (docs/REPUTATION.md, phase 4): a store blocked either way isn't there to
-/// order from.
+/// (docs/REPUTATION.md, phase 4): the customer's own list, and the store's
+/// listing, which names the people it blocked.
 pub(crate) fn ensure_store_serves(customer: &AgentPubKey, catalog_ref: &ActionHash) -> ExternResult<()> {
-    if crate::blocks::any_blocked(vec![(crate::blocks::Party::Person(customer.clone()), crate::blocks::Party::Store(catalog_ref.clone()))])? {
+    use crate::blocks::{my_own_blocks, store_lists, Party};
+    if my_own_blocks()?.contains(&Party::Store(catalog_ref.clone())) {
+        return Err(guest("You've blocked this store: unblock it from your profile to order."));
+    }
+    if store_lists(&crate::stores::current_catalog(catalog_ref)?, customer) {
         return Err(guest("This store isn't available to you."));
     }
     Ok(())
@@ -397,6 +402,7 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         return Err(guest("To have it left at your door, accept that it's delivered once it's left there."));
     }
     let code = crate::pin::new_code()?;
+    let block_salt = crate::blocks::new_salt()?;
     let order = DeliveryOrder {
         requester: requester.clone(),
         merchant: merchant.clone(),
@@ -408,6 +414,11 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         dropoff_geohash: dropoff_geohash.clone(),
         sealed_dropoff: seal(&requester, &DropoffDetails { point: input.dropoff, line2: input.dropoff_line2, notes: input.dropoff_notes, recipient: customer_name.clone(), wake: input.wake_for_driver.as_deref().map(checked_wake).transpose()?.map(str::to_string) })?,
         kitchen_note: Some(seal_kitchen_note(&merchant, catalog.allergy_policy.as_ref(), &input.kitchen_notes, input.allergies)?),
+        block_salt: block_salt.clone(),
+        // The people the customer blocked: no bid from one is valid.
+        blocked: crate::blocks::people_list(&block_salt, &crate::blocks::my_own_blocks()?)?,
+        store_block_salt: Vec::new(),
+        store_blocked: Vec::new(),
         sealed_customer_name: seal_note(&merchant, &customer_name)?,
         sealed_wake: seal_wake(&merchant, input.wake_for_store.as_deref())?,
         max_delivery_fee: input.max_delivery_fee,
@@ -520,8 +531,9 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
     let lines = order.lines.clone();
     let original = original_action_of(order_original_action.clone())?;
     order.customer_payment = crate::payments::step_payment(&original, &PaymentLeg::Customer, &order.merchant, "The customer's payment isn't held yet. Your app holds it as soon as their card comes through.")?;
+    let store_now = current_catalog(&order.catalog_ref)?;
     // The store's own limit on what may be left at a door.
-    let limit = current_catalog(&order.catalog_ref)?.leave_at_door_max_cents;
+    let limit = store_now.leave_at_door_max_cents;
     if order.dropoff_preference == DropoffPreference::LeaveAtDoor && limit.is_some_and(|max| order.order_total > max) {
         return Err(guest("This order is over your limit for leaving at the door -- decline it, or ask the customer to have it handed over."));
     }
@@ -531,6 +543,10 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
     order.sealed_pickup_code = Some(code.sealed);
     // The kitchen starts once a driver commits: the prep time is quoted now.
     order.prep_minutes = Some(crate::stores::prep_time(&order.catalog_ref, input.prep_minutes)?);
+    // The people the store blocked join the order, as its listing has them:
+    // no bid from one is valid.
+    order.store_block_salt = store_now.block_salt;
+    order.store_blocked = store_now.blocked;
     order.status = DeliveryStatus::Open;
     let updated = update_version(&current, &EntryTypes::DeliveryOrder(order.clone()), LinkTypes::Version)?;
     publish_to_open_anchor(&updated, &order, sys_time()?)?;

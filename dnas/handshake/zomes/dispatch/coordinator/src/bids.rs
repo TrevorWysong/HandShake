@@ -35,10 +35,10 @@ pub fn submit_bid(input: SubmitBidInput) -> ExternResult<Record> {
     if !get_links(sent, GetStrategy::Local)?.is_empty() {
         return Err(guest("You've already bid on this order."));
     }
-    // A driver blocked with the customer or the store, either way, isn't
-    // offered the order (docs/REPUTATION.md, phase 4).
-    use crate::blocks::{any_blocked, Party};
-    if any_blocked(vec![(Party::Person(bidder.clone()), Party::Person(order.requester.clone())), (Party::Person(bidder.clone()), Party::Store(order.catalog_ref.clone()))])? {
+    // Not an order whose customer or store blocked the driver --
+    // validation's rule, told first (docs/REPUTATION.md, phase 4). Their own
+    // blocks keep such orders out of their feed, on their device.
+    if order.blocks(bidder.get_raw_39()) {
         return Err(guest("This order isn't available to you."));
     }
     if let Err(refusal) = crate::order_queues::get_driver_load(bidder.clone())?.taking(order.priority, handshake_governance::max_concurrent_deliveries()) {
@@ -147,11 +147,10 @@ pub fn accept_bid(input: AcceptBidInput) -> ExternResult<Record> {
         return Err(guest("That driver has withdrawn their offer."));
     }
     crate::accounts::ensure_not_moved(&winning_bid.bidder, "That driver")?;
-    {
-        use crate::blocks::{any_blocked, Party};
-        if any_blocked(vec![(Party::Person(order.requester.clone()), Party::Person(winning_bid.bidder.clone())), (Party::Store(order.catalog_ref.clone()), Party::Person(winning_bid.bidder.clone()))])? {
-            return Err(guest("That driver isn't available for this order."));
-        }
+    // Not a driver the customer blocked since placing the order (one blocked
+    // before can't have bid: validation refuses it).
+    if crate::blocks::my_own_blocks()?.contains(&crate::blocks::Party::Person(winning_bid.bidder.clone())) {
+        return Err(guest("You've blocked that driver."));
     }
     if !crate::verification::bid_verification_stands(&winning_bid)? {
         return Err(guest("That driver's verification has been withdrawn."));

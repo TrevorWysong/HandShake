@@ -976,6 +976,22 @@ export interface DeliveryOrder {
    * network's published rule. Fixed when the order is placed.
    */
   auto_match: boolean;
+  /**
+   * What the order's lists of blocks are salted with
+   * (`handshake_types::block_prints`): random, set when it's placed.
+   */
+  block_salt: Uint8Array;
+  /**
+   * The people its customer blocked, fingerprinted and padded -- no bid
+   * from one is valid. Set when it's placed, never changed.
+   */
+  blocked: Uint8Array;
+  /**
+   * The people its store blocked: its listing's list and salt as they
+   * stood when the store accepted the order, never changed after.
+   */
+  store_block_salt: Uint8Array;
+  store_blocked: Uint8Array;
 }
 
 export type DeliveryStatus =
@@ -2186,6 +2202,17 @@ export interface MerchantCatalog {
    * held. The store's choice -- a low score never blocks anyone.
    */
   hold_below_customer_score: number | null;
+  /**
+   * What `blocked` is salted with (`handshake_types::block_prints`),
+   * fresh each time it changes.
+   */
+  block_salt: Uint8Array;
+  /**
+   * The people the store blocked (docs/REPUTATION.md, phase 4),
+   * fingerprinted and padded: a customer's app finds itself here and
+   * doesn't show the store.
+   */
+  blocked: Uint8Array;
   /**
    * The most an order may cost to be left at the door, in cents -- above
    * it, the store's deliveries are always handed over. A customer who

@@ -11,13 +11,14 @@ import { StarRating } from "../../../components/StarRating";
 import { formatCents, formatEta, shortAgentId, formatClockTime } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useResource } from "../../../lib/hooks/useResource";
-import type { ActionHash, Bid, DeliveryOrder, InHand, Party, WarrantSummary } from "../../../holochain/types";
+import type { ActionHash, Bid, DeliveryOrder, InHand, WarrantSummary } from "../../../holochain/types";
 import { carryRefusal, customerRefusal, describeLoad } from "../../../lib/driving/driverLoad";
 import { useTerms } from "../../../store/network";
 import { POLL, isOrderOrBidSignal } from "../../../lib/network/poll";
 import { useT } from "../../../i18n";
 import { DriverFaults } from "../../../components/reputation/DriverFaults";
-import { blockedAmong } from "../../../lib/reputation/blockCache";
+import { myBlockList } from "../../../lib/reputation/myBlockList";
+import { blocksPerson } from "../../../lib/reputation/blockPrints";
 import { DriverBlock } from "../../../components/reputation/DriverBlock";
 import { BidWeightBreakdown, HowBidsCompare } from "../../../components/orders/BidWeights";
 
@@ -45,11 +46,11 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
     `order-bids:${hash}`,
     async (): Promise<BidRow[]> => {
       const page = await listBidsForOrder(orderRef);
-      // A driver blocked with this customer or this store, either way, isn't
-      // shown (docs/REPUTATION.md, phase 4) -- checked together.
-      const bidders = page.bids.map((record) => decodeEntry<Bid>(record).bidder);
-      const blocked = await blockedAmong(bidders.flatMap((bidder): [Party, Party][] => [[{ Person: order.requester }, { Person: bidder }], [{ Store: order.catalog_ref }, { Person: bidder }]]));
-      const shown = page.bids.filter((_, i) => !blocked[i * 2] && !blocked[i * 2 + 1]);
+      // A driver the customer blocked since ordering isn't shown -- from
+      // their own list (docs/REPUTATION.md, phase 4); one blocked before, or
+      // by the store, couldn't bid at all.
+      const mine = await myBlockList({ Person: order.requester });
+      const shown = page.bids.filter((record) => !blocksPerson(mine, decodeEntry<Bid>(record).bidder));
       return Promise.all(
         shown.map(async (record) => {
           const bid = decodeEntry<Bid>(record);

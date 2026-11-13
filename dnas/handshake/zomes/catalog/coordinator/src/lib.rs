@@ -138,6 +138,7 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
     ensure_contact(&input.email, &input.website)?;
     let owner = agent_info()?.agent_initial_pubkey;
     let geohash = handshake_types::encode(input.location, CATALOG_GEOHASH_PRECISION);
+    let block_salt = random_bytes(handshake_types::block_prints::SALT_BYTES as u32)?.into_vec();
     let catalog = MerchantCatalog {
         owner: owner.clone(),
         business_name: input.business_name,
@@ -167,6 +168,9 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
         allergy_policy: None,
         auto_accept_orders: false,
         hold_below_customer_score: None,
+        block_salt: block_salt.clone(),
+        // Padded from the start, so a listing never says it blocked nobody.
+        blocked: handshake_types::block_prints::list(&block_salt, &[], &random_bytes(handshake_types::block_prints::decoy_bytes(0) as u32)?.into_vec()),
         leave_at_door_max_cents: None,
         min_order_cents: None,
         busy_extra_minutes: 0,

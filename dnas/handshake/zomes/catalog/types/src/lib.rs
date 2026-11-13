@@ -111,6 +111,15 @@ pub struct MerchantCatalog {
     /// held. The store's choice -- a low score never blocks anyone.
     #[serde(default)]
     pub hold_below_customer_score: Option<u8>,
+    /// What `blocked` is salted with (`handshake_types::block_prints`),
+    /// fresh each time it changes.
+    #[serde(default)]
+    pub block_salt: Vec<u8>,
+    /// The people the store blocked (docs/REPUTATION.md, phase 4),
+    /// fingerprinted and padded: a customer's app finds itself here and
+    /// doesn't show the store.
+    #[serde(default)]
+    pub blocked: Vec<u8>,
     /// The most an order may cost to be left at the door, in cents -- above
     /// it, the store's deliveries are always handed over. A customer who
     /// chooses the door accepts the risk once it's left there; a store sets
