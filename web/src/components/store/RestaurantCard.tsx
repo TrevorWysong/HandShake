@@ -100,9 +100,13 @@ export function RestaurantCard({ catalogHash, catalog, now, rating, reviewCount,
             <span className="truncate">
               {status.open && pickupOnly ? t("card.pickupOnly") : status.open && estimate?.fromMinutes ? `${estimate.fromMinutes}–${estimate.toMinutes} min` : status.label}
               {estimate && <span className="text-ink-400"> · {formatDistance(estimate.km)}</span>}
-              {farther && !pickupOnly && <span className="font-semibold text-amber-600 dark:text-amber-400" title={t("card.fartherDetail")}> · {t("card.farther")}</span>}
             </span>
           </p>
+          {farther && !pickupOnly && (
+            <p className="mt-0.5 truncate text-xs font-semibold text-amber-600 dark:text-amber-400" title={t("card.fartherDetail")}>
+              {t("card.farther")}
+            </p>
+          )}
         </div>
       </Link>
     </motion.div>

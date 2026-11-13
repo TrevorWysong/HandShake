@@ -23,12 +23,13 @@ export interface Quote {
 
 /// What the driver's schedule asks for an order -- at least their lowest fee,
 /// and never nothing (the network refuses a bid of zero) -- or `null` past
-/// their last band with nothing set beyond it.
+/// their last band with nothing set beyond it, or for a place that isn't one.
 export function quote(points: TripPoints, schedule: FeeSchedule, minFeeCents: number): Quote | null {
   const delivery = distanceKm(points.store, points.dropoff);
   const km = schedule.measure === "trip" ? distanceKm(points.driver, points.store) + delivery : delivery;
+  if (!Number.isFinite(km)) return null;
   const fee = feeFor(km, schedule);
-  return fee === null ? null : { km, feeCents: Math.max(minFeeCents, fee, 1) };
+  return fee === null || !Number.isFinite(fee) ? null : { km, feeCents: Math.min(Math.max(minFeeCents, fee, 1), Number.MAX_SAFE_INTEGER) };
 }
 
 /// The fee to bid automatically, or `null` with no quote or a customer's

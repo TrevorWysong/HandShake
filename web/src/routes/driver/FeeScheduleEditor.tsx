@@ -16,21 +16,18 @@ export function FeeScheduleEditor() {
   const unit = t(fees.unit === "mi" ? "fees.mi" : "fees.km");
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <span>
-          <span className="block text-xs font-semibold text-ink-500">{t("fees.title")}</span>
-          <span className="block text-[11px] text-ink-400">{t("fees.detail")}</span>
-        </span>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="min-w-0 flex-1 basis-40 text-[0.6875rem] text-ink-400">{t("fees.detail")}</p>
         <SegmentedTabs tabs={[{ value: "mi", label: t("fees.mi") }, { value: "km", label: t("fees.km") }] as const} value={fees.unit} onChange={(to) => setFees(inUnitOf(fees, to))} />
       </div>
       <SegmentedTabs tabs={[{ value: "rate", label: t("fees.perUnit", { unit }) }, { value: "bands", label: t("fees.byDistance") }] as const} value={fees.kind} onChange={(kind) => setFees({ kind })} />
       {fees.kind === "rate" ? (
-        <div className="flex gap-3">
-          <label className="flex-1 text-xs font-semibold text-ink-500">
+        <div className="flex flex-wrap gap-3">
+          <label className="min-w-0 flex-[1_1_8rem] text-xs font-semibold text-ink-500">
             {t("fees.base")}
             <Input type="number" min={0} step={0.5} value={fromMinorUnits(fees.baseCents)} onChange={(e) => setFees({ baseCents: centsTyped(e.target.value) })} prefix={currencySymbol()} className="mt-1 py-1.5 text-sm" />
           </label>
-          <label className="flex-1 text-xs font-semibold text-ink-500">
+          <label className="min-w-0 flex-[1_1_8rem] text-xs font-semibold text-ink-500">
             {t("fees.rate", { unit })}
             <Input type="number" min={0} step={0.1} value={fromMinorUnits(fees.perUnitCents)} onChange={(e) => setFees({ perUnitCents: centsTyped(e.target.value) })} prefix={currencySymbol()} className="mt-1 py-1.5 text-sm" />
           </label>
@@ -44,7 +41,7 @@ export function FeeScheduleEditor() {
           <Chip active={fees.measure === "trip"} onClick={() => setFees({ measure: "trip" })}>{t("fees.trip")}</Chip>
           <Chip active={fees.measure === "delivery"} onClick={() => setFees({ measure: "delivery" })}>{t("fees.delivery")}</Chip>
         </div>
-        <p className="mt-1.5 text-[11px] text-ink-400">{t(fees.measure === "trip" ? "fees.tripDetail" : "fees.deliveryDetail")}</p>
+        <p className="mt-1.5 text-[0.6875rem] text-ink-400">{t(fees.measure === "trip" ? "fees.tripDetail" : "fees.deliveryDetail")}</p>
       </div>
       <Preview fees={fees} minFeeCents={limits.minFeeCents} unit={unit} />
     </div>
@@ -65,8 +62,7 @@ function Bands({ fees, unit, onChange }: { fees: FeeSchedule; unit: string; onCh
           const problem = bandProblem(bands, index);
           return (
             <div key={index}>
-              <div className="flex items-center gap-2">
-                <span className="w-16 shrink-0 text-right text-xs tabular-nums text-ink-400">{t("fees.from", { from: formatNumber(from) })}</span>
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   type="number"
                   min={0.1}
@@ -76,23 +72,29 @@ function Bands({ fees, unit, onChange }: { fees: FeeSchedule; unit: string; onCh
                     const upTo = distanceIn(e.target.valueAsNumber);
                     if (upTo !== null) setBand(index, { upTo });
                   }}
+                  prefix={t("fees.from", { from: formatNumber(from) })}
                   suffix={unit}
                   aria-label={t("fees.upToLabel", { band: index + 1 })}
                   aria-invalid={problem !== null}
-                  className={`flex-1 py-1.5 text-sm ${problem ? "ring-1 ring-red-400" : ""}`}
+                  aria-describedby={problem ? `band-problem-${index}` : undefined}
+                  className={`min-w-0 flex-[1_1_6.5rem] py-1.5 text-sm ${problem ? "ring-1 ring-red-400" : ""}`}
                 />
-                <Input type="number" min={0} step={0.5} value={fromMinorUnits(band.feeCents)} onChange={(e) => setBand(index, { feeCents: centsTyped(e.target.value) })} prefix={currencySymbol()} aria-label={t("fees.feeLabel", { band: index + 1 })} className="flex-1 py-1.5 text-sm" />
+                {/* Too narrow for both -- large text, a small phone -- the fee
+                    and its remove button go to a line of their own. */}
+                <div className="flex min-w-0 flex-[1_1_8rem] items-center gap-1">
+                <Input type="number" min={0} step={0.5} value={fromMinorUnits(band.feeCents)} onChange={(e) => setBand(index, { feeCents: centsTyped(e.target.value) })} prefix={currencySymbol()} aria-label={t("fees.feeLabel", { band: index + 1 })} className="min-w-0 flex-1 py-1.5 text-sm" />
                 <button
                   type="button"
                   onClick={() => onChange({ bands: bands.filter((_, i) => i !== index) })}
                   disabled={bands.length === 1}
                   aria-label={t("fees.remove", { band: index + 1 })}
-                  className="rounded-full p-1.5 text-ink-400 transition hover:bg-ink-100 hover:text-red-500 disabled:opacity-30 dark:hover:bg-ink-800"
+                  className="grid h-10 w-10 place-items-center rounded-full text-ink-400 transition hover:bg-ink-100 hover:text-red-500 disabled:opacity-30 dark:hover:bg-ink-800"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={16} />
                 </button>
+                </div>
               </div>
-              {problem && <p className="mt-1 pl-[4.5rem] text-[11px] font-semibold text-red-500">{t("fees.pastPrevious", { distance: formatNumber(from), unit })}</p>}
+              {problem && <p id={`band-problem-${index}`} className="mt-1 text-[0.6875rem] font-semibold text-red-500">{t("fees.pastPrevious", { distance: formatNumber(from), unit })}</p>}
             </div>
           );
         })}
@@ -151,8 +153,8 @@ function Preview({ fees, minFeeCents, unit }: { fees: FeeSchedule; minFeeCents: 
   const now = fee(distance);
   return (
     <div className="rounded-2xl bg-ink-50 p-3 dark:bg-ink-800/50">
-      <div className="flex items-baseline justify-between">
-        <span className="text-[11px] text-ink-400">{t("fees.previewFor", { distance: formatNumber(distance), unit })}</span>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <span className="text-[0.6875rem] text-ink-400">{t("fees.previewFor", { distance: formatNumber(distance), unit })}</span>
         <span className="text-lg font-bold tabular-nums text-ink-900 dark:text-ink-50">{now === null ? t("fees.previewNoBid") : formatCents(now)}</span>
       </div>
       {/* The line stretches to the width; the marker sits over it, so it stays round. */}
@@ -161,7 +163,7 @@ function Preview({ fees, minFeeCents, unit }: { fees: FeeSchedule; minFeeCents: 
           <line x1={0} x2={W} y1={H - 4} y2={H - 4} className="stroke-ink-200 dark:stroke-ink-700" strokeWidth={1} vectorEffect="non-scaling-stroke" />
           <path d={path} fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         </svg>
-        {now !== null && <span className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current ring-2 ring-ink-50 dark:ring-ink-800" style={{ left: `${(x(distance) / W) * 100}%`, top: `${(y(now) / H) * 100}%` }} aria-hidden />}
+        {now !== null && <span className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current ring-2 ring-ink-50 forced-color-adjust-none dark:ring-ink-800 forced-colors:bg-[CanvasText]" style={{ left: `${(x(distance) / W) * 100}%`, top: `${(y(now) / H) * 100}%` }} aria-hidden />}
       </div>
       <input
         type="range"
@@ -174,7 +176,7 @@ function Preview({ fees, minFeeCents, unit }: { fees: FeeSchedule; minFeeCents: 
         aria-valuetext={`${formatNumber(distance)} ${unit}: ${now === null ? t("fees.previewNoBid") : formatCents(now)}`}
         className="mt-1 w-full accent-handshake-500"
       />
-      <div className="flex justify-between text-[10px] tabular-nums text-ink-400">
+      <div className="flex justify-between text-[0.625rem] tabular-nums text-ink-400">
         <span>0 {unit}</span>
         <span>{formatNumber(span)} {unit}</span>
       </div>

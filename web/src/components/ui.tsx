@@ -59,6 +59,10 @@ export function Badge({ tone = "neutral", children }: { tone?: "neutral" | "bran
   return <span className={clsx("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold", tones[tone])}>{children}</span>;
 }
 
+/// What's chosen, where high-contrast modes paint every background alike:
+/// outlined instead.
+const FORCED_SELECTED = "forced-colors:outline-2 forced-colors:outline-solid forced-colors:-outline-offset-2";
+
 export function ChipRow({ children }: { children: ReactNode }) {
   return <div className="no-scrollbar mb-3 flex gap-2 overflow-x-auto pb-0.5">{children}</div>;
 }
@@ -72,7 +76,7 @@ export function Chip({ active, onClick, children, tone = "default" }: { active: 
       aria-pressed={active}
       className={clsx(
         "shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition",
-        active ? activeClasses : "bg-ink-100 dark:bg-ink-800 text-ink-500 hover:bg-ink-200 dark:hover:bg-ink-700"
+        active ? clsx(activeClasses, FORCED_SELECTED) : "bg-ink-100 dark:bg-ink-800 text-ink-500 hover:bg-ink-200 dark:hover:bg-ink-700"
       )}
     >
       {children}
@@ -93,7 +97,7 @@ export function SegmentedTabs<T extends string>({ tabs, value, onChange }: { tab
           role="tab"
           aria-selected={value === tab.value}
           onClick={() => onChange(tab.value)}
-          className={clsx("flex items-center gap-1.5 rounded-full px-3 py-1 transition", value === tab.value ? "bg-white dark:bg-ink-950 shadow-sm text-ink-900 dark:text-white" : "text-ink-400")}
+          className={clsx("flex items-center gap-1.5 rounded-full px-3 py-1 transition", value === tab.value ? clsx("bg-white dark:bg-ink-950 shadow-sm text-ink-900 dark:text-white", FORCED_SELECTED) : "text-ink-400")}
         >
           {tab.label}
           {!!tab.badge && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-handshake-500 px-1 text-[10px] font-bold text-white">{tab.badge}</span>}

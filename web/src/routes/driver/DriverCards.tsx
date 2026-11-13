@@ -330,7 +330,7 @@ export function BidCard({
       </div>
       )}
       {!sent && quoted && typedFee === null && (
-        <p className="mt-1.5 text-[11px] text-ink-400">
+        <p className="mt-1.5 text-[0.6875rem] text-ink-400">
           {t("drive.yourRate", { amount: formatCents(quoted.feeCents), distance: formatDistanceIn(quoted.km, fees.unit) })}
           {cap !== null && quoted.feeCents > cap && <span className="font-semibold text-amber-600 dark:text-amber-400"> {t("drive.overCap", { cap: formatCents(cap) })}</span>}
         </p>

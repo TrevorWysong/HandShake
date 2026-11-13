@@ -37,6 +37,10 @@ test("past the last band with nothing set beyond it, no bid", () => {
   assert.equal(autoBidPrice(null, null), null);
 });
 
+test("a place that isn't one gets no quote, never a fee of NaN", () => {
+  assert.equal(quote({ driver: { lat: Number.NaN, lon: 0 }, store, dropoff }, rate, 0), null);
+});
+
 test("a store drivers keep reporting is skipped", () => {
   const rule = { on: true, skipRefusals: 3 };
   assert.equal(skipsStore(2, rule), false);

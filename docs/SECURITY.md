@@ -345,7 +345,10 @@ Reads that only show something -- menus, bags and promos while browsing, a birth
 
 - **A driver's fee schedule stays on their device.** A rate per mile or km, or up to ten distance bands with what's asked past the last, only sets the price of the driver's own bids, by hand or automatically. Nothing about it is published, so customers and stores see only the fee for their order, and the network has nothing new to validate or store. Every bid is still bounded by validation: never zero, never over the customer's cap (`integrity/src/bids.rs`).
 - **A schedule read back is made sound** (`soundSchedule`): whole non-negative amounts, distances within bounds, at most ten bands. A band typed out of order is shown as such and left out of the price until it's put right.
-- **"Farther away" on a store** is worked out on the customer's device from the stores already shown: twice their median distance, and at least 3 km. It reads nothing more from the network.
+- **No order is uncapped.** Validation requires every delivery to name its most for a driver (`max_delivery_fee`), never past the store's own, so a schedule that comes to more simply doesn't bid (automatically), or starts at the cap (by hand). Bids stay one per driver per order, as before: a schedule changes a bid's price, never how many are sent.
+- **A fee says no more than a bid already does.** Charged on the whole trip, a fee rises with the driver's distance to the store -- which the bid's time to the store (`to_store_seconds`) already tells the customer, more exactly. Distances are worked out from the drop-off's public 1 km area, never the sealed address.
+- **A place that isn't one prices nothing.** A location that isn't a number (a broken reading) gives no quote rather than a fee of NaN, and a fee never passes the largest whole number a bid can carry.
+- **"Farther away" on a store** is worked out on the customer's device from the stores already shown: twice their median distance, and at least 3 km. It reads nothing more from the network. Someone listing fake stores nearby could make real ones read farther; it's a hint, it changes no price, and fake stores are already a store-listing problem, not this one's.
 
 ## Store contact details and pickup chat
 

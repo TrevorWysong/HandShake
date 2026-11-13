@@ -18,6 +18,7 @@ import type { DeliveryOrder } from "../../holochain/types";
 import { offerable, offerRefusal, offerRules, type Commitment } from "../../lib/driving/addOns";
 import { useDriverSettings } from "../../store/roleSettings";
 import { DriverSettingsCard } from "./DriverSettingsCard";
+import { FeeCard } from "./FeeCard";
 import { VerificationCard } from "./VerificationCard";
 import { useTerms } from "../../store/network";
 import { useSentBids } from "../../store/sentBids";
@@ -152,34 +153,37 @@ export function DriverDashboard() {
       })
     : null;
 
-  // On a wide screen: going online beside what they take on, then what
-  // they're carrying beside what's on offer.
+  // On a wide screen: going online and what they charge beside what they
+  // take on, then what they're carrying beside what's on offer.
   const carrying = activeOrders.length > 0;
   return (
     <div className="px-4 pt-4 pb-8">
       <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-5">
-        <Card className="mb-5 flex items-center justify-between p-4 lg:order-1">
-          <div>
-            <p className="flex items-center gap-2 text-sm font-bold text-ink-900 dark:text-ink-50">
-              <PresenceDot live={online} />
-              {online ? t("drive.online") : t("drive.offline")}
-            </p>
-            <p className="text-xs text-ink-400">{online ? t("drive.onlineDetail") : t("drive.offlineDetail")}</p>
-            {online && locationRefused && <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">{t("drive.savedAddress")}</p>}
-            {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} size={11} />}
-          </div>
-          <motion.button
-            onClick={toggleOnline}
-            aria-label={online ? t("drive.goOffline") : t("drive.goOnline")}
-            whileTap={{ scale: 0.92 }}
-            animate={{ backgroundColor: online ? "#22c55e" : "#ece9e6" }}
-            transition={{ duration: 0.25 }}
-            className={`grid h-11 w-11 place-items-center rounded-full ${online ? "text-white shadow-[var(--shadow-glow)]" : "text-ink-400"}`}
-            style={online ? { boxShadow: "0 6px 20px -4px rgba(34, 197, 94, 0.5)" } : undefined}
-          >
-            <Power size={20} />
-          </motion.button>
-        </Card>
+        <div className="lg:order-1">
+          <Card className="mb-5 flex items-center justify-between p-4">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-bold text-ink-900 dark:text-ink-50">
+                <PresenceDot live={online} />
+                {online ? t("drive.online") : t("drive.offline")}
+              </p>
+              <p className="text-xs text-ink-400">{online ? t("drive.onlineDetail") : t("drive.offlineDetail")}</p>
+              {online && locationRefused && <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">{t("drive.savedAddress")}</p>}
+              {avgRating !== null && rating && <StarRating value={avgRating} count={rating.count} size={11} />}
+            </div>
+            <motion.button
+              onClick={toggleOnline}
+              aria-label={online ? t("drive.goOffline") : t("drive.goOnline")}
+              whileTap={{ scale: 0.92 }}
+              animate={{ backgroundColor: online ? "#22c55e" : "#ece9e6" }}
+              transition={{ duration: 0.25 }}
+              className={`grid h-11 w-11 place-items-center rounded-full ${online ? "text-white shadow-[var(--shadow-glow)]" : "text-ink-400"}`}
+              style={online ? { boxShadow: "0 6px 20px -4px rgba(34, 197, 94, 0.5)" } : undefined}
+            >
+              <Power size={20} />
+            </motion.button>
+          </Card>
+          <FeeCard />
+        </div>
         <PhotoNeeded
           open={askingPhoto}
           onClose={() => setAskingPhoto(false)}
