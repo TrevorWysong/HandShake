@@ -37,6 +37,7 @@ import { useClock } from "../../lib/hooks/useClock";
 import { storeStatus } from "../../lib/storefront/storeHours";
 import { StoreArt } from "../../components/store/StoreArt";
 import { StoreRoute } from "./StoreRoute";
+import { storeRecordLines } from "../../lib/reputation/recordLines";
 import { useStoreStanding } from "../../lib/hooks/useStoreStanding";
 
 /// Keyed by the store in the URL, so moving from one store page to another
@@ -190,9 +191,7 @@ function StorePage({ hash }: { hash: string }) {
               {catalog.is_open && status && !status.open && <span className="font-semibold text-ink-500 dark:text-ink-300">{t("store.orderAhead")}</span>}
               {catalog.cuisine_type && <span>{catalog.cuisine_type}</span>}
               {catalog.busy_extra_minutes > 0 && <span className="font-semibold text-amber-600 dark:text-amber-400">{t("store.busy", { minutes: catalog.prep_minutes + catalog.busy_extra_minutes })}</span>}
-              {record && record.late_count > 0 && <span className="font-semibold text-amber-600 dark:text-amber-400">{t("store.late", { count: record.late_count })}</span>}
-              {record && record.check_in_refused_count > 0 && <span className="font-semibold text-amber-600 dark:text-amber-400">{t("store.reports", { count: record.check_in_refused_count })}</span>}
-              {record && record.cancelled_by_them_count > 0 && <span className="font-semibold text-amber-600 dark:text-amber-400">{t("store.calledOff", { count: record.cancelled_by_them_count })}</span>}
+              {record && storeRecordLines(record, t).map((line) => <span key={line} className="font-semibold text-amber-600 dark:text-amber-400">{line}</span>)}
               {catalog.min_order_cents !== null && <span>{t("store.minimum", { amount: formatCents(catalog.min_order_cents) })}</span>}
             </span>
             <span className="mt-1.5 block text-xs font-semibold text-handshake-600 lg:text-sm dark:text-handshake-400">{t("store.info")}</span>

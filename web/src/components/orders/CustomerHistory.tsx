@@ -11,16 +11,13 @@ import { useResource } from "../../lib/hooks/useResource";
 import { POLL } from "../../lib/network/poll";
 import { useT } from "../../i18n";
 import { InfoSheet } from "../InfoSheet";
+import { customerRecordLines } from "../../lib/reputation/recordLines";
 
 export function CustomerHistory({ customer }: { customer: Uint8Array }) {
   const t = useT();
   const { data: summary } = useResource(`customer-history:${bytesToHex(customer)}`, () => getReputationSummary({ Customer: customer }), { pollMs: POLL.slow });
   if (!summary) return null;
-  const lines = [
-    summary.dispute_resolved_against_count > 0 && t("history.contested", { count: summary.dispute_resolved_against_count }),
-    summary.no_show_count > 0 && t("history.noShows", { count: summary.no_show_count }),
-    summary.cancelled_by_them_count > 0 && t("history.cancelled", { count: summary.cancelled_by_them_count }),
-  ].filter((line): line is string => !!line);
+  const lines = customerRecordLines(summary, t);
   if (lines.length === 0) return null;
   const sections = (["what", "use"] as const).map((part) => ({ title: t(`history.why.${part}`), body: t(`history.why.${part}Detail`) }));
   return (

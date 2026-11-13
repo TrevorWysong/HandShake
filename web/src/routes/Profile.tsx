@@ -24,6 +24,7 @@ import { DEV_ADMIN_URL } from "../lib/network/devNode";
 import { MAX_LABEL_CHARS, MAX_LICENSE_PLATE_CHARS, MAX_NOTE_CHARS, MAX_PHONE_CHARS, MAX_VEHICLE_CHARS } from "../holochain/types";
 import { useT } from "../i18n";
 import { useAction } from "../lib/hooks/useAction";
+import { MyCustomerRecord } from "../components/account/OwnRecord";
 import { normalizePhone } from "../lib/phone";
 
 /// One identity, several hats: ratings and stats are shown per role (your
@@ -186,6 +187,13 @@ export function ProfilePage() {
         </AnimatePresence>
       </Card>
       </motion.div>
+
+      {/* What stores and drivers see of them, worded as they see it. */}
+      {profile?.roles.includes("Requester") && agentPubKey && (
+        <motion.div variants={fadeSlideUp}>
+          <MyCustomerRecord me={agentPubKey} />
+        </motion.div>
+      )}
 
       {profile?.roles.includes("Provider") && (
         <motion.div variants={fadeSlideUp}>

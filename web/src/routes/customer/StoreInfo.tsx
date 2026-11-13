@@ -26,6 +26,7 @@ import { formatCents } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { useT } from "../../i18n";
 import { StoreRoute } from "./StoreRoute";
+import { storeRecordLines } from "../../lib/reputation/recordLines";
 import { useStoreStanding } from "../../lib/hooks/useStoreStanding";
 
 export function StoreInfo() {
@@ -58,11 +59,7 @@ function InfoPage({ hash }: { hash: string }) {
   const status = storeStatus(catalog, now);
   const avgRating = rating ? averageRating(rating) : null;
   const prepMinutes = catalog.prep_minutes + catalog.busy_extra_minutes;
-  const recordLines = [
-    record && record.late_count > 0 && t("store.late", { count: record.late_count }),
-    record && record.check_in_refused_count > 0 && t("store.reports", { count: record.check_in_refused_count }),
-    record && record.cancelled_by_them_count > 0 && t("store.calledOff", { count: record.cancelled_by_them_count }),
-  ].filter((line): line is string => !!line);
+  const recordLines = record ? storeRecordLines(record, t) : [];
   const kitchenText = [names(catalog.allergy_policy?.kitchen ?? []), ...(catalog.allergy_policy?.other ?? [])].filter(Boolean).join(", ");
   const recordSections = (["what", "who", "money"] as const).map((part) => ({ title: t(`storeInfo.record.${part}`), body: t(`storeInfo.record.${part}Detail`) }));
 
