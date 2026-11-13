@@ -39,6 +39,7 @@ version = "0.1.0"
 hdi = "=0.8.1"
 hdk = "=0.7.1"
 serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
 holochain_serialized_bytes = "0.0.57"
 handshake_types = { path = "dnas/handshake/types" }
 handshake_coordinator_support = { path = "dnas/handshake/coordinator_support" }

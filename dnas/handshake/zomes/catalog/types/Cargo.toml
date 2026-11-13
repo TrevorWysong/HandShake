@@ -9,6 +9,7 @@ crate-type = ["rlib"]
 [dependencies]
 hdi.workspace = true
 serde.workspace = true
+serde_bytes.workspace = true
 holochain_serialized_bytes.workspace = true
 handshake_types.workspace = true
 handshake_integrity_support.workspace = true

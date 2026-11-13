@@ -988,7 +988,8 @@ export interface DeliveryOrder {
   blocked: Uint8Array;
   /**
    * The people its store blocked: its listing's list and salt as they
-   * stood when the store accepted the order, never changed after.
+   * stood when the store accepted the order, never changed after. Each
+   * list and salt is carried as bytes, not a list of numbers.
    */
   store_block_salt: Uint8Array;
   store_blocked: Uint8Array;

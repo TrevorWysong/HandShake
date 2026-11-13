@@ -662,17 +662,18 @@ pub struct DeliveryOrder {
     pub auto_match: bool,
     /// What the order's lists of blocks are salted with
     /// (`handshake_types::block_prints`): random, set when it's placed.
-    #[serde(default)]
+    #[serde(default, with = "serde_bytes")]
     pub block_salt: Vec<u8>,
     /// The people its customer blocked, fingerprinted and padded -- no bid
     /// from one is valid. Set when it's placed, never changed.
-    #[serde(default)]
+    #[serde(default, with = "serde_bytes")]
     pub blocked: Vec<u8>,
     /// The people its store blocked: its listing's list and salt as they
-    /// stood when the store accepted the order, never changed after.
-    #[serde(default)]
+    /// stood when the store accepted the order, never changed after. Each
+    /// list and salt is carried as bytes, not a list of numbers.
+    #[serde(default, with = "serde_bytes")]
     pub store_block_salt: Vec<u8>,
-    #[serde(default)]
+    #[serde(default, with = "serde_bytes")]
     pub store_blocked: Vec<u8>,
 }
 

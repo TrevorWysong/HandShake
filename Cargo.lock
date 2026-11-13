@@ -204,6 +204,7 @@ dependencies = [
  "hdi",
  "holochain_serialized_bytes",
  "serde",
+ "serde_bytes",
 ]
 
 [[package]]
@@ -417,6 +418,7 @@ dependencies = [
  "hdi",
  "holochain_serialized_bytes",
  "serde",
+ "serde_bytes",
 ]
 
 [[package]]

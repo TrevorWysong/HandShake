@@ -21,9 +21,11 @@ export async function blockPrint(salt: Uint8Array, key: Uint8Array): Promise<Uin
 /// Whether `list` holds the fingerprint of `key` under `salt`.
 export async function listsKey(list: Uint8Array, salt: Uint8Array, key: Uint8Array): Promise<boolean> {
   if (list.length === 0) return false;
-  const print = await blockPrint(salt, key);
-  for (let at = 0; at + PRINT_BYTES <= list.length; at += PRINT_BYTES) {
-    if (bytesEqual(list.subarray(at, at + PRINT_BYTES), print)) return true;
+  // Bytes, however they were decoded.
+  const bytes = Uint8Array.from(list);
+  const print = await blockPrint(Uint8Array.from(salt), key);
+  for (let at = 0; at + PRINT_BYTES <= bytes.length; at += PRINT_BYTES) {
+    if (bytesEqual(bytes.subarray(at, at + PRINT_BYTES), print)) return true;
   }
   return false;
 }

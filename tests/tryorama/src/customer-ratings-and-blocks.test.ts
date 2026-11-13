@@ -21,8 +21,9 @@ import { acceptOrder, actionHash, customerPaid, decodeEntry, retryUntil, retryUn
 
 /// Whether a record's list names `key` -- `handshake_types::block_prints`.
 const listsKey = (list: Uint8Array, salt: Uint8Array, key: Uint8Array) => {
-  const print = createHash("sha256").update("handshake-block:v1:").update(salt).update(key).digest();
-  for (let at = 0; at + 32 <= list.length; at += 32) if (Buffer.from(list.subarray(at, at + 32)).equals(print)) return true;
+  const print = createHash("sha256").update("handshake-block:v1:").update(Buffer.from(salt)).update(Buffer.from(key)).digest();
+  const bytes = Buffer.from(list);
+  for (let at = 0; at + 32 <= bytes.length; at += 32) if (bytes.subarray(at, at + 32).equals(print)) return true;
   return false;
 };
 
@@ -36,8 +37,10 @@ interface Score {
 await runScenario(async (scenario) => {
   // A score shows from one rating; a rater's ratings stop counting once two
   // or more are more than half thumbs-down; a store is established from one
-  // completed order.
+  // completed order; and a report window long enough that no order settles
+  // before its customer reports it.
   const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({
+    report_window_secs: 300,
     min_flagger_orders: 1,
     min_flagger_customers: 1,
     min_customer_ratings: 1,
