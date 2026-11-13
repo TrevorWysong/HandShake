@@ -1,5 +1,6 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, CustomerReason, CustomerScore, Finding, FindingView, HcRecord, MyCustomerRating, Party, RatingSummary, ReputationSummary, ReputationTarget, ReviewTarget, Timestamp } from "../types";
+import type { ActionHash, AgentPubKey, CustomerReason, CustomerScore, Finding, FindingView, HcRecord, MyCustomerRating, Party, RatingSummary, RecentDelivery, ReputationSummary, ReputationTarget, ReviewTarget, Timestamp } from "../types";
+import { forgetBlocks } from "../../lib/reputation/blockMemo";
 
 /// A UI-display cache only -- see `reputation_integrity`'s doc comment.
 /// Never the actual trust decision on its own; `check_warrants`
@@ -107,12 +108,19 @@ export async function getCustomerScore(customer: AgentPubKey): Promise<CustomerS
 
 /// The caller blocking a party, as themselves or as their store.
 export async function block(by: Party, blocked: Party): Promise<void> {
-  return callZome("reputation", "block", { by, blocked });
+  await callZome("reputation", "block", { by, blocked });
+  forgetBlocks();
 }
 
 /// The caller lifting a block they made.
 export async function unblock(by: Party, blocked: Party): Promise<void> {
-  return callZome("reputation", "unblock", { by, blocked });
+  await callZome("reputation", "unblock", { by, blocked });
+  forgetBlocks();
+}
+
+/// The caller's deliveries whose customer they can still rate, newest first.
+export async function myRecentDeliveries(limit: number): Promise<RecentDelivery[]> {
+  return callZome("reputation", "my_recent_deliveries", limit);
 }
 
 /// Whom the caller has blocked, as themselves or as a store of theirs.

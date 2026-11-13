@@ -5,6 +5,12 @@ import type { Message } from "./en";
 import type { REFUSALS } from "./refusals";
 
 export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
+  "refusal.customers-are-rated-within-a-few-days": "Los clientes se valoran a los pocos días de su pedido, y este ya ha pasado.",
+  "refusal.that-isn-t-an-order": "Eso no es un pedido.",
+  "refusal.the-customer-reported-a-problem-with-this": "El cliente reportó un problema con este pedido: responde a su reporte en lugar de valorarlo.",
+  "refusal.this-order-is-disputed-so-its-customer": "Este pedido está en disputa, así que su cliente no se valora en él.",
+  "refusal.too-many-orders-to-look-up-at": "Demasiados pedidos para consultar a la vez.",
+  "refusal.you-can-rate-the-customer-once-the": "Puedes valorar al cliente cuando el pedido esté terminado.",
   "refusal.a-score-to-hold-below-is-a": "Una puntuación para retener es una proporción, como mucho el 100%.",
   "refusal.give-a-reason-for-a-thumbs-down": "Da un motivo para el pulgar abajo.",
   "refusal.that-driver-isn-t-available-for-this": "Ese repartidor no está disponible para este pedido.",

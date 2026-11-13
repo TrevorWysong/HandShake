@@ -17,7 +17,7 @@ import { useTerms } from "../../../store/network";
 import { POLL, isOrderOrBidSignal } from "../../../lib/network/poll";
 import { useT } from "../../../i18n";
 import { DriverFaults } from "../../../components/reputation/DriverFaults";
-import { blockedPairs } from "../../../holochain/zomes/reputation";
+import { blockedAmong } from "../../../lib/reputation/blockCache";
 import { DriverBlock } from "../../../components/reputation/DriverBlock";
 import { BidWeightBreakdown, HowBidsCompare } from "../../../components/orders/BidWeights";
 
@@ -48,7 +48,7 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
       // A driver blocked with this customer or this store, either way, isn't
       // shown (docs/REPUTATION.md, phase 4) -- checked together.
       const bidders = page.bids.map((record) => decodeEntry<Bid>(record).bidder);
-      const blocked = await blockedPairs(bidders.flatMap((bidder): [Party, Party][] => [[{ Person: order.requester }, { Person: bidder }], [{ Store: order.catalog_ref }, { Person: bidder }]]));
+      const blocked = await blockedAmong(bidders.flatMap((bidder): [Party, Party][] => [[{ Person: order.requester }, { Person: bidder }], [{ Store: order.catalog_ref }, { Person: bidder }]]));
       const shown = page.bids.filter((_, i) => !blocked[i * 2] && !blocked[i * 2 + 1]);
       return Promise.all(
         shown.map(async (record) => {

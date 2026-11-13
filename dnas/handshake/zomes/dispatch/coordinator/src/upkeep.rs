@@ -448,3 +448,34 @@ impl WaitingOrder {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LapsedHoldsInput {
+    pub catalog_ref: ActionHash,
+    /// How many days back, up to 30.
+    pub days: u32,
+}
+
+/// How many orders the caller's store declined in the last `days` because
+/// it held them for a review nobody gave in time (docs/REPUTATION.md, phase
+/// 4) -- shown beside the setting, so holding below a score never turns
+/// into a ban by score unseen. Read from the store's own chain.
+#[hdk_extern]
+pub fn lapsed_holds(input: LapsedHoldsInput) -> ExternResult<u32> {
+    let since = Timestamp::from_micros(sys_time()?.as_micros() - i64::from(input.days.clamp(1, 30)) * 86_400_000_000);
+    let types = [EntryType::try_from(UnitEntryTypes::DeliveryOrder)?, EntryType::try_from(UnitEntryTypes::PickupOrder)?];
+    let lapsed = Some(Cancellation::ByStore(DeclineReason::NotReviewed));
+    let mut count = 0;
+    for record in handshake_coordinator_support::chain::mine(&types).since(since).records()? {
+        let (catalog, cancellation) = match (decode_or::<DeliveryOrder>(&record), decode_or::<PickupOrder>(&record)) {
+            (Some(order), _) => (order.catalog_ref, order.cancellation),
+            (None, Some(order)) => (order.catalog_ref, order.cancellation),
+            _ => continue,
+        };
+        if catalog == input.catalog_ref && cancellation == lapsed {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+

@@ -27,7 +27,7 @@ export function ReporterStanding({ customer }: { customer: AgentPubKey }) {
       {pattern?.shown && (
         <p className="flex items-center gap-2 border-t border-ink-100 px-4 py-2.5 text-xs text-ink-600 dark:border-ink-800 dark:text-ink-300">
           <History size={14} className="shrink-0 text-ink-400" aria-hidden />
-          {t("reportPattern.line", { reported: pattern.reported, count: pattern.orders })}
+          {t("reportPattern.line", { reported: pattern.reported, count: pattern.orders })}{pattern.reported > 0 && ` · ${t("reportPattern.upheld", { count: pattern.upheld })}`}
         </p>
       )}
       {flagged && <Flagged customer={customer} hex={hex} stores={summary.bad_faith_stores} />}

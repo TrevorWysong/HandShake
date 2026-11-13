@@ -254,23 +254,27 @@ impl Standing {
 /// flag -- doesn't. Its owner's own completions don't count toward either.
 fn established(catalog: &ActionHash, owner: &AgentPubKey) -> ExternResult<bool> {
     let (base, link_type) = event_links(&ReputationTarget::Store(catalog.clone()));
-    let mut orders: Vec<Vec<u8>> = Vec::new();
-    let mut customers: Vec<AgentPubKey> = Vec::new();
-    for link in recent(vec![base], link_type)? {
-        let tag = link.tag.0;
-        if tag.first() != Some(&COMPLETED) || &link.author == owner {
+    Ok(established_in(&recent(vec![base], link_type)?, owner))
+}
+
+/// The same, from the store's event links already read.
+pub(crate) fn established_in(links: &[Link], owner: &AgentPubKey) -> bool {
+    let mut orders: Vec<&[u8]> = Vec::new();
+    let mut customers: Vec<&AgentPubKey> = Vec::new();
+    for link in links {
+        if link.tag.0.first() != Some(&COMPLETED) || &link.author == owner {
             continue;
         }
-        if let Some(order) = tag.get(9..) {
-            if !orders.iter().any(|o| o == order) {
-                orders.push(order.to_vec());
+        if let Some(order) = link.tag.0.get(9..) {
+            if !orders.contains(&order) {
+                orders.push(order);
             }
         }
-        if !customers.contains(&link.author) {
-            customers.push(link.author);
+        if !customers.contains(&&link.author) {
+            customers.push(&link.author);
         }
     }
-    Ok(orders.len() as u32 >= handshake_governance::min_flagger_orders() && customers.len() as u32 >= handshake_governance::min_flagger_customers())
+    orders.len() as u32 >= handshake_governance::min_flagger_orders() && customers.len() as u32 >= handshake_governance::min_flagger_customers()
 }
 
 /// Whether the order's customer appealed it and the arbiter awarded them

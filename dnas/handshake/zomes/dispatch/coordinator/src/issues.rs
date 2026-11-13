@@ -760,14 +760,19 @@ pub fn settle_stalled_delivery(input: crate::deliveries::TimedStepInput) -> Exte
 // --- a customer's report pattern ---
 
 /// How many of a customer's most recent orders they've reported a problem
-/// with (docs/REPUTATION.md, phase 4): their own action, never a store's
-/// discretion -- what a store answering their report weighs.
+/// with (docs/REPUTATION.md, phase 4) -- their own action, never a store's
+/// discretion -- and how many of those the store accepted, so reports that
+/// were right read as bad luck rather than a pattern. What a store answering
+/// their report weighs.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ReportPattern {
     /// Their most recent orders counted, up to `report_pattern_orders`.
     pub orders: u32,
     /// How many of those they reported a problem with.
     pub reported: u32,
+    /// How many of those reported orders' stores accepted a report, in full
+    /// or in part.
+    pub upheld: u32,
     /// Whether there are enough orders to show (`min_report_pattern_orders`).
     pub shown: bool,
 }
@@ -775,8 +780,52 @@ pub struct ReportPattern {
 #[hdk_extern]
 pub fn get_report_pattern(customer: AgentPubKey) -> ExternResult<ReportPattern> {
     let page = crate::order_queues::history_page(dispatch_integrity::QueueOwner::Customer(&customer), None, Some(handshake_governance::report_pattern_orders()))?;
-    let queries = page.orders.iter().map(|entry| Ok(LinkQuery::try_new(entry.original_action.clone(), LinkTypes::OrderToIssue)?.author(customer.clone()))).collect::<ExternResult<Vec<_>>>()?;
-    let orders = queries.len() as u32;
-    let reported = handshake_coordinator_support::get_links_many(queries)?.iter().filter(|links| !links.is_empty()).count() as u32;
-    Ok(ReportPattern { orders, reported, shown: orders >= handshake_governance::min_report_pattern_orders() })
+    let originals: Vec<ActionHash> = page.orders.iter().map(|entry| entry.original_action.clone()).collect();
+    let now = sys_time()?;
+    let (mut reported, mut upheld) = (0, 0);
+    for (order, issues) in originals.iter().zip(reports_by(&customer, &originals)?) {
+        // A report dated ahead of this clock isn't reported yet.
+        let issues: Vec<ActionHash> = issues.into_iter().filter(|link| link.timestamp <= now).filter_map(|link| link.target.into_action_hash()).collect();
+        if issues.is_empty() {
+            continue;
+        }
+        reported += 1;
+        let merchant = priced(order)?.merchant;
+        for issue in &issues {
+            if store_answer(issue, &merchant)?.is_some_and(|(_, answer)| answer.accept) {
+                upheld += 1;
+                break;
+            }
+        }
+    }
+    let orders = originals.len() as u32;
+    Ok(ReportPattern { orders, reported, upheld, shown: orders >= handshake_governance::min_report_pattern_orders() })
+}
+
+/// The customer's report links on each order, read together.
+fn reports_by(customer: &AgentPubKey, orders: &[ActionHash]) -> ExternResult<Vec<Vec<Link>>> {
+    let queries = orders.iter().map(|order| Ok(LinkQuery::try_new(order.clone(), LinkTypes::OrderToIssue)?.author(customer.clone()))).collect::<ExternResult<Vec<_>>>()?;
+    handshake_coordinator_support::get_links_many(queries)
+}
+
+/// The most orders one `reported_at` reads: a page of a customer's ratings.
+const MAX_REPORTED_AT: usize = 200;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ReportedAtInput {
+    pub customer: AgentPubKey,
+    pub orders: Vec<ActionHash>,
+}
+
+/// When the customer first reported a problem with each order, if they have
+/// -- what tells a rating that answered a report from one that came before
+/// it (docs/REPUTATION.md, phase 4). A report dated ahead of this clock
+/// isn't counted.
+#[hdk_extern]
+pub fn reported_at(input: ReportedAtInput) -> ExternResult<Vec<Option<Timestamp>>> {
+    if input.orders.len() > MAX_REPORTED_AT {
+        return Err(guest("Too many orders to look up at once."));
+    }
+    let now = sys_time()?;
+    Ok(reports_by(&input.customer, &input.orders)?.into_iter().map(|links| links.iter().map(|link| link.timestamp).filter(|at| *at <= now).min()).collect())
 }

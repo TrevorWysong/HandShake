@@ -24,7 +24,7 @@ import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
 import { storeStatus } from "../../lib/storefront/storeHours";
 import { fartherThanKm } from "../../lib/storefront/fartherAway";
-import { blockedPairs } from "../../holochain/zomes/reputation";
+import { blockedAmong } from "../../lib/reputation/blockCache";
 import { myAgentPubKey } from "../../holochain/client";
 import type { Party } from "../../holochain/types";
 import { useT } from "../../i18n";
@@ -109,7 +109,7 @@ export function Browse() {
   const me = myAgentPubKey();
   const listedKey = listed.map((r) => r.hex).join(",");
   const { data: blocked = [] } = useResource(listedKey ? `browse-blocked:${listedKey}` : null, async () => {
-    const flags = await blockedPairs(listed.map((r): [Party, Party] => [{ Person: me }, { Store: r.hash }]));
+    const flags = await blockedAmong(listed.map((r): [Party, Party] => [{ Person: me }, { Store: r.hash }]));
     return listed.filter((_, i) => flags[i]).map((r) => r.hex);
   });
   const rows = useMemo(() => listed.filter((r) => !blocked.includes(r.hex)), [listed, blocked]);

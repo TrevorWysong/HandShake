@@ -1089,6 +1089,7 @@ checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 name = "reputation_coordinator"
 version = "0.1.0"
 dependencies = [
+ "dispatch_types",
  "handshake_coordinator_support",
  "handshake_governance",
  "hdk",
@@ -1101,6 +1102,7 @@ name = "reputation_integrity"
 version = "0.1.0"
 dependencies = [
  "dispatch_types",
+ "handshake_governance",
  "handshake_integrity_support",
  "hdi",
  "holochain_serialized_bytes",

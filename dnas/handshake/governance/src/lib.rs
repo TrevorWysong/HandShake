@@ -127,6 +127,10 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub min_report_pattern_orders: Option<u32>,
     #[serde(default)]
+    pub customer_rating_days: Option<u32>,
+    #[serde(default)]
+    pub rater_window_days: Option<u32>,
+    #[serde(default)]
     pub reputation_window_days: Option<u32>,
     #[serde(default)]
     pub max_store_wait_secs: Option<u64>,
@@ -493,9 +497,10 @@ pub fn min_flagging_stores() -> u32 {
     setting(|p| p.min_flagging_stores, 2).max(1)
 }
 
-/// How many of a customer's most recent rated orders their score is the
-/// share of thumbs-up over (docs/REPUTATION.md, phase 4) -- recent enough to
-/// say how they are now.
+/// How many stores and drivers a customer's score is the share of
+/// thumbs-up over (docs/REPUTATION.md, phase 4): the latest word from each
+/// of the most recent raters -- recent enough to say how they are now, and
+/// one per rater, so no one store or driver fills it.
 pub fn customer_rating_window() -> u32 {
     setting(|p| p.customer_rating_window, 100).max(1)
 }
@@ -516,6 +521,20 @@ pub fn max_rater_down_percent() -> u8 {
 /// How many customers a rater must have rated before that share is judged.
 pub fn min_rater_ratings() -> u32 {
     setting(|p| p.min_rater_ratings, 10).max(1)
+}
+
+/// How long after an order completes its store and driver may rate its
+/// customer: a rating is how the order went, not a reply to what came
+/// after -- a report, a review, an appeal. Validated.
+pub fn customer_rating_days() -> u32 {
+    setting(|p| p.customer_rating_days, 3).clamp(1, 30)
+}
+
+/// The window a rater is judged over -- whether they're an established
+/// store or driver, and whether they rate most customers down. Shorter than
+/// the reputation window so a busy rater's history is a bounded read.
+pub fn rater_window() -> Duration {
+    Duration::from_secs(u64::from(setting(|p| p.rater_window_days, 90).clamp(7, 365)) * 86_400)
 }
 
 /// How many of a customer's most recent orders their report pattern counts

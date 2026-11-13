@@ -1,11 +1,15 @@
 //! Phase 4 (docs/REPUTATION.md): customers rated by the stores and drivers
 //! who served them, and blocks between any two parties. A customer's score
-//! is the share of thumbs-up over their recent rated orders, from raters who
-//! don't rate most customers down, shown once there are enough; a block
-//! hides a pair from each other, whichever made it.
+//! is the share of thumbs-up over the latest word of their recent raters --
+//! established stores and drivers who don't rate most customers down, and
+//! never a thumbs-down given after the customer reported that order --
+//! shown once there are enough; a block hides a pair from each other,
+//! whichever made it.
 
 use super::*;
+use dispatch_types::{DeliveryOrder, DeliveryStatus, PickupOrder, PickupStatus};
 use handshake_coordinator_support::chain::mine;
+use std::collections::BTreeSet;
 
 // --- rating customers ---
 
@@ -18,13 +22,46 @@ pub struct RateCustomerInput {
     pub reason: Option<CustomerReason>,
 }
 
-#[derive(Deserialize, Debug)]
-struct OrderPartiesWire {
+/// An order as a rating needs it: who and where from, and where it stands.
+struct Rated {
     customer: AgentPubKey,
+    merchant: AgentPubKey,
+    catalog_ref: ActionHash,
+    done: bool,
+    disputed: bool,
+}
+
+fn order_terms(latest: &Record) -> ExternResult<Rated> {
+    match (decode_or::<DeliveryOrder>(latest), decode_or::<PickupOrder>(latest)) {
+        (Some(o), _) => Ok(Rated { done: matches!(o.status, DeliveryStatus::Delivered | DeliveryStatus::Collected), disputed: o.status == DeliveryStatus::Disputed, customer: o.requester, merchant: o.merchant, catalog_ref: o.catalog_ref }),
+        (None, Some(o)) => Ok(Rated { done: o.status == PickupStatus::PickedUp, disputed: false, customer: o.requester, merchant: o.merchant, catalog_ref: o.catalog_ref }),
+        _ => Err(guest("That isn't an order.")),
+    }
+}
+
+/// Whether `at` is still within the days a customer may be rated after an
+/// order completed at `done_at`.
+fn rating_open(done_at: Timestamp, at: Timestamp) -> bool {
+    at.as_micros() <= done_at.as_micros().saturating_add(i64::from(handshake_governance::customer_rating_days()) * 86_400_000_000)
+}
+
+#[derive(Serialize, Debug)]
+struct ReportedAtWire {
+    customer: AgentPubKey,
+    orders: Vec<ActionHash>,
+}
+
+/// When the customer first reported a problem with each order, if they have.
+fn reported_at(customer: &AgentPubKey, orders: Vec<ActionHash>) -> ExternResult<Vec<Option<Timestamp>>> {
+    if orders.is_empty() {
+        return Ok(Vec::new());
+    }
+    call_local::<_, Vec<Option<Timestamp>>>("dispatch", "reported_at", ReportedAtWire { customer: customer.clone(), orders })?.map_err(|why| guest(format!("couldn't read the customer's reports: {why}")))
 }
 
 /// The caller -- the order's store or its driver -- rating its customer,
-/// once, on the order completed.
+/// once, on the order completed, within days of it, and not once the
+/// customer's reported it: a report is answered, not rated.
 #[hdk_extern]
 pub fn rate_customer(input: RateCustomerInput) -> ExternResult<Record> {
     let order = original_action_of(input.order)?;
@@ -34,13 +71,27 @@ pub fn rate_customer(input: RateCustomerInput) -> ExternResult<Record> {
     if my_rating_on(&order)?.is_some() {
         return Err(guest("You've already rated this customer for this order."));
     }
-    let parties: OrderPartiesWire = call_local::<_, OrderPartiesWire>("dispatch", "get_issue_items", order.clone())?.map_err(|why| guest(format!("get_issue_items: {why}")))?;
     // The order as it stands: validation checks it shows the order done.
-    let completed = resolve_latest(order.clone())?.action_address().clone();
-    let rating = CustomerRating { order_ref: order, completed, customer: parties.customer.clone(), up: input.up, reason: input.reason };
+    let latest = resolve_latest(order.clone())?;
+    let terms = order_terms(&latest)?;
+    if terms.disputed {
+        return Err(guest("This order is disputed, so its customer isn't rated on it."));
+    }
+    if !terms.done {
+        return Err(guest("You can rate the customer once the order's done."));
+    }
+    if !rating_open(latest.action().timestamp(), sys_time()?) {
+        return Err(guest("Customers are rated within a few days of their order, and this one's past that."));
+    }
+    if reported_at(&terms.customer, vec![order.clone()])?.first().is_some_and(Option::is_some) {
+        return Err(guest("The customer reported a problem with this order: answer their report rather than rating them."));
+    }
+    let me = agent_info()?.agent_initial_pubkey;
+    let store = (me == terms.merchant).then(|| terms.catalog_ref.clone());
+    let rating = CustomerRating { order_ref: order, completed: latest.action_address().clone(), customer: terms.customer.clone(), up: input.up, reason: input.reason, store };
     let hash = create_entry(&EntryTypes::CustomerRating(rating.clone()))?;
-    create_link(parties.customer, hash.clone(), LinkTypes::CustomerToRating, customer_rating_tag(&rating))?;
-    create_link(agent_info()?.agent_initial_pubkey, hash.clone(), LinkTypes::RaterToRating, rater_tag(&rating))?;
+    create_link(terms.customer, hash.clone(), LinkTypes::CustomerToRating, customer_rating_tag(&rating))?;
+    create_link(me, hash.clone(), LinkTypes::RaterToRating, rater_tag(&rating))?;
     written(hash)
 }
 
@@ -67,11 +118,62 @@ fn my_rating_on(order: &ActionHash) -> ExternResult<Option<MyCustomerRating>> {
     }))
 }
 
+/// A delivery the caller made, for rating its customer.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RecentDelivery {
+    /// The order's original action.
+    pub order: ActionHash,
+    pub customer: AgentPubKey,
+    pub catalog_ref: ActionHash,
+    pub delivered_at: Timestamp,
+}
+
+/// The caller's deliveries they can still rate the customer of, newest
+/// first, at most `limit` (up to 50): each completion a store recorded for
+/// them within `customer_rating_days`, not yet rated, not disputed, and
+/// not reported by its customer.
+#[hdk_extern]
+pub fn my_recent_deliveries(limit: u32) -> ExternResult<Vec<RecentDelivery>> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let window = std::time::Duration::from_secs(u64::from(handshake_governance::customer_rating_days()) * 86_400);
+    let mut completions: Vec<Link> = within_each(vec![me.clone().into()], LinkTypes::DriverToEvent, window)?.into_iter().flatten().filter(|link| link.tag.0.first() == Some(&COMPLETED)).collect();
+    completions.sort_by_key(|link| std::cmp::Reverse(link.timestamp));
+    let rated: BTreeSet<Vec<u8>> = within_each(vec![me.clone().into()], LinkTypes::RaterToRating, window)?.into_iter().flatten().filter(|link| link.author == me).filter_map(|link| link.tag.0.get(..39).map(<[u8]>::to_vec)).collect();
+    let now = sys_time()?;
+    let most = limit.min(50) as usize;
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for link in completions {
+        if out.len() >= most {
+            break;
+        }
+        let Some(order) = link.tag.0.get(9..).and_then(|raw| ActionHash::try_from_raw_39(raw.to_vec()).ok()) else { continue };
+        if rated.contains(order.get_raw_39()) || !seen.insert(order.clone()) {
+            continue;
+        }
+        let Ok(latest) = resolve_latest(order.clone()) else { continue };
+        let Ok(terms) = order_terms(&latest) else { continue };
+        if !terms.done || !rating_open(latest.action().timestamp(), now) {
+            continue;
+        }
+        out.push(RecentDelivery { order, customer: terms.customer, catalog_ref: terms.catalog_ref, delivered_at: latest.action().timestamp() });
+    }
+    // Not one its customer reported: those are answered, not rated.
+    let mut kept = Vec::with_capacity(out.len());
+    for delivery in out {
+        if reported_at(&delivery.customer, vec![delivery.order.clone()])?.first().is_some_and(Option::is_some) {
+            continue;
+        }
+        kept.push(delivery);
+    }
+    Ok(kept)
+}
+
 /// A customer's score, as stores and drivers -- and the customer -- read it.
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CustomerScore {
-    /// Counted thumbs-up and thumbs-down, over the customer's last
-    /// `customer_rating_window` counted ratings.
+    /// Counted thumbs-up and thumbs-down: the latest word of each of the
+    /// customer's last `customer_rating_window` counted raters.
     pub up: u32,
     pub down: u32,
     /// How many thumbs-down gave each reason.
@@ -80,45 +182,69 @@ pub struct CustomerScore {
     pub shown: bool,
 }
 
-/// A customer's score: newest ratings first, one per rater per order, from
-/// raters who don't rate most customers down, until the window is full.
+/// One rater's latest rating of the customer, from its tag.
+struct Word {
+    rater: AgentPubKey,
+    up: bool,
+    reason: u8,
+    order: ActionHash,
+    /// The store, when its owner rated as the store.
+    store: Option<ActionHash>,
+    at: Timestamp,
+}
+
+impl Word {
+    fn of(link: &Link) -> Option<Self> {
+        let tag = &link.tag.0;
+        let order = ActionHash::try_from_raw_39(tag.get(2..41)?.to_vec()).ok()?;
+        let store = match tag.get(41..) {
+            None | Some([]) => None,
+            Some(raw) => Some(ActionHash::try_from_raw_39(raw.to_vec()).ok()?),
+        };
+        Some(Self { rater: link.author.clone(), up: *tag.first()? == 1, reason: *tag.get(1)?, order, store, at: link.timestamp })
+    }
+}
+
+/// A customer's score: the latest rating from each rater, newest first,
+/// counting only established stores and drivers who don't rate most
+/// customers down, and no thumbs-down given after the customer reported
+/// that order -- until the window is full. Raters are judged a window's
+/// worth at a time, each a batched read.
 #[hdk_extern]
 pub fn get_customer_score(customer: AgentPubKey) -> ExternResult<CustomerScore> {
     let target = ReputationTarget::Customer(customer.clone());
-    let mut links = recent(bases_of(customer.into(), subject_of(&target))?, LinkTypes::CustomerToRating)?;
+    let mut links = recent(bases_of(customer.clone().into(), subject_of(&target))?, LinkTypes::CustomerToRating)?;
     links.sort_by_key(|link| std::cmp::Reverse(link.timestamp));
-    let window = handshake_governance::customer_rating_window();
-    let mut seen: Vec<(AgentPubKey, Vec<u8>)> = Vec::new();
-    let mut fair: BTreeMap<AgentPubKey, bool> = BTreeMap::new();
+    let mut raters = BTreeSet::new();
+    let words: Vec<Word> = links.iter().filter_map(Word::of).filter(|word| raters.insert(word.rater.clone())).collect();
+    let window = handshake_governance::customer_rating_window() as usize;
     let mut score = CustomerScore::default();
     let mut reasons: BTreeMap<u8, u32> = BTreeMap::new();
-    for link in links {
-        if score.up + score.down >= window {
-            break;
-        }
-        let tag = link.tag.0.clone();
-        let (Some(&up), Some(&reason), Some(order)) = (tag.first(), tag.get(1), tag.get(2..)) else { continue };
-        let key = (link.author.clone(), order.to_vec());
-        if seen.contains(&key) {
-            continue;
-        }
-        seen.push(key);
-        let counts = match fair.get(&link.author) {
-            Some(known) => *known,
-            None => {
-                let known = rates_fairly(&link.author)?;
-                fair.insert(link.author.clone(), known);
-                known
+    // Judged a batch at a time: a window's worth, within what one read of
+    // the customer's reports takes.
+    for chunk in words.chunks(window.clamp(1, 100)) {
+        let counts = counted(chunk)?;
+        let downs: Vec<ActionHash> = chunk.iter().filter(|word| !word.up).map(|word| word.order.clone()).collect();
+        let reports: BTreeMap<ActionHash, Timestamp> = downs.iter().cloned().zip(reported_at(&customer, downs.clone())?).filter_map(|(order, at)| Some((order, at?))).collect();
+        for (word, counts) in chunk.iter().zip(counts) {
+            if (score.up + score.down) as usize >= window {
+                break;
             }
-        };
-        if !counts {
-            continue;
+            // A thumbs-down given once the customer had reported the order
+            // answers the report: it doesn't count.
+            let answers_report = !word.up && reports.get(&word.order).is_some_and(|reported| *reported <= word.at);
+            if !counts || answers_report {
+                continue;
+            }
+            if word.up {
+                score.up += 1;
+            } else {
+                score.down += 1;
+                *reasons.entry(word.reason).or_default() += 1;
+            }
         }
-        if up == 1 {
-            score.up += 1;
-        } else {
-            score.down += 1;
-            *reasons.entry(reason).or_default() += 1;
+        if (score.up + score.down) as usize >= window {
+            break;
         }
     }
     score.reasons = reasons.into_iter().map(|(index, count)| (customer_reason(index), count)).collect();
@@ -126,17 +252,40 @@ pub fn get_customer_score(customer: AgentPubKey) -> ExternResult<CustomerScore> 
     Ok(score)
 }
 
+/// Whether each rater's word counts, over the rater window: an established
+/// store (enough completed orders from enough different customers) or
+/// driver (deliveries recorded by enough different stores) -- so a store or
+/// account made to rate doesn't -- who, having rated enough customers,
+/// doesn't rate more of them down than the network allows. Three batched
+/// reads, whatever the number of raters.
+fn counted(words: &[Word]) -> ExternResult<Vec<bool>> {
+    let window = handshake_governance::rater_window();
+    let ratings = within_each(words.iter().map(|word| word.rater.clone().into()).collect(), LinkTypes::RaterToRating, window)?;
+    let stores: Vec<&ActionHash> = words.iter().filter_map(|word| word.store.as_ref()).collect();
+    let drivers: Vec<&AgentPubKey> = words.iter().filter(|word| word.store.is_none()).map(|word| &word.rater).collect();
+    let mut store_events = within_each(stores.iter().map(|store| (*store).clone().into()).collect(), LinkTypes::StoreToEvent, window)?.into_iter();
+    let mut driver_events = within_each(drivers.iter().map(|driver| (*driver).clone().into()).collect(), LinkTypes::DriverToEvent, window)?.into_iter();
+    let mut out = Vec::with_capacity(words.len());
+    for (word, ratings) in words.iter().zip(ratings) {
+        let established = match word.store {
+            Some(_) => crate::findings::established_in(&store_events.next().unwrap_or_default(), &word.rater),
+            None => stores_in(&driver_events.next().unwrap_or_default()) >= handshake_governance::min_reporter_stores(),
+        };
+        out.push(established && rates_fairly(&word.rater, &ratings));
+    }
+    Ok(out)
+}
+
 /// Whether a rater's ratings count: not one who, having rated enough
 /// customers, rates more of them down than the network allows.
-fn rates_fairly(rater: &AgentPubKey) -> ExternResult<bool> {
-    let links = recent(vec![rater.clone().into()], LinkTypes::RaterToRating)?;
+fn rates_fairly(rater: &AgentPubKey, links: &[Link]) -> bool {
     let mine: Vec<&Link> = links.iter().filter(|link| &link.author == rater).collect();
     let total = mine.len() as u32;
     if total < handshake_governance::min_rater_ratings() {
-        return Ok(true);
+        return true;
     }
     let down = mine.iter().filter(|link| link.tag.0.get(39) == Some(&0)).count() as u32;
-    Ok(down * 100 <= total * u32::from(handshake_governance::max_rater_down_percent()))
+    down * 100 <= total * u32::from(handshake_governance::max_rater_down_percent())
 }
 
 fn customer_reason(index: u8) -> CustomerReason {

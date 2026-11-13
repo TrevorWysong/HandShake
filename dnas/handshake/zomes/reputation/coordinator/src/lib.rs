@@ -71,7 +71,13 @@ fn recent(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Vec
 
 /// `recent`, each base's links apart.
 fn recent_each(bases: Vec<AnyLinkableHash>, link_type: LinkTypes) -> ExternResult<Vec<Vec<Link>>> {
-    let since = (sys_time()? - handshake_governance::reputation_window()).unwrap_or(Timestamp::from_micros(0));
+    within_each(bases, link_type, handshake_governance::reputation_window())
+}
+
+/// The links of `link_type` under each of `bases` made within `window`,
+/// each base's apart, read together.
+fn within_each(bases: Vec<AnyLinkableHash>, link_type: LinkTypes, window: std::time::Duration) -> ExternResult<Vec<Vec<Link>>> {
+    let since = (sys_time()? - window).unwrap_or(Timestamp::from_micros(0));
     let mut queries = Vec::with_capacity(bases.len());
     for base in bases {
         let mut query = LinkQuery::try_new(base, link_type)?;
@@ -197,13 +203,19 @@ const COMPLETED: u8 = 0;
 /// `driver` -- each store records its own, so each is a different agent.
 fn stores_delivered_for(driver: &AgentPubKey) -> ExternResult<u32> {
     let (base, event_link) = event_links(&ReputationTarget::Driver(driver.clone()));
-    let mut stores: Vec<AgentPubKey> = Vec::new();
-    for link in recent(vec![base], event_link)? {
-        if link.tag.0.first() == Some(&COMPLETED) && !stores.contains(&link.author) {
-            stores.push(link.author);
+    Ok(stores_in(&recent(vec![base], event_link)?))
+}
+
+/// How many different stores recorded a completed delivery among a
+/// driver's event links.
+fn stores_in(links: &[Link]) -> u32 {
+    let mut stores: Vec<&AgentPubKey> = Vec::new();
+    for link in links {
+        if link.tag.0.first() == Some(&COMPLETED) && !stores.contains(&&link.author) {
+            stores.push(&link.author);
         }
     }
-    Ok(stores.len() as u32)
+    stores.len() as u32
 }
 
 #[hdk_extern]

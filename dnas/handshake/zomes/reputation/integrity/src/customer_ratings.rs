@@ -36,13 +36,21 @@ pub struct CustomerRating {
     pub up: bool,
     /// Why, for a thumbs-down; none for a thumbs-up.
     pub reason: Option<CustomerReason>,
+    /// The store, by its catalog, when its owner rates as the order's store;
+    /// none from its driver. What tells a reader which kind of rater to
+    /// weigh, from the tag alone.
+    pub store: Option<ActionHash>,
 }
 
-/// A `CustomerToRating` link's tag: up or down, its reason's place, and the
-/// order -- what a customer's score is counted from in one read.
+/// A `CustomerToRating` link's tag: up or down, its reason's place, the
+/// order, and the store when the store rated -- what a customer's score is
+/// counted from in one read.
 pub fn customer_rating_tag(rating: &CustomerRating) -> LinkTag {
     let mut bytes = vec![u8::from(rating.up), rating.reason.map_or(u8::MAX, |r| r as u8)];
     bytes.extend_from_slice(rating.order_ref.get_raw_39());
+    if let Some(store) = &rating.store {
+        bytes.extend_from_slice(store.get_raw_39());
+    }
     LinkTag::new(bytes)
 }
 
@@ -56,8 +64,9 @@ pub fn rater_tag(rating: &CustomerRating) -> LinkTag {
 }
 
 /// Only the order's store, or the driver who delivered it, rates its
-/// customer -- once each, on the order completed; a thumbs-down with a
-/// reason, a thumbs-up with none.
+/// customer -- once each, on the order completed and within
+/// `customer_rating_days` of it; a thumbs-down with a reason, a thumbs-up
+/// with none.
 pub(crate) fn validate_customer_rating(rating: &CustomerRating, author: &AgentPubKey, at: Timestamp, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
     if rating.up == rating.reason.is_some() {
         return Ok(ValidateCallbackResult::Invalid("a thumbs-down gives a reason, a thumbs-up none".into()));
@@ -65,7 +74,8 @@ pub(crate) fn validate_customer_rating(rating: &CustomerRating, author: &AgentPu
     if original_creation(rating.order_ref.clone())? != rating.order_ref || original_creation(rating.completed.clone())? != rating.order_ref {
         return Ok(ValidateCallbackResult::Invalid("a rating cites its order and a version of it".into()));
     }
-    let Some(order) = Parties::of(&must_get_valid_record(rating.completed.clone())?)? else {
+    let completed = must_get_valid_record(rating.completed.clone())?;
+    let Some(order) = Parties::of(&completed)? else {
         return Ok(ValidateCallbackResult::Invalid("a rating cites an order".into()));
     };
     if !order.completed || rating.customer != order.requester {
@@ -76,6 +86,14 @@ pub(crate) fn validate_customer_rating(rating: &CustomerRating, author: &AgentPu
     }
     if author == &rating.customer {
         return Ok(ValidateCallbackResult::Invalid("nobody rates themselves".into()));
+    }
+    // The store's owner rates as the store, even delivering it themselves.
+    if rating.store != (author == &order.merchant).then(|| order.catalog_ref.clone()) {
+        return Ok(ValidateCallbackResult::Invalid("a store's rating names its store, a driver's none".into()));
+    }
+    let deadline = completed.action().timestamp().as_micros().saturating_add(i64::from(handshake_governance::customer_rating_days()) * 86_400_000_000);
+    if at.as_micros() > deadline {
+        return Ok(ValidateCallbackResult::Invalid("a customer is rated within days of their order completing".into()));
     }
     let Some(prev) = prev_action else { return Ok(ValidateCallbackResult::Invalid("a rating can't open a chain".into())) };
     let placed = must_get_action(rating.order_ref.clone())?.hashed.content.header.timestamp;

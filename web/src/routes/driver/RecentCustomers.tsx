@@ -1,9 +1,9 @@
-// A driver's customers of the last few days, not yet rated: how each was,
+// A driver's customers they can still rate -- within the network's days for
+// it, not yet rated, not reported or disputed: how each was,
 // for the stores and drivers who serve them next (docs/REPUTATION.md,
 // phase 4). Gone once there are none.
 import { ThumbsUp } from "lucide-react";
-import { myRecentDeliveries } from "../../holochain/zomes/dispatch";
-import { myCustomerRating } from "../../holochain/zomes/reputation";
+import { myRecentDeliveries } from "../../holochain/zomes/reputation";
 import { bytesToHex } from "../../holochain/decode";
 import { storeName } from "../../lib/reputation/blockTargets";
 import { useResource } from "../../lib/hooks/useResource";
@@ -18,9 +18,7 @@ const OFFERED = 5;
 export function RecentCustomers({ driverHex }: { driverHex: string }) {
   const t = useT();
   const { data: unrated } = useResource(`recent-customers:${driverHex}`, async () => {
-    const recent = await myRecentDeliveries(OFFERED * 2);
-    const rated = await Promise.all(recent.map((delivery) => myCustomerRating(delivery.order).catch(() => null)));
-    const open = recent.filter((_, i) => rated[i] === null).slice(0, OFFERED);
+    const open = await myRecentDeliveries(OFFERED);
     return Promise.all(open.map(async (delivery) => ({ ...delivery, store: await storeName(delivery.catalog_ref).catch(() => "") })));
   });
   if (!unrated || unrated.length === 0) return null;

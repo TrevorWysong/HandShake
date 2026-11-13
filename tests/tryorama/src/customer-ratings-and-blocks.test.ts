@@ -1,7 +1,9 @@
 // Proves phase 4 of docs/REPUTATION.md:
 //
 // - only an order's store, or its driver, rates its customer -- once, on the
-//   order completed, a thumbs-down with a reason; a rater who rates most
+//   order completed, a thumbs-down with a reason, naming the store when the
+//   store rates, and never once the customer's reported the order; only
+//   established raters count, one word each, and a rater who rates most
 //   customers down stops counting;
 // - a customer's report pattern counts their own reports over their orders;
 // - a block, either way, keeps two parties apart -- ordering, a store taking
@@ -21,8 +23,11 @@ interface Score {
 
 await runScenario(async (scenario) => {
   // A score shows from one rating; a rater's ratings stop counting once two
-  // or more are more than half thumbs-down.
+  // or more are more than half thumbs-down; a store is established from one
+  // completed order.
   const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({
+    min_flagger_orders: 1,
+    min_flagger_customers: 1,
     min_customer_ratings: 1,
     min_rater_ratings: 2,
     max_rater_down_percent: 50,
@@ -63,8 +68,9 @@ await runScenario(async (scenario) => {
 
   // ===== Rating a customer: who, on what, once =====
   const first = await pickup();
-  const raw = (by: typeof customer, rating: object) => call(by, "reputation")("create_raw_customer_rating_for_testing", { order_ref: first.order, completed: first.done, customer: customer.agentPubKey, up: true, reason: null, ...rating });
-  await assert.rejects(raw(driver, {}), /only the order's store, or its driver/, "nobody else rates its customer");
+  const raw = (by: typeof customer, rating: object) => call(by, "reputation")("create_raw_customer_rating_for_testing", { order_ref: first.order, completed: first.done, customer: customer.agentPubKey, up: true, reason: null, store, ...rating });
+  await assert.rejects(raw(driver, { store: null }), /only the order's store, or its driver/, "nobody else rates its customer");
+  await assert.rejects(raw(merchant, { store: null }), /names its store/, "a store's rating names its store");
   await assert.rejects(raw(merchant, { up: false }), /thumbs-down gives a reason/, "a thumbs-down gives a reason");
   await assert.rejects(raw(merchant, { reason: "Unsafe" }), /thumbs-up none/, "a thumbs-up gives none");
   await assert.rejects(raw(merchant, { completed: first.order }), /completed/, "only on the order completed");
@@ -87,9 +93,19 @@ await runScenario(async (scenario) => {
   // ===== The customer's report pattern =====
   await call(customer, "dispatch")("report_issue", { order: second.order, lines: [{ line: 0, quantity: 1, kind: "Missing" }], note: "", photo_data_uri: "" });
   await sync();
-  const pattern = await retryUntil(() => call(merchant, "dispatch")<{ orders: number; reported: number; shown: boolean }>("get_report_pattern", customer.agentPubKey), (p) => p.reported === 1);
+  const pattern = await retryUntil(() => call(merchant, "dispatch")<{ orders: number; reported: number; upheld: number; shown: boolean }>("get_report_pattern", customer.agentPubKey), (p) => p.reported === 1);
   assert.deepEqual([pattern.reported, pattern.orders >= 2, pattern.shown], [1, true, true], "one reported, of their recent orders");
-  console.log("[PASS] a customer's report pattern counts their own reports over their orders");
+  assert.equal(pattern.upheld, 0, "none accepted yet");
+  console.log("[PASS] a customer's report pattern counts their own reports over their orders, and what stores accepted");
+
+  // ===== A reported order is answered, not rated =====
+  const third = await pickup();
+  await call(customer, "dispatch")("report_issue", { order: third.order, lines: [{ line: 0, quantity: 1, kind: "Missing" }], note: "", photo_data_uri: "" });
+  await sync();
+  await retryUntilOk(async () => {
+    await assert.rejects(call(merchant, "reputation")("rate_customer", { order: third.order, up: false, reason: "Other" }), /answer their report/);
+  });
+  console.log("[PASS] a store can't rate a customer on an order they reported");
 
   // ===== A block keeps a customer and a store apart, either way =====
   await assert.rejects(call(driver, "reputation")("block", { by: { Store: store }, blocked: { Person: customer.agentPubKey } }), /made by the person, or the store's owner/, "nobody blocks as a store they don't own");
@@ -122,9 +138,12 @@ await runScenario(async (scenario) => {
   await sync();
   await call(customer, "reputation")("block", { by: { Person: customer.agentPubKey }, blocked: { Person: driver.agentPubKey } });
   await sync();
-  assert.equal(listed(await feed()), false, "the driver no longer sees the customer's orders");
+  const next = actionHash(await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: 1000, tip_cents: 100 }));
+  await sync();
+  await acceptOrder(merchant, next, all);
+  await assert.rejects(call(driver, "dispatch")("submit_bid", { order_ref: next, eta_seconds: 600, price_offer: 500 }), /isn't available to you/, "the driver can't bid on the customer's orders");
   await assert.rejects(call(customer, "dispatch")("accept_bid", { order_original_action: delivery, bid_action: bid, override_warrants: false }), /isn't available for this order/, "nor the customer take their bid");
   const ranked = await call(customer, "dispatch")<object[]>("rank_bids", delivery);
   assert.equal(ranked.length, 0, "nor is it ranked for matching");
-  console.log("[PASS] a customer blocking a driver keeps them apart: feed, bid and matching");
+  console.log("[PASS] a customer blocking a driver keeps them apart: bidding, taking a bid and matching");
 });

@@ -1,6 +1,6 @@
 import { workedFor } from "../../lib/payments/work";
 import { callZome } from "../client";
-import type { AllergySet, ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecentDelivery, RecurrenceRule, ReportPattern, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VehicleDetails, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
+import type { AllergySet, ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, ReportPattern, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VehicleDetails, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
 
 // --- orders ---
 
@@ -629,8 +629,9 @@ export async function getReportPattern(customer: AgentPubKey): Promise<ReportPat
   return callZome("dispatch", "get_report_pattern", customer);
 }
 
-/// The caller's deliveries of the last few days, newest first -- for rating
-/// their customers (docs/REPUTATION.md, phase 4).
-export async function myRecentDeliveries(limit: number): Promise<RecentDelivery[]> {
-  return callZome("dispatch", "my_recent_deliveries", limit);
+/// How many orders the caller's store declined in the last `days` because
+/// nobody reviewed a held order in time.
+export async function lapsedHolds(catalogRef: ActionHash, days: number): Promise<number> {
+  return callZome("dispatch", "lapsed_holds", { catalog_ref: catalogRef, days });
 }
+

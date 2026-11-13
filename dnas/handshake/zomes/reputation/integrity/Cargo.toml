@@ -12,3 +12,4 @@ serde.workspace = true
 holochain_serialized_bytes.workspace = true
 dispatch_types.workspace = true
 handshake_integrity_support.workspace = true
+handshake_governance.workspace = true

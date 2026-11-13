@@ -620,8 +620,8 @@ export type CustomerReason =
  */
 export interface CustomerScore {
   /**
-   * Counted thumbs-up and thumbs-down, over the customer's last
-   * `customer_rating_window` counted ratings.
+   * Counted thumbs-up and thumbs-down: the latest word of each of the
+   * customer's last `customer_rating_window` counted raters.
    */
   up: number;
   down: number;
@@ -2471,11 +2471,15 @@ export interface NetworkTerms {
    */
   min_flagging_stores: number;
   /**
-   * A customer's score is over their last this-many rated orders, and
-   * shown once it has `min_customer_ratings`.
+   * A customer's score is over the latest word of their last this-many
+   * raters, and shown once it has `min_customer_ratings`.
    */
   customer_rating_window: number;
   min_customer_ratings: number;
+  /**
+   * How many days after an order completes its customer may be rated.
+   */
+  customer_rating_days: number;
   /**
    * How far back ratings and records reach, in days.
    */
@@ -4010,8 +4014,7 @@ export interface ReceiptPayment {
 }
 
 /**
- * A delivery the caller made, for rating its customer (docs/REPUTATION.md,
- * phase 4).
+ * A delivery the caller made, for rating its customer.
  */
 export interface RecentDelivery {
   /**
@@ -4159,8 +4162,10 @@ export interface RecurringOrderTemplate {
 
 /**
  * How many of a customer's most recent orders they've reported a problem
- * with (docs/REPUTATION.md, phase 4): their own action, never a store's
- * discretion -- what a store answering their report weighs.
+ * with (docs/REPUTATION.md, phase 4) -- their own action, never a store's
+ * discretion -- and how many of those the store accepted, so reports that
+ * were right read as bad luck rather than a pattern. What a store answering
+ * their report weighs.
  */
 export interface ReportPattern {
   /**
@@ -4171,6 +4176,11 @@ export interface ReportPattern {
    * How many of those they reported a problem with.
    */
   reported: number;
+  /**
+   * How many of those reported orders' stores accepted a report, in full
+   * or in part.
+   */
+  upheld: number;
   /**
    * Whether there are enough orders to show (`min_report_pattern_orders`).
    */

@@ -60,14 +60,9 @@ pub fn get_open_orders_near(geohash: String) -> ExternResult<Vec<Record>> {
         }
     }
     orders.truncate(most);
-    // Not an order from a customer or a store the caller is blocked with,
-    // either way (docs/REPUTATION.md, phase 4) -- read together. Every one
-    // listed is a delivery (filtered above), two pairs each.
-    use crate::blocks::Party;
-    let me = Party::Person(agent_info()?.agent_initial_pubkey);
-    let pairs = orders.iter().filter_map(decode_or::<DeliveryOrder>).flat_map(|order| [(me.clone(), Party::Person(order.requester)), (me.clone(), Party::Store(order.catalog_ref))]).collect();
-    let blocked = crate::blocks::blocked_each(pairs)?;
-    let orders = orders.into_iter().zip(blocked.chunks(2)).filter(|(_, pair)| !pair.contains(&true)).map(|(record, _)| record).collect();
+    // Blocks (docs/REPUTATION.md, phase 4) aren't read here: this is polled
+    // every few seconds, so the driver's app filters it from its own cache of
+    // pairs, and `submit_bid` refuses a blocked pair whatever it shows.
     Ok(orders)
 }
 

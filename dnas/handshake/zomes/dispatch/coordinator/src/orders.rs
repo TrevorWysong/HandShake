@@ -624,10 +624,12 @@ pub struct NetworkTerms {
     /// How many different stores must find a customer's reports weren't
     /// made in good faith before other stores are shown it.
     pub min_flagging_stores: u32,
-    /// A customer's score is over their last this-many rated orders, and
-    /// shown once it has `min_customer_ratings`.
+    /// A customer's score is over the latest word of their last this-many
+    /// raters, and shown once it has `min_customer_ratings`.
     pub customer_rating_window: u32,
     pub min_customer_ratings: u32,
+    /// How many days after an order completes its customer may be rated.
+    pub customer_rating_days: u32,
     /// How far back ratings and records reach, in days.
     pub reputation_window_days: u32,
     /// What a minute of a driver's arrival time counts for when matching.
@@ -705,6 +707,7 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         min_flagging_stores: handshake_governance::min_flagging_stores(),
         customer_rating_window: handshake_governance::customer_rating_window(),
         min_customer_ratings: handshake_governance::min_customer_ratings(),
+        customer_rating_days: handshake_governance::customer_rating_days(),
         reputation_window_days: (handshake_governance::reputation_window().as_secs() / 86_400) as u32,
         minute_value_cents: handshake_governance::minute_value_cents(),
         time_relays: handshake_governance::time_source().relays,
