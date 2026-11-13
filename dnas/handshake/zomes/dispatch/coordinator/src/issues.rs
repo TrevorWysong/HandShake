@@ -49,6 +49,9 @@ pub struct IssueItems {
     /// `None` where there's none to make: a pickup, one they collected, or
     /// a fee the store paid all of.
     pub delivery_report_worth: Option<u64>,
+    /// The driver who delivered it, if one did -- whom a store may find at
+    /// fault for a poor delivery (docs/REPUTATION.md, phase 3).
+    pub driver: Option<AgentPubKey>,
 }
 
 /// An order's items as reports are made against them -- public, as the
@@ -57,8 +60,10 @@ pub struct IssueItems {
 pub fn get_issue_items(order: ActionHash) -> ExternResult<IssueItems> {
     let order = original_action_of(order)?;
     let terms = priced(&order)?;
-    let delivery_report_worth = service_worth(resolve_latest(order)?.action_address())?.filter(|worth| *worth > 0);
-    Ok(IssueItems { order_total: terms.order_total, lines: terms.lines, customer: terms.requester, catalog_ref: terms.catalog_ref, delivery_report_worth })
+    let delivered = delivered_by(resolve_latest(order)?.action_address())?;
+    let delivery_report_worth = delivered.as_ref().map(|(bid, store_percent)| service_value(bid.price_offer, *store_percent)).filter(|worth| *worth > 0);
+    let driver = delivered.map(|(bid, _)| bid.bidder);
+    Ok(IssueItems { order_total: terms.order_total, lines: terms.lines, customer: terms.requester, catalog_ref: terms.catalog_ref, delivery_report_worth, driver })
 }
 
 fn priced(order: &ActionHash) -> ExternResult<Priced> {
@@ -128,16 +133,23 @@ pub fn report_issue(input: ReportIssueInput) -> ExternResult<Record> {
         return Err(guest(problem));
     }
     let evidence = IssueEvidence { note: input.note, photo_data_uri: input.photo_data_uri, allergen: input.allergen };
+    // About the delivery: worth the customer's share of its fee, and sealed
+    // to its driver too, who may be asked to answer for it.
+    let driver = match input.service {
+        true => match delivered_by(latest.action_address())? {
+            Some((bid, store_percent)) if service_value(bid.price_offer, store_percent) > 0 => Some(bid.bidder),
+            _ => return Err(guest("You can tell the store about a delivery a driver brought you, if you paid toward its fee.")),
+        },
+        false => None,
+    };
     let issue = ItemIssue {
         order: order.clone(),
         received: latest.action_address().clone(),
         lines: input.lines,
         sealed_for_store: seal_chunked(&terms.merchant, &evidence)?,
         service: input.service,
+        sealed_for_driver: driver.map(|driver| seal_chunked(&driver, &evidence)).transpose()?,
     };
-    if issue.service && service_worth(&issue.received)?.unwrap_or(0) == 0 {
-        return Err(guest("You can tell the store about a delivery a driver brought you, if you paid toward its fee."));
-    }
     let hash = create_entry(&EntryTypes::ItemIssue(issue))?;
     create_link(order.clone(), hash.clone(), LinkTypes::OrderToIssue, ())?;
     // On the store's list of reports to answer, tagged with the order.
@@ -195,6 +207,9 @@ pub struct IssueView {
     /// What the store's answer refunds: all it's worth or the part it
     /// named, nothing for a decline -- `None` before it answers.
     pub refund: Option<u64>,
+    /// The store's answer itself, once it's given -- what a finding on the
+    /// report cites (docs/REPUTATION.md).
+    pub answer: Option<ActionHash>,
     /// The note and photo, for the customer and the store.
     pub evidence: Option<IssueEvidence>,
     /// That it's about the delivery itself, not items: worth the customer's
@@ -226,6 +241,10 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
             open_chunked(&terms.merchant, &issue.sealed_for_store)?
         } else if me == terms.merchant {
             open_chunked(&terms.requester, &issue.sealed_for_store)?
+        } else if let Some(sealed) = &issue.sealed_for_driver {
+            // The driver who brought it, for a report on the delivery: only
+            // theirs opens.
+            open_chunked(&terms.requester, sealed)?
         } else {
             None
         };
@@ -233,8 +252,9 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
             issue: hash.clone(),
             reported_at: record.action().timestamp(),
             value,
-            accepted: answer.as_ref().map(|a| a.accept),
-            refund: answer.as_ref().map(|a| a.refunds(value)),
+            accepted: answer.as_ref().map(|(_, a)| a.accept),
+            refund: answer.as_ref().map(|(_, a)| a.refunds(value)),
+            answer: answer.as_ref().map(|(hash, _)| hash.clone()),
             evidence: evidence.filter(|e| handshake_integrity_support::image_problem(&e.photo_data_uri).is_none()),
             service: issue.service,
             lines: issue.lines,
@@ -265,20 +285,25 @@ fn value_in(issue: &ItemIssue, terms: &Priced) -> ExternResult<u64> {
 /// if it can't be one. Validated with the report: one not here yet is an
 /// error.
 fn service_worth(received: &ActionHash) -> ExternResult<Option<u64>> {
+    Ok(delivered_by(received)?.map(|(bid, store_percent)| service_value(bid.price_offer, store_percent)))
+}
+
+/// The bid that delivered an order, by its `received` version -- with the
+/// store's share of its fee -- or `None` if no driver delivered it.
+fn delivered_by(received: &ActionHash) -> ExternResult<Option<(Bid, u8)>> {
     let Some(version) = decode_or::<DeliveryOrder>(&arrived(received)?) else { return Ok(None) };
     let Some(bid) = version.accepted_bid.filter(|_| version.status == DeliveryStatus::Delivered) else { return Ok(None) };
-    let Some(bid) = decode_or::<Bid>(&arrived(&bid)?) else { return Ok(None) };
-    Ok(Some(service_value(bid.price_offer, version.delivery_subsidy_percent)))
+    Ok(decode_or::<Bid>(&arrived(&bid)?).map(|bid| (bid, version.delivery_subsidy_percent)))
 }
 
 /// The store's answer to an issue, if it's given one.
-fn store_answer(issue: &ActionHash, merchant: &AgentPubKey) -> ExternResult<Option<IssueResponse>> {
+fn store_answer(issue: &ActionHash, merchant: &AgentPubKey) -> ExternResult<Option<(ActionHash, IssueResponse)>> {
     for link in get_links(LinkQuery::try_new(issue.clone(), LinkTypes::IssueToResponse)?.author(merchant.clone()), GetStrategy::default())? {
         let Some(hash) = link.target.into_action_hash() else { continue };
         // Validated, by the store: one not here yet is an error, never an
         // issue left unanswered.
         if let Some(response) = decode_or::<IssueResponse>(&arrived(&hash)?) {
-            return Ok(Some(response));
+            return Ok(Some((hash, response)));
         }
     }
     Ok(None)

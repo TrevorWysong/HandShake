@@ -102,3 +102,7 @@ pub const SEALED_IMAGE_OVERHEAD_BYTES: usize = 4_096;
 pub const MAX_GUARDIANS: usize = 7;
 /// The most a migration's parcel may hold, before sealing.
 pub const MAX_PARCEL_BYTES: usize = 65_536;
+
+/// The most a reply to a store's finding about someone may say
+/// (docs/REPUTATION.md): a sentence or two, shown beside it.
+pub const MAX_REPLY_CHARS: usize = 280;

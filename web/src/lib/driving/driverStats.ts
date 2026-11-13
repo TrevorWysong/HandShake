@@ -11,6 +11,9 @@ export interface DriverStats {
   droppedCount: number;
   /// Offers they let lapse, or turned down, without committing.
   lapsedCount: number;
+  /// Deliveries a store found them at fault for, having refunded its
+  /// customer (docs/REPUTATION.md, phase 3) -- shown, never weighed.
+  faultedCount: number;
   avgRating: number;
   reviewCount: number;
   /// Null for one who hasn't set one: shown by their short id instead.
@@ -26,6 +29,7 @@ export async function fetchDriverStats(agent: Uint8Array): Promise<DriverStats> 
     completedCount: summary.completed_count,
     droppedCount: summary.dropped_count,
     lapsedCount: summary.lapsed_count,
+    faultedCount: summary.faulted_count,
     avgRating: averageRating(rating) ?? 0,
     reviewCount: rating.count,
     displayName: profile?.display_name || null,

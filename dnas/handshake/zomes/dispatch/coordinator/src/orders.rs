@@ -600,6 +600,9 @@ pub struct NetworkTerms {
     /// Different stores a driver must have delivered for before their
     /// check-in reports count.
     pub min_reporter_stores: u32,
+    /// How many different stores must find a customer's reports weren't
+    /// made in good faith before other stores are shown it.
+    pub min_flagging_stores: u32,
     /// How far back ratings and records reach, in days.
     pub reputation_window_days: u32,
     /// What a minute of a driver's arrival time counts for when matching.
@@ -674,6 +677,7 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         bid_window_secs: handshake_governance::bid_window().as_secs(),
         max_driver_changes: handshake_governance::max_driver_changes(),
         min_reporter_stores: handshake_governance::min_reporter_stores(),
+        min_flagging_stores: handshake_governance::min_flagging_stores(),
         reputation_window_days: (handshake_governance::reputation_window().as_secs() / 86_400) as u32,
         minute_value_cents: handshake_governance::minute_value_cents(),
         time_relays: handshake_governance::time_source().relays,

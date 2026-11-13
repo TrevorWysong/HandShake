@@ -144,6 +144,7 @@ mod test_utils {
             lines: input.lines,
             sealed_for_store: handshake_coordinator_support::seal_chunked(&me, &evidence)?,
             service: input.service,
+            sealed_for_driver: None,
         };
         create_entry(&EntryTypes::ItemIssue(issue))
     }

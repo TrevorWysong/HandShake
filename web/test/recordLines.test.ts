@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { customerRecordLines, storeRecordLines } from "../src/lib/reputation/recordLines.ts";
 
-const zero = { completed_count: 0, cancelled_by_them_count: 0, dispute_raised_count: 0, dispute_resolved_against_count: 0, dropped_count: 0, late_count: 0, lapsed_count: 0, check_in_refused_count: 0, no_show_count: 0, total_collateral_forfeited: 0 };
+const zero = { completed_count: 0, cancelled_by_them_count: 0, dispute_raised_count: 0, dispute_resolved_against_count: 0, dropped_count: 0, late_count: 0, lapsed_count: 0, check_in_refused_count: 0, no_show_count: 0, total_collateral_forfeited: 0, bad_faith_stores: 0, faulted_count: 0 };
 // The key, with its count: what each line says, without the translations.
 const t = (key: string, vars?: Record<string, string | number>) => `${key}:${vars?.count}`;
 

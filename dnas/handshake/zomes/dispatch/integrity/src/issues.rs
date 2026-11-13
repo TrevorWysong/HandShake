@@ -96,9 +96,12 @@ pub(crate) fn validate_item_issue(issue: &ItemIssue, author: &AgentPubKey, prev_
     if wrote_since::<ItemIssue>(author, prev, placed, UnitEntryTypes::ItemIssue.try_into()?, reported_again)? {
         return invalid("each line of an order, and its delivery, is reported once");
     }
-    let bounded = handshake_integrity_support::sealed_chunks_problem("an issue's evidence", &issue.sealed_for_store, handshake_integrity_support::max_sealed_image_bytes()).is_none();
-    if !bounded {
+    let bounded = |sealed| handshake_integrity_support::sealed_chunks_problem("an issue's evidence", sealed, handshake_integrity_support::max_sealed_image_bytes()).is_none();
+    if !bounded(&issue.sealed_for_store) || !issue.sealed_for_driver.as_ref().is_none_or(bounded) {
         return invalid("an issue's evidence may hold a note and at most one photo, within the network's image limit");
+    }
+    if issue.sealed_for_driver.is_some() && !issue.service {
+        return invalid("only a report on the delivery is sealed to its driver");
     }
     // The delivery itself: no items, on one a driver brought -- not one the
     // customer collected -- whose fee they paid a share of.

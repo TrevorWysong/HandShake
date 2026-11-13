@@ -2,8 +2,9 @@
 // subject"): the very lines shown to the people who decide whether to take
 // their orders, who those are, and how long each counts. A customer's on
 // their profile, a store's on its page; a driver's is under Earnings.
+import type { ReactNode } from "react";
 import { CheckCircle2, ShieldAlert, ShieldCheck } from "lucide-react";
-import { getReputationSummary } from "../../holochain/zomes/reputation";
+import { getFindings, getReputationSummary } from "../../holochain/zomes/reputation";
 import { bytesToHex } from "../../holochain/decode";
 import type { ActionHash, AgentPubKey } from "../../holochain/types";
 import { useResource } from "../../lib/hooks/useResource";
@@ -11,20 +12,26 @@ import { customerRecordLines, storeRecordLines } from "../../lib/reputation/reco
 import { useTerms } from "../../store/network";
 import { Card, SectionLabel, Skeleton } from "../ui";
 import { InfoSheet } from "../InfoSheet";
+import { OwnFindings } from "../reputation/OwnFindings";
 import { useT, type MessageKey } from "../../i18n";
 
 /// A customer's own record, from the same reading stores and drivers make.
 export function MyCustomerRecord({ me }: { me: AgentPubKey }) {
   const t = useT();
-  const days = useTerms().reputation_window_days;
+  const terms = useTerms();
+  const days = terms.reputation_window_days;
   const { data: summary } = useResource(`customer-history:${bytesToHex(me)}`, () => getReputationSummary({ Customer: me }));
+  const { data: findings, reload } = useResource(`own-findings:customer:${bytesToHex(me)}`, () => getFindings({ Customer: me }));
   return (
     <OwnRecord
       lines={summary ? customerRecordLines(summary, t) : undefined}
+      more={!!findings && findings.length > 0}
       title="ownRecord.customer.title"
       seenBy="ownRecord.customer.seenBy"
-      how={(["what", "who", "recover", "wrong"] as const).map((part) => ({ title: t(`ownRecord.customer.${part}`), body: t(`ownRecord.customer.${part}Detail`, { days }) }))}
-    />
+      how={(["what", "who", "recover", "wrong", "findings"] as const).map((part) => ({ title: t(`ownRecord.customer.${part}`), body: t(`ownRecord.customer.${part}Detail`, { days, stores: terms.min_flagging_stores }) }))}
+    >
+      <OwnFindings findings={findings} intro={t("findings.customerIntro", { stores: terms.min_flagging_stores })} onReplied={reload} />
+    </OwnRecord>
   );
 }
 
@@ -43,7 +50,9 @@ export function MyStoreRecord({ catalogRef }: { catalogRef: ActionHash }) {
   );
 }
 
-function OwnRecord({ lines, title, seenBy, how }: { lines: string[] | undefined; title: MessageKey; seenBy: MessageKey; how: { title: string; body: string }[] }) {
+/// `more`: what stores have said is listed below (`children`), so an empty
+/// list of lines isn't "nothing on your record".
+function OwnRecord({ lines, more = false, title, seenBy, how, children }: { lines: string[] | undefined; more?: boolean; title: MessageKey; seenBy: MessageKey; how: { title: string; body: string }[]; children?: ReactNode }) {
   const t = useT();
   const days = useTerms().reputation_window_days;
   return (
@@ -54,7 +63,7 @@ function OwnRecord({ lines, title, seenBy, how }: { lines: string[] | undefined;
       </div>
       {lines === undefined ? (
         <Skeleton className="h-12 w-full" />
-      ) : lines.length === 0 ? (
+      ) : lines.length === 0 && more ? null : lines.length === 0 ? (
         <div className="flex items-center gap-3 rounded-2xl bg-green-50 p-3 dark:bg-green-950/30">
           <CheckCircle2 size={20} className="shrink-0 text-green-600 dark:text-green-400" aria-hidden />
           <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("ownRecord.clean")}</p>
@@ -69,8 +78,9 @@ function OwnRecord({ lines, title, seenBy, how }: { lines: string[] | undefined;
           ))}
         </ul>
       )}
-      <p className="mt-3 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{t(seenBy)}</p>
+      {!(lines?.length === 0 && more) && <p className="mt-3 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{t(seenBy)}</p>}
       <p className="mt-1 text-[0.6875rem] leading-relaxed text-ink-400">{t("ownRecord.window", { days })}</p>
+      {children}
     </Card>
   );
 }

@@ -241,6 +241,25 @@ export type Authority =
     };
 
 /**
+ * Why a store finds a report wasn't made in good faith: a fixed list, so
+ * nothing free-written about anyone is ever published.
+ */
+export type BadFaithReason =
+  /**
+   * The item was in the order; the store can show it.
+   */
+  | "ItemWasIncluded"
+  /**
+   * The photo or note doesn't match the order.
+   */
+  | "EvidenceDoesNotMatch"
+  /**
+   * The same claim, again and again.
+   */
+  | "RepeatedClaim"
+  | "Other";
+
+/**
  * A goodie bag as a customer sees it on its store's page: how many are
  * left, and whether they've ordered one already.
  */
@@ -1166,6 +1185,40 @@ export interface EarnRules {
 }
 
 /**
+ * What a store finds its driver did wrong: a fixed list.
+ */
+export type FaultReason = "Late" | "ColdOrSpilled" | "WrongPlace" | "Conduct" | "Other";
+
+/**
+ * What a store finds on a report.
+ */
+export type Finding =
+  /**
+   * The report, about items it declined, wasn't made in good faith.
+   */
+  | { BadFaith: BadFaithReason }
+  /**
+   * The driver was at fault for the delivery it refunded.
+   */
+  | { DriverAtFault: FaultReason };
+
+/**
+ * A finding about someone, as anyone may read it.
+ */
+export interface FindingView {
+  event: ActionHash;
+  order: ActionHash;
+  at: Timestamp;
+  finding: Finding;
+  /**
+   * Whether it counts on their record: a customer's, only from an
+   * established store, unless an appeal they won says otherwise.
+   */
+  counts: boolean;
+  reply: string | null;
+}
+
+/**
  * The bytes of salt a grant's payload carries.
  */
 export const GRANT_SALT_BYTES = 16;
@@ -1395,6 +1448,11 @@ export interface IssueItems {
    * a fee the store paid all of.
    */
   delivery_report_worth: number | null;
+  /**
+   * The driver who delivered it, if one did -- whom a store may find at
+   * fault for a poor delivery (docs/REPUTATION.md, phase 3).
+   */
+  driver: AgentPubKey | null;
 }
 
 export type IssueKind =
@@ -1440,6 +1498,11 @@ export interface IssueView {
    * named, nothing for a decline -- `None` before it answers.
    */
   refund: number | null;
+  /**
+   * The store's answer itself, once it's given -- what a finding on the
+   * report cites (docs/REPUTATION.md).
+   */
+  answer: ActionHash | null;
   /**
    * The note and photo, for the customer and the store.
    */
@@ -1488,6 +1551,13 @@ export interface ItemIssue {
    * to give, never taken from the driver. Once per delivery.
    */
   service: boolean;
+  /**
+   * For a report on the delivery: the same evidence, sealed to the
+   * driver who brought it -- so a driver the store holds at fault knows
+   * what they're answering (docs/REPUTATION.md, phase 3). The customer is
+   * told before they send it.
+   */
+  sealed_for_driver: SealedChunks | null;
 }
 
 /**
@@ -1838,6 +1908,12 @@ export const MAX_PROMO_CODE_CHARS = 40;
 export const MAX_PROMO_USES_PER_CUSTOMER = 1000;
 
 export const MAX_PROMO_USES_TOTAL = 1000000;
+
+/**
+ * The most a reply to a store's finding about someone may say
+ * (docs/REPUTATION.md): a sentence or two, shown beside it.
+ */
+export const MAX_REPLY_CHARS = 280;
 
 /**
  * The most rewards a program offers.
@@ -2322,6 +2398,11 @@ export interface NetworkTerms {
    * check-in reports count.
    */
   min_reporter_stores: number;
+  /**
+   * How many different stores must find a customer's reports weren't
+   * made in good faith before other stores are shown it.
+   */
+  min_flagging_stores: number;
   /**
    * How far back ratings and records reach, in days.
    */
@@ -4024,7 +4105,31 @@ export type ReputationEventKind =
    * driver's word (`DeliveryStatus::Unanswered`). Recorded by the store,
    * citing its decision.
    */
-  | "NoShow";
+  | "NoShow"
+  /**
+   * A store's finding that a customer's report of items wasn't made in
+   * good faith -- its word, attributed and answerable, never its decline
+   * alone (docs/REPUTATION.md, phase 2). Recorded by the order's store,
+   * citing its own decline of that customer's report about items --
+   * never one about the delivery, which the store didn't see.
+   */
+  | {
+      BadFaithReport: {
+        reason: BadFaithReason;
+      };
+    }
+  /**
+   * A store's finding that the driver who brought an order was at fault
+   * for a poor delivery (docs/REPUTATION.md, phase 3) -- only once it has
+   * refunded the customer for it, out of its own takings. Recorded by
+   * the order's store, citing its own answer refunding the customer's
+   * report on the delivery.
+   */
+  | {
+      DeliveryFaulted: {
+        reason: FaultReason;
+      };
+    };
 
 export interface ReputationSummary {
   completed_count: number;
@@ -4053,6 +4158,18 @@ export interface ReputationSummary {
    */
   no_show_count: number;
   total_collateral_forfeited: number;
+  /**
+   * How many different established stores found a customer's reports
+   * weren't made in good faith, but for orders whose appeal they won
+   * (docs/REPUTATION.md, phase 2). Shown to other stores only from
+   * `min_flagging_stores`.
+   */
+  bad_faith_stores: number;
+  /**
+   * Deliveries a store found the driver at fault for, having refunded
+   * the customer (phase 3).
+   */
+  faulted_count: number;
 }
 
 /**

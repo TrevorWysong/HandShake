@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, HcRecord, RatingSummary, ReputationSummary, ReputationTarget, ReviewTarget, Timestamp } from "../types";
+import type { ActionHash, Finding, FindingView, HcRecord, RatingSummary, ReputationSummary, ReputationTarget, ReviewTarget, Timestamp } from "../types";
 
 /// A UI-display cache only -- see `reputation_integrity`'s doc comment.
 /// Never the actual trust decision on its own; `check_warrants`
@@ -70,4 +70,22 @@ export async function getItemRatingSummaries(itemRefs: ActionHash[]): Promise<It
 /// `next_before` to continue.
 export async function getItemReviews(itemRef: ActionHash, before: Timestamp | null = null): Promise<ReviewsPage> {
   return callZome("reputation", "get_item_reviews", { item_ref: itemRef, before });
+}
+
+/// The caller's store recording its finding on a report it's answered: that
+/// it wasn't made in good faith, or that the driver was at fault
+/// (docs/REPUTATION.md) -- a call of its own, after the answer.
+export async function recordFinding(input: { order: ActionHash; issue: ActionHash; finding: Finding }): Promise<HcRecord> {
+  return callZome("reputation", "record_finding", input);
+}
+
+/// The caller's one public reply to a store's finding about them.
+export async function replyToFinding(input: { event: ActionHash; text: string }): Promise<HcRecord> {
+  return callZome("reputation", "reply_to_finding", input);
+}
+
+/// Every store's finding about a customer or driver, newest first, with
+/// their replies.
+export async function getFindings(target: ReputationTarget): Promise<FindingView[]> {
+  return callZome("reputation", "get_findings", target);
 }

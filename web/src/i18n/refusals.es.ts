@@ -5,6 +5,18 @@ import type { Message } from "./en";
 import type { REFUSALS } from "./refusals";
 
 export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
+  "refusal.answer-the-report-first": "Responde primero al reporte.",
+  "refusal.keep-your-reply-short": "Haz tu respuesta breve.",
+  "refusal.no-driver-delivered-this-order": "Ningún repartidor entregó este pedido.",
+  "refusal.say-something-in-your-reply": "Escribe algo en tu respuesta.",
+  "refusal.that-isn-t-a-finding": "Eso no es una conclusión de una tienda.",
+  "refusal.that-report-isn-t-on-this-order": "Ese reporte no es de este pedido.",
+  "refusal.the-customer-didn-t-say-what-went": "El cliente no dijo qué salió mal, así que el repartidor no tendría nada que responder.",
+  "refusal.you-can-hold-the-driver-at-fault": "Solo puedes culpar al repartidor de una entrega por la que reembolsaste al cliente.",
+  "refusal.you-can-only-reply-to-what-a": "Solo puedes responder a lo que una tienda dijo de ti.",
+  "refusal.you-can-say-a-report-wasn-t": "Solo puedes decir que un reporte no fue de buena fe si es sobre artículos y ya lo rechazaste.",
+  "refusal.you-ve-already-replied-to-this": "Ya respondiste a esto.",
+  "refusal.you-ve-already-said-so-about-this": "Ya lo dijiste sobre este pedido.",
   "refusal.you-can-tell-the-store-about-a": "Puedes avisar a la tienda de una entrega que te trajo un repartidor, si pagaste parte de su tarifa.",
   "refusal.you-ve-already-told-the-store-about": "Ya avisaste a la tienda de la entrega.",
   "refusal.a-declined-report-refunds-nothing": "Un reporte rechazado no reembolsa nada.",

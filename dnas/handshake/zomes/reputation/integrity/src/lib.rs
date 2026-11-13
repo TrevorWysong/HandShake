@@ -12,7 +12,7 @@
 //! `LinkTypes`), so every read below only ever walks that one target's own
 //! links.
 
-use dispatch_types::{Bid, Cancellation, DeliveryOrder, DeliveryStatus, OrderOutcome, Outcome, PickupOrder, PickupStatus};
+use dispatch_types::{Bid, Cancellation, DeliveryOrder, DeliveryStatus, IssueResponse, ItemIssue, OrderOutcome, Outcome, PickupOrder, PickupStatus};
 use hdi::prelude::*;
 use handshake_integrity_support::chain::entries_since;
 use handshake_integrity_support::{first_problem, text_problem};
@@ -74,6 +74,55 @@ pub enum ReputationEventKind {
     /// driver's word (`DeliveryStatus::Unanswered`). Recorded by the store,
     /// citing its decision.
     NoShow,
+    /// A store's finding that a customer's report of items wasn't made in
+    /// good faith -- its word, attributed and answerable, never its decline
+    /// alone (docs/REPUTATION.md, phase 2). Recorded by the order's store,
+    /// citing its own decline of that customer's report about items --
+    /// never one about the delivery, which the store didn't see.
+    BadFaithReport { reason: BadFaithReason },
+    /// A store's finding that the driver who brought an order was at fault
+    /// for a poor delivery (docs/REPUTATION.md, phase 3) -- only once it has
+    /// refunded the customer for it, out of its own takings. Recorded by
+    /// the order's store, citing its own answer refunding the customer's
+    /// report on the delivery.
+    DeliveryFaulted { reason: FaultReason },
+}
+
+/// Why a store finds a report wasn't made in good faith: a fixed list, so
+/// nothing free-written about anyone is ever published.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BadFaithReason {
+    /// The item was in the order; the store can show it.
+    ItemWasIncluded,
+    /// The photo or note doesn't match the order.
+    EvidenceDoesNotMatch,
+    /// The same claim, again and again.
+    RepeatedClaim,
+    Other,
+}
+
+/// What a store finds its driver did wrong: a fixed list.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FaultReason {
+    Late,
+    ColdOrSpilled,
+    WrongPlace,
+    Conduct,
+    Other,
+}
+
+pub use handshake_integrity_support::limits::MAX_REPLY_CHARS;
+
+/// The one answer someone gives to a mark another party recorded against
+/// them on their word (`BadFaithReport`, `DeliveryFaulted`): public, short,
+/// shown beside it wherever it's shown. By the mark's subject only, once.
+#[hdk_entry_helper]
+#[derive(Clone)]
+#[serde(deny_unknown_fields)]
+pub struct MarkReply {
+    /// The `ReputationEvent` it answers.
+    pub event: ActionHash,
+    pub text: String,
 }
 
 /// Append-only by design: a single mutable
@@ -164,6 +213,7 @@ pub enum EntryTypes {
     ReputationEvent(ReputationEvent),
     Review(Review),
     ItemReview(ItemReview),
+    MarkReply(MarkReply),
 }
 
 /// One link type per (target kind, purpose) rather than one shared type
@@ -192,6 +242,8 @@ pub enum LinkTypes {
     /// owner -- so a store's rating can count only reviewers who've also
     /// rated an order from someone else (`get_rating_summary`).
     ReviewerToReview,
+    /// From a mark to its subject's reply.
+    EventToReply,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -203,6 +255,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::ReputationEvent(event) => validate_event(&event, action.author()),
             EntryTypes::Review(review) => validate_review(&review, action.author(), action.prev_action()),
             EntryTypes::ItemReview(review) => validate_item_review(&review, action.author(), action.prev_action()),
+            EntryTypes::MarkReply(reply) => validate_reply(&reply, action.author(), action.timestamp(), action.prev_action()),
         },
         // Reputation is an append-only record.
         Checked::Update { .. } => Ok(ValidateCallbackResult::Invalid("reputation entries can't be changed".into())),
@@ -454,6 +507,13 @@ fn validate_event(event: &ReputationEvent, author: &AgentPubKey) -> ExternResult
         return Ok(ValidateCallbackResult::Invalid("a reputation event's counterparty must be its author".into()));
     }
     let basis = must_get_valid_record(event.basis.clone())?;
+    // A store's finding on a report rests on its own answer to it.
+    if let Some(answer) = decode::<IssueResponse>(&basis) {
+        return validate_finding(event, author, &basis, &answer);
+    }
+    if matches!(event.kind, ReputationEventKind::BadFaithReport { .. } | ReputationEventKind::DeliveryFaulted { .. }) {
+        return Ok(ValidateCallbackResult::Invalid("a store's finding cites its own answer to the report".into()));
+    }
     // The order version showing the parties, and the store's decision when
     // the event rests on one.
     let (version, outcome) = match decode::<OrderOutcome>(&basis) {
@@ -510,6 +570,71 @@ fn validate_event(event: &ReputationEvent, author: &AgentPubKey) -> ExternResult
     };
     if !allowed {
         return Ok(ValidateCallbackResult::Invalid("only the order's own parties record events about it, as its records show them, and only its store an outcome".into()));
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// A store's finding on a customer's report, citing `answer` -- its own
+/// `IssueResponse` to it. That the report wasn't made in good faith: only
+/// on one about items it declined (it never saw the delivery). That the
+/// driver was at fault: only on one about the delivery it accepted, so
+/// refunded -- the store pays before it can say so.
+fn validate_finding(event: &ReputationEvent, author: &AgentPubKey, answer: &Record, response: &IssueResponse) -> ExternResult<ValidateCallbackResult> {
+    if answer.action().author() != author {
+        return Ok(ValidateCallbackResult::Invalid("a finding cites its recorder's own answer to the report".into()));
+    }
+    let report = must_get_valid_record(response.issue.clone())?;
+    let Some(issue) = decode::<ItemIssue>(&report) else {
+        return Ok(ValidateCallbackResult::Invalid("a finding cites an answer to a report".into()));
+    };
+    if issue.order != event.order_ref {
+        return Ok(ValidateCallbackResult::Invalid("a finding is about its own order".into()));
+    }
+    let Some(order) = Parties::of(&must_get_valid_record(issue.received.clone())?)? else {
+        return Ok(ValidateCallbackResult::Invalid("a finding's report cites a version of an order".into()));
+    };
+    if author != &order.merchant || report.action().author() != &order.requester {
+        return Ok(ValidateCallbackResult::Invalid("only the order's store makes a finding, on its customer's report".into()));
+    }
+    let allowed = match (&event.kind, &event.target) {
+        (ReputationEventKind::BadFaithReport { .. }, ReputationTarget::Customer(customer)) => customer == &order.requester && !response.accept && !issue.service,
+        (ReputationEventKind::DeliveryFaulted { .. }, ReputationTarget::Driver(driver)) => order.driver.as_ref() == Some(driver) && response.accept && issue.service,
+        _ => false,
+    };
+    if !allowed {
+        return Ok(ValidateCallbackResult::Invalid("a store finds a report wasn't made in good faith only on one about items it declined, and a driver at fault only on a report on the delivery it refunded".into()));
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// A reply to a mark: by its subject, to one recorded on another party's
+/// word, short, once.
+fn validate_reply(reply: &MarkReply, author: &AgentPubKey, at: Timestamp, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
+    let marked = must_get_valid_record(reply.event.clone())?;
+    let Some(event) = decode::<ReputationEvent>(&marked) else {
+        return Ok(ValidateCallbackResult::Invalid("a reply answers a mark".into()));
+    };
+    let subject = match (&event.kind, &event.target) {
+        (ReputationEventKind::BadFaithReport { .. }, ReputationTarget::Customer(agent)) | (ReputationEventKind::DeliveryFaulted { .. }, ReputationTarget::Driver(agent)) => agent,
+        _ => return Ok(ValidateCallbackResult::Invalid("only a store's finding can be replied to".into())),
+    };
+    if subject != author {
+        return Ok(ValidateCallbackResult::Invalid("only the one a mark is about replies to it".into()));
+    }
+    if reply.text.trim().is_empty() {
+        return Ok(ValidateCallbackResult::Invalid("a reply says something".into()));
+    }
+    if let Some(problem) = text_problem("a reply", &reply.text, MAX_REPLY_CHARS) {
+        return Ok(ValidateCallbackResult::Invalid(problem));
+    }
+    // Dated after the mark, so the walk below sees every reply to it.
+    if at < marked.action().timestamp() {
+        return Ok(ValidateCallbackResult::Invalid("a reply comes after the mark it answers".into()));
+    }
+    let Some(prev) = prev_action else { return Ok(ValidateCallbackResult::Invalid("a reply can't open a chain".into())) };
+    let again = handshake_integrity_support::chain::wrote_since::<MarkReply>(author, prev, marked.action().timestamp(), UnitEntryTypes::MarkReply.try_into()?, |r| r.event == reply.event)?;
+    if again {
+        return Ok(ValidateCallbackResult::Invalid("a mark is replied to once".into()));
     }
     Ok(ValidateCallbackResult::Valid)
 }
@@ -648,6 +773,8 @@ pub fn event_tag(kind: &ReputationEventKind, order_original: &ActionHash) -> Lin
         ReputationEventKind::CheckInRefused => (7, 0),
         ReputationEventKind::OfferLapsed => (8, 0),
         ReputationEventKind::NoShow => (9, 0),
+        ReputationEventKind::BadFaithReport { reason } => (10, *reason as u64),
+        ReputationEventKind::DeliveryFaulted { reason } => (11, *reason as u64),
     };
     let mut bytes = vec![code];
     bytes.extend_from_slice(&amount.to_be_bytes());

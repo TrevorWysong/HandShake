@@ -82,6 +82,12 @@ pub struct ItemIssue {
     /// to give, never taken from the driver. Once per delivery.
     #[serde(default)]
     pub service: bool,
+    /// For a report on the delivery: the same evidence, sealed to the
+    /// driver who brought it -- so a driver the store holds at fault knows
+    /// what they're answering (docs/REPUTATION.md, phase 3). The customer is
+    /// told before they send it.
+    #[serde(default)]
+    pub sealed_for_driver: Option<SealedChunks>,
 }
 
 /// What a report on a delivery's service is worth: the customer's share of

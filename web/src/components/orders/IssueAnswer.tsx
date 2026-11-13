@@ -8,20 +8,23 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Gift } from "lucide-react";
 import { respondToIssue } from "../../holochain/zomes/dispatch";
 import { grantPoints } from "../../holochain/zomes/rewards";
-import type { IssueItems, IssueView } from "../../holochain/types";
+import type { Finding, IssueItems, IssueView } from "../../holochain/types";
+import { recordFinding } from "../../holochain/zomes/reputation";
+import { FindingChoice, type FindingKind } from "./FindingChoice";
 import { GoodwillPoints } from "../rewards/GoodwillPoints";
 import { usePointsName, useRunningProgram } from "../../lib/hooks/useRunningProgram";
 import { partIn, pickedPoints, quickParts } from "../../lib/orders/issueAnswer";
 import { centsTyped, currencySymbol, formatCents, fromMinorUnits } from "../../lib/ui/format";
 import { useAction } from "../../lib/hooks/useAction";
 import { Button, Chip, Input, Notice, SegmentedTabs, Switch } from "../ui";
-import { useT } from "../../i18n";
+import { useT, type MessageKey } from "../../i18n";
 
 type Refund = "all" | "part" | "none";
 
-/// `onAnswered` is told why points couldn't be given, if they couldn't --
-/// for the report's row to say, since this goes once it's answered.
-export function IssueAnswer({ orderRef, issue, items, onAnswered }: { orderRef: Uint8Array; issue: IssueView; items: IssueItems; onAnswered: (grantProblem: string | null) => Promise<void> }) {
+/// `onAnswered` is told what couldn't be done after the answer -- points
+/// not given, a finding not recorded -- for the report's row to say, since
+/// this goes once it's answered.
+export function IssueAnswer({ orderRef, issue, items, onAnswered }: { orderRef: Uint8Array; issue: IssueView; items: IssueItems; onAnswered: (problems: string[]) => Promise<void> }) {
   const t = useT();
   const answering = useAction();
   const [refund, setRefund] = useState<Refund>("all");
@@ -34,23 +37,35 @@ export function IssueAnswer({ orderRef, issue, items, onAnswered }: { orderRef: 
   const pointsName = usePointsName(running);
   const given = giving && running ? pickedPoints(running, points) : null;
 
+  // A finding fits only some answers: bad faith on a declined report about
+  // items; the driver at fault on a refunded report about the delivery,
+  // with something the customer said for the driver to answer.
+  const [finding, setFinding] = useState<Finding | null>(null);
+  const findingKind: FindingKind | null = refund === "none" ? (issue.service ? null : "badFaith") : issue.service ? "driverAtFault" : null;
+  const customerSaid = !!issue.evidence && (issue.evidence.note.trim().length > 0 || issue.evidence.photo_data_uri.length > 0);
+  // One chosen for another answer (the refund changed since) doesn't carry over.
+  const fits = (f: Finding) => (findingKind === "badFaith" ? "BadFaith" in f : findingKind === "driverAtFault" && "DriverAtFault" in f);
+  const findingMade = finding && fits(finding) ? finding : null;
+
   const part = partIn(partCents, issue.value);
   const refunds = refund === "all" ? issue.value : refund === "part" ? part : 0;
   const ready = refunds !== null && (!giving || !running || (given !== null && note.trim().length > 0));
 
   const confirm = () => answering.run(async () => {
     await respondToIssue(issue.issue, refund !== "none", refund === "part" ? part : null);
-    // The answer stands on its own: points that couldn't be given are said
-    // so, never a reason to undo it.
-    let grantProblem: string | null = null;
-    if (given !== null && running) {
+    // The answer stands on its own: points or a finding that couldn't be
+    // recorded are said so, never a reason to undo it.
+    const problems: string[] = [];
+    const attempt = async (what: MessageKey, step: () => Promise<unknown>) => {
       try {
-        await grantPoints({ to: items.customer, catalog_ref: items.catalog_ref, points: given, note: note.trim(), order: orderRef });
+        await step();
       } catch (e) {
-        grantProblem = e instanceof Error ? e.message : String(e);
+        problems.push(t(what, { why: e instanceof Error ? e.message : String(e) }));
       }
-    }
-    await onAnswered(grantProblem);
+    };
+    if (given !== null && running) await attempt("issueAnswer.grantFailed", () => grantPoints({ to: items.customer, catalog_ref: items.catalog_ref, points: given, note: note.trim(), order: orderRef }));
+    if (findingMade) await attempt("findingChoice.failed", () => recordFinding({ order: orderRef, issue: issue.issue, finding: findingMade }));
+    await onAnswered(problems);
   });
 
   const label =
@@ -126,6 +141,15 @@ export function IssueAnswer({ orderRef, issue, items, onAnswered }: { orderRef: 
             )}
           </AnimatePresence>
         </div>
+      )}
+
+      {findingKind && (
+        <FindingChoice
+          kind={findingKind}
+          finding={findingMade}
+          onChange={setFinding}
+          unavailable={findingKind === "driverAtFault" && !customerSaid ? "findingChoice.faultNothingSaid" : undefined}
+        />
       )}
 
       <Button variant={refund === "none" ? "secondary" : "primary"} className="mt-3 w-full py-2" loading={answering.busy} disabled={!ready} onClick={confirm}>

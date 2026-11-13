@@ -16,6 +16,7 @@ import { carryRefusal, customerRefusal, describeLoad } from "../../../lib/drivin
 import { useTerms } from "../../../store/network";
 import { POLL, isOrderOrBidSignal } from "../../../lib/network/poll";
 import { useT } from "../../../i18n";
+import { DriverFaults } from "../../../components/reputation/DriverFaults";
 import { BidWeightBreakdown, HowBidsCompare } from "../../../components/orders/BidWeights";
 
 /// A bid's bidder, with their warrant count and driver track record.
@@ -130,6 +131,7 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
                         <span className="text-xs text-ink-400">· {t("order.completed", { count: stats.completedCount })}</span>
                         {stats.droppedCount > 0 && <span className="text-xs text-amber-600 dark:text-amber-400">· {t("order.dropped", { count: stats.droppedCount })}</span>}
                         {stats.lapsedCount > 0 && <span className="text-xs text-ink-400">· {t("order.lapsed", { count: stats.lapsedCount })}</span>}
+                        {stats.faultedCount > 0 && <DriverFaults driver={bid.bidder} count={stats.faultedCount} />}
                       </div>
                     )}
                     {load && <p className="mt-1 text-xs text-ink-400">{describeLoad(load)}</p>}

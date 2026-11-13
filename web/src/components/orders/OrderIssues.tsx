@@ -20,6 +20,7 @@ import { useResource } from "../../lib/hooks/useResource";
 import { Button, Card, Notice, Stepper, Textarea } from "../ui";
 import { IssueAnswer } from "./IssueAnswer";
 import { DeliveryReportSheet } from "./DeliveryReportSheet";
+import { ReporterStanding } from "../reputation/ReporterStanding";
 import { PhotoInput } from "../PhotoInput";
 import { Sheet } from "../Sheet";
 import { OrderAppeal } from "./OrderAppeal";
@@ -72,6 +73,8 @@ export function OrderIssues({ orderRef, role, onAnswered }: { orderRef: Uint8Arr
           <p className="mt-0.5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{subline(role, decisions, settling, answersUntil)}</p>
         </div>
       </div>
+
+      {role === "store" && open && issues.some((issue) => !issue.service && issue.accepted === null) && <ReporterStanding customer={items.customer} />}
 
       {issues.length > 0 && (
         <ul className="divide-y divide-ink-100 border-t border-ink-100 dark:divide-ink-800 dark:border-ink-800">
@@ -158,9 +161,9 @@ function StorePayoutNote({ decisions, orderTotal }: { decisions: OrderDecisions;
 
 function IssueRow({ orderRef, issue, items, role, canAnswer, onAnswered }: { orderRef: Uint8Array; issue: IssueView; items: IssueItems; role: Role; canAnswer: boolean; onAnswered: () => Promise<void> }) {
   const t = useT();
-  // Points given with the answer that couldn't be: said here, as the answer
-  // form goes once it's answered.
-  const [grantProblem, setGrantProblem] = useState<string | null>(null);
+  // What couldn't be done with the answer -- points, a finding: said here,
+  // as the answer form goes once it's answered.
+  const [problems, setProblems] = useState<string[]>([]);
   const nameOf = (line: number) => {
     const ordered = items.lines[line];
     return ordered ? [ordered.name, ...ordered.choices].join(", ") : translate("issues.anItem");
@@ -209,13 +212,13 @@ function IssueRow({ orderRef, issue, items, role, canAnswer, onAnswered }: { ord
           orderRef={orderRef}
           issue={issue}
           items={items}
-          onAnswered={async (problem) => {
-            setGrantProblem(problem);
+          onAnswered={async (left) => {
+            setProblems(left);
             await onAnswered();
           }}
         />
       )}
-      {grantProblem && <Notice tone="warn" className="mt-2">{t("issueAnswer.grantFailed", { why: grantProblem })}</Notice>}
+      {problems.map((problem) => <Notice key={problem} tone="warn" className="mt-2">{problem}</Notice>)}
     </li>
   );
 }

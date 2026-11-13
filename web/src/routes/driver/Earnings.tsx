@@ -1,7 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 import { LoadProblem } from "../../components/LoadProblem";
 import { motion } from "framer-motion";
-import { getReputationSummary } from "../../holochain/zomes/reputation";
+import { getFindings, getReputationSummary } from "../../holochain/zomes/reputation";
 import { myAgentPubKey } from "../../holochain/client";
 import { bytesToHex } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
@@ -11,6 +11,7 @@ import { InfoSheet } from "../../components/InfoSheet";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { EarningsReport } from "./EarningsReport";
 import { useT } from "../../i18n";
+import { OwnFindings } from "../../components/reputation/OwnFindings";
 import { useTerms } from "../../store/network";
 
 export function Earnings() {
@@ -21,6 +22,7 @@ export function Earnings() {
   // Driver-scoped: deliveries only, never completions at a store this
   // agent might also run.
   const { data: rep, error: repError, reload: reloadRep } = useResource(`driver-rep:${meHex}`, () => getReputationSummary({ Driver: me }));
+  const { data: findings, reload: reloadFindings } = useResource(`own-findings:driver:${meHex}`, () => getFindings({ Driver: me }));
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="px-4 pt-4 pb-8">
@@ -47,7 +49,7 @@ export function Earnings() {
             <p className="flex items-center gap-2 text-sm font-bold text-ink-900 dark:text-ink-50">
               <ShieldCheck size={16} className="text-presence-600" /> {t("earnings.reputation")}
             </p>
-            <InfoSheet title={t("earnings.repHow")} sections={(["counts", "matching", "seen", "fair"] as const).map((part) => ({ title: t(`earnings.rep.${part}`), body: t(`earnings.rep.${part}Detail`, { clean: terms.clean_start_deliveries }) }))} />
+            <InfoSheet title={t("earnings.repHow")} sections={(["counts", "matching", "seen", "fair", "findings"] as const).map((part) => ({ title: t(`earnings.rep.${part}`), body: t(`earnings.rep.${part}Detail`, { clean: terms.clean_start_deliveries }) }))} />
           </div>
           <p className="-mt-2 mb-3 text-xs text-ink-400">{t("reputation.window", { count: terms.reputation_window_days })}</p>
           {rep === undefined && repError ? (
@@ -65,8 +67,10 @@ export function Earnings() {
               <Stat label={t("earnings.dropped")} value={rep.dropped_count} tone={rep.dropped_count > 0 ? "danger" : "default"} />
               <Stat label={t("earnings.disputes")} value={rep.dispute_raised_count} />
               <Stat label={t("earnings.against")} value={rep.dispute_resolved_against_count} tone={rep.dispute_resolved_against_count > 0 ? "danger" : "default"} />
+              <Stat label={t("earnings.faulted")} value={rep.faulted_count} tone={rep.faulted_count > 0 ? "danger" : "default"} />
             </motion.div>
           )}
+          <OwnFindings findings={findings} intro={t("findings.driverIntro")} onReplied={reloadFindings} />
         </Card>
       </motion.div>
     </motion.div>

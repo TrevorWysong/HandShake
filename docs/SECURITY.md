@@ -351,6 +351,16 @@ Reads that only show something -- menus, bags and promos while browsing, a birth
 - **A poor delivery is the store's to make good, never the driver's.** A customer can report the delivery itself (`ItemIssue::service`): only on one a driver delivered (not one they collected), naming no items, once, worth their share of that driver's fee -- the same split every payment of it uses (`service_value`). The store answers it as any report, all, part or none, and refunds it out of what it collects for the food: the driver's pay is a hold of its own that no settlement touches, so no store can pull a driver's pay to please a customer. A driver at fault answers through their reviews and reputation. Like any refund, it's never more than the food cost.
 - **Points for anything else** -- a late or cold order no report covers -- are a "Give points" on the store's finished orders: the same grant, citing that order. The store's program is read only when the sheet opens, so a long order history costs nothing.
 
+## Findings about customers and drivers (docs/REPUTATION.md)
+
+- **A store's decline marks nobody.** Refusing a refund is the store's discretion. Only an explicit finding, with a reason from a fixed list, is recorded -- no free text about anyone is published.
+- **Each finding cites the store's own answer**, and validation holds it to its kind: bad faith only on a report about items the store declined (`BadFaithReport`); the driver at fault only on a report about the delivery the store refunded (`DeliveryFaulted`), against the driver who delivered it. Nobody but the order's store can record either.
+- **Bad faith counts only from established stores** (`min_flagger_orders`, `min_flagger_customers`, the owner's own completions excluded), once per store, is shown only from `min_flagging_stores` different stores and only to stores answering that customer's reports about items, and stops counting once the customer wins an appeal on that order. Drivers never see it.
+- **A driver at fault costs the store first** -- it refunded the customer -- and moves no money from the driver; it's shown to customers choosing a driver, never weighed by matching.
+- **The one it's about sees it and answers it.** A customer or driver sees every finding about them, counted or not, and can reply once (`MarkReply`): validation refuses a reply from anyone else, a second one, or one past `MAX_REPLY_CHARS`.
+- **What the driver reads:** a report on the delivery is also sealed to its driver; the customer is told so before sending. Anyone else gets nothing from it.
+- **Reading stays bounded:** findings are rare, and each costs a few reads only where it exists; the reputation window bounds everything read.
+
 ## Driver fee schedules
 
 - **A driver's fee schedule stays on their device.** A rate per mile or km, or up to ten distance bands with what's asked past the last, only sets the price of the driver's own bids, by hand or automatically. Nothing about it is published, so customers and stores see only the fee for their order, and the network has nothing new to validate or store. Every bid is still bounded by validation: never zero, never over the customer's cap (`integrity/src/bids.rs`).

@@ -20,6 +20,9 @@ use handshake_coordinator_support::{all_arrived, arrived, call_local, call_role,
 use std::collections::BTreeMap;
 use reputation_integrity::*;
 
+mod findings;
+pub use findings::*;
+
 /// Where a `ReputationTarget`'s events live: the link base and type.
 fn event_links(target: &ReputationTarget) -> (AnyLinkableHash, LinkTypes) {
     match target {
@@ -166,6 +169,16 @@ pub struct ReputationSummary {
     #[serde(default)]
     pub no_show_count: u32,
     pub total_collateral_forfeited: u64,
+    /// How many different established stores found a customer's reports
+    /// weren't made in good faith, but for orders whose appeal they won
+    /// (docs/REPUTATION.md, phase 2). Shown to other stores only from
+    /// `min_flagging_stores`.
+    #[serde(default)]
+    pub bad_faith_stores: u32,
+    /// Deliveries a store found the driver at fault for, having refunded
+    /// the customer (phase 3).
+    #[serde(default)]
+    pub faulted_count: u32,
 }
 
 /// A UI-display cache only -- see the integrity crate's doc comment. Do not
@@ -203,9 +216,16 @@ pub fn get_reputation_summary(target: ReputationTarget) -> ExternResult<Reputati
     // they've completed enough deliveries -- a throwaway identity's reports
     // don't. Each reporter is looked up once.
     let mut seasoned: BTreeMap<AgentPubKey, bool> = BTreeMap::new();
+    // A store's findings that a customer's reports weren't made in good
+    // faith count by store, not by order (`flagging_stores`).
+    let mut flags: Vec<(AgentPubKey, ActionHash)> = Vec::new();
     for link in links {
         let tag = link.tag.into_inner();
         if tag.len() != 1 + 8 + 39 {
+            continue;
+        }
+        if tag[0] == BAD_FAITH {
+            flags.push((link.author, ActionHash::from_raw_39(tag[9..].to_vec())));
             continue;
         }
         if tag[0] == CHECK_IN_REFUSED {
@@ -237,10 +257,12 @@ pub fn get_reputation_summary(target: ReputationTarget) -> ExternResult<Reputati
             8 => summary.lapsed_count += 1,
             9 => summary.no_show_count += 1,
             CHECK_IN_REFUSED => summary.check_in_refused_count += 1,
+            FAULTED => summary.faulted_count += 1,
             4 => summary.total_collateral_forfeited += amount,
             _ => {}
         }
     }
+    summary.bad_faith_stores = flagging_stores(&flags)?;
     if let Some(earlier) = on_previous_network::<_, ReputationSummary>(&target, |t| ("get_reputation_summary", t))? {
         summary.merge(&earlier);
     }
@@ -259,6 +281,8 @@ impl ReputationSummary {
         self.check_in_refused_count += other.check_in_refused_count;
         self.no_show_count += other.no_show_count;
         self.total_collateral_forfeited += other.total_collateral_forfeited;
+        self.bad_faith_stores += other.bad_faith_stores;
+        self.faulted_count += other.faulted_count;
     }
 }
 
@@ -573,8 +597,15 @@ pub fn get_item_reviews(input: ItemReviewsInput) -> ExternResult<ReviewsPage> {
 #[cfg(feature = "test-utils")]
 mod test_utils {
     use hdk::prelude::*;
-    use reputation_integrity::{EntryTypes, LinkTypes, Review};
-    handshake_coordinator_support::raw_link_test_externs!(StoreToEvent, DriverToEvent, CustomerToEvent, StoreToReview, DriverToReview, OrderToReview, ItemToReview, ReviewerToReview);
+    use reputation_integrity::{EntryTypes, LinkTypes, MarkReply, Review};
+    handshake_coordinator_support::raw_link_test_externs!(StoreToEvent, DriverToEvent, CustomerToEvent, StoreToReview, DriverToReview, OrderToReview, ItemToReview, ReviewerToReview, EventToReply);
+
+    /// Writes a reply to a finding exactly as given, past the coordinator's
+    /// checks, so a test can prove what validation refuses.
+    #[hdk_extern]
+    pub fn create_raw_mark_reply_for_testing(reply: MarkReply) -> ExternResult<ActionHash> {
+        create_entry(&EntryTypes::MarkReply(reply))
+    }
 
     /// Writes a review exactly as given, past the coordinator's checks --
     /// what a modified client could -- so a test can prove what validation

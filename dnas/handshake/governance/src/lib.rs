@@ -109,6 +109,12 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub min_reporter_stores: Option<u32>,
     #[serde(default)]
+    pub min_flagger_orders: Option<u32>,
+    #[serde(default)]
+    pub min_flagger_customers: Option<u32>,
+    #[serde(default)]
+    pub min_flagging_stores: Option<u32>,
+    #[serde(default)]
     pub reputation_window_days: Option<u32>,
     #[serde(default)]
     pub max_store_wait_secs: Option<u64>,
@@ -453,6 +459,26 @@ pub fn max_offers_per_order() -> u32 {
 /// themselves, can't bury a competitor in reports.
 pub fn min_reporter_stores() -> u32 {
     setting(|p| p.min_reporter_stores, 3)
+}
+
+/// How many completed orders a store must have before its finding that a
+/// customer's report wasn't made in good faith counts on their record
+/// (docs/REPUTATION.md, phase 2) -- a store just opened, or made to flag,
+/// counts for nothing.
+pub fn min_flagger_orders() -> u32 {
+    setting(|p| p.min_flagger_orders, 20)
+}
+
+/// How many different customers those orders must be from -- so a store
+/// can't qualify on its own second accounts' orders alone.
+pub fn min_flagger_customers() -> u32 {
+    setting(|p| p.min_flagger_customers, 10)
+}
+
+/// How many different stores must have made that finding before other
+/// stores are shown it: one store's view of a customer never follows them.
+pub fn min_flagging_stores() -> u32 {
+    setting(|p| p.min_flagging_stores, 2).max(1)
 }
 
 /// How far back a reputation reaches: ratings and records count what
