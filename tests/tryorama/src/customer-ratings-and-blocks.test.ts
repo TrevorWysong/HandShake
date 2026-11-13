@@ -38,9 +38,10 @@ await runScenario(async (scenario) => {
   // A score shows from one rating; a rater's ratings stop counting once two
   // or more are more than half thumbs-down; a store is established from one
   // completed order; and a report window long enough that no order settles
-  // before its customer reports it.
+  // before its customer reports it; and room for the many orders it places.
   const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({
     report_window_secs: 300,
+    max_pending_orders: 20,
     min_flagger_orders: 1,
     min_flagger_customers: 1,
     min_customer_ratings: 1,
