@@ -35,6 +35,7 @@ import { OrderIssues } from "../../components/orders/OrderIssues";
 import { StoreAppeals } from "../../components/orders/StoreAppeals";
 import { useT, type MessageKey } from "../../i18n";
 import { ForTheStore, TicketAllergies } from "./OrderHandoffs";
+import { GivePoints } from "../../components/rewards/GivePoints";
 
 
 const TABS = [
@@ -356,6 +357,8 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
       {(order.kitchen_note || order.sealed_customer_name) && <ForTheStore orderHex={row.hex} orderRef={row.ref} />}
       {!leftTheStore(row) && <CustomerHistory customer={order.requester} />}
       {children}
+      {/* Once it's out of the kitchen: a thank-you, or an apology no report covers. */}
+      {leftTheStore(row) && !bytesEqual(order.requester, order.merchant) && <GivePoints order={row.ref} customer={order.requester} catalogRef={order.catalog_ref} />}
     </Card>
   );
 }

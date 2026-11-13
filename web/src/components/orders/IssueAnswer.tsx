@@ -7,12 +7,12 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Gift } from "lucide-react";
 import { respondToIssue } from "../../holochain/zomes/dispatch";
-import { grantPoints, programOf } from "../../holochain/zomes/rewards";
-import { bytesToHex } from "../../holochain/decode";
-import { MAX_GRANT_NOTE_CHARS, MAX_GRANT_POINTS, type IssueItems, type IssueView } from "../../holochain/types";
-import { goodwillChoices, partIn, pointsIn, quickParts } from "../../lib/orders/issueAnswer";
+import { grantPoints } from "../../holochain/zomes/rewards";
+import type { IssueItems, IssueView } from "../../holochain/types";
+import { GoodwillPoints } from "../rewards/GoodwillPoints";
+import { usePointsName, useRunningProgram } from "../../lib/hooks/useRunningProgram";
+import { partIn, pickedPoints, quickParts } from "../../lib/orders/issueAnswer";
 import { centsTyped, currencySymbol, formatCents, fromMinorUnits } from "../../lib/ui/format";
-import { useResource } from "../../lib/hooks/useResource";
 import { useAction } from "../../lib/hooks/useAction";
 import { Button, Chip, Input, Notice, SegmentedTabs, Switch } from "../ui";
 import { useT } from "../../i18n";
@@ -30,11 +30,9 @@ export function IssueAnswer({ orderRef, issue, items, onAnswered }: { orderRef: 
   const [points, setPoints] = useState<number | null>(null);
   const [note, setNote] = useState(() => t("issueAnswer.defaultNote"));
   // Points only where there's a program running to spend them in.
-  const { data: program = null } = useResource(`program:${bytesToHex(items.catalog_ref)}`, () => programOf(items.catalog_ref));
-  const running = program?.program.active ? program.program : null;
-  const choices = running ? goodwillChoices(running.rewards) : [];
-  const pointsName = running?.points_name || t("issueAnswer.points");
-  const given = giving && running ? (points ?? choices[0]?.points ?? null) : null;
+  const running = useRunningProgram(items.catalog_ref) ?? null;
+  const pointsName = usePointsName(running);
+  const given = giving && running ? pickedPoints(running, points) : null;
 
   const part = partIn(partCents, issue.value);
   const refunds = refund === "all" ? issue.value : refund === "part" ? part : 0;
@@ -121,33 +119,8 @@ export function IssueAnswer({ orderRef, issue, items, onAnswered }: { orderRef: 
           <AnimatePresence initial={false}>
             {giving && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {choices.map((choice) => (
-                    <Chip key={choice.points} active={given === choice.points} onClick={() => setPoints(choice.points)}>
-                      {choice.reward ? t("issueAnswer.enoughFor", { reward: choice.reward, points: choice.points.toLocaleString() }) : choice.points.toLocaleString()}
-                    </Chip>
-                  ))}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={MAX_GRANT_POINTS}
-                    step={1}
-                    value={given ?? 0}
-                    onChange={(e) => setPoints(pointsIn(e.target.valueAsNumber) ?? given)}
-                    suffix={pointsName}
-                    aria-label={t("issueAnswer.pointsLabel", { points: pointsName })}
-                    className="min-w-0 flex-[1_1_8rem] py-1.5 text-sm"
-                  />
-                  <Input
-                    value={note}
-                    maxLength={MAX_GRANT_NOTE_CHARS}
-                    onChange={(e) => setNote(e.target.value)}
-                    aria-label={t("issueAnswer.noteLabel")}
-                    placeholder={t("issueAnswer.defaultNote")}
-                    className="min-w-0 flex-[2_1_12rem] py-1.5 text-sm"
-                  />
+                <div className="mt-3">
+                  <GoodwillPoints program={running} points={points} onPoints={setPoints} note={note} onNote={setNote} />
                 </div>
               </motion.div>
             )}

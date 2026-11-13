@@ -5,6 +5,8 @@ import type { Message } from "./en";
 import type { REFUSALS } from "./refusals";
 
 export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
+  "refusal.you-can-tell-the-store-about-a": "Puedes avisar a la tienda de una entrega que te trajo un repartidor, si pagaste parte de su tarifa.",
+  "refusal.you-ve-already-told-the-store-about": "Ya avisaste a la tienda de la entrega.",
   "refusal.a-declined-report-refunds-nothing": "Un reporte rechazado no reembolsa nada.",
   "refusal.to-refund-nothing-decline-the-report": "Para no reembolsar nada, rechaza el reporte.",
   "refusal.this-account-s-orders-and-payments-couldn": "No se pudieron comprobar los pedidos y pagos de esta cuenta, así que no se ha movido. Inténtalo de nuevo en un momento.",

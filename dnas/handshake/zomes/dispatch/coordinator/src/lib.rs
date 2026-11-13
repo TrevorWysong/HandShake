@@ -122,6 +122,9 @@ mod test_utils {
         /// latest if left out.
         #[serde(default)]
         pub received: Option<ActionHash>,
+        /// A report on the delivery itself.
+        #[serde(default)]
+        pub service: bool,
     }
 
     /// An `ItemIssue` as given, with honestly sealed (empty) evidence and
@@ -140,6 +143,7 @@ mod test_utils {
             received,
             lines: input.lines,
             sealed_for_store: handshake_coordinator_support::seal_chunked(&me, &evidence)?,
+            service: input.service,
         };
         create_entry(&EntryTypes::ItemIssue(issue))
     }

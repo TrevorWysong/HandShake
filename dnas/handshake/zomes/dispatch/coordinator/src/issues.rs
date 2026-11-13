@@ -44,14 +44,21 @@ pub struct IssueItems {
     pub lines: Vec<crate::lines::LineView>,
     pub customer: AgentPubKey,
     pub catalog_ref: ActionHash,
+    /// What a report on the delivery itself would be worth -- the
+    /// customer's share of the fee for the driver who brought it -- or
+    /// `None` where there's none to make: a pickup, one they collected, or
+    /// a fee the store paid all of.
+    pub delivery_report_worth: Option<u64>,
 }
 
 /// An order's items as reports are made against them -- public, as the
 /// order's lines are.
 #[hdk_extern]
 pub fn get_issue_items(order: ActionHash) -> ExternResult<IssueItems> {
-    let terms = priced(&original_action_of(order)?)?;
-    Ok(IssueItems { order_total: terms.order_total, lines: terms.lines, customer: terms.requester, catalog_ref: terms.catalog_ref })
+    let order = original_action_of(order)?;
+    let terms = priced(&order)?;
+    let delivery_report_worth = service_worth(resolve_latest(order)?.action_address())?.filter(|worth| *worth > 0);
+    Ok(IssueItems { order_total: terms.order_total, lines: terms.lines, customer: terms.requester, catalog_ref: terms.catalog_ref, delivery_report_worth })
 }
 
 fn priced(order: &ActionHash) -> ExternResult<Priced> {
@@ -77,10 +84,15 @@ pub struct ReportIssueInput {
     /// It had an allergen the store didn't say it had -- sealed with the note.
     #[serde(default)]
     pub allergen: bool,
+    /// The delivery itself was poor, not an item: no lines, worth the
+    /// customer's share of its fee (`ItemIssue::service`).
+    #[serde(default)]
+    pub service: bool,
 }
 
-/// The customer reporting items missing or wrong. Reported before the store
-/// settles the order, it's refunded unless the store declines it.
+/// The customer reporting items missing or wrong, or that the delivery
+/// itself was poor. Reported before the store settles the order, it's
+/// refunded unless the store declines it.
 #[hdk_extern]
 pub fn report_issue(input: ReportIssueInput) -> ExternResult<Record> {
     let order = original_action_of(input.order)?;
@@ -91,8 +103,13 @@ pub fn report_issue(input: ReportIssueInput) -> ExternResult<Record> {
     if decisions_of(&order)?.settlement.is_some() {
         return Err(guest("The store has already settled this order."));
     }
-    // Each line reported once -- validation's rule, told first.
-    let reported: Vec<u32> = get_issues_for_order(order.clone())?.into_iter().flat_map(|view| view.lines.into_iter().map(|line| line.line)).collect();
+    // Each line, and the delivery, reported once -- validation's rules,
+    // told first.
+    let views = get_issues_for_order(order.clone())?;
+    if input.service && (!input.lines.is_empty() || views.iter().any(|view| view.service)) {
+        return Err(guest("You've already told the store about the delivery."));
+    }
+    let reported: Vec<u32> = views.into_iter().flat_map(|view| view.lines.into_iter().map(|line| line.line)).collect();
     if input.lines.iter().any(|line| reported.contains(&line.line)) {
         return Err(guest("You've already reported a problem with one of these items."));
     }
@@ -116,7 +133,11 @@ pub fn report_issue(input: ReportIssueInput) -> ExternResult<Record> {
         received: latest.action_address().clone(),
         lines: input.lines,
         sealed_for_store: seal_chunked(&terms.merchant, &evidence)?,
+        service: input.service,
     };
+    if issue.service && service_worth(&issue.received)?.unwrap_or(0) == 0 {
+        return Err(guest("You can tell the store about a delivery a driver brought you, if you paid toward its fee."));
+    }
     let hash = create_entry(&EntryTypes::ItemIssue(issue))?;
     create_link(order.clone(), hash.clone(), LinkTypes::OrderToIssue, ())?;
     // On the store's list of reports to answer, tagged with the order.
@@ -176,6 +197,9 @@ pub struct IssueView {
     pub refund: Option<u64>,
     /// The note and photo, for the customer and the store.
     pub evidence: Option<IssueEvidence>,
+    /// That it's about the delivery itself, not items: worth the customer's
+    /// share of its fee.
+    pub service: bool,
 }
 
 /// Every report on an order, with the store's answer and its worth.
@@ -196,8 +220,7 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
         if record.action().timestamp() > now {
             continue;
         }
-        let claimed: Vec<(u32, u32)> = issue.lines.iter().map(|l| (l.line, l.quantity)).collect();
-        let value = claimed_value(&terms.amounts(), terms.order_total, &claimed);
+        let value = value_in(&issue, &terms)?;
         let answer = store_answer(&hash, &terms.merchant)?;
         let evidence: Option<IssueEvidence> = if me == terms.requester {
             open_chunked(&terms.merchant, &issue.sealed_for_store)?
@@ -213,6 +236,7 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
             accepted: answer.as_ref().map(|a| a.accept),
             refund: answer.as_ref().map(|a| a.refunds(value)),
             evidence: evidence.filter(|e| handshake_integrity_support::image_problem(&e.photo_data_uri).is_none()),
+            service: issue.service,
             lines: issue.lines,
         });
     }
@@ -222,9 +246,29 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
 
 /// What an issue claims is worth, of what its order's customer paid.
 fn value_of(issue: &ItemIssue) -> ExternResult<u64> {
+    value_in(issue, &priced(&issue.order)?)
+}
+
+/// `value_of`, with the order already read: its items' share of what was
+/// paid, or for the delivery itself, the customer's share of its fee --
+/// validation's reckoning (`integrity/src/issues.rs`).
+fn value_in(issue: &ItemIssue, terms: &Priced) -> ExternResult<u64> {
+    if issue.service {
+        return Ok(service_worth(&issue.received)?.unwrap_or(0));
+    }
     let claimed: Vec<(u32, u32)> = issue.lines.iter().map(|l| (l.line, l.quantity)).collect();
-    let terms = priced(&issue.order)?;
     Ok(claimed_value(&terms.amounts(), terms.order_total, &claimed))
+}
+
+/// What a report on a delivery's service is worth, citing `received` -- the
+/// customer's share of the fee for the driver who delivered it -- or `None`
+/// if it can't be one. Validated with the report: one not here yet is an
+/// error.
+fn service_worth(received: &ActionHash) -> ExternResult<Option<u64>> {
+    let Some(version) = decode_or::<DeliveryOrder>(&arrived(received)?) else { return Ok(None) };
+    let Some(bid) = version.accepted_bid.filter(|_| version.status == DeliveryStatus::Delivered) else { return Ok(None) };
+    let Some(bid) = decode_or::<Bid>(&arrived(&bid)?) else { return Ok(None) };
+    Ok(Some(service_value(bid.price_offer, version.delivery_subsidy_percent)))
 }
 
 /// The store's answer to an issue, if it's given one.
@@ -428,18 +472,23 @@ fn answer_grace_micros() -> i64 {
 }
 
 /// The refund the store's answers add up to: every report it accepted --
-/// for all it's worth, or the part it named -- or never answered. The
+/// for all it's worth, or the part it named -- or never answered, the
+/// delivery's own included. The
 /// store has the final say -- one it declined isn't refunded -- as it would
 /// if you ordered from it directly. Never more than the reports cited are
 /// worth together, which validation holds it to: two reports of the same
 /// unit are worth it once.
 fn refund_owed(terms: &Priced, issues: &[IssueView]) -> (Vec<ActionHash>, u64) {
     let refunded: Vec<&IssueView> = issues.iter().filter(|i| i.accepted != Some(false)).collect();
+    let refunds = |i: &IssueView| i.refund.unwrap_or(i.value);
+    // The delivery itself: its own worth, apart from any item's.
+    let service: u64 = refunded.iter().filter(|i| i.service).map(|i| refunds(i)).sum();
+    let items: Vec<&IssueView> = refunded.iter().filter(|i| !i.service).copied().collect();
     let lines = |of: &[&IssueView]| -> Vec<(u32, u32)> { of.iter().flat_map(|i| i.lines.iter().map(|l| (l.line, l.quantity))).collect() };
-    let (parts, whole): (Vec<&IssueView>, Vec<&IssueView>) = refunded.iter().partition(|i| i.refund.is_some_and(|r| r < i.value));
+    let (parts, whole): (Vec<&IssueView>, Vec<&IssueView>) = items.iter().partition(|i| i.refund.is_some_and(|r| r < i.value));
     let worth = |of: &[&IssueView]| claimed_value(&terms.amounts(), terms.order_total, &lines(of));
-    let owed = worth(&whole).saturating_add(parts.iter().filter_map(|i| i.refund).sum()).min(worth(&refunded));
-    (refunded.iter().map(|i| i.issue.clone()).collect(), owed)
+    let owed = worth(&whole).saturating_add(parts.iter().filter_map(|i| i.refund).sum()).min(worth(&items));
+    (refunded.iter().map(|i| i.issue.clone()).collect(), owed.saturating_add(service))
 }
 
 /// Has the store's conductor make its decisions on `order`, in a call of its

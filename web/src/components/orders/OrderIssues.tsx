@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { TimeAgo } from "../TimeAgo";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, HeartPulse, CheckCircle2, Clock3, PackageX, Repeat2, ShieldCheck, XCircle } from "lucide-react";
+import { AlertCircle, HeartPulse, CheckCircle2, Clock3, PackageX, Repeat2, ShieldCheck, Truck, XCircle } from "lucide-react";
 import { getIssueItems, getIssuesForOrder, getOrderDecisions, reportIssue } from "../../holochain/zomes/dispatch";
 import { bytesToHex } from "../../holochain/decode";
 import { MAX_NOTE_CHARS, type IssueItems, type IssueKind, type IssueLine, type IssueView, type OrderDecisions } from "../../holochain/types";
@@ -19,6 +19,7 @@ import { useClock } from "../../lib/hooks/useClock";
 import { useResource } from "../../lib/hooks/useResource";
 import { Button, Card, Notice, Stepper, Textarea } from "../ui";
 import { IssueAnswer } from "./IssueAnswer";
+import { DeliveryReportSheet } from "./DeliveryReportSheet";
 import { PhotoInput } from "../PhotoInput";
 import { Sheet } from "../Sheet";
 import { OrderAppeal } from "./OrderAppeal";
@@ -48,6 +49,7 @@ export function OrderIssues({ orderRef, role, onAnswered }: { orderRef: Uint8Arr
   const { data: issues, reload } = useResource(`issues:${hex}`, () => getIssuesForOrder(orderRef), refresh);
   const { data: items } = useResource(`issue-items:${hex}`, () => getIssueItems(orderRef));
   const [reporting, setReporting] = useState(false);
+  const [reportingDelivery, setReportingDelivery] = useState(false);
   const now = useClock(30_000).getTime() * 1000;
   const graceSecs = useTerms().answer_grace_secs;
 
@@ -66,7 +68,7 @@ export function OrderIssues({ orderRef, role, onAnswered }: { orderRef: Uint8Arr
           <PackageX size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-bold text-ink-900 dark:text-ink-50">{headline(role, decisions, issues.length, settling)}</p>
+          <p className="font-bold text-ink-900 dark:text-ink-50">{headline(role, decisions, issues.length, settling, items.delivery_report_worth !== null)}</p>
           <p className="mt-0.5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{subline(role, decisions, settling, answersUntil)}</p>
         </div>
       </div>
@@ -82,11 +84,29 @@ export function OrderIssues({ orderRef, role, onAnswered }: { orderRef: Uint8Arr
       {!open && <OrderAppeal orderRef={orderRef} role={role} kept={items.order_total - (decisions.refund ?? 0)} />}
 
       {role === "customer" && open && !settling && (
-        <div className="border-t border-ink-100 p-4 dark:border-ink-800">
-          <Button variant="ghost" className="w-full" onClick={() => setReporting(true)}>
-            {issues.length ? translate("issues.reportMore") : translate("issues.report")}
+        <div className="flex flex-wrap gap-2 border-t border-ink-100 p-4 dark:border-ink-800">
+          <Button variant="ghost" className="min-w-0 flex-[1_1_12rem]" onClick={() => setReporting(true)}>
+            {issues.some((issue) => !issue.service) ? translate("issues.reportMore") : translate("issues.report")}
           </Button>
+          {items.delivery_report_worth !== null && !issues.some((issue) => issue.service) && (
+            <Button variant="ghost" className="min-w-0 flex-[1_1_12rem]" onClick={() => setReportingDelivery(true)}>
+              <Truck size={16} aria-hidden /> {translate("deliveryReport.open")}
+            </Button>
+          )}
         </div>
+      )}
+
+      {role === "customer" && items.delivery_report_worth !== null && (
+        <DeliveryReportSheet
+          open={reportingDelivery}
+          onClose={() => setReportingDelivery(false)}
+          orderRef={orderRef}
+          worth={items.delivery_report_worth}
+          onReported={async () => {
+            setReportingDelivery(false);
+            await reload();
+          }}
+        />
       )}
 
       {role === "customer" && (
@@ -106,12 +126,12 @@ export function OrderIssues({ orderRef, role, onAnswered }: { orderRef: Uint8Arr
   );
 }
 
-function headline(role: Role, decisions: OrderDecisions, count: number, settling: boolean): string {
+function headline(role: Role, decisions: OrderDecisions, count: number, settling: boolean, anyProblem: boolean): string {
   const refund = decisions.refund;
   if (refund !== null) return refund > 0 ? translate("issues.refunded", { amount: formatCents(refund) }) : role === "store" ? translate("issues.noRefund") : translate("issues.declined");
   if (settling) return translate("issues.settling");
   if (role === "store") return translate("issues.storeReported", { count });
-  return count ? translate("issues.reportIn") : translate("issues.ask");
+  return count ? translate("issues.reportIn") : translate(anyProblem ? "issues.askAny" : "issues.ask");
 }
 
 function subline(role: Role, decisions: OrderDecisions, settling: boolean, answersUntil: number | null): string {
@@ -149,6 +169,13 @@ function IssueRow({ orderRef, issue, items, role, canAnswer, onAnswered }: { ord
   return (
     <li className="p-4">
       <div className="flex items-start justify-between gap-3">
+        {issue.service ? (
+          <p className="flex min-w-0 items-center gap-2 text-sm">
+            <Truck size={16} className="shrink-0 text-ink-500" aria-hidden />
+            <span className="text-ink-800 dark:text-ink-100">{t("deliveryReport.row")}</span>
+            <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">{t("deliveryReport.chip")}</span>
+          </p>
+        ) : (
         <ul className="flex min-w-0 flex-col gap-1.5">
           {issue.lines.map((line) => (
             <li key={line.line} className="flex items-center gap-2 text-sm">
@@ -160,6 +187,7 @@ function IssueRow({ orderRef, issue, items, role, canAnswer, onAnswered }: { ord
             </li>
           ))}
         </ul>
+        )}
         <span className="shrink-0 text-sm font-bold tabular-nums text-ink-900 dark:text-ink-50">{formatCents(issue.value)}</span>
       </div>
 

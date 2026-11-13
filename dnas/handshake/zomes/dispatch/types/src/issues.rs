@@ -16,7 +16,8 @@
 //!   store is paid as for any delivery, and the customer's recourse is an
 //!   appeal.
 //! - `ItemSettlement`: what the food's payment comes to. The customer
-//!   reports items missing or wrong (`ItemIssue`), the store accepts each
+//!   reports items missing or wrong, or a delivery that was poor
+//!   (`ItemIssue`), the store accepts each
 //!   -- for all it's worth or a part of it -- or declines it
 //!   (`IssueResponse`), and has the final say, as it would if you ordered
 //!   from it directly; the settlement names the refund.
@@ -74,6 +75,20 @@ pub struct ItemIssue {
     pub lines: Vec<IssueLine>,
     /// The customer's `IssueEvidence`, sealed to the store.
     pub sealed_for_store: SealedChunks,
+    /// That the delivery itself was poor -- late, cold, mishandled -- rather
+    /// than any item: it names no lines, and is worth the customer's share
+    /// of the fee for the driver who brought it (`service_value`). The store
+    /// refunds it out of what it collects for the food, so it's the store's
+    /// to give, never taken from the driver. Once per delivery.
+    #[serde(default)]
+    pub service: bool,
+}
+
+/// What a report on a delivery's service is worth: the customer's share of
+/// the fee for the driver who brought it -- `price_offer`, split by the
+/// store's subsidy as every payment of it is.
+pub fn service_value(price_offer: u64, store_percent: u8) -> u64 {
+    crate::split_delivery_fee(price_offer, store_percent).1
 }
 
 /// The store's answer to an `ItemIssue`: accept it (the customer is

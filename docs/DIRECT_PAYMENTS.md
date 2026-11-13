@@ -39,6 +39,8 @@ A pickup has only the customer leg, for the food. A store ordering from itself p
 | Customer never collected (`NotCollected`): a delivery they chose to collect, or a ready pickup | the food | — | — |
 | Store declined, or never answered; a scheduled order its store was closed for, or sent too late (`StoreClosed`, `ScheduleMissed`) | nothing | nothing | nothing |
 
+A refund a store gives for a poor delivery (a customer's report on the delivery itself) is the customer's share of the fee, taken off what the store collects for the food: the driver's pay doesn't change.
+
 The store's share of the fee is inside the bid it pays the driver; the customer is held only for their own share. The store passes on the customer's share of the fee and the tip only as the driver actually took them: a store's claim cites the driver's settlement (`Claim.via`).
 
 **Equivalence is tested, not hoped for.** `dispatch_types::direct` is a pure model of every part, and its tests prove that for every scenario, what each party pays and is paid equals the old credits rules, before processor fees.

@@ -98,7 +98,7 @@ await runScenario(async (scenario) => {
   console.log("[PASS] only the customer reports, only items on the order, never more than ordered");
 
   const missingBread = actionHash(await call(customer, "dispatch")<HcRecord>("report_issue", { order, lines: [{ line: BREAD, quantity: 1, kind: "Missing" }], note: "Only one bread in the bag", photo_data_uri: FULL_SIZE_PHOTO }));
-  await assert.rejects(raw(customer, "item_issue", { order, lines: [{ line: BREAD, quantity: 1, kind: "Wrong" }] }), /each line of an order is reported once/, "a line already reported can't be reported again");
+  await assert.rejects(raw(customer, "item_issue", { order, lines: [{ line: BREAD, quantity: 1, kind: "Wrong" }] }), /each line of an order, and its delivery, is reported once/, "a line already reported can't be reported again");
   const wrongStew = actionHash(await call(customer, "dispatch")<HcRecord>("report_issue", { order, lines: [{ line: STEW, quantity: 1, kind: "Wrong" }], note: "This is soup", photo_data_uri: "" }));
   await sync();
   const seenByStore = await retryUntil(() => call(merchant, "dispatch")<IssueView[]>("get_issues_for_order", order), (issues) => issues.length === 2);

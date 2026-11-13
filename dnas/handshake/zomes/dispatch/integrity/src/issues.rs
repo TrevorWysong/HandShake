@@ -2,7 +2,9 @@
 //! the flow. What it guarantees:
 //!
 //! - only an order's own customer reports issues with it, only for items on
-//!   it, never more units than were ordered; only its store answers each,
+//!   it, never more units than were ordered -- or, once, the delivery
+//!   itself, if a driver brought it, worth their share of its fee; only its
+//!   store answers each,
 //!   once -- accepting it for a part of its worth only between nothing and
 //!   all of it;
 //! - only the order's store decides its outcome and its settlement, once
@@ -14,13 +16,14 @@
 //!   customer's claim, made after the driver's proven pickup, and never by a
 //!   store that cancelled the order;
 //! - a settlement's refund is never more than the issues it cites are worth
-//!   of what the customer paid -- plus, for a delivery its customer
+//!   of what the customer paid (a report on the delivery, their share of its
+//!   fee, which the store refunds out of the food's payment) -- plus, for a delivery its customer
 //!   collected themselves, the store's share of the fee it would have paid a
 //!   driver, which it must refund (`collection_compensation`).
 
 use super::*;
 use crate::claims::wrote_update_of;
-use dispatch_types::{claimed_value, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome};
+use dispatch_types::{claimed_value, service_value, IssueResponse, ItemIssue, ItemSettlement, OrderOutcome, Outcome};
 use handshake_integrity_support::chain::wrote_since;
 use handshake_integrity_support::{decode, original_creation, valid};
 
@@ -89,9 +92,24 @@ pub(crate) fn validate_item_issue(issue: &ItemIssue, author: &AgentPubKey, prev_
     }
     let Some(prev) = prev_action else { return invalid("an issue can't open a chain") };
     let placed = must_get_action(issue.order.clone())?.hashed.content.header.timestamp;
-    let reported_again = |earlier: &ItemIssue| earlier.order == issue.order && earlier.lines.iter().any(|old| issue.lines.iter().any(|new| new.line == old.line));
+    let reported_again = |earlier: &ItemIssue| earlier.order == issue.order && (earlier.lines.iter().any(|old| issue.lines.iter().any(|new| new.line == old.line)) || (earlier.service && issue.service));
     if wrote_since::<ItemIssue>(author, prev, placed, UnitEntryTypes::ItemIssue.try_into()?, reported_again)? {
-        return invalid("each line of an order is reported once");
+        return invalid("each line of an order, and its delivery, is reported once");
+    }
+    let bounded = handshake_integrity_support::sealed_chunks_problem("an issue's evidence", &issue.sealed_for_store, handshake_integrity_support::max_sealed_image_bytes()).is_none();
+    if !bounded {
+        return invalid("an issue's evidence may hold a note and at most one photo, within the network's image limit");
+    }
+    // The delivery itself: no items, on one a driver brought -- not one the
+    // customer collected -- whose fee they paid a share of.
+    if issue.service {
+        if !issue.lines.is_empty() {
+            return invalid("a report on the delivery names no items");
+        }
+        return match service_value_of(issue, terms.delivery)? {
+            Some(value) if value > 0 => valid(),
+            _ => invalid("a report on the delivery is for one a driver brought, whose fee the customer paid a share of"),
+        };
     }
     if issue.lines.is_empty() {
         return invalid("an issue names at least one line");
@@ -107,8 +125,30 @@ pub(crate) fn validate_item_issue(issue: &ItemIssue, author: &AgentPubKey, prev_
             return invalid("an issue claims between one and the number ordered of each line");
         }
     }
-    let bounded = handshake_integrity_support::sealed_chunks_problem("an issue's evidence", &issue.sealed_for_store, handshake_integrity_support::max_sealed_image_bytes()).is_none();
-    require(bounded, "an issue's evidence may hold a note and at most one photo, within the network's image limit")
+    valid()
+}
+
+/// What a report on a delivery's service is worth -- the customer's share of
+/// the fee for the driver who delivered it, by the version it cites -- or
+/// `None` if it can't be one: not a delivery, or not one a driver delivered.
+fn service_value_of(issue: &ItemIssue, delivery: bool) -> ExternResult<Option<u64>> {
+    if !delivery {
+        return Ok(None);
+    }
+    let Some((_, version)) = version_of::<DeliveryOrder>(&issue.order, &issue.received)? else { return Ok(None) };
+    let Some(bid) = version.accepted_bid.filter(|_| version.status == DeliveryStatus::Delivered) else { return Ok(None) };
+    let Some(bid) = decode::<Bid>(&must_get_valid_record(bid)?) else { return Ok(None) };
+    Ok(Some(service_value(bid.price_offer, version.delivery_subsidy_percent)))
+}
+
+/// What an issue is worth, of what its customer paid: its items' share, or
+/// for the delivery itself, their share of its fee.
+fn issue_value(issue: &ItemIssue, terms: &OrderForIssues) -> ExternResult<u64> {
+    if issue.service {
+        return Ok(service_value_of(issue, terms.delivery)?.unwrap_or(0));
+    }
+    let claimed: Vec<(u32, u32)> = issue.lines.iter().map(|l| (l.line, l.quantity)).collect();
+    Ok(claimed_value(&terms.lines, terms.order_total, &claimed))
 }
 
 pub(crate) fn validate_issue_response(response: &IssueResponse, author: &AgentPubKey, at: Timestamp, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
@@ -126,8 +166,7 @@ pub(crate) fn validate_issue_response(response: &IssueResponse, author: &AgentPu
     // A part is of an issue accepted, more than nothing and less than all
     // it's worth -- all of it is `None`, a decline refunds nothing.
     if let Some(part) = response.refund {
-        let claimed: Vec<(u32, u32)> = issue.lines.iter().map(|l| (l.line, l.quantity)).collect();
-        let value = claimed_value(&terms.lines, terms.order_total, &claimed);
+        let value = issue_value(&issue, &terms)?;
         if !response.accept || part == 0 || part >= value {
             return invalid("a partial refund accepts an issue for more than nothing and less than it's worth");
         }
@@ -242,6 +281,7 @@ pub(crate) fn validate_settlement(settlement: &ItemSettlement, author: &AgentPub
         return invalid("a delivery its customer collected refunds them the store's share of the fee it would have paid a driver");
     }
     let mut claimed: Vec<(u32, u32)> = Vec::new();
+    let mut service: u64 = 0;
     for (i, issue_ref) in settlement.issues.iter().enumerate() {
         if settlement.issues[..i].contains(issue_ref) {
             return invalid("a settlement cites each issue once");
@@ -254,9 +294,14 @@ pub(crate) fn validate_settlement(settlement: &ItemSettlement, author: &AgentPub
         if issue_record.action().timestamp() > at {
             return invalid("a settlement cites only issues reported before it");
         }
+        if issue.service {
+            service = service.saturating_add(issue_value(&issue, &terms)?);
+        }
         claimed.extend(issue.lines.iter().map(|l| (l.line, l.quantity)));
     }
-    if settlement.refund > claimed_value(&terms.lines, terms.order_total, &claimed).saturating_add(owed).min(terms.order_total) {
+    // The delivery's share of its fee comes out of what the store collects
+    // for the food, like any refund: never more than the food cost.
+    if settlement.refund > claimed_value(&terms.lines, terms.order_total, &claimed).saturating_add(service).saturating_add(owed).min(terms.order_total) {
         return invalid("a refund can't exceed what the cited issues are worth");
     }
     let Some(prev) = prev_action else { return invalid("a settlement can't open a chain") };

@@ -35,3 +35,8 @@ export function goodwillChoices(rewards: readonly Reward[]): { points: number; r
 export function pointsIn(value: number): number | null {
   return Number.isInteger(value) && value >= 1 && value <= MAX_GRANT_POINTS ? value : null;
 }
+
+/// The points picked: what was chosen or typed, or the first choice.
+export function pickedPoints(program: { rewards: readonly Reward[] }, points: number | null): number | null {
+  return points ?? goodwillChoices(program.rewards)[0]?.points ?? null;
+}

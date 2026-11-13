@@ -348,6 +348,8 @@ Reads that only show something -- menus, bags and promos while browsing, a birth
 - **A customer refunded in part can still appeal** for the rest: an appeal asks for up to what the order cost less what was refunded.
 - **Points as an apology are an ordinary grant** (`grant_points`), bounded as every grant is: only the store's owner gives them, only to someone who's ordered there citing their order, at most `MAX_GRANT_POINTS` a grant, with a short note, sealed between the two. They're offered only where the store runs an active program. The grant is a call of its own after the answer, so a grant that fails never undoes the answer (commit poisoning); the store is told.
 - **Nothing grows with it.** A part is one optional field on the answer every report already gets; points are one grant and one link, as any gift.
+- **A poor delivery is the store's to make good, never the driver's.** A customer can report the delivery itself (`ItemIssue::service`): only on one a driver delivered (not one they collected), naming no items, once, worth their share of that driver's fee -- the same split every payment of it uses (`service_value`). The store answers it as any report, all, part or none, and refunds it out of what it collects for the food: the driver's pay is a hold of its own that no settlement touches, so no store can pull a driver's pay to please a customer. A driver at fault answers through their reviews and reputation. Like any refund, it's never more than the food cost.
+- **Points for anything else** -- a late or cold order no report covers -- are a "Give points" on the store's finished orders: the same grant, citing that order. The store's program is read only when the sheet opens, so a long order history costs nothing.
 
 ## Driver fee schedules
 

@@ -422,7 +422,7 @@ export async function getMyHandoverCode(orderRef: ActionHash): Promise<PinSecret
 // --- missing and wrong items (see the dispatch `issues` module) ---
 
 /// The customer reporting items missing or wrong.
-export async function reportIssue(input: { allergen?: boolean; order: ActionHash; lines: IssueLine[]; note: string; photo_data_uri: string }): Promise<HcRecord> {
+export async function reportIssue(input: { allergen?: boolean; service?: boolean; order: ActionHash; lines: IssueLine[]; note: string; photo_data_uri: string }): Promise<HcRecord> {
   return callZome("dispatch", "report_issue", input);
 }
 

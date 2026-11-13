@@ -1388,6 +1388,13 @@ export interface IssueItems {
   lines: LineView[];
   customer: AgentPubKey;
   catalog_ref: ActionHash;
+  /**
+   * What a report on the delivery itself would be worth -- the
+   * customer's share of the fee for the driver who brought it -- or
+   * `None` where there's none to make: a pickup, one they collected, or
+   * a fee the store paid all of.
+   */
+  delivery_report_worth: number | null;
 }
 
 export type IssueKind =
@@ -1437,6 +1444,11 @@ export interface IssueView {
    * The note and photo, for the customer and the store.
    */
   evidence: IssueEvidence | null;
+  /**
+   * That it's about the delivery itself, not items: worth the customer's
+   * share of its fee.
+   */
+  service: boolean;
 }
 
 /**
@@ -1468,6 +1480,14 @@ export interface ItemIssue {
    * The customer's `IssueEvidence`, sealed to the store.
    */
   sealed_for_store: SealedChunks;
+  /**
+   * That the delivery itself was poor -- late, cold, mishandled -- rather
+   * than any item: it names no lines, and is worth the customer's share
+   * of the fee for the driver who brought it (`service_value`). The store
+   * refunds it out of what it collects for the food, so it's the store's
+   * to give, never taken from the driver. Once per delivery.
+   */
+  service: boolean;
 }
 
 /**
