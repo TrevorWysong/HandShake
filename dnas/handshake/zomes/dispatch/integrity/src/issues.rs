@@ -3,7 +3,8 @@
 //!
 //! - only an order's own customer reports issues with it, only for items on
 //!   it, never more units than were ordered; only its store answers each,
-//!   once;
+//!   once -- accepting it for a part of its worth only between nothing and
+//!   all of it;
 //! - only the order's store decides its outcome and its settlement, once
 //!   each -- so every payment cites the same decision, and none can
 //!   contradict another;
@@ -121,6 +122,15 @@ pub(crate) fn validate_issue_response(response: &IssueResponse, author: &AgentPu
     // it: none can be dated before it.
     if at < issue_record.action().timestamp() {
         return invalid("an answer comes after the issue it answers");
+    }
+    // A part is of an issue accepted, more than nothing and less than all
+    // it's worth -- all of it is `None`, a decline refunds nothing.
+    if let Some(part) = response.refund {
+        let claimed: Vec<(u32, u32)> = issue.lines.iter().map(|l| (l.line, l.quantity)).collect();
+        let value = claimed_value(&terms.lines, terms.order_total, &claimed);
+        if !response.accept || part == 0 || part >= value {
+            return invalid("a partial refund accepts an issue for more than nothing and less than it's worth");
+        }
     }
     let Some(prev) = prev_action else { return invalid("a response can't open a chain") };
     let answered = wrote_since::<IssueResponse>(author, prev, issue_record.action().timestamp(), UnitEntryTypes::IssueResponse.try_into()?, |r| r.issue == response.issue)?;

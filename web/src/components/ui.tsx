@@ -27,7 +27,7 @@ export function Button({
   disabled,
   ...rest
 }: Omit<HTMLMotionProps<"button">, "children"> & { children?: ReactNode; variant?: ButtonVariant; loading?: boolean }) {
-  const base = "inline-flex items-center justify-center gap-2 rounded-full font-semibold text-sm px-5 py-3 transition disabled:opacity-40 disabled:pointer-events-none";
+  const base = "inline-flex items-center justify-center gap-2 rounded-full font-semibold text-sm px-5 py-3 transition disabled:opacity-40 disabled:pointer-events-none forced-colors:border forced-colors:border-solid";
   const variants: Record<ButtonVariant, string> = {
     primary: "bg-handshake-500 text-white hover:bg-handshake-600 shadow-[var(--shadow-glow)]",
     secondary: "bg-ink dark:bg-ink-100 text-white dark:text-ink-900 hover:opacity-90",
@@ -75,7 +75,7 @@ export function Chip({ active, onClick, children, tone = "default" }: { active: 
       onClick={onClick}
       aria-pressed={active}
       className={clsx(
-        "shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition",
+        "max-w-full shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition",
         active ? clsx(activeClasses, FORCED_SELECTED) : "bg-ink-100 dark:bg-ink-800 text-ink-500 hover:bg-ink-200 dark:hover:bg-ink-700"
       )}
     >
@@ -90,7 +90,7 @@ export function Chip({ active, onClick, children, tone = "default" }: { active: 
 /// A pill-shaped tab switcher -- "Active / Past" style.
 export function SegmentedTabs<T extends string>({ tabs, value, onChange }: { tabs: readonly { value: T; label: string; badge?: number }[]; value: T; onChange: (value: T) => void }) {
   return (
-    <div role="tablist" className="flex rounded-full bg-ink-100 dark:bg-ink-800 p-1 text-xs font-semibold">
+    <div role="tablist" className="flex flex-wrap rounded-3xl bg-ink-100 dark:bg-ink-800 p-1 text-xs font-semibold">
       {tabs.map((tab) => (
         <button
           key={tab.value}

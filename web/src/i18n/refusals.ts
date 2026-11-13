@@ -3,6 +3,7 @@
 // Every refusal a person can meet, in English as its source writes it;
 // every catalog translates each (describeError matches the text).
 export const REFUSALS = {
+  "refusal.a-declined-report-refunds-nothing": "A declined report refunds nothing.",
   "refusal.a-free-order-can-t-be-delivered": "A free order can't be delivered: your driver answers for what they carry. Choose pickup instead.",
   "refusal.a-goodie-bag-is-one-to-an": "A goodie bag is one to an order.",
   "refusal.a-pickup-is-confirmed-by-the-store": "A pickup is confirmed by the store, not with a code.",
@@ -223,6 +224,7 @@ export const REFUSALS = {
   "refusal.those-keys-aren-t-in-a-form": "Those keys aren't in a form HandShake reads.",
   "refusal.those-keys-weren-t-accepted-by-check": "Those keys weren't accepted by {0}. Check them in its dashboard, then try again.",
   "refusal.to-have-it-left-at-your-door": "To have it left at your door, accept that it's delivered once it's left there.",
+  "refusal.to-refund-nothing-decline-the-report": "To refund nothing, decline the report.",
   "refusal.too-many-wrong-codes-ask-the-store": "Too many wrong codes. Ask the store to hand the order over by scanning your code.",
   "refusal.too-many-wrong-codes-scan-their-code": "Too many wrong codes. Scan their code, or ask them to confirm in their app.",
   "refusal.you-aren-t-one-of-this-account": "You aren't one of this account's guardians.",

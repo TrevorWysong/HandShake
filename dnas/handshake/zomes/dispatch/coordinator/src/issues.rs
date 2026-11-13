@@ -22,6 +22,7 @@ use handshake_coordinator_support::{arrived, call_local, decode_or, guest, open_
 struct Priced {
     requester: AgentPubKey,
     merchant: AgentPubKey,
+    catalog_ref: ActionHash,
     order_total: u64,
     lines: Vec<crate::lines::LineView>,
 }
@@ -35,11 +36,14 @@ impl Priced {
 }
 
 /// What reports on an order are judged against: its lines (reported by
-/// position), and what the customer paid for the food.
+/// position), and what the customer paid for the food -- and whose order it
+/// is, at which store, for points its store gives with an answer.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct IssueItems {
     pub order_total: u64,
     pub lines: Vec<crate::lines::LineView>,
+    pub customer: AgentPubKey,
+    pub catalog_ref: ActionHash,
 }
 
 /// An order's items as reports are made against them -- public, as the
@@ -47,17 +51,17 @@ pub struct IssueItems {
 #[hdk_extern]
 pub fn get_issue_items(order: ActionHash) -> ExternResult<IssueItems> {
     let terms = priced(&original_action_of(order)?)?;
-    Ok(IssueItems { order_total: terms.order_total, lines: terms.lines })
+    Ok(IssueItems { order_total: terms.order_total, lines: terms.lines, customer: terms.requester, catalog_ref: terms.catalog_ref })
 }
 
 fn priced(order: &ActionHash) -> ExternResult<Priced> {
     let record = get(order.clone(), GetOptions::default())?.ok_or(guest("order not found"))?;
-    let (requester, merchant, order_total, lines) = match (decode_or::<DeliveryOrder>(&record), decode_or::<PickupOrder>(&record)) {
-        (Some(o), _) => (o.requester, o.merchant, o.order_total, o.lines),
-        (None, Some(o)) => (o.requester, o.merchant, o.order_total, o.lines),
+    let (requester, merchant, catalog_ref, order_total, lines) = match (decode_or::<DeliveryOrder>(&record), decode_or::<PickupOrder>(&record)) {
+        (Some(o), _) => (o.requester, o.merchant, o.catalog_ref, o.order_total, o.lines),
+        (None, Some(o)) => (o.requester, o.merchant, o.catalog_ref, o.order_total, o.lines),
         _ => return Err(guest("that isn't an order")),
     };
-    Ok(Priced { requester, merchant, order_total, lines: crate::lines::describe(&lines)? })
+    Ok(Priced { requester, merchant, catalog_ref, order_total, lines: crate::lines::describe(&lines)? })
 }
 
 // --- the customer ---
@@ -128,19 +132,29 @@ pub fn report_issue(input: ReportIssueInput) -> ExternResult<Record> {
 pub struct RespondToIssueInput {
     pub issue: ActionHash,
     pub accept: bool,
+    /// Accepting it for part of what it's worth: this much. `None`, or all
+    /// it's worth or more, for all of it.
+    #[serde(default)]
+    pub refund: Option<u64>,
 }
 
-/// The store accepting an issue (the customer is refunded when it settles)
-/// or declining it (they aren't). The store has the final say. Once per
-/// issue.
+/// The store accepting an issue (the customer is refunded, all it's worth
+/// or the part the store names, when it settles) or declining it (they
+/// aren't). The store has the final say. Once per issue.
 #[hdk_extern]
 pub fn respond_to_issue(input: RespondToIssueInput) -> ExternResult<Record> {
-    let record = get(input.issue.clone(), GetOptions::default())?.ok_or(guest("report not found"))?;
+    let record = arrived(&input.issue)?;
     let issue = decode_or::<ItemIssue>(&record).ok_or(guest("that isn't a report"))?;
     if decisions_of(&issue.order)?.settlement.is_some() {
         return Err(guest("This order is already settled."));
     }
-    let hash = create_entry(&EntryTypes::IssueResponse(IssueResponse { issue: input.issue.clone(), accept: input.accept }))?;
+    let refund = match (input.accept, input.refund) {
+        (false, Some(_)) => return Err(guest("A declined report refunds nothing.")),
+        (true, Some(0)) => return Err(guest("To refund nothing, decline the report.")),
+        (true, Some(part)) => (part < value_of(&issue)?).then_some(part),
+        (_, None) => None,
+    };
+    let hash = create_entry(&EntryTypes::IssueResponse(IssueResponse { issue: input.issue.clone(), accept: input.accept, refund }))?;
     create_link(input.issue, hash.clone(), LinkTypes::IssueToResponse, ())?;
     written(hash)
 }
@@ -157,6 +171,9 @@ pub struct IssueView {
     pub value: u64,
     /// The store's answer: accepted, declined, or not yet.
     pub accepted: Option<bool>,
+    /// What the store's answer refunds: all it's worth or the part it
+    /// named, nothing for a decline -- `None` before it answers.
+    pub refund: Option<u64>,
     /// The note and photo, for the customer and the store.
     pub evidence: Option<IssueEvidence>,
 }
@@ -180,6 +197,8 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
             continue;
         }
         let claimed: Vec<(u32, u32)> = issue.lines.iter().map(|l| (l.line, l.quantity)).collect();
+        let value = claimed_value(&terms.amounts(), terms.order_total, &claimed);
+        let answer = store_answer(&hash, &terms.merchant)?;
         let evidence: Option<IssueEvidence> = if me == terms.requester {
             open_chunked(&terms.merchant, &issue.sealed_for_store)?
         } else if me == terms.merchant {
@@ -190,8 +209,9 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
         views.push(IssueView {
             issue: hash.clone(),
             reported_at: record.action().timestamp(),
-            value: claimed_value(&terms.amounts(), terms.order_total, &claimed),
-            accepted: store_answer(&hash, &terms.merchant)?,
+            value,
+            accepted: answer.as_ref().map(|a| a.accept),
+            refund: answer.as_ref().map(|a| a.refunds(value)),
             evidence: evidence.filter(|e| handshake_integrity_support::image_problem(&e.photo_data_uri).is_none()),
             lines: issue.lines,
         });
@@ -200,14 +220,21 @@ pub fn get_issues_for_order(order: ActionHash) -> ExternResult<Vec<IssueView>> {
     Ok(views)
 }
 
+/// What an issue claims is worth, of what its order's customer paid.
+fn value_of(issue: &ItemIssue) -> ExternResult<u64> {
+    let claimed: Vec<(u32, u32)> = issue.lines.iter().map(|l| (l.line, l.quantity)).collect();
+    let terms = priced(&issue.order)?;
+    Ok(claimed_value(&terms.amounts(), terms.order_total, &claimed))
+}
+
 /// The store's answer to an issue, if it's given one.
-fn store_answer(issue: &ActionHash, merchant: &AgentPubKey) -> ExternResult<Option<bool>> {
+fn store_answer(issue: &ActionHash, merchant: &AgentPubKey) -> ExternResult<Option<IssueResponse>> {
     for link in get_links(LinkQuery::try_new(issue.clone(), LinkTypes::IssueToResponse)?.author(merchant.clone()), GetStrategy::default())? {
         let Some(hash) = link.target.into_action_hash() else { continue };
         // Validated, by the store: one not here yet is an error, never an
         // issue left unanswered.
         if let Some(response) = decode_or::<IssueResponse>(&arrived(&hash)?) {
-            return Ok(Some(response.accept));
+            return Ok(Some(response));
         }
     }
     Ok(None)
@@ -400,13 +427,19 @@ fn answer_grace_micros() -> i64 {
     handshake_governance::answer_grace().as_micros() as i64
 }
 
-/// The refund the store's answers add up to: every report it accepted or
-/// never answered. The store has the final say -- one it declined isn't
-/// refunded -- as it would if you ordered from it directly.
+/// The refund the store's answers add up to: every report it accepted --
+/// for all it's worth, or the part it named -- or never answered. The
+/// store has the final say -- one it declined isn't refunded -- as it would
+/// if you ordered from it directly. Never more than the reports cited are
+/// worth together, which validation holds it to: two reports of the same
+/// unit are worth it once.
 fn refund_owed(terms: &Priced, issues: &[IssueView]) -> (Vec<ActionHash>, u64) {
     let refunded: Vec<&IssueView> = issues.iter().filter(|i| i.accepted != Some(false)).collect();
-    let claimed: Vec<(u32, u32)> = refunded.iter().flat_map(|i| i.lines.iter().map(|l| (l.line, l.quantity))).collect();
-    (refunded.iter().map(|i| i.issue.clone()).collect(), claimed_value(&terms.amounts(), terms.order_total, &claimed))
+    let lines = |of: &[&IssueView]| -> Vec<(u32, u32)> { of.iter().flat_map(|i| i.lines.iter().map(|l| (l.line, l.quantity))).collect() };
+    let (parts, whole): (Vec<&IssueView>, Vec<&IssueView>) = refunded.iter().partition(|i| i.refund.is_some_and(|r| r < i.value));
+    let worth = |of: &[&IssueView]| claimed_value(&terms.amounts(), terms.order_total, &lines(of));
+    let owed = worth(&whole).saturating_add(parts.iter().filter_map(|i| i.refund).sum()).min(worth(&refunded));
+    (refunded.iter().map(|i| i.issue.clone()).collect(), owed)
 }
 
 /// Has the store's conductor make its decisions on `order`, in a call of its

@@ -1,5 +1,7 @@
 // Missing and wrong items, once the customer has their order: they report
-// them, the store accepts or declines each report (its answer is final),
+// them, the store accepts each report -- for all it's worth or a part --
+// or declines it (its answer is final), with points as an apology if it
+// likes (`IssueAnswer`),
 // and when their report window has run the store's app settles the food --
 // refunding what it accepted or never answered (see the dispatch `issues`
 // module). Shown on both sides of the order.
@@ -7,7 +9,7 @@ import { useState } from "react";
 import { TimeAgo } from "../TimeAgo";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, HeartPulse, CheckCircle2, Clock3, PackageX, Repeat2, ShieldCheck, XCircle } from "lucide-react";
-import { getIssueItems, getIssuesForOrder, getOrderDecisions, reportIssue, respondToIssue } from "../../holochain/zomes/dispatch";
+import { getIssueItems, getIssuesForOrder, getOrderDecisions, reportIssue } from "../../holochain/zomes/dispatch";
 import { bytesToHex } from "../../holochain/decode";
 import { MAX_NOTE_CHARS, type IssueItems, type IssueKind, type IssueLine, type IssueView, type OrderDecisions } from "../../holochain/types";
 import { claimedValue } from "../../lib/orders/issues";
@@ -15,7 +17,8 @@ import { formatCents, formatDeadline } from "../../lib/ui/format";
 import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
 import { useResource } from "../../lib/hooks/useResource";
-import { Button, Card, Stepper, Textarea } from "../ui";
+import { Button, Card, Notice, Stepper, Textarea } from "../ui";
+import { IssueAnswer } from "./IssueAnswer";
 import { PhotoInput } from "../PhotoInput";
 import { Sheet } from "../Sheet";
 import { OrderAppeal } from "./OrderAppeal";
@@ -71,7 +74,7 @@ export function OrderIssues({ orderRef, role, onAnswered }: { orderRef: Uint8Arr
       {issues.length > 0 && (
         <ul className="divide-y divide-ink-100 border-t border-ink-100 dark:divide-ink-800 dark:border-ink-800">
           {issues.map((issue) => (
-            <IssueRow key={bytesToHex(issue.issue)} issue={issue} items={items} role={role} canAnswer={role === "store" && open} onAnswered={async () => { await reload(); onAnswered?.(); }} />
+            <IssueRow key={bytesToHex(issue.issue)} orderRef={orderRef} issue={issue} items={items} role={role} canAnswer={role === "store" && open} onAnswered={async () => { await reload(); onAnswered?.(); }} />
           ))}
         </ul>
       )}
@@ -133,19 +136,15 @@ function StorePayoutNote({ decisions, orderTotal }: { decisions: OrderDecisions;
   );
 }
 
-function IssueRow({ issue, items, role, canAnswer, onAnswered }: { issue: IssueView; items: IssueItems; role: Role; canAnswer: boolean; onAnswered: () => Promise<void> }) {
+function IssueRow({ orderRef, issue, items, role, canAnswer, onAnswered }: { orderRef: Uint8Array; issue: IssueView; items: IssueItems; role: Role; canAnswer: boolean; onAnswered: () => Promise<void> }) {
   const t = useT();
-  const answering = useAction();
-  const [confirmDecline, setConfirmDecline] = useState(false);
+  // Points given with the answer that couldn't be: said here, as the answer
+  // form goes once it's answered.
+  const [grantProblem, setGrantProblem] = useState<string | null>(null);
   const nameOf = (line: number) => {
     const ordered = items.lines[line];
     return ordered ? [ordered.name, ...ordered.choices].join(", ") : translate("issues.anItem");
   };
-
-  const answer = (accept: boolean) => answering.run(async () => {
-    await respondToIssue(issue.issue, accept);
-    await onAnswered();
-  }, { as: accept ? "accept" : "decline" });
 
   return (
     <li className="p-4">
@@ -173,51 +172,43 @@ function IssueRow({ issue, items, role, canAnswer, onAnswered }: { issue: IssueV
       )}
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <StatusChip accepted={issue.accepted} role={role} />
+        <StatusChip issue={issue} role={role} />
         <span className="text-[11px] text-ink-400"><TimeAgo at={issue.reported_at} /></span>
       </div>
 
       {canAnswer && issue.accepted === null && (
-        <AnimatePresence mode="wait" initial={false}>
-          {confirmDecline ? (
-            <motion.div key="confirm" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-3 rounded-xl border border-ink-200 p-3 dark:border-ink-700">
-              <p className="text-xs leading-relaxed text-ink-600 dark:text-ink-300">{t("issues.declineWarning")}</p>
-              <div className="mt-3 flex gap-2">
-                <Button variant="ghost" className="flex-1 py-2" onClick={() => setConfirmDecline(false)}>
-                  {t("common.back")}
-                </Button>
-                <Button variant="secondary" className="flex-1 py-2" loading={answering.doing === "decline"} onClick={() => answer(false)}>
-                  {t("issues.declineReport")}
-                </Button>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div key="answer" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-3 flex gap-2">
-              <Button variant="ghost" className="flex-1 py-2" disabled={answering.busy} onClick={() => setConfirmDecline(true)}>
-                {t("issues.decline")}
-              </Button>
-              <Button className="flex-1 py-2" loading={answering.doing === "accept"} disabled={answering.busy} onClick={() => answer(true)}>
-                {t("issues.acceptRefund", { amount: formatCents(issue.value) })}
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <IssueAnswer
+          orderRef={orderRef}
+          issue={issue}
+          items={items}
+          onAnswered={async (problem) => {
+            setGrantProblem(problem);
+            await onAnswered();
+          }}
+        />
       )}
-      {answering.error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{answering.error}</p>}
+      {grantProblem && <Notice tone="warn" className="mt-2">{t("issueAnswer.grantFailed", { why: grantProblem })}</Notice>}
     </li>
   );
 }
 
-function StatusChip({ accepted, role }: { accepted: boolean | null; role: Role }) {
+function StatusChip({ issue, role }: { issue: IssueView; role: Role }) {
+  const part = issue.accepted === true && issue.refund !== null && issue.refund < issue.value;
   const [Icon, label, tone] =
-    accepted === true
-      ? [CheckCircle2, translate(role === "store" ? "issues.youAccepted" : "issues.storeAccepted"), "text-green-700 dark:text-green-300"]
-      : accepted === false
+    issue.accepted === true
+      ? [
+          CheckCircle2,
+          part
+            ? translate(role === "store" ? "issues.youAcceptedPart" : "issues.storeAcceptedPart", { amount: formatCents(issue.refund!), value: formatCents(issue.value) })
+            : translate(role === "store" ? "issues.youAccepted" : "issues.storeAccepted"),
+          "text-green-700 dark:text-green-300",
+        ]
+      : issue.accepted === false
         ? [XCircle, translate(role === "store" ? "issues.youDeclined" : "issues.storeDeclined"), "text-ink-600 dark:text-ink-300"]
         : [Clock3, translate(role === "store" ? "issues.waitingYou" : "issues.waitingStore"), "text-ink-500 dark:text-ink-400"];
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${tone}`}>
-      <Icon size={14} /> {label}
+      <Icon size={14} aria-hidden /> {label}
     </span>
   );
 }

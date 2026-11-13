@@ -4,8 +4,8 @@
 // - only the customer reports, only items on the order, never more than
 //   were ordered; only the store answers, once each;
 // - the store's app settles the food once the customer's report window has
-//   run: what it accepted or never answered is refunded, what it declined
-//   isn't;
+//   run: what it accepted (all of, or the part it named) or never answered
+//   is refunded, what it declined isn't;
 // - only the store settles, once, citing that the customer has the order,
 //   for no more than the reports it cites are worth.
 import assert from "node:assert/strict";
@@ -171,4 +171,29 @@ await runScenario(async (scenario) => {
   assert.equal(await refundOf(ignored), 1000, "a report the store never answers is refunded");
   await settlesTo(customer, ignored, -2000 + 1000);
   console.log("[PASS] a report the store ignores is refunded when its window closes");
+
+  // ===== A report refunded in part =====
+  const { ref: halved } = await pickup();
+  const twoBreads = actionHash(await call(customer, "dispatch")<HcRecord>("report_issue", { order: halved, lines: [{ line: BREAD, quantity: 2, kind: "Wrong" }], note: "", photo_data_uri: "" }));
+  await sync();
+  const part = (input: Record<string, unknown>) => raw(merchant, "issue_response", { issue: twoBreads, accept: true, refund: 400, ...input });
+  await assert.rejects(part({ accept: false }), /partial refund/, "a decline refunds no part");
+  await assert.rejects(part({ refund: 0 }), /partial refund/, "a part is more than nothing");
+  await assert.rejects(part({ refund: 1000 }), /partial refund/, "and less than all it's worth -- all of it has no part");
+  await assert.rejects(call(merchant, "dispatch")("respond_to_issue", { issue: twoBreads, accept: true, refund: 0 }), /decline the report/, "the store's app says to decline instead");
+  await call(merchant, "dispatch")("respond_to_issue", { issue: twoBreads, accept: true, refund: 400 });
+  const answered = await retryUntil(() => call(customer, "dispatch")<{ accepted: boolean | null; refund: number | null; value: number }[]>("get_issues_for_order", halved), (views) => views[0]?.accepted !== null);
+  assert.deepEqual([answered[0].accepted, answered[0].refund, answered[0].value], [true, 400, 1000], "the customer sees it accepted for 4.00 of 10.00");
+  await retryUntil(
+    async () => {
+      await call(merchant, "dispatch")("settle_order", halved).catch(() => 0);
+      return refundOf(halved);
+    },
+    (refund) => refund !== null,
+    150,
+    1000,
+  );
+  assert.equal(await refundOf(halved), 400, "settled for the part the store named");
+  await settlesTo(customer, halved, -2000 + 400);
+  console.log("[PASS] a store refunds part of a report: more than nothing, less than it's worth, and settled for just that");
 });

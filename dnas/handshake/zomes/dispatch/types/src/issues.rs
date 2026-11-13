@@ -16,9 +16,10 @@
 //!   store is paid as for any delivery, and the customer's recourse is an
 //!   appeal.
 //! - `ItemSettlement`: what the food's payment comes to. The customer
-//!   reports items missing or wrong (`ItemIssue`), the store accepts or
-//!   declines each (`IssueResponse`) and has the final say, as it would if
-//!   you ordered from it directly; the settlement names the refund.
+//!   reports items missing or wrong (`ItemIssue`), the store accepts each
+//!   -- for all it's worth or a part of it -- or declines it
+//!   (`IssueResponse`), and has the final say, as it would if you ordered
+//!   from it directly; the settlement names the refund.
 //!
 //! Its app waits out a report window before settling, and refunds what the
 //! store accepted or never answered -- a store's own choice, made visible.
@@ -76,7 +77,8 @@ pub struct ItemIssue {
 }
 
 /// The store's answer to an `ItemIssue`: accept it (the customer is
-/// refunded what it's worth) or decline it (they aren't). One per issue.
+/// refunded what it's worth, or the part of it `refund` names) or decline
+/// it (they aren't). One per issue.
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq, Eq)]
 // Decodes only from its own fields: a record of another type that
@@ -85,6 +87,22 @@ pub struct ItemIssue {
 pub struct IssueResponse {
     pub issue: ActionHash,
     pub accept: bool,
+    /// Accepted for part of what it's worth: this much, more than nothing
+    /// and less than all of it. `None` for all of it, and for a decline.
+    #[serde(default)]
+    pub refund: Option<u64>,
+}
+
+impl IssueResponse {
+    /// What accepting it refunds, of an issue worth `value`: all of it, its
+    /// part, or nothing for a decline.
+    pub fn refunds(&self, value: u64) -> u64 {
+        match (self.accept, self.refund) {
+            (false, _) => 0,
+            (true, None) => value,
+            (true, Some(part)) => part.min(value),
+        }
+    }
 }
 
 /// Where a delivery's food went, as its store decides -- see the module
@@ -227,6 +245,17 @@ mod tests {
         // at its own price.
         let lines = [(400, 1), (460, 1)];
         assert_eq!(claimed_value(&lines, 860, &[(1, 1)]), 460);
+    }
+
+    #[test]
+    fn an_answer_refunds_all_a_part_or_nothing() {
+        let issue = ActionHash::from_raw_36(vec![0; 36]);
+        let answer = |accept, refund| IssueResponse { issue: issue.clone(), accept, refund };
+        assert_eq!(answer(true, None).refunds(1000), 1000, "accepted: all it's worth");
+        assert_eq!(answer(true, Some(400)).refunds(1000), 400, "accepted for a part: that part");
+        assert_eq!(answer(true, Some(5000)).refunds(1000), 1000, "never more than it's worth");
+        assert_eq!(answer(false, None).refunds(1000), 0, "declined: nothing");
+        assert_eq!(answer(false, Some(400)).refunds(1000), 0, "declined, whatever it says");
     }
 
     #[test]

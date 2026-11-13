@@ -1380,11 +1380,14 @@ export interface IssueEvidence {
 
 /**
  * What reports on an order are judged against: its lines (reported by
- * position), and what the customer paid for the food.
+ * position), and what the customer paid for the food -- and whose order it
+ * is, at which store, for points its store gives with an answer.
  */
 export interface IssueItems {
   order_total: number;
   lines: LineView[];
+  customer: AgentPubKey;
+  catalog_ref: ActionHash;
 }
 
 export type IssueKind =
@@ -1425,6 +1428,11 @@ export interface IssueView {
    * The store's answer: accepted, declined, or not yet.
    */
   accepted: boolean | null;
+  /**
+   * What the store's answer refunds: all it's worth or the part it
+   * named, nothing for a decline -- `None` before it answers.
+   */
+  refund: number | null;
   /**
    * The note and photo, for the customer and the store.
    */

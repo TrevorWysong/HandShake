@@ -22,8 +22,9 @@ export async function myCards(): Promise<CardView[]> {
   return callZome("rewards", "my_cards", null);
 }
 
-/// The caller's store giving a customer points.
-export async function grantPoints(input: { to: AgentPubKey; catalog_ref: ActionHash; points: number; note: string }): Promise<ActionHash> {
+/// The caller's store giving a customer points -- citing `order` of theirs
+/// there, or by default their latest.
+export async function grantPoints(input: { to: AgentPubKey; catalog_ref: ActionHash; points: number; note: string; order?: ActionHash }): Promise<ActionHash> {
   return callZome("rewards", "grant_points", input);
 }
 

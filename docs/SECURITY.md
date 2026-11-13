@@ -341,6 +341,14 @@ The rule from the last review, applied across every zome that adds up money, poi
 
 Reads that only show something -- menus, bags and promos while browsing, a birthday looked up for a gift that's tried again later -- still skip what isn't here.
 
+## Partial refunds and apology points
+
+- **A store can refund part of a report**, not just all or nothing (`IssueResponse::refund`). Validation holds a part to an accepted report, more than nothing and less than all the report is worth; all of it is written as no part, so each answer has one form. Only the order's store answers, once per report, as before.
+- **The settlement is bounded as before.** It refunds each accepted part, all of each report accepted whole or never answered, and nothing for a decline, and never more than the cited reports are worth together (two reports of the same unit are worth it once). Validation's ceiling on a settlement is unchanged: a part can only lower a refund, never raise it.
+- **A customer refunded in part can still appeal** for the rest: an appeal asks for up to what the order cost less what was refunded.
+- **Points as an apology are an ordinary grant** (`grant_points`), bounded as every grant is: only the store's owner gives them, only to someone who's ordered there citing their order, at most `MAX_GRANT_POINTS` a grant, with a short note, sealed between the two. They're offered only where the store runs an active program. The grant is a call of its own after the answer, so a grant that fails never undoes the answer (commit poisoning); the store is told.
+- **Nothing grows with it.** A part is one optional field on the answer every report already gets; points are one grant and one link, as any gift.
+
 ## Driver fee schedules
 
 - **A driver's fee schedule stays on their device.** A rate per mile or km, or up to ten distance bands with what's asked past the last, only sets the price of the driver's own bids, by hand or automatically. Nothing about it is published, so customers and stores see only the fee for their order, and the network has nothing new to validate or store. Every bid is still bounded by validation: never zero, never over the customer's cap (`integrity/src/bids.rs`).

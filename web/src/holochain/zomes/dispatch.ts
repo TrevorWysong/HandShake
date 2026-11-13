@@ -427,8 +427,10 @@ export async function reportIssue(input: { allergen?: boolean; order: ActionHash
 }
 
 /// The store accepting or declining a report -- its answer is final.
-export async function respondToIssue(issue: ActionHash, accept: boolean): Promise<HcRecord> {
-  return callZome("dispatch", "respond_to_issue", { issue, accept });
+/// The caller's store answering a report: declined, accepted for all it's
+/// worth, or accepted for the part `refund` names.
+export async function respondToIssue(issue: ActionHash, accept: boolean, refund: number | null = null): Promise<HcRecord> {
+  return callZome("dispatch", "respond_to_issue", { issue, accept, refund });
 }
 
 export async function getIssuesForOrder(orderRef: ActionHash): Promise<IssueView[]> {

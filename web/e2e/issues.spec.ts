@@ -110,13 +110,18 @@ test("a report of a missing item waits under Issues until the store answers it",
   await expect(seller).toHaveURL(/tab=issues/);
   // The store's list catches up with the report on its poll.
   await expect(seller.getByText("The customer reported a problem").first()).toBeVisible({ timeout: 90_000 });
-  await expect(seller.getByText(/Accept or decline each report by/).first()).toBeVisible();
+  await expect(seller.getByText(/Refund all, part or none of each report by/).first()).toBeVisible();
   await keep(seller, "issues-report");
 
-  // Whatever an earlier run left too: the seeded world carries on between runs.
-  const accept = seller.getByRole("button", { name: /^Accept · refund/ });
+  // Refunded in part -- and whatever an earlier run left too: the seeded
+  // world carries on between runs.
+  const part = seller.getByRole("tab", { name: "Part" });
+  const refund = seller.getByRole("button", { name: /^Refund / });
   await expect(async () => {
-    if (await accept.count()) await accept.first().click();
+    if (await refund.count()) {
+      if (await part.count()) await part.first().click();
+      await refund.first().click();
+    }
     await expect(seller.getByRole("tab", { name: /Issues/ })).toHaveText("Issues", { timeout: 4_000 });
   }).toPass({ timeout: 60_000 });
   await expect(seller.getByText("No open issues")).toBeVisible();
