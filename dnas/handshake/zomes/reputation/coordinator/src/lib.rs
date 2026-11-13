@@ -20,7 +20,9 @@ use handshake_coordinator_support::{all_arrived, arrived, call_local, call_role,
 use std::collections::BTreeMap;
 use reputation_integrity::*;
 
+mod customers;
 mod findings;
+pub use customers::*;
 pub use findings::*;
 
 /// Where a `ReputationTarget`'s events live: the link base and type.
@@ -597,14 +599,21 @@ pub fn get_item_reviews(input: ItemReviewsInput) -> ExternResult<ReviewsPage> {
 #[cfg(feature = "test-utils")]
 mod test_utils {
     use hdk::prelude::*;
-    use reputation_integrity::{EntryTypes, LinkTypes, MarkReply, Review};
-    handshake_coordinator_support::raw_link_test_externs!(StoreToEvent, DriverToEvent, CustomerToEvent, StoreToReview, DriverToReview, OrderToReview, ItemToReview, ReviewerToReview, EventToReply);
+    use reputation_integrity::{CustomerRating, EntryTypes, LinkTypes, MarkReply, Review};
+    handshake_coordinator_support::raw_link_test_externs!(StoreToEvent, DriverToEvent, CustomerToEvent, StoreToReview, DriverToReview, OrderToReview, ItemToReview, ReviewerToReview, EventToReply, CustomerToRating, RaterToRating, PairToBlock);
 
     /// Writes a reply to a finding exactly as given, past the coordinator's
     /// checks, so a test can prove what validation refuses.
     #[hdk_extern]
     pub fn create_raw_mark_reply_for_testing(reply: MarkReply) -> ExternResult<ActionHash> {
         create_entry(&EntryTypes::MarkReply(reply))
+    }
+
+    /// Writes a rating of a customer exactly as given, past the
+    /// coordinator's checks, so a test can prove what validation refuses.
+    #[hdk_extern]
+    pub fn create_raw_customer_rating_for_testing(rating: CustomerRating) -> ExternResult<ActionHash> {
+        create_entry(&EntryTypes::CustomerRating(rating))
     }
 
     /// Writes a review exactly as given, past the coordinator's checks --

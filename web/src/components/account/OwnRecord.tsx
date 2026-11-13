@@ -4,7 +4,9 @@
 // their profile, a store's on its page; a driver's is under Earnings.
 import type { ReactNode } from "react";
 import { CheckCircle2, ShieldAlert, ShieldCheck } from "lucide-react";
-import { getFindings, getReputationSummary } from "../../holochain/zomes/reputation";
+import { getCustomerScore, getFindings, getReputationSummary } from "../../holochain/zomes/reputation";
+import { scorePercent } from "../../lib/reputation/customers";
+import { ScoreLine } from "../orders/CustomerHistory";
 import { bytesToHex } from "../../holochain/decode";
 import type { ActionHash, AgentPubKey } from "../../holochain/types";
 import { useResource } from "../../lib/hooks/useResource";
@@ -30,8 +32,30 @@ export function MyCustomerRecord({ me }: { me: AgentPubKey }) {
       seenBy="ownRecord.customer.seenBy"
       how={(["what", "who", "recover", "wrong", "findings"] as const).map((part) => ({ title: t(`ownRecord.customer.${part}`), body: t(`ownRecord.customer.${part}Detail`, { days, stores: terms.min_flagging_stores }) }))}
     >
+      <OwnScore me={me} />
       <OwnFindings findings={findings} intro={t("findings.customerIntro", { stores: terms.min_flagging_stores })} onReplied={reload} />
     </OwnRecord>
+  );
+}
+
+/// A customer's own score: what stores and drivers see, the reasons counted
+/// -- never who gave them -- or how many ratings count so far.
+function OwnScore({ me }: { me: AgentPubKey }) {
+  const t = useT();
+  const terms = useTerms();
+  const { data: score } = useResource(`customer-score:${bytesToHex(me)}`, () => getCustomerScore(me));
+  if (!score) return null;
+  const percent = scorePercent(score);
+  return (
+    <div className="mt-4 border-t border-ink-100 pt-4 dark:border-ink-800">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-ink-400">{t("score.yours")}</h3>
+      {percent === null ? (
+        <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">{t("score.notYet", { count: score.up + score.down, min: terms.min_customer_ratings })}</p>
+      ) : (
+        <ul className="mt-1"><ScoreLine score={score} percent={percent} /></ul>
+      )}
+      <p className="mt-1 text-[0.6875rem] leading-relaxed text-ink-400">{t("score.yoursDetail", { window: terms.customer_rating_window })}</p>
+    </div>
   );
 }
 

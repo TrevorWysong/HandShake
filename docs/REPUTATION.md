@@ -2,7 +2,7 @@
 
 How HandShake records what people did and what people thought, who sees it, what it changes, and how anyone answers it. A mark against someone shapes who takes their orders and who they're matched with, and those effects compound. On a network with no company to complain to, the rules themselves have to be fair, visible and answerable.
 
-This is the plan as well as the record. Phases 1 to 3 are built; phase 4 is deferred.
+This is the plan as well as the record. All four phases are built.
 
 ## Two kinds of signal
 
@@ -37,7 +37,7 @@ Every mark, existing or proposed, is held to these.
 |---|---|---|---|---|---|
 | Driver | completed, dropped, offers lapsed, disputes raised, disputes decided against them, collateral forfeited, deliveries held at fault (phase 3); stars | the order's store or customer, citing the order | customers choosing a bid, and on "your driver" | completed, dropped, disputes and decisions against them, under Earnings, with how it's counted; stars on their dashboard | automatic matching weighs drops and lapses (`clean_start_deliveries` cushions newcomers); stars never |
 | Store | completed, called off, kept drivers waiting, drivers' check-in reports; stars and reviews | the order's customer or driver, citing the order | customers on its page and info; drivers on each order, and automatic bidding skips stores reported often | **stars only** (gap) | drivers' choices; nothing automatic but a driver's own skip rule |
-| Customer | contested "never arrived" claims decided against them, no-shows, orders called off once the store had them; stores' findings of bad faith (phase 2) | the order's store, citing its decision; or the customer's own app, on the order's record of their cancellation | stores and drivers on each order they're handling | **nothing** (gap) | stores' and drivers' choices; nothing automatic |
+| Customer | contested "never arrived" claims decided against them, no-shows, orders called off once the store had them; stores' findings of bad faith (phase 2); a score from stores and drivers, and their report pattern (phase 4) | the order's store, citing its decision; or the customer's own app, on the order's record of their cancellation | stores and drivers on each order they're handling | **nothing** (gap) | stores' and drivers' choices; nothing automatic |
 
 ## Gaps, and what closed them
 
@@ -75,9 +75,44 @@ A store declining a report is its discretion (principle 9): never recorded, neve
 - **The driver answers:** one public reply (`MarkReply`), shown beside the finding wherever it's shown.
 - **Shown, never weighed:** customers choosing a driver see "N deliveries held at fault", opening onto each reason and the driver's reply. It never changes the driver's pay or how automatic matching counts their bids.
 
-## Phase 4 -- drivers and stores rating customers (deferred)
+## Phase 4 -- customers rated, customers' patterns, and blocks (built, from research)
 
-Free stars are the most subjective signal and the easiest to use against someone (a driver marking down a customer who didn't tip). If it's built at all: one thumbs-down with a reason from a fixed list, one per order per party, shown as counts, never an average, never weighed. Deferred until phases 1--3 have shown how marks are used.
+The big apps don't publish customer ratings, but they run them internally, and a fraud team acts on them: the decentralized network has no fraud team and no ban, so the same signals have to be visible to the people deciding -- held to these principles.
+
+### What the platforms do (November 2026)
+
+- **Uber Eats couriers rate the customer**, thumbs up or down, after each drop-off; a thumbs-down asks for a reason from a fixed list, and isn't published. A courier's own score is the share of thumbs-up over their last 100 rated trips, shown once they have 10. "Ratings Protection" removes thumbs-down from people with a pattern of irregular, unfair ratings, and from trips affected by things outside the courier's control (a store's delay). [Uber: delivery ratings explained](https://www.uber.com/us/en/deliver/basics/tips-for-success/delivery-ratings-explained/), [Uber AU: satisfaction ratings](https://www.uber.com/au/en/blog/your-guide-to-satisfaction-ratings/)
+- **Uber riders have a rating**, from five trips on, and lose access only well below their city's average, after several warnings -- "a very small number of riders". [WEF on Uber's 2019 policy](https://www.weforum.org/stories/2019/05/uber-will-start-deactivating-riders-with-low-ratings)
+- **Uber removes access for false refund claims, promo abuse and duplicate accounts**, and screens customers who abuse ratings or support to get refunds, so their complaints don't count against couriers. [Uber: losing account access](https://www.uber.com/us/en/drive/driver-app/deactivation-review/)
+- **DoorDash has no customer rating**, but a Dasher can report a customer (SafeChat), unassign without a penalty, and opt out of future deliveries to them; refunds are denied on "order details and account history". [DoorDash: Dasher safety](https://dasher.doordash.com/en-us/support/safety), [DoorDash community guidelines](https://about.doordash.com/en-us/news/community-guidelines)
+- **Instacart shoppers can block a customer** from future batches, and Instacart drops ratings from customers who habitually rate low. [Instacart: a community built on best intent](https://company.instacart.com/shopper-community/our-commitment-to-shoppers-a-community-built-on-best-intent)
+- **Refund-fraud signals the industry watches:** repeated "not received" or "damaged" claims on one account, address or card; claims the moment a delivery is confirmed; accounts sharing an address or card. No one signal proves fraud; delivery evidence settles most claims. [Accertify](https://www.accertify.com/industry/quick-service-restaurants/), [BoldDesk](https://www.bolddesk.com/blogs/ecommerce-fraud-signals-detection)
+
+### What HandShake does
+
+1. **Stores and drivers rate the customer**, thumbs up or down, once per completed order each (`CustomerRating`): validation holds it to the order's store or the driver who delivered it, on a version showing it completed, a thumbs-down with a reason from a fixed list (`CustomerReason`: rude or abusive; unreachable at the handoff; unsafe; wrong or missing address details; asked to go off the app; another reason) and a thumbs-up with none, once per rater per order. There's no reason about tipping: a tip is set before a driver bids. A store rates from its order history; a driver from "How were your customers?" on their dashboard, their deliveries of the last few days.
+2. **A score, not stars:** the share of thumbs-up over the customer's last `customer_rating_window` counted ratings (default 100), shown once there are `min_customer_ratings` (default 10). Read newest first, stopping once the window is full.
+3. **Rater protection:** a rater who has rated at least `min_rater_ratings` customers (default 10) and given more than `max_rater_down_percent` of them a thumbs-down (default 50) doesn't count.
+4. **The report pattern:** "reported a problem on N of their last M orders" (`get_report_pattern`), over `report_pattern_orders` (default 20), shown from `min_report_pattern_orders` (default 5) to a store answering their report.
+5. **Who sees it:** the score, with how many of each reason, where stores and drivers decide on an order (`CustomerHistory`); the customer sees exactly that on their record -- never who rated them.
+6. **Choices, never bans by score:** a store's auto-accept can hold orders from customers below a score it picks (`hold_below_customer_score`), declining them as not reviewed if nobody does in time; a driver's automatic bidding can skip customers below a score they pick. A customer with no score shown is never held or skipped -- no history isn't a low score.
+
+### Blocks
+
+Any party -- a customer, a driver or a store -- can block any other, in any direction. Blocked either way, the two no longer see or deal with each other:
+
+| Between | What stops |
+|---|---|
+| customer and store | the store isn't in Browse, its page says it isn't available, ordering is refused; the store's app declines anything that reaches it anyway (`NotServing`), and nobody's charged |
+| customer and driver | the driver's feed leaves out the customer's orders and their bid is refused; the customer doesn't see their bids, can't take one, and matching skips them |
+| driver and store | the driver's feed leaves out the store's orders and their bid is refused; the store's customers don't see their bids, and matching skips them |
+
+- **Private as a public network allows:** a block is a link at the pair's key -- a hash of the two parties, the same whichever blocked whom (`pair_key`). Nobody can list a person's or a store's blocks; only check a pair whose sides they already know. Its maker's own list is a private entry on their chain (`PartyBlock`).
+- **Validation:** only the person, or the store's owner, a block says made it can make it; at its pair's key; never against oneself. Only whoever made a block lifts it.
+- **Enforced where the parties meet,** in the coordinators every honest app runs -- ordering, a store taking an order, a driver's feed and bid, a customer taking a bid, matching -- and by each party's own app, so a modified app on the other side gets nowhere.
+- **Never automatic, never counted, never shown to anyone else.** The blocked party isn't told. Each person and store lists and lifts their own blocks: on their profile, or the store's page.
+
+Not emulated: duplicate accounts. Identities are free here, so a customer with no history shows as new -- "no history yet" is itself what a driver or store weighs, and the payments' established-payer check (docs/DIRECT_PAYMENTS.md) already treats a new payer with care.
 
 ## Abuse to weigh, phase by phase
 
@@ -90,10 +125,15 @@ Free stars are the most subjective signal and the easiest to use against someone
 | 3 | a store blames a driver falsely | only after refunding the customer; the driver sees the claim and replies |
 | 3 | a store and customer collude against a driver | the store pays the refund every time; the driver's reply; reviews from colluding identities already discounted |
 | 3 | a driver retaliates | drivers can't mark customers (phase 4 deferred) |
+| 4 | a driver rates down customers who didn't tip | tips are set before bidding; no tipping reason exists; raters who rate most customers down don't count |
+| 4 | a customer rated down unfairly once | a score over the last 100 rated orders, shown only from 10 |
+| 4 | blocks used to punish | they mark nobody, are never counted or shown to anyone else, and can't be listed |
+| 4 | blocking as someone else | only the person, or the store's owner, a block names can make it; only its maker lifts it |
 | all | fake accounts flooding marks | each mark is tied to a real order, once per recorder per order; reporters who haven't worked with several parties don't count where that's possible (`min_reporter_stores`) |
 
 ## Testing each phase
 
+- Integration (`tests/tryorama/src/customer-ratings-and-blocks.test.ts`): a rating refused from anyone but the order's store or driver, without its reason, off a completed order, or twice; a rater who rates most customers down not counting; the report pattern; blocks refused when made as someone else, kept apart at ordering, accepting, the feed, bidding, taking a bid and matching, and lifted only by their maker.
 - Integration (`tests/tryorama/src/reputation-findings.test.ts`): each finding refused from anyone but the order's store, on the wrong kind of report or answer, or twice; a store's finding counting only once it's established, and not once an appeal the customer won; a reply only from the one it's about, once and short; the driver reading the customer's evidence.
 - Unit: each display rule -- rates, minimums, the window.
 - Browser: each record shown to its subject, in the words others see, at phone and desktop widths, larger text and high contrast.

@@ -24,14 +24,25 @@ pub fn set_catalog_open(input: SetCatalogOpenInput) -> ExternResult<Record> {
 pub struct SetAutoAcceptOrdersInput {
     pub original_action: ActionHash,
     pub auto_accept_orders: bool,
+    /// Hold customers whose score is below this share for review; `None`
+    /// holds none. Left out, it's unchanged.
+    #[serde(default)]
+    pub hold_below_customer_score: Option<Option<u8>>,
 }
 
-/// Turns the store's conductor accepting new orders on its own on or off --
-/// see `MerchantCatalog::auto_accept_orders`.
+/// Turns the store's conductor accepting new orders on its own on or off,
+/// and which customers it holds for review -- see
+/// `MerchantCatalog::auto_accept_orders`, `hold_below_customer_score`.
 #[hdk_extern]
 pub fn set_auto_accept_orders(input: SetAutoAcceptOrdersInput) -> ExternResult<Record> {
     let (current, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(input.original_action, "MerchantCatalog")?;
     catalog.auto_accept_orders = input.auto_accept_orders;
+    if let Some(hold) = input.hold_below_customer_score {
+        if hold.is_some_and(|percent| percent > 100) {
+            return Err(guest("A score to hold below is a share, at most 100%."));
+        }
+        catalog.hold_below_customer_score = hold;
+    }
     let updated = update_version(&current, &EntryTypes::MerchantCatalog(catalog), LinkTypes::Version)?;
     written(updated)
 }

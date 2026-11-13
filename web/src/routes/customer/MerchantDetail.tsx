@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { LoadProblem } from "../../components/LoadProblem";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Clock, Heart, HeartPulse, Tag } from "lucide-react";
+import { ArrowLeft, Ban, ChevronRight, Clock, Heart, HeartPulse, Tag } from "lucide-react";
 import { motion } from "framer-motion";
 import clsx from "clsx";
 import { averageRating, getItemRatingSummaries, type ItemRatingSummary } from "../../holochain/zomes/reputation";
@@ -14,7 +14,7 @@ import { useAllergenNames } from "../../lib/hooks/useAllergenNames";
 import { hexToBytes, bytesToHex } from "../../holochain/decode";
 import { useCarts, type CartLine } from "../../store/cart";
 import { formatCents } from "../../lib/ui/format";
-import { Chip, ChipRow, Skeleton } from "../../components/ui";
+import { Chip, ChipRow, EmptyState, Skeleton } from "../../components/ui";
 import { useTerms } from "../../store/network";
 import { useT } from "../../i18n";
 import { StarRating } from "../../components/StarRating";
@@ -38,6 +38,9 @@ import { storeStatus } from "../../lib/storefront/storeHours";
 import { StoreArt } from "../../components/store/StoreArt";
 import { StoreRoute } from "./StoreRoute";
 import { storeRecordLines } from "../../lib/reputation/recordLines";
+import { BlockActions, type Blockable } from "../../components/reputation/BlockActions";
+import { blockedPairs } from "../../holochain/zomes/reputation";
+import { myAgentPubKey } from "../../holochain/client";
 import { useStoreStanding } from "../../lib/hooks/useStoreStanding";
 
 /// Keyed by the store in the URL, so moving from one store page to another
@@ -45,6 +48,19 @@ import { useStoreStanding } from "../../lib/hooks/useStoreStanding";
 /// the previous store.
 export function MerchantDetail() {
   return <StoreRoute>{(hash) => <StorePage key={hash} hash={hash} />}</StoreRoute>;
+}
+
+/// "…" on a store's page: blocking it, or lifting a block.
+function StoreBlock({ by, catalogHash, name, hash, onChanged }: { by: Uint8Array; catalogHash: Uint8Array; name: string; hash: string; onChanged: () => Promise<void> }) {
+  return (
+    <BlockActions
+      by={{ Person: by }}
+      partyKey={`person:${bytesToHex(by)}`}
+      targetsKey={`store-page:${hash}`}
+      targets={async (): Promise<Blockable[]> => [{ party: { Store: catalogHash }, name, role: "store" }]}
+      onChanged={() => void onChanged()}
+    />
+  );
 }
 
 function StorePage({ hash }: { hash: string }) {
@@ -64,6 +80,10 @@ function StorePage({ hash }: { hash: string }) {
   const catalog = menu?.catalog ?? routerState?.catalog ?? null;
   const now = useClock();
   const status = catalog ? storeStatus(catalog, now) : null;
+  // Blocked either way, the store isn't there for this customer
+  // (docs/REPUTATION.md, phase 4).
+  const me = myAgentPubKey();
+  const { data: blocked = false, reload: reloadBlocked } = useResource(`store-blocked:${hash}`, async () => (await blockedPairs([[{ Person: me }, { Store: catalogHash }]]))[0] ?? false);
   // As they sell right now: a sale's price, while it's running.
   const items = menu && catalog ? menu.items.map((row) => soldRow(row, catalog, now)) : null;
   const bags = menu?.bags ?? [];
@@ -108,6 +128,17 @@ function StorePage({ hash }: { hash: string }) {
   // Filtered too: what someone's asked not to see stays out of the sale as well.
   const onSale = filteredItems.filter((row) => row.fullPriceCents && row.item.available);
   const setFilters = (diet: string[], hide: boolean) => setParams({ ...(diet.length ? { diet } : {}), ...(hide ? { hide: "1" } : {}) }, { replace: true });
+
+  if (blocked) {
+    return (
+      <div className="px-4 pt-6">
+        <EmptyState icon={<Ban size={32} aria-hidden />} title={t("block.storeUnavailable")} subtitle={t("block.storeUnavailableDetail")} action={{ label: t("block.backToBrowse"), to: "/customer" }} />
+        <div className="mt-4 flex justify-center">
+          <StoreBlock by={me} catalogHash={catalogHash} name={catalog?.business_name ?? ""} hash={hash} onChanged={reloadBlocked} />
+        </div>
+      </div>
+    );
+  }
 
   if (!catalog || !items) {
     if (menuError) return <LoadProblem error={menuError} onRetry={reloadMenu} />;
@@ -160,6 +191,9 @@ function StorePage({ hash }: { hash: string }) {
         <motion.button whileTap={{ scale: 0.9 }} onClick={goBack} aria-label={t("common.back")} className="absolute top-3 left-3 grid h-10 w-10 place-items-center rounded-full bg-white/90 shadow backdrop-blur-sm transition hover:bg-white lg:top-4 lg:left-4">
           <ArrowLeft size={18} className="text-ink-900" />
         </motion.button>
+        <span className="absolute top-3 right-15 rounded-full bg-white/90 shadow backdrop-blur-sm lg:top-4 lg:right-16">
+          <StoreBlock by={me} catalogHash={catalogHash} name={catalog.business_name} hash={hash} onChanged={reloadBlocked} />
+        </span>
         <motion.button
           whileTap={{ scale: 0.85 }}
           onClick={() => toggleFavorite(catalogHash)}

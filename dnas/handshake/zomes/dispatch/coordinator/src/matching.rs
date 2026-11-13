@@ -60,6 +60,14 @@ pub fn get_open_orders_near(geohash: String) -> ExternResult<Vec<Record>> {
         }
     }
     orders.truncate(most);
+    // Not an order from a customer or a store the caller is blocked with,
+    // either way (docs/REPUTATION.md, phase 4) -- read together. Every one
+    // listed is a delivery (filtered above), two pairs each.
+    use crate::blocks::Party;
+    let me = Party::Person(agent_info()?.agent_initial_pubkey);
+    let pairs = orders.iter().filter_map(decode_or::<DeliveryOrder>).flat_map(|order| [(me.clone(), Party::Person(order.requester)), (me.clone(), Party::Store(order.catalog_ref))]).collect();
+    let blocked = crate::blocks::blocked_each(pairs)?;
+    let orders = orders.into_iter().zip(blocked.chunks(2)).filter(|(_, pair)| !pair.contains(&true)).map(|(record, _)| record).collect();
     Ok(orders)
 }
 
@@ -166,11 +174,23 @@ fn ranked(order_ref: &ActionHash, latest: &Record, order: &dispatch_integrity::D
     let mut links = get_links(LinkQuery::try_new(order_ref.clone(), LinkTypes::OrderToBid)?, GetStrategy::default())?;
     links.sort_by_key(|link| link.timestamp);
     links.truncate(handshake_governance::max_ranked_bids() as usize);
+    let mut open = Vec::new();
     for link in links {
-        let Some(bid_ref) = link.target.into_action_hash() else { continue };
+        let Some(bid_ref) = link.target.clone().into_action_hash() else { continue };
         let Ok(record) = resolve_latest(bid_ref.clone()) else { continue };
         let Some(bid) = decode_or::<Bid>(&record) else { continue };
         if bid.status != BidStatus::Open || original_action_of(bid.order_ref.clone()).ok().as_ref() != Some(order_ref) || record.action().author() != &bid.bidder {
+            continue;
+        }
+        open.push((link, bid_ref, bid));
+    }
+    // A driver blocked with the customer or the store, either way, isn't
+    // shown or matched (docs/REPUTATION.md, phase 4) -- read together.
+    use crate::blocks::Party;
+    let pairs = open.iter().flat_map(|(_, _, bid)| [(Party::Person(order.requester.clone()), Party::Person(bid.bidder.clone())), (Party::Store(order.catalog_ref.clone()), Party::Person(bid.bidder.clone()))]).collect();
+    let blocked = crate::blocks::blocked_each(pairs)?;
+    for ((link, bid_ref, bid), pair) in open.into_iter().zip(blocked.chunks(2)) {
+        if pair.contains(&true) {
             continue;
         }
         let weight = weigh(bid.price_offer, bid.eta_seconds, &driver_record(&bid.bidder)?, handshake_governance::minute_value_cents());

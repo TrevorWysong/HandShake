@@ -24,6 +24,9 @@ import { POLL } from "../../lib/network/poll";
 import { useClock } from "../../lib/hooks/useClock";
 import { storeStatus } from "../../lib/storefront/storeHours";
 import { fartherThanKm } from "../../lib/storefront/fartherAway";
+import { blockedPairs } from "../../holochain/zomes/reputation";
+import { myAgentPubKey } from "../../holochain/client";
+import type { Party } from "../../holochain/types";
 import { useT } from "../../i18n";
 
 /// Stores read a page at a time while browsing.
@@ -100,7 +103,16 @@ export function Browse() {
   const driveMinutes = useNearbyStores((s) => minutesFrom(s, location));
   const deals = useNearbyStores((s) => s.deals);
   // What's been read of them, nearest first, and how many are still coming.
-  const rows = useMemo(() => want.flatMap((l) => known[l.hex] ?? []), [want, known]);
+  const listed = useMemo(() => want.flatMap((l) => known[l.hex] ?? []), [want, known]);
+  // A store blocked either way isn't there for this customer
+  // (docs/REPUTATION.md, phase 4) -- checked together for what's listed.
+  const me = myAgentPubKey();
+  const listedKey = listed.map((r) => r.hex).join(",");
+  const { data: blocked = [] } = useResource(listedKey ? `browse-blocked:${listedKey}` : null, async () => {
+    const flags = await blockedPairs(listed.map((r): [Party, Party] => [{ Person: me }, { Store: r.hash }]));
+    return listed.filter((_, i) => flags[i]).map((r) => r.hex);
+  });
+  const rows = useMemo(() => listed.filter((r) => !blocked.includes(r.hex)), [listed, blocked]);
   const pending = want.filter((l) => !known[l.hex] && !gone[l.hex]).length;
   // More to read: of what's listed, or farther out.
   const more = !!ordered && (wanted < ordered.length || !widen);

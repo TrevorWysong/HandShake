@@ -166,6 +166,7 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
         dietary_tags: Vec::new(),
         allergy_policy: None,
         auto_accept_orders: false,
+        hold_below_customer_score: None,
         leave_at_door_max_cents: None,
         min_order_cents: None,
         busy_extra_minutes: 0,

@@ -19,6 +19,7 @@ import { offerable, offerRefusal, offerRules, type Commitment } from "../../lib/
 import { useDriverSettings } from "../../store/roleSettings";
 import { DriverSettingsCard } from "./DriverSettingsCard";
 import { FeeCard } from "./FeeCard";
+import { RecentCustomers } from "./RecentCustomers";
 import { VerificationCard } from "./VerificationCard";
 import { useTerms } from "../../store/network";
 import { useSentBids } from "../../store/sentBids";
@@ -183,6 +184,7 @@ export function DriverDashboard() {
             </motion.button>
           </Card>
           <FeeCard />
+          <RecentCustomers driverHex={driverHex} />
         </div>
         <PhotoNeeded
           open={askingPhoto}

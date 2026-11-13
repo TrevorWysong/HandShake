@@ -11,12 +11,14 @@ import { StarRating } from "../../../components/StarRating";
 import { formatCents, formatEta, shortAgentId, formatClockTime } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useResource } from "../../../lib/hooks/useResource";
-import type { ActionHash, Bid, DeliveryOrder, InHand, WarrantSummary } from "../../../holochain/types";
+import type { ActionHash, Bid, DeliveryOrder, InHand, Party, WarrantSummary } from "../../../holochain/types";
 import { carryRefusal, customerRefusal, describeLoad } from "../../../lib/driving/driverLoad";
 import { useTerms } from "../../../store/network";
 import { POLL, isOrderOrBidSignal } from "../../../lib/network/poll";
 import { useT } from "../../../i18n";
 import { DriverFaults } from "../../../components/reputation/DriverFaults";
+import { blockedPairs } from "../../../holochain/zomes/reputation";
+import { DriverBlock } from "../../../components/reputation/DriverBlock";
 import { BidWeightBreakdown, HowBidsCompare } from "../../../components/orders/BidWeights";
 
 /// A bid's bidder, with their warrant count and driver track record.
@@ -43,8 +45,13 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
     `order-bids:${hash}`,
     async (): Promise<BidRow[]> => {
       const page = await listBidsForOrder(orderRef);
+      // A driver blocked with this customer or this store, either way, isn't
+      // shown (docs/REPUTATION.md, phase 4) -- checked together.
+      const bidders = page.bids.map((record) => decodeEntry<Bid>(record).bidder);
+      const blocked = await blockedPairs(bidders.flatMap((bidder): [Party, Party][] => [[{ Person: order.requester }, { Person: bidder }], [{ Store: order.catalog_ref }, { Person: bidder }]]));
+      const shown = page.bids.filter((_, i) => !blocked[i * 2] && !blocked[i * 2 + 1]);
       return Promise.all(
-        page.bids.map(async (record) => {
+        shown.map(async (record) => {
           const bid = decodeEntry<Bid>(record);
           const [warrants, stats, load] = await Promise.all([
             checkWarrants(bid.bidder).catch(() => null),
@@ -113,9 +120,10 @@ export function OrderBids({ orderRef, order, accepting, onAccept }: { orderRef: 
               <motion.div key={bytesToHex(bidHash)} layout variants={fadeSlideUp} initial="hidden" animate="visible" exit={{ opacity: 0, scale: 0.97 }}>
                 <Card className="flex items-center justify-between p-3.5">
                   <div>
-                    <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">
-                      {nameOf(row)} · {formatEta(bid.eta_seconds)}
-                      {bestMatch && bytesEqual(bestMatch.bid, bidHash) && <span className="ml-2 rounded-full bg-handshake-100 px-2 py-0.5 text-[10px] font-bold text-handshake-700 dark:bg-handshake-900/30 dark:text-handshake-300">{t("order.bestMatch")}</span>}
+                    <p className="flex items-center gap-1 text-sm font-semibold text-ink-900 dark:text-ink-50">
+                      <span>{nameOf(row)} · {formatEta(bid.eta_seconds)}</span>
+                      {bestMatch && bytesEqual(bestMatch.bid, bidHash) && <span className="ml-1 rounded-full bg-handshake-100 px-2 py-0.5 text-[10px] font-bold text-handshake-700 dark:bg-handshake-900/30 dark:text-handshake-300">{t("order.bestMatch")}</span>}
+                      <DriverBlock driver={bid.bidder} name={nameOf(row)} />
                     </p>
                     <p className="text-xs text-ink-400">
                       {t("order.bidFee", { amount: formatCents(bid.price_offer) })}

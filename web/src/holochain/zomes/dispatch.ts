@@ -1,6 +1,6 @@
 import { workedFor } from "../../lib/payments/work";
 import { callZome } from "../client";
-import type { AllergySet, ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecurrenceRule, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VehicleDetails, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
+import type { AllergySet, ActionHash, AgentPubKey, AppealsPage, AppealView, BagStanding, Beacon, BidWeight, RecurringDue, StoreArrivalEvidence, DeclineReason, DeliveryStatus, DropoffDetails, DropoffPreference, GeoPoint, HcRecord, InHand, IssueItems, IssueLine, IssueView, LineView, NetworkReach, NetworkTerms, OrderDecisions, OrderItem, OrderTiming, PaymentInput, PinSecret, PromoStanding, RankedBid, Receipt, RecentDelivery, RecurrenceRule, ReportPattern, StoreStep, StoreStepDue, TemplateDetails, Timestamp, VehicleDetails, VerificationCheck, VerificationTerms, VerificationView, WarrantSummary } from "../types";
 
 // --- orders ---
 
@@ -621,4 +621,16 @@ export async function myPromoUses(promo: ActionHash): Promise<number> {
 /// ordered one already -- in the order asked.
 export async function bagStandings(bags: ActionHash[]): Promise<BagStanding[]> {
   return callZome("dispatch", "bag_standings", bags);
+}
+
+/// How many of a customer's recent orders they've reported a problem with
+/// -- for a store answering their report (docs/REPUTATION.md, phase 4).
+export async function getReportPattern(customer: AgentPubKey): Promise<ReportPattern> {
+  return callZome("dispatch", "get_report_pattern", customer);
+}
+
+/// The caller's deliveries of the last few days, newest first -- for rating
+/// their customers (docs/REPUTATION.md, phase 4).
+export async function myRecentDeliveries(limit: number): Promise<RecentDelivery[]> {
+  return callZome("dispatch", "my_recent_deliveries", limit);
 }

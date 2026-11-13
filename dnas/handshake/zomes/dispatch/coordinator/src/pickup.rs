@@ -57,6 +57,7 @@ pub fn request_pickup_order(input: RequestPickupOrderInput) -> ExternResult<Reco
     let requester = agent_info()?.agent_initial_pubkey;
     let catalog_ref = input.catalog_ref.clone();
     let requested_at = sys_time()?;
+    crate::orders::ensure_store_serves(&requester, &catalog_ref)?;
 
     if let Some(promo_ref) = &input.promo_code_ref {
         ensure_promo_usable(promo_ref, &input.catalog_ref)?;
@@ -135,6 +136,7 @@ pub fn accept_pickup_order(input: AcceptOrderInput) -> ExternResult<Record> {
     if order.merchant != agent_info()?.agent_initial_pubkey {
         return Err(guest("Only the order's store can accept it."));
     }
+    crate::orders::ensure_customer_served(&order.catalog_ref, &order.requester)?;
     crate::accounts::ensure_not_moved(&order.requester, "This customer")?;
     ensure_priced_from_current_menu(&order_original_action, &order.lines, order.promo_code_ref.as_ref())?;
     crate::bags::ensure_bags_left(&order_original_action, &order.lines)?;

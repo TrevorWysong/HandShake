@@ -341,6 +341,13 @@ The rule from the last review, applied across every zome that adds up money, poi
 
 Reads that only show something -- menus, bags and promos while browsing, a birthday looked up for a gift that's tried again later -- still skip what isn't here.
 
+## Customers rated, and blocks (docs/REPUTATION.md, phase 4)
+
+- **Only those who served a customer rate them:** the order's store or the driver who delivered it, on the order completed, once each; a thumbs-down needs a reason from a fixed list, never free text. Raters who rate most customers down don't count, and a score shows only from enough ratings. It weighs; it never blocks anyone automatically -- a store may hold, or a driver skip, below a score each chooses.
+- **A block is between two parties only.** It sits at a hash of the pair, so nobody can list anyone's blocks -- only check a pair they already know. Validation lets only a party (the person, or the store's owner) make it, and only its maker lift it. It's enforced where the two meet -- ordering, a store taking an order, a driver's feed and bid, a customer taking a bid, matching -- and by each party's own app. It's never counted or shown to anyone else, and the blocked party isn't told.
+- **What a block doesn't do:** validation can't read the block index, so a modified app could still write an order or bid the other side's app refuses -- the store declines it with nobody charged; a bid is never shown or taken.
+- **Bounded reads:** a page of stores or bids checks its pairs in one batched read; a score reads newest first and stops once its window is full, looking each rater up once.
+
 ## Partial refunds and apology points
 
 - **A store can refund part of a report**, not just all or nothing (`IssueResponse::refund`). Validation holds a part to an accepted report, more than nothing and less than all the report is worth; all of it is written as no part, so each answer has one form. Only the order's store answers, once per report, as before.

@@ -5,6 +5,14 @@ import type { Message } from "./en";
 import type { REFUSALS } from "./refusals";
 
 export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
+  "refusal.a-score-to-hold-below-is-a": "Una puntuación para retener es una proporción, como mucho el 100%.",
+  "refusal.give-a-reason-for-a-thumbs-down": "Da un motivo para el pulgar abajo.",
+  "refusal.that-driver-isn-t-available-for-this": "Ese repartidor no está disponible para este pedido.",
+  "refusal.this-order-isn-t-available-to-you": "Este pedido no está disponible para ti.",
+  "refusal.this-store-isn-t-available-to-you": "Esta tienda no está disponible para ti.",
+  "refusal.you-and-this-customer-have-blocked-each": "Tú y este cliente os habéis bloqueado: rechaza el pedido.",
+  "refusal.you-can-t-block-yourself": "No puedes bloquearte a ti mismo.",
+  "refusal.you-ve-already-rated-this-customer-for": "Ya valoraste a este cliente en este pedido.",
   "refusal.answer-the-report-first": "Responde primero al reporte.",
   "refusal.keep-your-reply-short": "Haz tu respuesta breve.",
   "refusal.no-driver-delivered-this-order": "Ningún repartidor entregó este pedido.",

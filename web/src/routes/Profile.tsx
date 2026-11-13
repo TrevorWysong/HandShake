@@ -25,6 +25,7 @@ import { MAX_LABEL_CHARS, MAX_LICENSE_PLATE_CHARS, MAX_NOTE_CHARS, MAX_PHONE_CHA
 import { useT } from "../i18n";
 import { useAction } from "../lib/hooks/useAction";
 import { MyCustomerRecord } from "../components/account/OwnRecord";
+import { BlockedList } from "../components/reputation/BlockedList";
 import { normalizePhone } from "../lib/phone";
 
 /// One identity, several hats: ratings and stats are shown per role (your
@@ -192,6 +193,13 @@ export function ProfilePage() {
       {profile?.roles.includes("Requester") && agentPubKey && (
         <motion.div variants={fadeSlideUp}>
           <MyCustomerRecord me={agentPubKey} />
+        </motion.div>
+      )}
+
+      {/* Whom they've blocked, as themselves, with the way to lift each. */}
+      {agentPubKey && (
+        <motion.div variants={fadeSlideUp}>
+          <BlockedList by={{ Person: agentPubKey }} partyKey={`person:${bytesToHex(agentPubKey)}`} />
         </motion.div>
       )}
 

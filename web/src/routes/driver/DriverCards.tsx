@@ -36,6 +36,8 @@ import { useTerms } from "../../store/network";
 import type { SentBid } from "../../store/sentBids";
 import { useAction } from "../../lib/hooks/useAction";
 import { DROPOFF_FOR_DRIVER } from "../../lib/orders/handoffs";
+import { BlockActions, type Blockable } from "../../components/reputation/BlockActions";
+import { storeName } from "../../lib/reputation/blockTargets";
 import { BEFORE_PICKUP, ON_THE_WAY, dropoffPoint, type OrderRow } from "../../lib/driving/deliveryRows";
 
 /// The order to make this driver's stops in -- see `planRoute`. Stores'
@@ -84,6 +86,24 @@ export function SuggestedRoute({ orders, location }: { orders: OrderRow[]; locat
   );
 }
 
+/// "…" on an order a driver's offered or carrying: blocking its customer,
+/// or its store.
+function DriverOrderBlocks({ order }: { order: DeliveryOrder }) {
+  const t = useT();
+  const me = myAgentPubKey();
+  return (
+    <BlockActions
+      by={{ Person: me }}
+      partyKey={`person:${bytesToHex(me)}`}
+      targetsKey={`driver-order:${bytesToHex(order.catalog_ref)}:${bytesToHex(order.requester)}`}
+      targets={async (): Promise<Blockable[]> => [
+        { party: { Person: order.requester }, name: t("block.thisCustomer"), role: "customer" },
+        { party: { Store: order.catalog_ref }, name: await storeName(order.catalog_ref), role: "store" },
+      ]}
+    />
+  );
+}
+
 export function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRow; location: { lat: number; lon: number }; onAdvanced: () => Promise<void> }) {
   const terms = useTerms();
   const t = useT();
@@ -107,7 +127,7 @@ export function ActiveDeliveryCard({ row, location, onAdvanced }: { row: OrderRo
 
   return (
     <div className="flex flex-col gap-3">
-    <OrderHero progress={driverProgress(row.order.status)}>
+    <OrderHero progress={driverProgress(row.order.status)} chips={<DriverOrderBlocks order={row.order} />}>
       <OrderStatusTimeline status={row.order.status} viewer="driver" />
     </OrderHero>
     <Card className="p-4">
@@ -264,7 +284,10 @@ export function BidCard({
         <p className="flex items-baseline gap-1 text-sm font-bold text-ink-900 dark:text-ink-50">
           {t("order.heading")}<StatNumber className="text-base">{formatCents(order.order_total)}</StatNumber>
         </p>
-        {eta !== null && <span className="text-xs text-ink-400">{formatEta(eta * 60)}</span>}
+        <span className="flex items-center gap-1">
+          {eta !== null && <span className="text-xs text-ink-400">{formatEta(eta * 60)}</span>}
+          <DriverOrderBlocks order={order} />
+        </span>
       </div>
       {sameMerchant ? (
         <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-handshake-600">

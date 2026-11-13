@@ -594,6 +594,47 @@ export interface CollectRequest {
   order: ActionHash;
 }
 
+/**
+ * Why a customer was rated down: a fixed list, so nothing free-written
+ * about anyone is published.
+ */
+export type CustomerReason =
+  | "RudeOrAbusive"
+  /**
+   * Not there, or not answering, at the drop-off or the counter.
+   */
+  | "Unreachable"
+  | "Unsafe"
+  /**
+   * Wrong or missing address details.
+   */
+  | "AddressDetails"
+  /**
+   * Asked to take the order, or pay, off the app.
+   */
+  | "OffApp"
+  | "Other";
+
+/**
+ * A customer's score, as stores and drivers -- and the customer -- read it.
+ */
+export interface CustomerScore {
+  /**
+   * Counted thumbs-up and thumbs-down, over the customer's last
+   * `customer_rating_window` counted ratings.
+   */
+  up: number;
+  down: number;
+  /**
+   * How many thumbs-down gave each reason.
+   */
+  reasons: ([CustomerReason, number])[];
+  /**
+   * Whether there are enough to show (`min_customer_ratings`).
+   */
+  shown: boolean;
+}
+
 export const DEFAULT_MAX_TIP_FLOOR = 1000;
 
 /**
@@ -696,7 +737,17 @@ export type DeclineReason =
    * could answer them, lately.
    */
   | "TooManyCancellations"
-  | "Other";
+  | "Other"
+  /**
+   * The store, or this customer, has blocked the other (docs/REPUTATION.md,
+   * phase 4): its app declines anything that reaches it anyway.
+   */
+  | "NotServing"
+  /**
+   * Held for the store's own review -- its auto-accept holds customers
+   * below the score it chose -- and nobody reviewed it in time.
+   */
+  | "NotReviewed";
 
 /**
  * What a provider is willing to carry. Kept as an enum (not a single
@@ -2129,6 +2180,13 @@ export interface MerchantCatalog {
    */
   auto_accept_orders: boolean;
   /**
+   * With auto-accept on: a customer whose score (docs/REPUTATION.md,
+   * phase 4) is shown and below this share of thumbs-up, in percent, has
+   * their order held for someone at the store to review. `None`: none
+   * held. The store's choice -- a low score never blocks anyone.
+   */
+  hold_below_customer_score: number | null;
+  /**
    * The most an order may cost to be left at the door, in cents -- above
    * it, the store's deliveries are always handed over. A customer who
    * chooses the door accepts the risk once it's left there; a store sets
@@ -2307,6 +2365,15 @@ export interface MoveReadiness {
   ready: boolean;
 }
 
+/**
+ * The caller's rating of an order's customer, if they've given one: up or
+ * down, and why.
+ */
+export interface MyCustomerRating {
+  up: boolean;
+  reason: CustomerReason | null;
+}
+
 export interface MyPaymentInput {
   /**
    * The order (its original action, or any version of it).
@@ -2403,6 +2470,12 @@ export interface NetworkTerms {
    * made in good faith before other stores are shown it.
    */
   min_flagging_stores: number;
+  /**
+   * A customer's score is over their last this-many rated orders, and
+   * shown once it has `min_customer_ratings`.
+   */
+  customer_rating_window: number;
+  min_customer_ratings: number;
   /**
    * How far back ratings and records reach, in days.
    */
@@ -2791,6 +2864,16 @@ export interface Part {
   purpose: HoldPurpose;
   portion: Portion;
 }
+
+/**
+ * One side of a block: a person, whatever role they act in, or a store.
+ */
+export type Party =
+  | { Person: AgentPubKey }
+  /**
+   * A store, by its catalog's original action.
+   */
+  | { Store: ActionHash };
 
 /**
  * A payee's agent saying it's seeing card testing: until `until`, it lets
@@ -3926,6 +4009,20 @@ export interface ReceiptPayment {
   transaction: ActionHash;
 }
 
+/**
+ * A delivery the caller made, for rating its customer (docs/REPUTATION.md,
+ * phase 4).
+ */
+export interface RecentDelivery {
+  /**
+   * The order's original action.
+   */
+  order: ActionHash;
+  customer: AgentPubKey;
+  catalog_ref: ActionHash;
+  delivered_at: Timestamp;
+}
+
 export interface RecordActionInput {
   offer: ActionHash;
   /**
@@ -4058,6 +4155,26 @@ export interface RecurringOrderTemplate {
   next_run_at: Timestamp;
   active: boolean;
   created_at: Timestamp;
+}
+
+/**
+ * How many of a customer's most recent orders they've reported a problem
+ * with (docs/REPUTATION.md, phase 4): their own action, never a store's
+ * discretion -- what a store answering their report weighs.
+ */
+export interface ReportPattern {
+  /**
+   * Their most recent orders counted, up to `report_pattern_orders`.
+   */
+  orders: number;
+  /**
+   * How many of those they reported a problem with.
+   */
+  reported: number;
+  /**
+   * Whether there are enough orders to show (`min_report_pattern_orders`).
+   */
+  shown: boolean;
 }
 
 export type ReputationEventKind =

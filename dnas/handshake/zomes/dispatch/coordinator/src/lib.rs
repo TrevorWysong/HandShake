@@ -41,6 +41,7 @@ mod accounts;
 mod appeals;
 mod bags;
 mod bids;
+mod blocks;
 mod collecting;
 mod acceptance;
 mod confirmations;

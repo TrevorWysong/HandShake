@@ -318,7 +318,7 @@ fn answer_store_orders() -> ExternResult<Answers> {
                 continue;
             }
             let auto_accept_requests = catalog.allergy_policy.as_ref().is_some_and(|policy| policy.auto_accept_requests);
-            if isolated::<_, ()>("answer_one_order", AnswerInput { seen: SeenOrder::of(&entry), open_now, auto_accept_requests }).is_none() {
+            if isolated::<_, ()>("answer_one_order", AnswerInput { seen: SeenOrder::of(&entry), open_now, auto_accept_requests, hold_below: catalog.hold_below_customer_score }).is_none() {
                 answers.failed += 1;
             }
         }
@@ -333,18 +333,21 @@ pub struct AnswerInput {
     pub open_now: bool,
     /// Whether the store's let auto-accept take orders with allergies on them.
     pub auto_accept_requests: bool,
+    /// Customers below this score are held for the store's review.
+    #[serde(default)]
+    pub hold_below: Option<u8>,
 }
 
 /// Answers one order waiting on one of the caller's stores, in a call of
 /// its own (see the module doc).
 #[hdk_extern]
 pub fn answer_one_order(input: AnswerInput) -> ExternResult<()> {
-    let AnswerInput { seen, open_now, auto_accept_requests } = input;
+    let AnswerInput { seen, open_now, auto_accept_requests, hold_below } = input;
     let order = seen.order.clone();
     let entry = seen.entry()?;
     let written_at = entry.as_ref().map(|entry| entry.record.action().timestamp().as_micros());
     let waiting = entry.as_ref().and_then(WaitingOrder::from_entry).ok_or(guest("that order isn't waiting on its store"))?;
-    waiting.answer(&order, open_now, auto_accept_requests, written_at.unwrap_or_default())
+    waiting.answer(&order, open_now, auto_accept_requests, hold_below, written_at.unwrap_or_default())
 }
 
 const ALLERGY_DECLINE_MARGIN_MICROS: i64 = 90_000_000;
@@ -393,9 +396,13 @@ impl WaitingOrder {
     /// and, nobody having come, is declined before its window closes: left to
     /// lapse, anyone could mark an unattended store as never answering, by
     /// ordering with a sealed note its conductor won't accept.
-    fn answer(&self, order_ref: &ActionHash, open_now: bool, auto_accept_requests: bool, written_at: i64) -> ExternResult<()> {
+    fn answer(&self, order_ref: &ActionHash, open_now: bool, auto_accept_requests: bool, hold_below: Option<u8>, written_at: i64) -> ExternResult<()> {
         let bags_only = crate::bags::bags_on(&self.lines)?.len() == self.lines.len();
-        let decline = if !open_now && !bags_only {
+        // Blocked either way: declined. A read that fails waits for the next round.
+        let blocked = crate::blocks::any_blocked(vec![(crate::blocks::Party::Store(self.catalog_ref.clone()), crate::blocks::Party::Person(self.requester.clone()))])?;
+        let decline = if blocked {
+            Some(DeclineReason::NotServing)
+        } else if !open_now && !bags_only {
             Some(DeclineReason::Closed)
         } else if crate::bags::unavailable_bag(order_ref, &self.lines)?.is_some() {
             Some(DeclineReason::BagUnavailable)
@@ -410,7 +417,18 @@ impl WaitingOrder {
         } else {
             crate::acceptance::decline_for(&self.requester, &self.catalog_ref, self.rewards.as_ref())?
         };
+        // Held for the store's own review: a customer below the score it
+        // chose -- never declined for it, but nobody having come, declined
+        // before its window closes (as an order with allergies is).
+        let held = decline.is_none() && hold_below.is_some_and(|below| crate::blocks::customer_score(&self.requester).ok().flatten().is_some_and(|score| score < below));
         let decline = match decline {
+            None if held => {
+                let window = store_response_window().as_micros() as i64;
+                if sys_time()?.as_micros() < written_at + window - (window / 4).max(ALLERGY_DECLINE_MARGIN_MICROS) {
+                    return Ok(());
+                }
+                Some(DeclineReason::NotReviewed)
+            }
             None if !auto_accept_requests && self.has_allergies()? => {
                 let window = store_response_window().as_micros() as i64;
                 // At least long enough before it closes for this minute's sweep to come round.

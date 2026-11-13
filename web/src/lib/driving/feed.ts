@@ -3,7 +3,7 @@
 // send -- by hand, or by their rule (`autoBid`) as new orders come in.
 import { getMyActiveDeliveries, getOpenOrdersNear, getOrderPrivateDetails, submitBid } from "../../holochain/zomes/dispatch";
 import { getCatalog } from "../../holochain/zomes/catalog";
-import { getReputationSummary } from "../../holochain/zomes/reputation";
+import { getCustomerScore, getReputationSummary } from "../../holochain/zomes/reputation";
 import { actionHash, bytesEqual, bytesToHex, decodeEntry } from "../../holochain/decode";
 import type { Bid, DeliveryOrder, GeoPoint, MerchantCatalog, NetworkTerms } from "../../holochain/types";
 import { geohashCenter } from "../places/geohash";
@@ -15,6 +15,7 @@ import { autoBidPrice, quote, skipsStore } from "./autoBid";
 import { estimateTrip } from "./eta";
 import { legMinutes } from "./routing";
 import { commitmentOf, type OrderRow } from "./deliveryRows";
+import { below } from "../reputation/customers";
 import { storeLocations } from "./storeLocations";
 
 /// The deliveries this driver is carrying, from their own active-delivery
@@ -79,6 +80,8 @@ export async function bidAutomatically(driverHex: string, offered: OrderRow[], c
     try {
       const [catalog, store] = await Promise.all([getCatalog(order.catalog_ref), getReputationSummary({ Store: order.catalog_ref })]);
       if (skipsStore(store.check_in_refused_count, autoBid)) continue;
+      // A customer below the driver's own threshold, if they set one.
+      if (autoBid.skipBelowCustomerScore !== null && below(await getCustomerScore(order.requester).catch(() => null), autoBid.skipBelowCustomerScore)) continue;
       const storeAt = decodeEntry<MerchantCatalog>(catalog).location;
       const dropoffAt = geohashCenter(order.dropoff_geohash);
       const price = autoBidPrice(quote({ driver: location, store: storeAt, dropoff: dropoffAt }, fees, limits.minFeeCents), order.max_delivery_fee);

@@ -28,6 +28,10 @@ fn review_link(target: &ReviewTarget) -> (LinkTypes, AnyLinkableHash) {
 /// for the links ratings and summaries are summed from -- its tag carries
 /// exactly what the entry says (see `review_tag`/`event_tag`).
 pub fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target: &AnyLinkableHash, tag: &LinkTag, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    // A block points at a party, not a record.
+    if link_type == LinkTypes::PairToBlock {
+        return validate_block_link(base, target, tag, author);
+    }
     let Some(record) = linked_record(target)? else {
         return invalid("reputation links must target a record");
     };
@@ -59,6 +63,11 @@ pub fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target
             Some(r) => Some((LinkTypes::ItemToReview, r.item_ref.into(), Some(review_tag(r.rating, &original_creation(r.order_ref)?)))),
             None => None,
         },
+        // A customer's rating, under them and under its rater, tagged with
+        // what it says.
+        LinkTypes::CustomerToRating => decode::<CustomerRating>(&record).map(|r| (LinkTypes::CustomerToRating, r.customer.clone().into(), Some(customer_rating_tag(&r)))),
+        LinkTypes::RaterToRating => decode::<CustomerRating>(&record).map(|r| (LinkTypes::RaterToRating, author.clone().into(), Some(rater_tag(&r)))),
+        LinkTypes::PairToBlock => return invalid("a block is validated as one"),
         // A reply hangs off the mark it answers.
         LinkTypes::EventToReply => decode::<MarkReply>(&record).map(|reply| (LinkTypes::EventToReply, reply.event.into(), None)),
         // Tagged with the owner of the store the order was really from.

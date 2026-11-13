@@ -23,6 +23,7 @@ import { useStore } from "./useStore";
 import { useT } from "../../i18n";
 import { toast } from "../../store/toast";
 import { MyStoreRecord } from "../../components/account/OwnRecord";
+import { BlockedList } from "../../components/reputation/BlockedList";
 import { useAction } from "../../lib/hooks/useAction";
 
 /// The Store tab: how the active store runs -- whether it's taking orders,
@@ -92,6 +93,7 @@ function StoreSettings({ storeHex, openDetailsOnArrival }: { storeHex: string; o
         {/* What its customers and drivers see of it, worded as they see it. */}
         <motion.div variants={fadeSlideUp} className="mt-4">
           <MyStoreRecord catalogRef={catalogRef} />
+          <BlockedList by={{ Store: catalogRef }} partyKey={`store:${storeHex}`} />
         </motion.div>
 
         <Group icon={StoreIcon} title={t("storePage.storefront")}>

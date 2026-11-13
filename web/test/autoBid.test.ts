@@ -42,7 +42,7 @@ test("a place that isn't one gets no quote, never a fee of NaN", () => {
 });
 
 test("a store drivers keep reporting is skipped", () => {
-  const rule = { on: true, skipRefusals: 3 };
+  const rule = { on: true, skipRefusals: 3, skipBelowCustomerScore: null };
   assert.equal(skipsStore(2, rule), false);
   assert.equal(skipsStore(3, rule), true);
 });

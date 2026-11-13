@@ -18,7 +18,11 @@ use handshake_integrity_support::chain::entries_since;
 use handshake_integrity_support::{first_problem, text_problem};
 use handshake_integrity_support::{classify, decode, original_creation, Checked};
 
+mod blocks;
+mod customer_ratings;
 mod links;
+pub use blocks::*;
+pub use customer_ratings::*;
 
 /// Who a `ReputationEvent` is about.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -214,6 +218,10 @@ pub enum EntryTypes {
     Review(Review),
     ItemReview(ItemReview),
     MarkReply(MarkReply),
+    CustomerRating(CustomerRating),
+    /// A block's maker's own list, kept on their own chain.
+    #[entry_type(visibility = "private")]
+    PartyBlock(PartyBlock),
 }
 
 /// One link type per (target kind, purpose) rather than one shared type
@@ -244,6 +252,13 @@ pub enum LinkTypes {
     ReviewerToReview,
     /// From a mark to its subject's reply.
     EventToReply,
+    /// A customer's ratings by stores and drivers, under the customer.
+    CustomerToRating,
+    /// A rater's ratings of customers, under the rater -- how a rater who
+    /// rates most customers down is found.
+    RaterToRating,
+    /// A block, at its pair's key (`pair_key`).
+    PairToBlock,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");
@@ -256,6 +271,9 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Review(review) => validate_review(&review, action.author(), action.prev_action()),
             EntryTypes::ItemReview(review) => validate_item_review(&review, action.author(), action.prev_action()),
             EntryTypes::MarkReply(reply) => validate_reply(&reply, action.author(), action.timestamp(), action.prev_action()),
+            EntryTypes::CustomerRating(rating) => validate_customer_rating(&rating, action.author(), action.timestamp(), action.prev_action()),
+            // Private to its maker's chain: only ever their own list.
+            EntryTypes::PartyBlock(block) => Ok(if speaks_for(&block.by, action.author())? { ValidateCallbackResult::Valid } else { ValidateCallbackResult::Invalid("a block is its maker's own".into()) }),
         },
         // Reputation is an append-only record.
         Checked::Update { .. } => Ok(ValidateCallbackResult::Invalid("reputation entries can't be changed".into())),
@@ -263,6 +281,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         Checked::CreateLink { link_type: LinkTypes::Version, action } => handshake_integrity_support::versions::validate_version_link(&action.base_address, &action.target_address, &action.tag, action.author()),
         Checked::DeleteLink { link_type: LinkTypes::Version, .. } => Ok(ValidateCallbackResult::Invalid("an entry's versions stay linked".into())),
         Checked::CreateLink { link_type, action } => links::validate_create_link(link_type, &action.base_address, &action.target_address, &action.tag, action.author()),
+        // A block is lifted by whoever made it -- the only link here that is.
+        Checked::DeleteLink { link_type: LinkTypes::PairToBlock, original, action } => Ok(if original.author() == action.author() { ValidateCallbackResult::Valid } else { ValidateCallbackResult::Invalid("only whoever made a block lifts it".into()) }),
         Checked::DeleteLink { .. } => links::validate_delete_link(),
         Checked::Other => Ok(ValidateCallbackResult::Valid),
     }

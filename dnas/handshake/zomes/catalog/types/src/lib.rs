@@ -105,6 +105,12 @@ pub struct MerchantCatalog {
     /// waiting for someone to tap Accept.
     #[serde(default)]
     pub auto_accept_orders: bool,
+    /// With auto-accept on: a customer whose score (docs/REPUTATION.md,
+    /// phase 4) is shown and below this share of thumbs-up, in percent, has
+    /// their order held for someone at the store to review. `None`: none
+    /// held. The store's choice -- a low score never blocks anyone.
+    #[serde(default)]
+    pub hold_below_customer_score: Option<u8>,
     /// The most an order may cost to be left at the door, in cents -- above
     /// it, the store's deliveries are always handed over. A customer who
     /// chooses the door accepts the risk once it's left there; a store sets

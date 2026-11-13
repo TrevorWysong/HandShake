@@ -9,6 +9,7 @@ import { useDriverSettings } from "../../store/roleSettings";
 import { useT } from "../../i18n";
 import { FeeScheduleEditor } from "./FeeScheduleEditor";
 import { SettingsCard } from "./SettingsCard";
+import { ScoreThreshold } from "../../components/reputation/ScoreThreshold";
 
 export function FeeCard() {
   const t = useT();
@@ -38,6 +39,12 @@ export function FeeCard() {
             {t("driverSettings.skip")}
             <Input type="number" min={1} step={1} value={autoBid.skipRefusals} onChange={(e) => setAutoBid({ skipRefusals: Math.max(1, Math.round(Number(e.target.value)) || 1) })} suffix={t("driverSettings.times")} className="mt-1 py-1.5 text-sm" />
           </label>
+          <ScoreThreshold
+            label={t("driverSettings.skipCustomers")}
+            detail={t("driverSettings.skipCustomersDetail")}
+            value={autoBid.skipBelowCustomerScore}
+            onChange={(skipBelowCustomerScore) => setAutoBid({ skipBelowCustomerScore })}
+          />
           <p className="text-[0.6875rem] text-ink-400">{t("driverSettings.autoBidNote")}</p>
         </>
       )}

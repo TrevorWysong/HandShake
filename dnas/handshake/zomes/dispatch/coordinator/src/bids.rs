@@ -35,6 +35,12 @@ pub fn submit_bid(input: SubmitBidInput) -> ExternResult<Record> {
     if !get_links(sent, GetStrategy::Local)?.is_empty() {
         return Err(guest("You've already bid on this order."));
     }
+    // A driver blocked with the customer or the store, either way, isn't
+    // offered the order (docs/REPUTATION.md, phase 4).
+    use crate::blocks::{any_blocked, Party};
+    if any_blocked(vec![(Party::Person(bidder.clone()), Party::Person(order.requester.clone())), (Party::Person(bidder.clone()), Party::Store(order.catalog_ref.clone()))])? {
+        return Err(guest("This order isn't available to you."));
+    }
     if let Err(refusal) = crate::order_queues::get_driver_load(bidder.clone())?.taking(order.priority, handshake_governance::max_concurrent_deliveries()) {
         return Err(guest(driver_refusal(refusal)));
     }
@@ -141,6 +147,12 @@ pub fn accept_bid(input: AcceptBidInput) -> ExternResult<Record> {
         return Err(guest("That driver has withdrawn their offer."));
     }
     crate::accounts::ensure_not_moved(&winning_bid.bidder, "That driver")?;
+    {
+        use crate::blocks::{any_blocked, Party};
+        if any_blocked(vec![(Party::Person(order.requester.clone()), Party::Person(winning_bid.bidder.clone())), (Party::Store(order.catalog_ref.clone()), Party::Person(winning_bid.bidder.clone()))])? {
+            return Err(guest("That driver isn't available for this order."));
+        }
+    }
     if !crate::verification::bid_verification_stands(&winning_bid)? {
         return Err(guest("That driver's verification has been withdrawn."));
     }
@@ -249,4 +261,39 @@ pub fn list_bids_for_order(input: ListBidsInput) -> ExternResult<BidsPage> {
     links.truncate(BID_PAGE_SIZE);
     let bids = resolve_links_to_records(links);
     Ok(BidsPage { bids, next_after })
+}
+
+/// A delivery the caller made, for rating its customer (docs/REPUTATION.md,
+/// phase 4).
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RecentDelivery {
+    /// The order's original action.
+    pub order: ActionHash,
+    pub customer: AgentPubKey,
+    pub catalog_ref: ActionHash,
+    pub delivered_at: Timestamp,
+}
+
+/// How far back a driver's app looks for deliveries to rate: a rating is
+/// given while the order's fresh in mind.
+const RECENT_DELIVERY_MICROS: i64 = 3 * 86_400_000_000;
+
+/// The caller's deliveries within the last few days, newest first -- each
+/// an order delivered on their bid -- from their own bids, at most `limit`.
+#[hdk_extern]
+pub fn my_recent_deliveries(limit: u32) -> ExternResult<Vec<RecentDelivery>> {
+    let since = Timestamp::from_micros(sys_time()?.as_micros() - RECENT_DELIVERY_MICROS);
+    let mut out = Vec::new();
+    for record in handshake_coordinator_support::chain::mine(&[EntryType::try_from(UnitEntryTypes::Bid)?]).creates().since(since).records()? {
+        if out.len() >= limit.min(50) as usize {
+            break;
+        }
+        let Some(bid) = handshake_coordinator_support::decode_or::<Bid>(&record) else { continue };
+        let Ok((latest, order)) = resolve_latest_decoded::<DeliveryOrder>(bid.order_ref.clone(), "DeliveryOrder") else { continue };
+        let mine = order.accepted_bid.as_ref().is_some_and(|accepted| original_action_of(accepted.clone()).ok().as_ref() == Some(record.action_address()));
+        if mine && order.status == DeliveryStatus::Delivered {
+            out.push(RecentDelivery { order: original_action_of(bid.order_ref)?, customer: order.requester, catalog_ref: order.catalog_ref, delivered_at: latest.action().timestamp() });
+        }
+    }
+    Ok(out)
 }

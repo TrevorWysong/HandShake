@@ -27,7 +27,7 @@ import { ChatPanel } from "../../components/orders/ChatPanel";
 import { bytesEqual } from "../../holochain/decode";
 import { formatCents, formatClockTime } from "../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import type { Timestamp } from "../../holochain/types";
+import type { Party, Timestamp } from "../../holochain/types";
 import { POLL, isOrderSignal } from "../../lib/network/poll";
 import { OrderLines } from "../../components/orders/OrderLines";
 import { CustomerHistory } from "../../components/orders/CustomerHistory";
@@ -36,6 +36,9 @@ import { StoreAppeals } from "../../components/orders/StoreAppeals";
 import { useT, type MessageKey } from "../../i18n";
 import { ForTheStore, TicketAllergies } from "./OrderHandoffs";
 import { GivePoints } from "../../components/rewards/GivePoints";
+import { RateCustomer } from "../../components/reputation/RateCustomer";
+import { BlockActions, type Blockable } from "../../components/reputation/BlockActions";
+import { driverOf, personName } from "../../lib/reputation/blockTargets";
 
 
 const TABS = [
@@ -320,6 +323,31 @@ function mayHaveOpenIssues(row: QueueRow, terms: { report_window_secs: number; a
   return completed && now.getTime() * 1000 - row.writtenAt < openForMicros;
 }
 
+/// Whether the customer has the order: delivered, collected or picked up.
+function completed(row: QueueRow): boolean {
+  return row.kind === "Delivery" ? received(row.order.status) : row.order.status === "PickedUp";
+}
+
+/// "…" on a store's order: blocking its customer, or its driver.
+function StoreOrderBlocks({ row }: { row: QueueRow }) {
+  const t = useT();
+  const { order } = row;
+  if (bytesEqual(order.requester, order.merchant)) return null;
+  const by: Party = { Store: order.catalog_ref };
+  return (
+    <BlockActions
+      by={by}
+      partyKey={`store:${row.storeHex}`}
+      targetsKey={`store-order:${row.hex}`}
+      targets={async (): Promise<Blockable[]> => {
+        const customer: Blockable = { party: { Person: order.requester }, name: t("block.thisCustomer"), role: "customer" };
+        const driver = row.kind === "Delivery" ? await driverOf(row.ref, row.order.accepted_bid).catch(() => null) : null;
+        return driver ? [customer, { party: { Person: driver }, name: await personName(driver), role: "driver" }] : [customer];
+      }}
+    />
+  );
+}
+
 function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; storeLabel: string | null; showTime?: boolean; children?: React.ReactNode }) {
   const { order } = row;
   const t = useT();
@@ -337,6 +365,9 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
           </span>
         )}
         {showTime && <span className="ml-auto font-normal normal-case tracking-normal text-ink-300"><TimeAgo at={order.requested_at} /></span>}
+        <span className={clsx("-my-2 -mr-2 font-normal normal-case tracking-normal", !showTime && "ml-auto")}>
+          <StoreOrderBlocks row={row} />
+        </span>
       </div>
       {!leftTheStore(row) && (
         <div className="mt-1 mb-2">
@@ -359,6 +390,8 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
       {children}
       {/* Once it's out of the kitchen: a thank-you, or an apology no report covers. */}
       {leftTheStore(row) && !bytesEqual(order.requester, order.merchant) && <GivePoints order={row.ref} customer={order.requester} catalogRef={order.catalog_ref} />}
+      {/* Done: how the customer was, for the stores and drivers who serve them next. */}
+      {completed(row) && !bytesEqual(order.requester, order.merchant) && <RateCustomer order={row.ref} className="mt-3 border-t border-ink-100 pt-3 dark:border-ink-800" />}
     </Card>
   );
 }

@@ -262,6 +262,9 @@ fn validate_catalog(catalog: &MerchantCatalog, author: &AgentPubKey) -> ExternRe
     if let Some(problem) = amount_problem("max_delivery_fee", catalog.max_delivery_fee) {
         return Ok(ValidateCallbackResult::Invalid(problem));
     }
+    if catalog.hold_below_customer_score.is_some_and(|percent| percent > 100) {
+        return Ok(ValidateCallbackResult::Invalid("a customer score to hold below is a share, at most 100%".into()));
+    }
     if catalog.max_tip_percent > MAX_TIP_PERCENT {
         return Ok(ValidateCallbackResult::Invalid(format!("a store's tip limit is at most {}% of the order", MAX_TIP_PERCENT)));
     }

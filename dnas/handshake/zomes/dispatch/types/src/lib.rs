@@ -274,6 +274,12 @@ pub enum DeclineReason {
     /// could answer them, lately.
     TooManyCancellations,
     Other,
+    /// The store, or this customer, has blocked the other (docs/REPUTATION.md,
+    /// phase 4): its app declines anything that reaches it anyway.
+    NotServing,
+    /// Held for the store's own review -- its auto-accept holds customers
+    /// below the score it chose -- and nobody reviewed it in time.
+    NotReviewed,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

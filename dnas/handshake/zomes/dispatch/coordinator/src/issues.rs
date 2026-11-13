@@ -756,3 +756,27 @@ pub fn settle_stalled_delivery(input: crate::deliveries::TimedStepInput) -> Exte
     crate::order_queues::retire(&crate::OrderParties::delivery(&order, &delivery)?)?;
     Ok(hash)
 }
+
+// --- a customer's report pattern ---
+
+/// How many of a customer's most recent orders they've reported a problem
+/// with (docs/REPUTATION.md, phase 4): their own action, never a store's
+/// discretion -- what a store answering their report weighs.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ReportPattern {
+    /// Their most recent orders counted, up to `report_pattern_orders`.
+    pub orders: u32,
+    /// How many of those they reported a problem with.
+    pub reported: u32,
+    /// Whether there are enough orders to show (`min_report_pattern_orders`).
+    pub shown: bool,
+}
+
+#[hdk_extern]
+pub fn get_report_pattern(customer: AgentPubKey) -> ExternResult<ReportPattern> {
+    let page = crate::order_queues::history_page(dispatch_integrity::QueueOwner::Customer(&customer), None, Some(handshake_governance::report_pattern_orders()))?;
+    let queries = page.orders.iter().map(|entry| Ok(LinkQuery::try_new(entry.original_action.clone(), LinkTypes::OrderToIssue)?.author(customer.clone()))).collect::<ExternResult<Vec<_>>>()?;
+    let orders = queries.len() as u32;
+    let reported = handshake_coordinator_support::get_links_many(queries)?.iter().filter(|links| !links.is_empty()).count() as u32;
+    Ok(ReportPattern { orders, reported, shown: orders >= handshake_governance::min_report_pattern_orders() })
+}

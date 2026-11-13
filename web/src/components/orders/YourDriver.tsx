@@ -14,6 +14,7 @@ import { shortAgentId } from "../../lib/ui/format";
 import { useT } from "../../i18n";
 import { StarRating } from "../StarRating";
 import { DriverFaults } from "../reputation/DriverFaults";
+import { DriverBlock } from "../reputation/DriverBlock";
 import { Card, Skeleton } from "../ui";
 
 interface Props {
@@ -43,7 +44,7 @@ export function YourDriver({ orderRef, driver, status }: Props) {
         )}
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">{t("driver.yours")}</p>
-          <p className="truncate text-base font-bold text-ink-900 dark:text-ink-50">{name}</p>
+          <p className="flex items-center gap-1 text-base font-bold text-ink-900 dark:text-ink-50"><span className="truncate">{name}</span><DriverBlock driver={driver} name={name} /></p>
           <div className="flex items-center gap-2 text-xs text-ink-500 dark:text-ink-400">
             {stats.reviewCount > 0 && <StarRating value={stats.avgRating} count={stats.reviewCount} size={11} />}
             <span>{t("driver.deliveries", { count: stats.completedCount })}</span>

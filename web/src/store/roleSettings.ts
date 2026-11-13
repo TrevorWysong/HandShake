@@ -65,6 +65,9 @@ export const DETOUR_CHOICES_KM = [0.5, 1, 2, 3, 5];
 /// on every order they're offered, at their fee (`FeeSchedule`).
 export interface AutoBid {
   on: boolean;
+  /// Customers whose score is shown and below this share of thumbs-up, in
+  /// percent, are passed by (docs/REPUTATION.md, phase 4); `null`: none.
+  skipBelowCustomerScore: number | null;
   /// Stores they skip: those with at least this many drivers' reports of
   /// refusing to check them in.
   skipRefusals: number;
@@ -91,7 +94,7 @@ export const useDriverSettings = create<DriverSettings>()(
       limits: { maxAtOnce: null, takePriority: true, minFeeCents: 0, detourKm: null },
       fees: defaultSchedule(usesMiles() ? "mi" : "km"),
       setFees: (fees) => set((state) => ({ fees: { ...state.fees, ...fees } })),
-      autoBid: { on: false, skipRefusals: 3 },
+      autoBid: { on: false, skipRefusals: 3, skipBelowCustomerScore: null },
       setAutoBid: (autoBid) => set((state) => ({ autoBid: { ...state.autoBid, ...autoBid } })),
       travelMode: "car",
       setLimits: (limits) => set((state) => ({ limits: { ...state.limits, ...limits } })),

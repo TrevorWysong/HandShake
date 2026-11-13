@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, Finding, FindingView, HcRecord, RatingSummary, ReputationSummary, ReputationTarget, ReviewTarget, Timestamp } from "../types";
+import type { ActionHash, AgentPubKey, CustomerReason, CustomerScore, Finding, FindingView, HcRecord, MyCustomerRating, Party, RatingSummary, ReputationSummary, ReputationTarget, ReviewTarget, Timestamp } from "../types";
 
 /// A UI-display cache only -- see `reputation_integrity`'s doc comment.
 /// Never the actual trust decision on its own; `check_warrants`
@@ -88,4 +88,39 @@ export async function replyToFinding(input: { event: ActionHash; text: string })
 /// their replies.
 export async function getFindings(target: ReputationTarget): Promise<FindingView[]> {
   return callZome("reputation", "get_findings", target);
+}
+
+/// The caller -- an order's store or its driver -- rating its customer, once.
+export async function rateCustomer(input: { order: ActionHash; up: boolean; reason: CustomerReason | null }): Promise<HcRecord> {
+  return callZome("reputation", "rate_customer", input);
+}
+
+/// The caller's rating of an order's customer, if they've given one.
+export async function myCustomerRating(order: ActionHash): Promise<MyCustomerRating | null> {
+  return callZome("reputation", "my_customer_rating", order);
+}
+
+/// A customer's score: the share of thumbs-up over their recent rated orders.
+export async function getCustomerScore(customer: AgentPubKey): Promise<CustomerScore> {
+  return callZome("reputation", "get_customer_score", customer);
+}
+
+/// The caller blocking a party, as themselves or as their store.
+export async function block(by: Party, blocked: Party): Promise<void> {
+  return callZome("reputation", "block", { by, blocked });
+}
+
+/// The caller lifting a block they made.
+export async function unblock(by: Party, blocked: Party): Promise<void> {
+  return callZome("reputation", "unblock", { by, blocked });
+}
+
+/// Whom the caller has blocked, as themselves or as a store of theirs.
+export async function myBlocks(by: Party): Promise<Party[]> {
+  return callZome("reputation", "my_blocks", by);
+}
+
+/// Whether each pair is blocked, either way -- read together.
+export async function blockedPairs(pairs: [Party, Party][]): Promise<boolean[]> {
+  return pairs.length === 0 ? [] : callZome("reputation", "blocked_pairs", pairs);
 }

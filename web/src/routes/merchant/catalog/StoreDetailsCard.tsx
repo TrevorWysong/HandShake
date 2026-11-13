@@ -16,6 +16,7 @@ import type { MerchantCatalog } from "../../../holochain/types";
 import { MAX_DESCRIPTION_CHARS, MAX_EMAIL_CHARS, MAX_LABEL_CHARS, MAX_PHONE_CHARS, MAX_TIP_PERCENT, MAX_WEBSITE_CHARS } from "../../../holochain/types";
 import { isStoreEmail, isStoreWebsite, normalizeWebsite, websiteLabel } from "../../../lib/storefront/contact";
 import { normalizePhone } from "../../../lib/phone";
+import { ScoreThreshold } from "../../../components/reputation/ScoreThreshold";
 import { useTerms } from "../../../store/network";
 
 /// The storefront's details: a read-only summary, or the editor.
@@ -247,6 +248,18 @@ export function AutoAcceptCard({ catalog, catalogRef, onSaved }: { catalog: Merc
         </div>
         <Switch checked={catalog.auto_accept_orders} onChange={toggle} disabled={save.busy} label={t("storeSettings.autoAccept")} />
       </div>
+      {catalog.auto_accept_orders && (
+        <ScoreThreshold
+          label={t("storeSettings.holdBelow")}
+          detail={t("storeSettings.holdBelowDetail")}
+          value={catalog.hold_below_customer_score}
+          disabled={save.busy}
+          onChange={(hold) => save.run(async () => {
+            await setAutoAcceptOrders(catalogRef, true, hold);
+            await onSaved();
+          })}
+        />
+      )}
       {save.error && <Notice className="mt-3">{save.error}</Notice>}
     </Card>
   );

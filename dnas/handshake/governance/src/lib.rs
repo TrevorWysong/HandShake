@@ -115,6 +115,18 @@ pub struct HandShakeDnaProperties {
     #[serde(default)]
     pub min_flagging_stores: Option<u32>,
     #[serde(default)]
+    pub customer_rating_window: Option<u32>,
+    #[serde(default)]
+    pub min_customer_ratings: Option<u32>,
+    #[serde(default)]
+    pub max_rater_down_percent: Option<u8>,
+    #[serde(default)]
+    pub min_rater_ratings: Option<u32>,
+    #[serde(default)]
+    pub report_pattern_orders: Option<u32>,
+    #[serde(default)]
+    pub min_report_pattern_orders: Option<u32>,
+    #[serde(default)]
     pub reputation_window_days: Option<u32>,
     #[serde(default)]
     pub max_store_wait_secs: Option<u64>,
@@ -479,6 +491,42 @@ pub fn min_flagger_customers() -> u32 {
 /// stores are shown it: one store's view of a customer never follows them.
 pub fn min_flagging_stores() -> u32 {
     setting(|p| p.min_flagging_stores, 2).max(1)
+}
+
+/// How many of a customer's most recent rated orders their score is the
+/// share of thumbs-up over (docs/REPUTATION.md, phase 4) -- recent enough to
+/// say how they are now.
+pub fn customer_rating_window() -> u32 {
+    setting(|p| p.customer_rating_window, 100).max(1)
+}
+
+/// How many counted ratings a customer needs before their score is shown:
+/// one unlucky order never reads as who they are.
+pub fn min_customer_ratings() -> u32 {
+    setting(|p| p.min_customer_ratings, 10).max(1)
+}
+
+/// The share of their ratings, in percent, a rater may give as thumbs-down
+/// before none of theirs count -- a driver or store who rates most
+/// customers down says more about themselves.
+pub fn max_rater_down_percent() -> u8 {
+    setting(|p| p.max_rater_down_percent, 50).min(100)
+}
+
+/// How many customers a rater must have rated before that share is judged.
+pub fn min_rater_ratings() -> u32 {
+    setting(|p| p.min_rater_ratings, 10).max(1)
+}
+
+/// How many of a customer's most recent orders their report pattern counts
+/// -- "reported N of their last M" -- for a store answering a report.
+pub fn report_pattern_orders() -> u32 {
+    setting(|p| p.report_pattern_orders, 20).max(1)
+}
+
+/// How many orders a customer needs before their report pattern is shown.
+pub fn min_report_pattern_orders() -> u32 {
+    setting(|p| p.min_report_pattern_orders, 5).max(1)
 }
 
 /// How far back a reputation reaches: ratings and records count what

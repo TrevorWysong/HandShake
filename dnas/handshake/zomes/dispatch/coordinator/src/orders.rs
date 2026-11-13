@@ -309,6 +309,25 @@ pub(crate) fn ensure_promo_usable(promo_ref: &ActionHash, catalog_ref: &ActionHa
     Ok(())
 }
 
+/// The store's side of `ensure_store_serves`: it doesn't take an order from
+/// a customer blocked either way.
+pub(crate) fn ensure_customer_served(catalog_ref: &ActionHash, customer: &AgentPubKey) -> ExternResult<()> {
+    if crate::blocks::any_blocked(vec![(crate::blocks::Party::Store(catalog_ref.clone()), crate::blocks::Party::Person(customer.clone()))])? {
+        return Err(guest("You and this customer have blocked each other: decline the order."));
+    }
+    Ok(())
+}
+
+/// That neither the customer nor the store has blocked the other
+/// (docs/REPUTATION.md, phase 4): a store blocked either way isn't there to
+/// order from.
+pub(crate) fn ensure_store_serves(customer: &AgentPubKey, catalog_ref: &ActionHash) -> ExternResult<()> {
+    if crate::blocks::any_blocked(vec![(crate::blocks::Party::Person(customer.clone()), crate::blocks::Party::Store(catalog_ref.clone()))])? {
+        return Err(guest("This store isn't available to you."));
+    }
+    Ok(())
+}
+
 #[hdk_extern]
 pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
     let requester = agent_info()?.agent_initial_pubkey;
@@ -326,6 +345,7 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
     }
     check_note(&input.dropoff_notes)?;
     check_line2(&input.dropoff_line2)?;
+    ensure_store_serves(&requester, &catalog_ref)?;
     let dropoff_geohash = handshake_types::encode(input.dropoff, DROPOFF_GEOHASH_PRECISION);
     let status = if input.requested_delivery_time.is_some() { DeliveryStatus::Scheduled } else { DeliveryStatus::Placed };
 
@@ -487,6 +507,7 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
     if order.merchant != agent_info()?.agent_initial_pubkey {
         return Err(guest("Only the order's store can accept it."));
     }
+    ensure_customer_served(&order.catalog_ref, &order.requester)?;
     crate::accounts::ensure_not_moved(&order.requester, "This customer")?;
     ensure_priced_from_current_menu(&order_original_action, &order.lines, order.promo_code_ref.as_ref())?;
     crate::bags::ensure_bags_left(&order_original_action, &order.lines)?;
@@ -603,6 +624,10 @@ pub struct NetworkTerms {
     /// How many different stores must find a customer's reports weren't
     /// made in good faith before other stores are shown it.
     pub min_flagging_stores: u32,
+    /// A customer's score is over their last this-many rated orders, and
+    /// shown once it has `min_customer_ratings`.
+    pub customer_rating_window: u32,
+    pub min_customer_ratings: u32,
     /// How far back ratings and records reach, in days.
     pub reputation_window_days: u32,
     /// What a minute of a driver's arrival time counts for when matching.
@@ -678,6 +703,8 @@ pub fn get_network_terms(_: ()) -> ExternResult<NetworkTerms> {
         max_driver_changes: handshake_governance::max_driver_changes(),
         min_reporter_stores: handshake_governance::min_reporter_stores(),
         min_flagging_stores: handshake_governance::min_flagging_stores(),
+        customer_rating_window: handshake_governance::customer_rating_window(),
+        min_customer_ratings: handshake_governance::min_customer_ratings(),
         reputation_window_days: (handshake_governance::reputation_window().as_secs() / 86_400) as u32,
         minute_value_cents: handshake_governance::minute_value_cents(),
         time_relays: handshake_governance::time_source().relays,

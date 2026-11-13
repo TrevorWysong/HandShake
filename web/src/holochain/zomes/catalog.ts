@@ -163,9 +163,10 @@ export async function removeMenuItem(originalAction: ActionHash): Promise<void> 
 }
 
 /// Whether the store's conductor accepts new orders on its own -- see
-/// `MerchantCatalog.auto_accept_orders`.
-export async function setAutoAcceptOrders(originalAction: ActionHash, autoAcceptOrders: boolean): Promise<HcRecord> {
-  return callZome("catalog", "set_auto_accept_orders", { original_action: originalAction, auto_accept_orders: autoAcceptOrders });
+/// `MerchantCatalog.auto_accept_orders` -- and, given, the customer score it
+/// holds orders below for review (`null` holds none).
+export async function setAutoAcceptOrders(originalAction: ActionHash, autoAcceptOrders: boolean, holdBelowCustomerScore?: number | null): Promise<HcRecord> {
+  return callZome("catalog", "set_auto_accept_orders", { original_action: originalAction, auto_accept_orders: autoAcceptOrders, ...(holdBelowCustomerScore === undefined ? {} : { hold_below_customer_score: holdBelowCustomerScore }) });
 }
 
 export async function setAllergyPolicy(originalAction: ActionHash, allergyPolicy: AllergyPolicy | null): Promise<HcRecord> {
