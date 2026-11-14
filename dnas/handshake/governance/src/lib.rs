@@ -500,9 +500,10 @@ pub fn min_flagging_stores() -> u32 {
 /// How many stores and drivers a customer's score is the share of
 /// thumbs-up over (docs/REPUTATION.md, phase 4): the latest word from each
 /// of the most recent raters -- recent enough to say how they are now, and
-/// one per rater, so no one store or driver fills it.
+/// one per rater, so no one store or driver fills it. At most 500, so a
+/// score's reads stay bounded.
 pub fn customer_rating_window() -> u32 {
-    setting(|p| p.customer_rating_window, 100).max(1)
+    setting(|p| p.customer_rating_window, 100).clamp(1, 500)
 }
 
 /// How many counted ratings a customer needs before their score is shown:
@@ -538,14 +539,15 @@ pub fn rater_window() -> Duration {
 }
 
 /// How many of a customer's most recent orders their report pattern counts
-/// -- "reported N of their last M" -- for a store answering a report.
+/// -- "reported N of their last M" -- for a store answering a report. At
+/// most 50, a page of their history.
 pub fn report_pattern_orders() -> u32 {
-    setting(|p| p.report_pattern_orders, 20).max(1)
+    setting(|p| p.report_pattern_orders, 20).clamp(1, 50)
 }
 
 /// How many orders a customer needs before their report pattern is shown.
 pub fn min_report_pattern_orders() -> u32 {
-    setting(|p| p.min_report_pattern_orders, 5).max(1)
+    setting(|p| p.min_report_pattern_orders, 5).clamp(1, report_pattern_orders())
 }
 
 /// How far back a reputation reaches: ratings and records count what

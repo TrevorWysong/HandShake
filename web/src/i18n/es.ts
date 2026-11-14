@@ -2052,7 +2052,7 @@ export const es: Catalog = {
   "score.reasonCount": "{reason} ({count})",
   "score.yours": "Tu puntuación",
   "score.notYet": { one: "{count} valoración por ahora. La puntuación se muestra desde {min}.", other: "{count} valoraciones por ahora. La puntuación se muestra desde {min}." },
-  "score.yoursDetail": "La proporción de pulgares arriba en la última valoración de cada una de tus últimas {window} tiendas y repartidores. Solo cuentan tiendas y repartidores establecidos, nunca quien valora mal a la mayoría, ni un pulgar abajo de aquel a quien se refería un reporte tuyo sobre ese pedido.",
+  "score.yoursDetail": "La proporción de pulgares arriba en la última valoración de cada una de tus últimas {window} tiendas y repartidores. Solo cuentan tiendas y repartidores establecidos, nunca quien valora mal a la mayoría, ni un pulgar abajo en un pedido que reportaste, de su tienda, o de su repartidor si reportaste la entrega.",
   "history.why.score": "Su puntuación",
   "history.why.scoreDetail": "La proporción de pulgares arriba de las tiendas y repartidores que lo atendieron, mostrada cuando tiene suficientes valoraciones. No cuentan quienes valoran mal a la mayoría, y un cliente sin puntuación no es un mal cliente.",
   "reportPattern.line": { one: "Reportó un problema en {reported} de su último {count} pedido", other: "Reportó un problema en {reported} de sus últimos {count} pedidos" },

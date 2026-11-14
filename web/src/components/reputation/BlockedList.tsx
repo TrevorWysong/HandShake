@@ -1,6 +1,6 @@
 // Whom someone has blocked -- as themselves, or as their store -- with the
-// way to lift each (docs/REPUTATION.md, phase 4). Their own list, from their
-// own device's record; nobody else can read it.
+// way to lift each (docs/REPUTATION.md, phase 4). Their own list, sealed to
+// them: nobody else can read it, and it moves with them to a new phone.
 import { Ban } from "lucide-react";
 import { myBlocks, unblock } from "../../holochain/zomes/reputation";
 import { getCatalog } from "../../holochain/zomes/catalog";

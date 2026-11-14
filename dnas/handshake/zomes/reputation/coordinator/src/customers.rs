@@ -3,7 +3,8 @@
 //! is the share of thumbs-up over the latest word of their recent raters --
 //! established stores and drivers who don't rate most customers down, and
 //! never a thumbs-down from whoever a report of the customer's on that order
-//! is about -- shown once there are enough; a block hides a pair from each
+//! concerns (the store, any; the driver, one on the delivery) -- shown once
+//! there are enough; a block hides a pair from each
 //! other, whichever made it.
 
 use super::*;
@@ -58,11 +59,12 @@ struct ReportsOn {
 }
 
 impl ReportsOn {
-    /// Whether a report is about this rater: the store, for its items; the
-    /// driver, for the delivery.
+    /// Whether a report concerns this rater: the store, for any report --
+    /// it answers each, and refunds it out of its own takings, the
+    /// delivery's too; the driver, for the delivery.
     fn about(&self, as_store: bool) -> bool {
         match as_store {
-            true => self.items,
+            true => self.items || self.service,
             false => self.service,
         }
     }
@@ -458,6 +460,17 @@ const SEAL_PAD_ROOM: usize = 4_096;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The store answers and refunds every report, so any one keeps its
+    /// thumbs-down off; the driver, only one on the delivery.
+    #[test]
+    fn a_report_concerns_the_store_always_and_the_driver_for_the_delivery() {
+        let items = ReportsOn { items: true, service: false };
+        let service = ReportsOn { items: false, service: true };
+        assert!(items.about(true) && service.about(true));
+        assert!(!items.about(false) && service.about(false));
+        assert!(!ReportsOn::default().about(true) && !ReportsOn::default().about(false));
+    }
 
     #[test]
     fn reasons_read_back_from_their_tag() {

@@ -425,8 +425,10 @@ impl WaitingOrder {
         };
         // Held for the store's own review: a customer below the score it
         // chose -- never declined for it, but nobody having come, declined
-        // before its window closes (as an order with allergies is).
-        let held = decline.is_none() && hold_below.is_some_and(|below| crate::blocks::customer_score(&self.requester).ok().flatten().is_some_and(|score| score < below));
+        // before its window closes (as an order with allergies is). A score
+        // that can't be read holds it too: the store's choice never fails
+        // open.
+        let held = decline.is_none() && hold_below.is_some_and(|below| crate::blocks::customer_score(&self.requester).map_or(true, |score| score.is_some_and(|score| score < below)));
         let decline = match decline {
             None if held => {
                 let window = store_response_window().as_micros() as i64;

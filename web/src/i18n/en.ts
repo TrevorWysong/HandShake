@@ -2057,7 +2057,7 @@ export const en = {
   "score.reasonCount": "{reason} ({count})",
   "score.yours": "Your score",
   "score.notYet": { one: "{count} rating so far. A score is shown from {min}.", other: "{count} ratings so far. A score is shown from {min}." },
-  "score.yoursDetail": "The share of thumbs up in the latest rating from each of your last {window} stores and drivers. Only established stores and drivers count, never anyone who rates most customers down, and never a thumbs-down from whoever a report of yours on that order was about.",
+  "score.yoursDetail": "The share of thumbs up in the latest rating from each of your last {window} stores and drivers. Only established stores and drivers count, never anyone who rates most customers down, and never a thumbs-down on an order you reported, from its store, or from its driver if you reported the delivery.",
   "history.why.score": "Their score",
   "history.why.scoreDetail": "The share of thumbs up from the stores and drivers who served them, shown once they have enough ratings. Raters who rate most customers down don't count, and a customer with no score yet isn't a bad one.",
   "reportPattern.line": { one: "Reported a problem on {reported} of their last {count} order", other: "Reported a problem on {reported} of their last {count} orders" },
