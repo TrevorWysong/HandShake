@@ -259,7 +259,7 @@ fn established(catalog: &ActionHash, owner: &AgentPubKey) -> ExternResult<bool> 
 /// `established` for each store and its owner, within `longest`, read
 /// together.
 pub(crate) fn stores_established(stores: Vec<(ActionHash, AgentPubKey)>, longest: std::time::Duration) -> ExternResult<Vec<bool>> {
-    let enough = |at: usize, links: &[Link], _: Timestamp| established_in(links, &stores[at].1).then_some(true);
+    let enough = |at: usize, links: &[Link]| established_in(links, &stores[at].1).then_some(true);
     settled_each(stores.iter().map(|(catalog, _)| catalog.clone().into()).collect(), LinkTypes::StoreToEvent, longest, &enough, &|_, _| false)
 }
 

@@ -285,12 +285,13 @@ pub fn get_customer_score(customer: AgentPubKey) -> ExternResult<CustomerScore> 
 /// doesn't rate more of them down than the network allows. Each check reads
 /// the shortest window that settles it (`settled_each`), batched across the
 /// raters, so a busy rater costs a day of links, not months of them. A
-/// rating's fairness is judged over a window reaching back to when it was
-/// given, at least: a good day since can't make an unfair month count.
+/// rating's fairness is judged as it stood when it was given -- over the
+/// rater's ratings up to it -- so nothing they rate afterwards makes an
+/// unfair rating count.
 fn counted(words: &[Word]) -> ExternResult<Vec<bool>> {
     let window = handshake_governance::rater_window();
-    let judged = |at: usize, links: &[Link], since: Timestamp| if words[at].at < since { None } else { rates_fairly(&words[at].rater, links, FAIRNESS_SAMPLE) };
-    let fair = settled_each(words.iter().map(|word| word.rater.clone().into()).collect(), LinkTypes::RaterToRating, window, &judged, &|at, links| rates_fairly(&words[at].rater, links, 0).unwrap_or(true))?;
+    let until: Vec<Option<Timestamp>> = words.iter().map(|word| Some(word.at)).collect();
+    let fair = settled_each_until(words.iter().map(|word| word.rater.clone().into()).collect(), &until, LinkTypes::RaterToRating, window, &|at, links| rates_fairly(&words[at].rater, links, FAIRNESS_SAMPLE), &|at, links| rates_fairly(&words[at].rater, links, 0).unwrap_or(true))?;
     let stores: Vec<(ActionHash, AgentPubKey)> = words.iter().filter_map(|word| word.store.clone().map(|store| (store, word.rater.clone()))).collect();
     let drivers: Vec<AnyLinkableHash> = words.iter().filter(|word| word.store.is_none()).map(|word| word.rater.clone().into()).collect();
     let mut stores_ok = crate::findings::stores_established(stores, window)?.into_iter();
@@ -475,6 +476,57 @@ mod tests {
         assert!(items.about(true) && service.about(true));
         assert!(!items.about(false) && service.about(false));
         assert!(!ReportsOn::default().about(true) && !ReportsOn::default().about(false));
+    }
+
+    /// A rater's ratings as links, `ups[i]` given `i` hours after the start.
+    fn ratings(rater: &AgentPubKey, ups: &[bool]) -> Vec<Link> {
+        ups.iter().enumerate().map(|(i, up)| {
+            let mut tag = vec![0u8; 39];
+            tag.push(u8::from(*up));
+            Link {
+                author: rater.clone(),
+                base: rater.clone().into(),
+                target: EntryHash::from_raw_36(vec![i as u8; 36]).into(),
+                timestamp: Timestamp::from_micros(i as i64 * 3_600_000_000),
+                zome_index: 0.into(),
+                link_type: 0.into(),
+                tag: LinkTag::new(tag),
+                create_link_hash: ActionHash::from_raw_36(vec![i as u8; 36]),
+            }
+        }).collect()
+    }
+
+    /// Whether each of `rater`'s ratings at `at` (by place) counts, judged as
+    /// `counted` does but over `links` in memory, the windows ending at each
+    /// rating -- or, `anchored` false, at `now`.
+    fn fair_at(rater: &AgentPubKey, links: &[Link], at: &[usize], anchored: bool, now: Timestamp) -> Vec<bool> {
+        let until: Vec<Option<Timestamp>> = at.iter().map(|i| anchored.then(|| links[*i].timestamp)).collect();
+        let read = |open: &[usize], window: std::time::Duration| -> ExternResult<Vec<Vec<Link>>> {
+            Ok(open.iter().map(|o| {
+                let (after, before) = crate::window_bounds(until[*o], now, window);
+                links.iter().filter(|l| l.timestamp > after && before.is_none_or(|b| l.timestamp < b)).cloned().collect()
+            }).collect())
+        };
+        crate::settle_windows(at.len(), std::time::Duration::from_secs(90 * 86_400), read, &|_, l| rates_fairly(rater, l, FAIRNESS_SAMPLE), &|_, l| rates_fairly(rater, l, 0).unwrap_or(true)).unwrap()
+    }
+
+    /// 50 thumbs-down, then 50 thumbs-up: judged now, the downs would be
+    /// half of 100 and pass; judged as they stood, each from the tenth on
+    /// was given by a rater rating everyone down, and never counts. The
+    /// first nine were too few to judge, as for any new rater.
+    #[test]
+    fn later_thumbs_up_never_make_earlier_unfair_downs_count() {
+        let rater = AgentPubKey::from_raw_36(vec![7; 36]);
+        let ups: Vec<bool> = (0..100).map(|i| i >= 50).collect();
+        let links = ratings(&rater, &ups);
+        let now = Timestamp::from_micros(101 * 3_600_000_000);
+        let downs: Vec<usize> = (0..50).collect();
+        assert!(fair_at(&rater, &links, &downs, false, now).iter().all(|fair| *fair), "judged now, 50 of 100 down passes");
+        let anchored = fair_at(&rater, &links, &downs, true, now);
+        assert!(anchored[..9].iter().all(|fair| *fair), "too few ratings to judge yet");
+        assert!(anchored[9..].iter().all(|fair| !*fair), "every later down was unfair when given");
+        let ups_at = fair_at(&rater, &links, &[50, 99], true, now);
+        assert_eq!(ups_at, vec![false, true], "the first thumbs-up came from a rater rating nearly everyone down; by the last, half their ratings are up, which the network allows");
     }
 
     #[test]

@@ -223,6 +223,12 @@ fn settled_enough(leg: &PaymentLeg, facts: &Facts) -> bool {
 /// What it rests on that hasn't reached this device is an error, never
 /// "not yet": a hold waiting on a read is reported, not left to lapse.
 pub(crate) fn settlement_due(hold_ref: &ActionHash) -> ExternResult<Option<Vec<DueClaim>>> {
+    settlement_due_waiting(hold_ref, PASS_ON_WAIT_MICROS)
+}
+
+/// `settlement_due`, with the store waiting `wait` from the customer's
+/// hold for its drivers to settle (tests pass none).
+pub(crate) fn settlement_due_waiting(hold_ref: &ActionHash, wait: i64) -> ExternResult<Option<Vec<DueClaim>>> {
     let me = agent_info()?.agent_initial_pubkey;
     let record = arrived(hold_ref)?;
     let Some(hold) = decode_or::<PaymentHold>(&record) else { return Ok(None) };
@@ -282,7 +288,7 @@ pub(crate) fn settlement_due(hold_ref: &ActionHash) -> ExternResult<Option<Vec<D
             }
         }
         let held_at = record.action().timestamp().as_micros();
-        if !unsettled.is_empty() && sys_time()?.as_micros() < held_at + PASS_ON_WAIT_MICROS {
+        if !unsettled.is_empty() && sys_time()?.as_micros() < held_at + wait {
             return Ok(None);
         }
         for (driver_hold, bid_ref, bid_record) in unsettled {

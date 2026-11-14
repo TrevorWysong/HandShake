@@ -182,6 +182,14 @@ mod test_utils {
         Evidence(dispatch_integrity::ArrivalEvidence),
     }
 
+    /// What the caller's hold settles with once the store has waited as
+    /// long as it will for its drivers -- days, which a test can't -- so a
+    /// test can settle the store's payment before its driver settles.
+    #[hdk_extern]
+    pub fn settlement_due_without_waiting_for_testing(hold: ActionHash) -> ExternResult<Option<Vec<crate::settlement::DueClaim>>> {
+        crate::settlement::settlement_due_waiting(&hold, 0)
+    }
+
     #[hdk_extern]
     pub fn create_raw_payment_record_for_testing(record: RawPaymentRecord) -> ExternResult<ActionHash> {
         create_entry(&match record {

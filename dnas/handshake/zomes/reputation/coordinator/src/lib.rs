@@ -87,10 +87,10 @@ fn within_each(bases: Vec<AnyLinkableHash>, link_type: LinkTypes, window: std::t
     get_links_many(queries)
 }
 
-/// What a threshold says about one base's links in a window that starts at
-/// the given time -- by the base's place among those asked about: settled,
-/// or to be read over a longer one.
-type Settles<'a> = &'a dyn Fn(usize, &[Link], Timestamp) -> Option<bool>;
+/// What a threshold says about one base's links in a window -- by the
+/// base's place among those asked about: settled, or to be read over a
+/// longer one.
+type Settles<'a> = &'a dyn Fn(usize, &[Link]) -> Option<bool>;
 
 /// A threshold judged over each of `bases`' links: in the shortest of a
 /// day, a week, a month or `longest` that `settles` it, or by `otherwise`
@@ -98,22 +98,55 @@ type Settles<'a> = &'a dyn Fn(usize, &[Link], Timestamp) -> Option<bool>;
 /// link it ever made, and one that isn't busy has few to read anyway. Each
 /// step is one batched read, of the bases still open.
 pub(crate) fn settled_each(bases: Vec<AnyLinkableHash>, link_type: LinkTypes, longest: std::time::Duration, settles: Settles, otherwise: &dyn Fn(usize, &[Link]) -> bool) -> ExternResult<Vec<bool>> {
+    let until = vec![None; bases.len()];
+    settled_each_until(bases, &until, link_type, longest, settles, otherwise)
+}
+
+/// `settled_each`, with each base's windows ending at its own time in
+/// `until` (`None`: now) -- the threshold as it stood then, whatever came
+/// after.
+pub(crate) fn settled_each_until(bases: Vec<AnyLinkableHash>, until: &[Option<Timestamp>], link_type: LinkTypes, longest: std::time::Duration, settles: Settles, otherwise: &dyn Fn(usize, &[Link]) -> bool) -> ExternResult<Vec<bool>> {
+    let now = sys_time()?;
+    let read = |open: &[usize], window: std::time::Duration| {
+        let mut queries = Vec::with_capacity(open.len());
+        for at in open {
+            let (after, before) = window_bounds(until[*at], now, window);
+            let mut query = LinkQuery::try_new(bases[*at].clone(), link_type)?;
+            query.after = Some(after);
+            query.before = before;
+            queries.push(query);
+        }
+        get_links_many(queries)
+    };
+    settle_windows(bases.len(), longest, read, settles, otherwise)
+}
+
+/// The links a window takes: made after the first time, and -- for one
+/// ending at a given time, not now -- before the second. A second's slack
+/// takes in links written in the same call as the one it ends at.
+pub(crate) fn window_bounds(until: Option<Timestamp>, now: Timestamp, window: std::time::Duration) -> (Timestamp, Option<Timestamp>) {
+    let end = until.unwrap_or(now);
+    let after = (end - window).unwrap_or(Timestamp::from_micros(0));
+    (after, until.map(|end| Timestamp::from_micros(end.as_micros().saturating_add(1_000_000))))
+}
+
+/// The steps of `settled_each`, over `count` bases whose links in a window
+/// `read` gives, the open ones' at a time.
+pub(crate) fn settle_windows(count: usize, longest: std::time::Duration, mut read: impl FnMut(&[usize], std::time::Duration) -> ExternResult<Vec<Vec<Link>>>, settles: Settles, otherwise: &dyn Fn(usize, &[Link]) -> bool) -> ExternResult<Vec<bool>> {
     const DAY: u64 = 86_400;
     let mut windows: Vec<std::time::Duration> = [DAY, 7 * DAY, 30 * DAY].into_iter().map(std::time::Duration::from_secs).filter(|window| *window < longest).collect();
     windows.push(longest);
-    let mut out: Vec<Option<bool>> = vec![None; bases.len()];
+    let mut out: Vec<Option<bool>> = vec![None; count];
     for (step, window) in windows.iter().enumerate() {
-        let open: Vec<usize> = (0..bases.len()).filter(|at| out[*at].is_none()).collect();
+        let open: Vec<usize> = (0..count).filter(|at| out[*at].is_none()).collect();
         if open.is_empty() {
             break;
         }
         let last = step + 1 == windows.len();
-        let since = (sys_time()? - *window).unwrap_or(Timestamp::from_micros(0));
-        let read = within_each(open.iter().map(|at| bases[*at].clone()).collect(), link_type, *window)?;
-        for (at, links) in open.into_iter().zip(read) {
+        for (at, links) in open.iter().copied().zip(read(&open, *window)?) {
             out[at] = match last {
-                true => Some(settles(at, &links, since).unwrap_or_else(|| otherwise(at, &links))),
-                false => settles(at, &links, since),
+                true => Some(settles(at, &links).unwrap_or_else(|| otherwise(at, &links))),
+                false => settles(at, &links),
             };
         }
     }
@@ -236,7 +269,7 @@ const COMPLETED: u8 = 0;
 /// `min_reporter_stores` different stores, within `longest` -- each store
 /// records its own, so each is a different agent.
 pub(crate) fn delivered_for_enough(drivers: Vec<AnyLinkableHash>, longest: std::time::Duration) -> ExternResult<Vec<bool>> {
-    let enough = |_: usize, links: &[Link], _: Timestamp| (stores_in(links) >= handshake_governance::min_reporter_stores()).then_some(true);
+    let enough = |_: usize, links: &[Link]| (stores_in(links) >= handshake_governance::min_reporter_stores()).then_some(true);
     settled_each(drivers, LinkTypes::DriverToEvent, longest, &enough, &|_, _| false)
 }
 
