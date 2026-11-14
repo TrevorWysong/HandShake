@@ -4,8 +4,8 @@
 import { distanceKm } from "../../../lib/places/geohash";
 import { type CartLine } from "../../../store/cart";
 import { countMyCompletedOrders, myPromoStanding } from "../../../holochain/zomes/dispatch";
-import { getCatalog, listLivePromoCodes } from "../../../holochain/zomes/catalog";
-import { bytesEqual, decodeEntry } from "../../../holochain/decode";
+import { getCatalog, listGoodieBagsForCatalog, listLivePromoCodes } from "../../../holochain/zomes/catalog";
+import { bytesEqual, bytesToHex, decodeEntry } from "../../../holochain/decode";
 import { formatDistance } from "../../../lib/ui/format";
 import { t as translate } from "../../../i18n";
 import { computePromoEffect, isPromoEligible } from "../../../lib/storefront/promotions";
@@ -62,6 +62,12 @@ export interface CartStoreInfo {
   allergyPolicy: AllergyPolicy | null;
   promoCodes: PromoRow[];
   menuItems: ItemRow[];
+  /// Whether the menu was read: unread, it's empty, and nothing in the
+  /// cart is judged against it.
+  menuRead: boolean;
+  /// The goodie bags the store has on offer (original actions, hex) --
+  /// `null` if they couldn't be read.
+  liveBags: Set<string> | null;
   completedOrderCount: number;
 }
 
@@ -69,7 +75,7 @@ export interface CartStoreInfo {
 /// once per store. Each part degrades independently on failure, same as
 /// before -- a missing promo list shouldn't block checkout.
 export async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartStoreInfo> {
-  const [catalog, livePromos, menuItems, completedOrderCount, standings] = await Promise.all([
+  const [catalog, livePromos, menu, liveBags, completedOrderCount, standings] = await Promise.all([
     getCatalog(catalogRef)
       .then((record) => decodeEntry<MerchantCatalog>(record))
       .catch(() => null),
@@ -82,7 +88,12 @@ export async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartSt
     // (BOGO, "spend $X get item Y free") even when the item they name isn't
     // already sitting in the cart.
     fetchMenu(catalogRef)
-      .catch(() => []),
+      .then((items) => ({ items, read: true }))
+      .catch(() => ({ items: [] as ItemRow[], read: false })),
+    // A bag its store has ended is off this list: the cart says so.
+    listGoodieBagsForCatalog(catalogRef)
+      .then((views) => new Set(views.map((view) => bytesToHex(view.original_action))))
+      .catch(() => null),
     // Loyalty rewards ("order 5 times, your 6th is discounted") count this
     // customer's completed orders at *this* store, delivery and pickup.
     countMyCompletedOrders(catalogRef).catch(() => 0),
@@ -105,7 +116,9 @@ export async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartSt
     pricesIncludeTax: catalog?.prices_include_tax ?? false,
     allergyPolicy: catalog?.allergy_policy ?? null,
     promoCodes,
-    menuItems,
+    menuItems: menu.items,
+    menuRead: menu.read,
+    liveBags,
     completedOrderCount,
   };
 }

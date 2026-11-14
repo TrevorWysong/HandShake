@@ -67,7 +67,7 @@ await runScenario(async (scenario) => {
   const pickup = (p: typeof merchant, items: unknown[], order_total: number, extra: Record<string, unknown> = {}) =>
     call(p, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items, order_total, ...extra });
   const one = (item_ref: Uint8Array) => ({ item_ref, quantity: 1, selections: [] });
-  await assert.rejects(pickup(cara, [one(soup), one(pastries)], 1400), /the total is now 1540 cents/, "soup and a bag, each at its price, taxed together");
+  await assert.rejects(pickup(cara, [one(soup), one(pastries)], 1400), /Prices have changed/, "soup and a bag, each at its price, taxed together");
   const order = actionHash(await retryUntilOk(() => pickup(cara, [one(soup), one(pastries)], 1540)));
   await sync();
   console.log("[PASS] a goodie bag is a line of the order, at its own price, taxed with the rest");
@@ -163,6 +163,7 @@ await runScenario(async (scenario) => {
   assert.ok(!stillListed.some((b) => Buffer.from(b.original_action).equals(Buffer.from(early))), "off the store's page");
   await customerPaid(merchant, beforeEnd, all);
   await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: beforeEnd }), /Early-close bag is sold out or no longer available/, "its order is declined, not sold");
+  await assert.rejects(pickup(cara, [one(early)], 660), /Early-close bag is no longer available/, "and no new order for it is placed");
   console.log("[PASS] a store can end a goodie bag early: off its page, and no order for it accepted after");
 
   // ===== Only while its window is open =====

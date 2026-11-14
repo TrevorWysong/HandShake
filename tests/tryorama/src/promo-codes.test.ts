@@ -133,7 +133,7 @@ await runScenario(async (scenario) => {
   await dhtSync(all, customer.cells[0].cell_id[0]);
   const twoEmpanadas = [{ item_ref: menuItemRef, quantity: 2 }];
   await placeOrder(bogoRef, 1000, twoEmpanadas); // two at $10.00, one free
-  await assert.rejects(placeOrder(bogoRef, 2000, twoEmpanadas), /the total is now 1000 cents/, "an order that skips the earned discount must be refused with the real total");
+  await assert.rejects(placeOrder(bogoRef, 2000, twoEmpanadas), /Prices have changed/, "an order that skips the earned discount must be refused with the real total");
   await assert.rejects(placeOrder(bogoRef, 1000), /doesn't meet the promo code's requirement/, "one empanada doesn't earn a second free");
   console.log("[PASS] a buy-X-get-Y-free (BOGO) deal is priced exactly, and only when earned");
 

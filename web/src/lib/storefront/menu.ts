@@ -76,6 +76,22 @@ function groupRefs(selections: SelectionInput[]): ActionHash[] {
   return selections.flatMap((s) => [s.group, ...s.options.flatMap((c) => groupRefs(c.nested))]);
 }
 
+/// How many choice groups one read asks for: well inside the network's limit
+/// (`get_modifier_groups`).
+const GROUPS_PER_READ = 20;
+
+/// The choice groups some choices name, nested ones included, at their
+/// latest -- what pricing them again against the store as it is now needs.
+/// A group the store no longer has is simply absent.
+export async function fetchChosenGroups(catalogRef: ActionHash, chosen: SelectionInput[][]): Promise<Groups> {
+  const refs = [...new Map(chosen.flatMap(groupRefs).map((ref) => [bytesToHex(ref), ref])).values()];
+  const groups: Groups = new Map();
+  for (let at = 0; at < refs.length; at += GROUPS_PER_READ) {
+    for (const view of await getModifierGroups(catalogRef, refs.slice(at, at + GROUPS_PER_READ))) groups.set(bytesToHex(view.original_action), decodeEntry<ModifierGroup>(view.record));
+  }
+  return groups;
+}
+
 /// A past order's lines as cart lines at the store's current menu: an item
 /// since removed or sold out, or whose choices are no longer on offer, is
 /// left out; one repriced takes its new price.
@@ -85,11 +101,7 @@ export async function cartLinesFromOrder(catalogRef: ActionHash, lines: OrderLin
 
 /// The same, of an order not yet placed: a recurring order's items.
 export async function cartLinesFromItems(catalogRef: ActionHash, lines: OrderItem[], menu: ItemRow[]): Promise<CartLine[]> {
-  const refs = new Map(lines.flatMap((line) => groupRefs(line.selections)).map((ref) => [bytesToHex(ref), ref]));
-  const groups: Groups = new Map();
-  if (refs.size > 0) {
-    for (const view of await getModifierGroups(catalogRef, [...refs.values()])) groups.set(bytesToHex(view.original_action), decodeEntry<ModifierGroup>(view.record));
-  }
+  const groups = await fetchChosenGroups(catalogRef, lines.map((line) => line.selections));
   return lines.flatMap((line) => {
     const row = menu.find((m) => bytesEqual(m.hash, line.item_ref));
     if (!row || !row.item.available) return [];

@@ -10,11 +10,12 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { CheckoutDraft } from "../../../lib/orders/recurring";
 import { motion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
+import { POLL } from "../../../lib/network/poll";
 import { Button, Checkbox, Notice, SegmentedTabs } from "../../../components/ui";
 import { PaySheet } from "../../../components/payments/PaySheet";
 import { ItemSheet } from "../../../components/store/ItemSheet";
-import { cartItems, menuLines, useCart, useCarts } from "../../../store/cart";
+import { cartItems, lineKey, menuLines, useCart, useCarts } from "../../../store/cart";
 import { useSession } from "../../../store/session";
 import { useCustomerSettings } from "../../../store/roleSettings";
 import { NoLongerSignedIn, stillSignedIn } from "../../../store/identityScope";
@@ -41,7 +42,9 @@ import { CartTotals } from "./CartTotals";
 import { CheckoutBar } from "./CheckoutBar";
 import { AllergySection } from "./AllergySection";
 import { useCartAllergies } from "./useCartAllergies";
-import { repricedLine, soldRow } from "../../../lib/storefront/sales";
+import { soldRow } from "../../../lib/storefront/sales";
+import { checkLine } from "../../../lib/storefront/cartCheck";
+import { fetchChosenGroups } from "../../../lib/storefront/menu";
 import { useMyAllergies } from "../../../lib/hooks/useMyAllergies";
 import { hasAllergies, NO_ALLERGIES } from "../../../lib/storefront/allergens";
 import { MAX_ORDER_LINES, type AllergySet } from "../../../holochain/types";
@@ -68,7 +71,8 @@ export function Cart() {
   const action = useAction();
 
   const catalogRef = cart.catalogRef;
-  const { data: storeInfo } = useResource(catalogRef && `cart-store:${bytesToHex(catalogRef)}`, () => fetchCartStoreInfo(catalogRef!));
+  // Read again now and then: a store can change its menu while the cart waits.
+  const { data: storeInfo, reload: reloadStore } = useResource(catalogRef && `cart-store:${bytesToHex(catalogRef)}`, () => fetchCartStoreInfo(catalogRef!), { pollMs: POLL.slow });
   // How the store is paid: its processor's card form. A store ordering from
   // itself pays itself nothing.
   const merchant = cart.merchant;
@@ -101,15 +105,32 @@ export function Cart() {
   const rawMenuItems = storeInfo?.menuItems ?? NO_ITEMS;
   const storeClock = storeInfo?.hours ?? null;
   const menuItems = storeClock ? rawMenuItems.map((row) => soldRow(row, storeClock, now)) : rawMenuItems;
-  // A sale can start or stop while something waits in the cart: it's priced as
-  // the order will be, which is what the network checks its total against.
+  // Each line against the store as it is now (`cartCheck`): its price, its
+  // choices, whether it's still sold. Judged only on a menu that was read,
+  // never on one that failed to load.
+  const chosenKey = cart.lines.map(lineKey).join(";");
+  const { data: groups, reload: reloadGroups } = useResource(storeInfo?.menuRead && catalogRef ? `cart-groups:${bytesToHex(catalogRef)}:${chosenKey}` : null, () => fetchChosenGroups(catalogRef!, cart.lines.map((line) => line.selections)));
+  const checks = storeInfo?.menuRead && groups ? new Map(cart.lines.map((line) => [lineKey(line), checkLine(line, menuItems, groups, storeInfo.liveBags)])) : null;
+  const repricedKey = checks ? [...checks].filter(([, check]) => check.kind === "repriced").map(([key]) => key).join(";") : "";
+  const lineProblems = checks ? [...checks.values()].filter((check) => check.kind === "gone" || check.kind === "choose").length : 0;
+  // What only changed in price is priced as the order will be -- what the
+  // network checks its total against -- and the customer told, once.
+  const [pricesUpdated, setPricesUpdated] = useState(false);
   usePolling(() => {
-    if (!storeClock) return;
+    if (!checks) return;
+    let changed = false;
     cart.repriceLines((line) => {
-      const row = line.bag ? undefined : rawMenuItems.find((candidate) => bytesEqual(candidate.hash, line.itemRef));
-      return row ? repricedLine(line, soldRow(row, storeClock, new Date()).item.price_cents) : line;
+      const check = checks.get(lineKey(line));
+      if (check?.kind !== "repriced") return line;
+      changed = true;
+      return check.line;
     });
-  }, { pollMs: 30_000 }, !!storeClock && cart.lines.length > 0, storeClock ? String(rawMenuItems.length) : undefined);
+    if (changed) setPricesUpdated(true);
+  }, { pollMs: 30_000 }, !!checks && cart.lines.length > 0, repricedKey || null);
+  const recheck = () => {
+    reloadStore();
+    reloadGroups();
+  };
   const allergyPolicy = storeInfo?.allergyPolicy ?? null;
   const allergiesRefused = tellingStore && hasAllergies(allergies) && allergyPolicy?.requests === "NotAccepted";
   const allergyMatches = useCartAllergies(catalogRef, cart.lines, menuItems, allergyPolicy, tellingStore ? allergies : mine);
@@ -189,6 +210,7 @@ export function Cart() {
   // An order holds at most so many lines (the network's rule).
   const tooManyLines = cartItems(cart.lines).length > MAX_ORDER_LINES;
   const notes = [
+    lineProblems > 0 && t("cart.check.blocked"),
     bagIssues.length > 0 && t("cart.bag.blocked"),
     allergiesRefused && t("cart.allergy.blocked"),
     storeInfo && storeInfo.busyExtraMinutes > 0 && t("cart.busy", { minutes: storeInfo.busyExtraMinutes }),
@@ -201,6 +223,7 @@ export function Cart() {
     storeClosed && (orderFor !== now ? t("cart.closedThen") : delivery && !hasBags ? t("cart.closedSchedule", { status: storeHours.label }) : storeHours.label),
   ].filter((note): note is string => !!note);
   const blocked =
+    lineProblems > 0 ||
     tooManyLines ||
     bagIssues.length > 0 ||
     allergiesRefused ||
@@ -218,7 +241,9 @@ export function Cart() {
     const [catalog_ref, merchant] = [cart.catalogRef, cart.merchant];
     const promo_code_ref = discounts.appliedPromo?.hash ?? null;
     const reward = discounts.chosenReward?.id ?? null;
-    return action.run(async () => {
+    // Refused, the store's menu is read again at once: what changed shows on
+    // the lines it changed.
+    const placed = action.run(async () => {
       // The order is placed whoever's signed in by when it's done; the bag
       // emptied and the checkout remembered only for the person who placed it.
       const current = stillSignedIn();
@@ -269,6 +294,10 @@ export function Cart() {
       cart.clear();
       navigate(`/customer/orders/${bytesToHex(actionHash(record))}`);
     }, { as: "place", stayBusy: true });
+    return placed.then((ok) => {
+      if (!ok) recheck();
+      return ok;
+    });
   }
 
   function saveRecurring(recurrence: RecurrenceRule) {
@@ -331,7 +360,13 @@ export function Cart() {
 
           <BagNotices store={store} problems={bagIssues} delivery={delivery} onSwitch={ageRestricted && !delivery ? null : () => setFulfillment(delivery ? "Pickup" : "Delivery")} />
 
-          <CartLines store={store} menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} onEdit={setEditing} />
+          {pricesUpdated && (
+            <motion.p variants={fadeSlideUp} role="status" className="mb-3 flex items-start gap-2 rounded-xl bg-ink-100 px-3 py-2.5 text-xs leading-relaxed text-ink-700 dark:bg-ink-800 dark:text-ink-200">
+              <RefreshCw size={14} aria-hidden className="mt-0.5 shrink-0 text-handshake-500" />
+              {t("cart.check.repriced")}
+            </motion.p>
+          )}
+          <CartLines store={store} menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} checks={checks} groups={groups ?? null} onEdit={setEditing} />
 
           {delivery && (
             <>

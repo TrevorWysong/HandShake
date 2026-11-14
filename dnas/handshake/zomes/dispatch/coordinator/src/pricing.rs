@@ -89,16 +89,14 @@ pub(crate) fn price_order(catalog_ref: &ActionHash, store: &MerchantCatalog, ite
     }
     let priced = finish(store, priced_menu, bag_lines);
     if priced.order_total != expected_total {
-        return Err(guest(format!(
-            "prices have changed since this was added to your cart: the total is now {} cents, not {expected_total}",
-            priced.order_total
-        )));
+        return Err(guest("Prices have changed since you added these to your cart. Check your cart's new total, then place your order again."));
     }
     Ok(priced)
 }
 
 /// A goodie bag's line: one of it, at its own price -- if it's from this
-/// store, still on sale, offered this way, not the caller's own, and not
+/// store, still on sale (its window open, and its store hasn't ended it),
+/// offered this way, not the caller's own, and not
 /// one they've ordered already (validation's rules, told first).
 fn bag_line(catalog_ref: &ActionHash, item: &OrderItem, bag: &GoodieBag, delivery: bool) -> ExternResult<(OrderLine, u64)> {
     if &bag.catalog_ref != catalog_ref {
@@ -107,7 +105,7 @@ fn bag_line(catalog_ref: &ActionHash, item: &OrderItem, bag: &GoodieBag, deliver
     if item.quantity != 1 || !item.selections.is_empty() {
         return Err(guest("A goodie bag is one to an order."));
     }
-    if !bag.orderable_at(sys_time()?) {
+    if !bag.orderable_at(sys_time()?) || !crate::bags::listed(&item.item_ref)? {
         return Err(guest(format!("{} is no longer available.", bag.title)));
     }
     if !bag.supports(delivery) {

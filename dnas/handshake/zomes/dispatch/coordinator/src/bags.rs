@@ -52,11 +52,11 @@ pub(crate) fn unavailable_bag(order: &ActionHash, lines: &[OrderLine]) -> Extern
     Ok(None)
 }
 
-/// Whether the caller's store still lists `bag`: one it ended isn't sold.
-/// Unread is an error, never "listed" -- a bag the store ended isn't sold
-/// for want of an answer.
-fn listed(bag: &ActionHash) -> ExternResult<bool> {
-    handshake_coordinator_support::call_local::<_, bool>("catalog", "my_bag_listed", bag.clone())?.map_err(|why| guest(format!("couldn't tell whether this goodie bag is still on sale: {why}")))
+/// Whether its store still lists `bag`: one it ended isn't sold. Unread
+/// is an error, never "listed" -- a bag the store ended isn't sold for want
+/// of an answer.
+pub(crate) fn listed(bag: &ActionHash) -> ExternResult<bool> {
+    handshake_coordinator_support::call_local::<_, bool>("catalog", "goodie_bag_listed", bag.clone())?.map_err(|why| guest(format!("couldn't tell whether this goodie bag is still on sale: {why}")))
 }
 
 /// Refuses an order with a goodie bag the store can't sell it -- see

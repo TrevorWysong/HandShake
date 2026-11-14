@@ -41,7 +41,7 @@ await runScenario(async (scenario) => {
   // ===== Placed at the price it's running at =====
   const onSale = await place(always, 1400);
   assert.equal(decodeEntry<{ lines: { on_sale: boolean }[] }>(onSale).lines[0].on_sale, true);
-  await assert.rejects(place(always, 2000), /prices have changed/, "not at its full price while it's on sale");
+  await assert.rejects(place(always, 2000), /Prices have changed/, "not at its full price while it's on sale");
   const [line] = await call(customer, "dispatch")<{ unit_price_cents: number; on_sale: boolean }[]>("get_order_lines", actionHash(onSale));
   assert.deepEqual([line.unit_price_cents, line.on_sale], [700, true], "its line reads as what was paid");
   assert.equal(decodeEntry<{ lines: { on_sale: boolean }[] }>(await place(elsewhen, 2000)).lines[0].on_sale, false, "a sale for another day isn't running");

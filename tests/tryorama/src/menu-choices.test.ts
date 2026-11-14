@@ -209,7 +209,7 @@ await runScenario(async (scenario) => {
     { item_ref: latteRef, quantity: 1, selections: [pick(size, [[2, 1]]), pick(shots, [[1, 3]])] },
   ];
   const withPromo = (order_total: number) => call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items, order_total, promo_code_ref: promo });
-  await assert.rejects(withPromo(80), /the total is now 480 cents/, "the small latte isn't the one it covers");
+  await assert.rejects(withPromo(80), /Prices have changed/, "the small latte isn't the one it covers");
   await retryUntilOk(() => withPromo(480));
   console.log("[PASS] a reward covers the choices it names, and no others");
 

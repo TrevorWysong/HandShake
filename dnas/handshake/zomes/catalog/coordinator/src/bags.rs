@@ -86,15 +86,17 @@ pub fn end_goodie_bag(original_action: ActionHash) -> ExternResult<()> {
     Ok(())
 }
 
-/// Whether the caller's store still lists `bag` (its original action):
-/// one it ended isn't sold any more.
+/// Whether `bag` (its original action) is still listed by the store that
+/// listed it -- by its own links, whoever asks: one it ended isn't sold any
+/// more, and neither the customer's order nor the store's acceptance goes
+/// through for it.
 #[hdk_extern]
-pub fn my_bag_listed(bag: ActionHash) -> ExternResult<bool> {
+pub fn goodie_bag_listed(bag: ActionHash) -> ExternResult<bool> {
     let record = get(bag.clone(), GetOptions::default())?.ok_or(guest("That goodie bag can't be found."))?;
     let listing = decode_or::<GoodieBag>(&record).ok_or(guest("That isn't a goodie bag."))?;
     let target = AnyLinkableHash::from(bag);
-    let me = agent_info()?.agent_initial_pubkey;
-    Ok(get_links(LinkQuery::try_new(listing.catalog_ref, LinkTypes::CatalogToBag)?.author(me), GetStrategy::Local)?.iter().any(|link| link.target == target))
+    let store = record.action().author().clone();
+    Ok(get_links(LinkQuery::try_new(listing.catalog_ref, LinkTypes::CatalogToBag)?.author(store), GetStrategy::default())?.iter().any(|link| link.target == target))
 }
 
 #[hdk_extern]

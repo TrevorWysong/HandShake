@@ -93,6 +93,7 @@ export const REFUSALS = {
   "refusal.only-this-order-s-customer-and-its-2": "Only this order's customer and its store can chat about it.",
   "refusal.only-whoever-held-a-payment-settles-it": "Only whoever held a payment settles it.",
   "refusal.only-whoever-pays-that-part-of-the": "Only whoever pays that part of the order offers a card for it.",
+  "refusal.prices-have-changed-since-you-added-these": "Prices have changed since you added these to your cart. Check your cart's new total, then place your order again.",
   "refusal.promo-codes-and-rewards-apply-to-menu": "Promo codes and rewards apply to menu items, not goodie bags.",
   "refusal.record-that-you-ve-arrived-first-hand": "Record that you've arrived first: hand it over at the door, and the customer is told you're there.",
   "refusal.say-something-in-your-reply": "Say something in your reply.",

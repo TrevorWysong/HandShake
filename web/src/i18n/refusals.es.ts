@@ -58,6 +58,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.only-its-store-s-owner-can-remove-2": "Solo el dueño de la tienda puede quitar un artículo.",
   "refusal.an-item-still-offers-this-choice-group": "Un artículo todavía ofrece este grupo de opciones: quítalo antes del artículo.",
   "refusal.another-choice-group-s-option-still-opens": "Una opción de otro grupo todavía abre este: cambia antes esa opción.",
+  "refusal.prices-have-changed-since-you-added-these": "Los precios cambiaron desde que añadiste esto a tu carrito. Revisa el nuevo total de tu carrito y vuelve a hacer el pedido.",
   "refusal.only-its-store-s-owner-can-end": "Solo el dueño de la tienda puede terminar una bolsa sorpresa.",
   "refusal.that-goodie-bag-can-t-be-found": "No se encuentra esa bolsa sorpresa.",
   "refusal.that-isn-t-a-choice-group": "Eso no es un grupo de opciones.",
