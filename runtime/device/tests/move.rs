@@ -126,7 +126,19 @@ async fn app_ws(node: &Node) -> AppWebsocket {
         }
     }
     let signer = ClientAgentSigner::default();
-    let credentials = node.admin.authorize_signing_credentials(AuthorizeSigningCredentialsPayload { cell_id: cell.cell_id.clone(), functions: None }).await.unwrap();
+    // A busy conductor can find its database locked for a moment while it
+    // integrates what it's been sent: that's tried again, anything else isn't.
+    let mut tries = 0;
+    let credentials = loop {
+        match node.admin.authorize_signing_credentials(AuthorizeSigningCredentialsPayload { cell_id: cell.cell_id.clone(), functions: None }).await {
+            Ok(credentials) => break credentials,
+            Err(error) if tries < 10 && format!("{error:?}").contains("database is locked") => {
+                tries += 1;
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            Err(error) => panic!("couldn't authorize signing: {error:?}"),
+        }
+    };
     signer.add_credentials(cell.cell_id.clone(), credentials);
     let port = node.admin.attach_app_interface(0, None, AllowedOrigins::Any, None).await.unwrap();
     let token = node.admin.issue_app_auth_token(IssueAppAuthenticationTokenPayload::for_installed_app_id(info.installed_app_id.clone())).await.unwrap().token;

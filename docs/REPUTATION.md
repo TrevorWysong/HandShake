@@ -27,7 +27,7 @@ Every mark, existing or proposed, is held to these.
 4. **Costly to accuse.** A one-sided mark is allowed only where the one making it pays or risks something -- a refund given, a decision that can be appealed.
 5. **Proportionate.** Marks weigh; they never bar. Nobody is blocked from ordering, bidding or selling by their record. Everything is counted over the network's reputation window (`reputation_window_days`, a year by default), so it recovers as you keep going.
 6. **Opinion apart from record.** Stars are shown, never weighed: they don't change how bids count or who's matched.
-7. **Least exposure.** A mark is shown where it matters to a decision, not everywhere. A customer's report history matters to the store answering a report, not to a driver choosing an order.
+7. **Least exposure.** A mark is shown where it matters to a decision, not everywhere. A customer's report history matters to the store answering a report, not to a driver choosing an order. Least exposure is what the app shows, not what the network hides: every mark is a public record (principle 1), so another app could read it. The app's copy says so wherever it promises who sees what.
 8. **Rates over counts, once there's enough to say.** "2 of 40" and "2 of 2" are different people.
 9. **Discretion is never a mark.** A choice someone is free to make -- a store declining a refund, as any local shop may -- says nothing about the other party, and recording it would make every "no" an accusation. Only a fact (the order's records, a decision validation holds to proof) or an independent finding (an arbiter's) can mark someone. That's why a contested "never arrived" claim counts: the store's decision rests on proof the order was delivered, which validation checks.
 
