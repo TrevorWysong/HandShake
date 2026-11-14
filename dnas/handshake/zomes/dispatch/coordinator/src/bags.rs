@@ -34,9 +34,10 @@ fn sales_of(bag: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<Link>> {
 }
 
 /// The first goodie bag on `order` (its original action) the caller's store
-/// can't sell it, by name: sold to other orders up to its quantity, or its
-/// window closed longer ago than an order placed in it could take to
-/// arrive (`store_response_window`), by the store's clock.
+/// can't sell it, by name: sold to other orders up to its quantity, ended
+/// early by the store (no longer on its page), or its window closed longer
+/// ago than an order placed in it could take to arrive
+/// (`store_response_window`), by the store's clock.
 pub(crate) fn unavailable_bag(order: &ActionHash, lines: &[OrderLine]) -> ExternResult<Option<String>> {
     let me = agent_info()?.agent_initial_pubkey;
     let order: AnyLinkableHash = original_action_of(order.clone())?.into();
@@ -44,11 +45,18 @@ pub(crate) fn unavailable_bag(order: &ActionHash, lines: &[OrderLine]) -> Extern
     let now = sys_time()?.as_micros();
     for (bag_ref, bag) in bags_on(lines)? {
         let sold_to_others = sales_of(&bag_ref, &me)?.iter().filter(|l| l.target != order).count() as u32;
-        if sold_to_others >= bag.quantity_total || now > bag.pickup_window_end.as_micros() + window {
+        if sold_to_others >= bag.quantity_total || now > bag.pickup_window_end.as_micros() + window || !listed(&bag_ref)? {
             return Ok(Some(bag.title));
         }
     }
     Ok(None)
+}
+
+/// Whether the caller's store still lists `bag`: one it ended isn't sold.
+/// Unread is an error, never "listed" -- a bag the store ended isn't sold
+/// for want of an answer.
+fn listed(bag: &ActionHash) -> ExternResult<bool> {
+    handshake_coordinator_support::call_local::<_, bool>("catalog", "my_bag_listed", bag.clone())?.map_err(|why| guest(format!("couldn't tell whether this goodie bag is still on sale: {why}")))
 }
 
 /// Refuses an order with a goodie bag the store can't sell it -- see

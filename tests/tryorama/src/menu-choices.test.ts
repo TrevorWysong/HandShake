@@ -225,4 +225,14 @@ await runScenario(async (scenario) => {
   const issues = await retryUntil(() => call(merchant, "dispatch")<IssueView[]>("get_issues_for_order", order), (found) => found.length === 1);
   assert.equal(issues[0].value, 555, "the large latte with its shots is refunded at its own price, not a plain one's");
   console.log("[PASS] a missing-item report is worth its own line, choices included");
+
+  // ===== Removing a choice group, once nothing uses it =====
+  await assert.rejects(call(merchant, "catalog")("remove_modifier_group", size), /An item still offers this choice group/, "not while an item offers it");
+  await assert.rejects(call(merchant, "catalog")("remove_modifier_group", friesSize), /Another choice group's option still opens this one/, "nor while another group's option opens it");
+  const unused = actionHash(await call(merchant, "catalog")<HcRecord>("create_modifier_group", group(store, "Seasonal", 0, 1, [option(1, "Pumpkin", 60)])));
+  await assert.rejects(call(rival, "catalog")("remove_modifier_group", unused), /Only its store's owner/, "only by its store");
+  await call(merchant, "catalog")("remove_modifier_group", unused);
+  const groups = await call(merchant, "catalog")<{ original_action: Uint8Array }[]>("list_modifier_groups", store);
+  assert.ok(!groups.some((g) => Buffer.from(g.original_action).equals(Buffer.from(unused))), "off the store's list");
+  console.log("[PASS] a store removes a choice group once no item or group uses it, and only its own");
 });

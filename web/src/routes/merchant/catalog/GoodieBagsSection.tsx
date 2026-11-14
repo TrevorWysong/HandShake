@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Gift, PackageOpen, Pencil, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { createGoodieBag, listGoodieBagsForCatalog, updateGoodieBag } from "../../../holochain/zomes/catalog";
+import { createGoodieBag, endGoodieBag, listGoodieBagsForCatalog, updateGoodieBag } from "../../../holochain/zomes/catalog";
+import { ConfirmRemove } from "../../../components/ConfirmRemove";
 import { bagStandings } from "../../../holochain/zomes/dispatch";
 import { bytesToHex, decodeEntry, hexToBytes } from "../../../holochain/decode";
 import { useResource } from "../../../lib/hooks/useResource";
@@ -110,7 +111,7 @@ export function GoodieBagsSection({ storeHex, catalogRef }: { storeHex: string; 
 
 /// A listed bag's words and photo, edited in place -- all of it a bag may
 /// change once listed; its price, quantity and window stay as customers
-/// first saw them.
+/// first saw them. It can also be ended early, for good.
 function EditBagForm({ original, bag, onDone }: { original: Uint8Array; bag: GoodieBag; onDone: (saved: boolean) => Promise<void> }) {
   const t = useT();
   const [form, setForm] = useState({ title: bag.title, description: bag.description, photo_data_uri: bag.photo_data_uri, allergens: bag.allergens ?? null });
@@ -119,6 +120,11 @@ function EditBagForm({ original, bag, onDone }: { original: Uint8Array; bag: Goo
   // Done moves on from the form: it stays busy until it does.
   const update = () => save.run(async () => {
     await updateGoodieBag(original, { ...bag, allergens: form.allergens, title: form.title.trim(), description: form.description, photo_data_uri: form.photo_data_uri });
+    await onDone(true);
+  }, { stayBusy: true });
+  const ending = useAction();
+  const end = () => ending.run(async () => {
+    await endGoodieBag(original);
     await onDone(true);
   }, { stayBusy: true });
 
@@ -140,10 +146,11 @@ function EditBagForm({ original, bag, onDone }: { original: Uint8Array; bag: Goo
         <Button variant="ghost" className="flex-1 py-2 text-xs" disabled={save.busy} onClick={() => onDone(false)}>
           {t("common.cancel")}
         </Button>
-        <Button className="flex-1 py-2 text-xs" loading={save.busy} disabled={!form.title.trim()} onClick={update}>
+        <Button className="flex-1 py-2 text-xs" loading={save.busy} disabled={!form.title.trim() || ending.busy} onClick={update}>
           {t("common.save")}
         </Button>
       </div>
+      <ConfirmRemove label={t("bags.end")} confirm={t("bags.endConfirm", { name: bag.title })} action={t("bags.endButton")} busy={save.busy || ending.busy} removing={ending.busy} error={ending.error} onRemove={end} />
     </div>
   );
 }

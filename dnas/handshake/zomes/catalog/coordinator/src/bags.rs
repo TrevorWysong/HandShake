@@ -6,7 +6,7 @@
 use handshake_integrity_support::allergens::AllergenFacts;
 use catalog_integrity::*;
 use hdk::prelude::*;
-use handshake_coordinator_support::{decode_or, resolve_latest, resolve_links_to_records_with_original, resolve_version, update_version, written};
+use handshake_coordinator_support::{decode_or, guest, resolve_latest, resolve_links_to_records_with_original, resolve_version, update_version, written};
 
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -63,6 +63,38 @@ pub fn update_goodie_bag(input: UpdateGoodieBagInput) -> ExternResult<Record> {
     let current = resolve_version(input.original_action)?;
     let updated = update_version(&current, &EntryTypes::GoodieBag(input.bag), LinkTypes::Version)?;
     written(updated)
+}
+
+/// Ends a goodie bag before its window closes: it leaves its store's page,
+/// and the store's app declines any order for it from then on
+/// (`dispatch::bags::unavailable_bag`), as for one sold out. Orders already
+/// accepted stand. Only its store's owner ends it.
+#[hdk_extern]
+pub fn end_goodie_bag(original_action: ActionHash) -> ExternResult<()> {
+    let record = get(original_action.clone(), GetOptions::default())?.ok_or(guest("That goodie bag can't be found."))?;
+    let bag = decode_or::<GoodieBag>(&record).ok_or(guest("That isn't a goodie bag."))?;
+    let me = agent_info()?.agent_initial_pubkey;
+    if record.action().author() != &me {
+        return Err(guest("Only its store's owner can end a goodie bag."));
+    }
+    let target = AnyLinkableHash::from(original_action);
+    for link in get_links(LinkQuery::try_new(bag.catalog_ref, LinkTypes::CatalogToBag)?.author(me), GetStrategy::Local)? {
+        if link.target == target {
+            delete_link(link.create_link_hash, GetOptions::default())?;
+        }
+    }
+    Ok(())
+}
+
+/// Whether the caller's store still lists `bag` (its original action):
+/// one it ended isn't sold any more.
+#[hdk_extern]
+pub fn my_bag_listed(bag: ActionHash) -> ExternResult<bool> {
+    let record = get(bag.clone(), GetOptions::default())?.ok_or(guest("That goodie bag can't be found."))?;
+    let listing = decode_or::<GoodieBag>(&record).ok_or(guest("That isn't a goodie bag."))?;
+    let target = AnyLinkableHash::from(bag);
+    let me = agent_info()?.agent_initial_pubkey;
+    Ok(get_links(LinkQuery::try_new(listing.catalog_ref, LinkTypes::CatalogToBag)?.author(me), GetStrategy::Local)?.iter().any(|link| link.target == target))
 }
 
 #[hdk_extern]

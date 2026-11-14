@@ -45,6 +45,41 @@ pub fn update_modifier_group(input: UpdateModifierGroupInput) -> ExternResult<Re
     written(updated)
 }
 
+/// Takes a choice group off its store's list -- only once no item offers it
+/// and no other group's option opens it, so nothing a customer can order
+/// names a group the store has dropped. Orders already placed keep the
+/// version they were priced at, and the record stays, as every catalog
+/// entry does.
+#[hdk_extern]
+pub fn remove_modifier_group(original_action: ActionHash) -> ExternResult<()> {
+    let current = my_current_version(original_action.clone())?.ok_or(guest("Only its store's owner can remove a choice group."))?;
+    let group = decode_or::<ModifierGroup>(&current.record).ok_or(guest("That isn't a choice group."))?;
+    let me = agent_info()?.agent_initial_pubkey;
+    let target = AnyLinkableHash::from(original_action.clone());
+    for link in get_links(LinkQuery::try_new(group.catalog_ref.clone(), LinkTypes::CatalogToMenuItem)?.author(me.clone()), GetStrategy::Local)? {
+        let Some(item_ref) = link.target.into_action_hash() else { continue };
+        let Some(item) = my_current_version(item_ref)?.and_then(|version| decode_or::<MenuItem>(&version.record)) else { continue };
+        if item.modifier_groups.contains(&original_action) {
+            return Err(guest("An item still offers this choice group: take it off the item first."));
+        }
+    }
+    let groups = get_links(LinkQuery::try_new(group.catalog_ref.clone(), LinkTypes::CatalogToModifierGroup)?.author(me), GetStrategy::Local)?;
+    for link in &groups {
+        let Some(other_ref) = link.target.clone().into_action_hash() else { continue };
+        if other_ref == original_action {
+            continue;
+        }
+        let Some(other) = my_current_version(other_ref)?.and_then(|version| decode_or::<ModifierGroup>(&version.record)) else { continue };
+        if other.options.iter().any(|option| option.nested_group.as_ref() == Some(&original_action)) {
+            return Err(guest("Another choice group's option still opens this one: change that option first."));
+        }
+    }
+    for link in groups.into_iter().filter(|link| link.target == target) {
+        delete_link(link.create_link_hash, GetOptions::default())?;
+    }
+    Ok(())
+}
+
 /// Every choice group a store has -- what its owner manages.
 #[hdk_extern]
 pub fn list_modifier_groups(catalog_ref: ActionHash) -> ExternResult<Vec<ModifierGroupView>> {

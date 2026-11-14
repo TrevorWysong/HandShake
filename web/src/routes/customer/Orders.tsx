@@ -4,7 +4,8 @@ import { Link } from "react-router-dom";
 import { Bike, ChevronRight, ClipboardList, Repeat, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
-import { getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
+import { deleteRecurringTemplate, getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
+import { ConfirmRemove } from "../../components/ConfirmRemove";
 import { getCatalog } from "../../holochain/zomes/catalog";
 import { decodeEntry, bytesToHex } from "../../holochain/decode";
 import { usePolling, useResource } from "../../lib/hooks/useResource";
@@ -194,6 +195,16 @@ function RecurringOrders() {
     await setRecurringTemplateActive(hash, !active);
     await reload();
   }, { as: hex });
+  const deleting = useAction();
+  // Which one was last asked to go: its error shows on it alone.
+  const [deletingHex, setDeletingHex] = useState<string | null>(null);
+  const remove = (hash: Uint8Array, hex: string) => {
+    setDeletingHex(hex);
+    return deleting.run(async () => {
+      await deleteRecurringTemplate(hash);
+      await reload();
+    }, { as: hex });
+  };
 
   if (!templates?.length) return null;
   return (
@@ -204,18 +215,29 @@ function RecurringOrders() {
       </div>
       <div className="flex flex-col gap-2">
         {templates.map(({ hash, hex, template, storeName }) => (
-          <Card key={hex} className="flex items-center justify-between p-3.5">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{storeName}</p>
-              <p className="text-xs text-ink-400">{describeRecurrence(template.recurrence)}</p>
+          <Card key={hex} className="flex flex-col gap-2 p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{storeName}</p>
+                <p className="text-xs text-ink-400">{describeRecurrence(template.recurrence)}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-xs text-ink-400">{template.active ? t("orders.active") : t("orders.paused")}</span>
+                <Switch checked={template.active} label={t("orders.recurringSwitch", { store: storeName })} disabled={toggling.busy} onChange={() => toggle(hash, hex, template.active)} />
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <span className="text-xs text-ink-400">{template.active ? t("orders.active") : t("orders.paused")}</span>
-              <Switch checked={template.active} label={t("orders.recurringSwitch", { store: storeName })} disabled={toggling.busy} onChange={() => toggle(hash, hex, template.active)} />
-            </div>
+            <ConfirmRemove
+              label={t("recurring.delete")}
+              confirm={t("recurring.deleteConfirm")}
+              action={t("recurring.deleteButton")}
+              busy={toggling.busy || deleting.busy}
+              removing={deleting.doing === hex}
+              error={deletingHex === hex ? deleting.error : null}
+              onRemove={() => remove(hash, hex)}
+              className="self-start text-xs font-semibold text-red-600 underline-offset-4 hover:underline disabled:opacity-50 dark:text-red-400"
+            />
           </Card>
         ))}
-        {toggling.error && <Notice>{toggling.error}</Notice>}
       </div>
       {toggling.error && <Notice className="mt-2">{toggling.error}</Notice>}
     </div>

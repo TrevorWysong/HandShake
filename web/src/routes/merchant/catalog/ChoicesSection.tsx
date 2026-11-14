@@ -7,7 +7,8 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ListChecks, Pencil, Plus, Trash2, X } from "lucide-react";
 import clsx from "clsx";
-import { createModifierGroup, updateModifierGroup } from "../../../holochain/zomes/catalog";
+import { createModifierGroup, removeModifierGroup, updateModifierGroup } from "../../../holochain/zomes/catalog";
+import { ConfirmRemove } from "../../../components/ConfirmRemove";
 import { bytesEqual, bytesToHex, hexToBytes } from "../../../holochain/decode";
 import type { ModifierGroup, ModifierOption } from "../../../holochain/types";
 import { MAX_GROUP_OPTIONS, MAX_NAME_CHARS, MAX_OPTION_QUANTITY } from "../../../holochain/types";
@@ -149,6 +150,14 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
     });
   }
 
+  // Off the store's list -- refused, saying why, while an item or another
+  // group still uses it.
+  const removing = useAction();
+  const remove = () => row && removing.run(async () => {
+    await removeModifierGroup(row.hash);
+    await onSaved();
+  });
+
   return (
     <Card className="mb-4 flex flex-col gap-3 p-4">
       <Field label={t("choicesEditor.name")}>
@@ -282,9 +291,10 @@ function GroupForm({ catalogRef, row, others, onSaved }: { catalogRef: Uint8Arra
 
       {((tried && problem) || action.error) && <p className="text-xs text-red-600 dark:text-red-400">{action.error ?? problem}</p>}
       <p className="text-[11px] leading-relaxed text-ink-400">{t("choicesEditor.changesApply")}</p>
-      <Button loading={action.busy} onClick={save} className="py-2 text-xs">
+      <Button loading={action.busy} disabled={removing.busy} onClick={save} className="py-2 text-xs">
         {row ? t("choicesEditor.save") : t("choicesEditor.create")}
       </Button>
+      {row && <ConfirmRemove label={t("choicesEditor.removeGroup")} confirm={t("choicesEditor.removeGroupConfirm", { name: row.group.name })} action={t("choicesEditor.removeGroupButton")} busy={action.busy || removing.busy} removing={removing.busy} error={removing.error} onRemove={remove} />}
     </Card>
   );
 }

@@ -123,4 +123,12 @@ await runScenario(async (scenario) => {
     "a non-owner must not be able to toggle someone else's recurring template",
   );
   console.log("[PASS] a non-owner cannot modify another agent's recurring template");
+
+  // ===== Deleted by its owner, for good =====
+  await assert.rejects(dispatchOf(merchant)("delete_recurring_template", templateRef), /isn't yours, or it's already gone/, "nobody else removes it");
+  await dispatchOf(customer)("delete_recurring_template", templateRef);
+  const left = await dispatchOf(customer)<{ original_action: Uint8Array }[]>("list_my_recurring_templates", null);
+  assert.ok(!left.some((t) => Buffer.from(t.original_action).equals(Buffer.from(templateRef))), "no longer listed, so nothing reminds them of it");
+  await assert.rejects(dispatchOf(customer)("delete_recurring_template", templateRef), /already gone/, "once");
+  console.log("[PASS] a customer deletes their own recurring order, and only theirs");
 });

@@ -6,6 +6,7 @@ import { bytesEqual, bytesToHex, hexToBytes } from "../../../holochain/decode";
 import { groupByCategory, type ItemRow } from "../../../lib/storefront/menu";
 import { formatCents, toMinorUnits, fromMinorUnits, currencySymbol } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
+import { ConfirmRemove } from "../../../components/ConfirmRemove";
 import { Button, Card, Checkbox, Field, GroupHeading, Input, Notice, SectionLabel, Select, StatNumber, Textarea } from "../../../components/ui";
 import { useTerms } from "../../../store/network";
 import { percentLabel } from "../../../lib/storefront/tax";
@@ -259,34 +260,9 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
       <Button loading={saving.doing === "save"} disabled={!form.name.trim() || priceProblem || saving.busy} onClick={save} className="py-2 text-xs">
         {row ? t("menuEditor.save") : t("menuEditor.addToMenu")}
       </Button>
-      {row && <RemoveItem name={row.item.name} busy={saving.busy} removing={saving.doing === "remove"} onRemove={remove} />}
+      {/* Taking it off the menu can't be undone: it's only added again as new. */}
+      {row && <ConfirmRemove label={t("menuEditor.remove")} confirm={t("menuEditor.removeConfirm", { name: row.item.name })} action={t("menuEditor.removeButton")} busy={saving.busy} removing={saving.doing === "remove"} onRemove={remove} />}
     </Card>
   );
 }
 
-/// Taking an item off the menu, asked once more: it can't be put back, only
-/// added again as new.
-function RemoveItem({ name, busy, removing, onRemove }: { name: string; busy: boolean; removing: boolean; onRemove: () => void }) {
-  const t = useT();
-  const [confirming, setConfirming] = useState(false);
-  if (!confirming) {
-    return (
-      <button type="button" onClick={() => setConfirming(true)} disabled={busy} className="self-center text-xs font-semibold text-red-600 underline-offset-4 hover:underline disabled:opacity-50 dark:text-red-400">
-        {t("menuEditor.remove")}
-      </button>
-    );
-  }
-  return (
-    <div className="rounded-xl bg-red-50 p-3 dark:bg-red-900/20">
-      <p className="text-xs leading-relaxed text-red-900 dark:text-red-100">{t("menuEditor.removeConfirm", { name })}</p>
-      <div className="mt-2 flex gap-2">
-        <Button variant="ghost" className="flex-1 py-2 text-xs" disabled={busy} onClick={() => setConfirming(false)}>
-          {t("common.back")}
-        </Button>
-        <Button variant="danger" className="flex-1 py-2 text-xs" loading={removing} disabled={busy} onClick={onRemove}>
-          {t("menuEditor.removeButton")}
-        </Button>
-      </div>
-    </div>
-  );
-}

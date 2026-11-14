@@ -97,6 +97,23 @@ pub fn set_recurring_template_active(input: SetRecurringTemplateActiveInput) -> 
     written(updated)
 }
 
+/// Removes one of the caller's recurring orders for good: it's no longer
+/// listed, and nothing reminds them of it again. Pausing it
+/// (`set_recurring_template_active`) is how one comes back.
+#[hdk_extern]
+pub fn delete_recurring_template(original_action: ActionHash) -> ExternResult<()> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let target = AnyLinkableHash::from(original_action);
+    let mut found = false;
+    for link in get_links(LinkQuery::try_new(me.clone(), LinkTypes::OwnerToTemplate)?.author(me), GetStrategy::Local)? {
+        if link.target == target {
+            delete_link(link.create_link_hash, GetOptions::default())?;
+            found = true;
+        }
+    }
+    if found { Ok(()) } else { Err(guest("That recurring order isn't yours, or it's already gone.")) }
+}
+
 /// A template's stable identity (what `set_recurring_template_active`
 /// takes) alongside its latest state.
 #[derive(Serialize, Deserialize, Debug)]

@@ -149,6 +149,22 @@ await runScenario(async (scenario) => {
   await retryUntilOk(() => pickup(bo, [one(bread)], 660));
   console.log("[PASS] a customer who cancels before the store starts can order the bag again");
 
+  // ===== Ended early by its store =====
+  // Off the store's page at once; an order placed before it ended can't be
+  // accepted after, as for one sold out.
+  const early = await listBag("Early-close bag", 5, { pickup: true, delivery: true });
+  await sync();
+  const beforeEnd = actionHash(await retryUntilOk(() => pickup(bo, [one(early)], 660)));
+  await sync();
+  await assert.rejects(call(bo, "catalog")("end_goodie_bag", early), /Only its store's owner/, "only the store ends its bag");
+  await call(merchant, "catalog")("end_goodie_bag", early);
+  await sync();
+  const stillListed = await call(merchant, "catalog")<{ original_action: Uint8Array }[]>("list_goodie_bags_for_catalog", store);
+  assert.ok(!stillListed.some((b) => Buffer.from(b.original_action).equals(Buffer.from(early))), "off the store's page");
+  await customerPaid(merchant, beforeEnd, all);
+  await assert.rejects(call(merchant, "dispatch")("accept_pickup_order", { order_original_action: beforeEnd }), /Early-close bag is sold out or no longer available/, "its order is declined, not sold");
+  console.log("[PASS] a store can end a goodie bag early: off its page, and no order for it accepted after");
+
   // ===== Only while its window is open =====
   const lastCall = await listBag("Last-call bag", 5, { pickup: true, delivery: true }, 3);
   await sync();

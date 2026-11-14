@@ -197,6 +197,11 @@ export async function updateModifierGroup(originalAction: ActionHash, group: Mod
   return callZome("catalog", "update_modifier_group", { original_action: originalAction, group });
 }
 
+/// Takes a choice group off the store's list, once no item or group uses it.
+export async function removeModifierGroup(originalAction: ActionHash): Promise<void> {
+  return callZome("catalog", "remove_modifier_group", originalAction);
+}
+
 /// Every choice group a store has -- what its owner manages.
 export async function listModifierGroups(catalogRef: ActionHash): Promise<CatalogView[]> {
   return callZome("catalog", "list_modifier_groups", catalogRef);
@@ -290,6 +295,12 @@ export async function createGoodieBag(input: CreateGoodieBagInput): Promise<HcRe
 // a fresh timestamp.
 export async function updateGoodieBag(originalAction: ActionHash, bag: GoodieBag): Promise<HcRecord> {
   return callZome("catalog", "update_goodie_bag", { original_action: originalAction, bag });
+}
+
+/// Ends a goodie bag before its window closes: off the store's page, and no
+/// order for it accepted after.
+export async function endGoodieBag(originalAction: ActionHash): Promise<void> {
+  return callZome("catalog", "end_goodie_bag", originalAction);
 }
 
 export async function getGoodieBag(bagRef: ActionHash): Promise<HcRecord> {

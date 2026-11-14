@@ -284,6 +284,11 @@ export async function setRecurringTemplateActive(originalAction: ActionHash, act
   return callZome("dispatch", "set_recurring_template_active", { original_action: originalAction, active });
 }
 
+/// Removes one of the caller's recurring orders for good.
+export async function deleteRecurringTemplate(originalAction: ActionHash): Promise<void> {
+  return callZome("dispatch", "delete_recurring_template", originalAction);
+}
+
 /// `original_action` is the template's identity (what the other recurring
 /// calls take); `record` is its latest state.
 export interface RecurringTemplateView {

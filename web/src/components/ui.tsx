@@ -309,12 +309,14 @@ export function SectionLabel({ icon, children, className, as: Tag = "p", id }: {
 /// anything (`action`), at its end.
 export function GroupHeading({ icon: Icon, title, action, className }: { icon: LucideIcon; title: string; action?: ReactNode; className?: string }) {
   return (
-    <div className={clsx("mb-2 flex min-h-9 items-center justify-between gap-3 px-1", className)}>
-      <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-ink-500">
-        <Icon size={15} className="text-handshake-500" />
+    // Enlarged text wraps the action under the title rather than squeezing
+    // its label into a column.
+    <div className={clsx("mb-2 flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1", className)}>
+      <h2 className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-ink-500">
+        <Icon size={15} className="shrink-0 text-handshake-500" />
         {title}
       </h2>
-      {action}
+      {action && <div className="shrink-0 whitespace-nowrap">{action}</div>}
     </div>
   );
 }

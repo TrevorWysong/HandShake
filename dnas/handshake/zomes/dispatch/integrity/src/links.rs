@@ -187,7 +187,9 @@ fn validate_served_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCallbac
 pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
     match link.link_type {
         LinkTypes::CustomerToServedOrder => invalid("the orders a store served a customer stay on their record"),
-        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder | LinkTypes::BagToOrder | LinkTypes::OrderToConfirmation | LinkTypes::OrderToPayment | LinkTypes::AgentToForgottenCard | LinkTypes::OrderToArrivalEvidence | LinkTypes::OrderToVehicleShare => invalid("this dispatch link type can't be deleted"),
+        LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::PromoToOrder | LinkTypes::BagToOrder | LinkTypes::OrderToConfirmation | LinkTypes::OrderToPayment | LinkTypes::AgentToForgottenCard | LinkTypes::OrderToArrivalEvidence | LinkTypes::OrderToVehicleShare => invalid("this dispatch link type can't be deleted"),
+        // A recurring order is its owner's own reminder: theirs to remove.
+        LinkTypes::OwnerToTemplate => require(link.base == &AnyLinkableHash::from(link.author.clone()), "only its owner removes a recurring order"),
         // Disconnecting a processor.
         LinkTypes::AgentToPaymentProfile => require(link.base == &AnyLinkableHash::from(link.author.clone()), "only its own agent unlinks how they're paid"),
         LinkTypes::DriverToVerification => {
