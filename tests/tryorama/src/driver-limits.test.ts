@@ -17,7 +17,9 @@ import { acceptOrder, actionHash, agentAsLinkBase, collectFromStore, commitAndCo
 const FOOD = 1000;
 
 await runScenario(async (scenario) => {
-  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ max_concurrent_deliveries: 1 }));
+  // A long offer window: on a slow runner the driver's commitment can come
+  // past the usual 45 seconds, and the store's app would move them on.
+  const [customer, merchant, driver] = await setupPlayersWithProperties(scenario, 3, () => ({ max_concurrent_deliveries: 1, offer_secs: 600 }));
   const all = [customer, merchant, driver];
   for (const p of all) await useTestCoordinators(p, ["dispatch"]);
   const sync = () => dhtSync(all, customer.cells[0].cell_id[0]);
