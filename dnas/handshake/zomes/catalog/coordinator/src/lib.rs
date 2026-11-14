@@ -131,6 +131,16 @@ fn ensure_contact(email: &str, website: &str) -> ExternResult<()> {
     Ok(())
 }
 
+/// A listing's list of the people it blocked, with nobody on it: freshly
+/// salted, and padded from the start, so a listing never says it blocked
+/// nobody.
+pub(crate) fn no_blocks() -> ExternResult<(Vec<u8>, Vec<u8>)> {
+    use handshake_types::block_prints;
+    let salt = random_bytes(block_prints::SALT_BYTES as u32)?.into_vec();
+    let list = block_prints::list(&salt, &[], &random_bytes(block_prints::decoy_bytes(0) as u32)?.into_vec());
+    Ok((salt, list))
+}
+
 /// Publishes a new store. Deliberately no "you already have one" guard --
 /// an owner adds as many stores as they run (see `list_my_catalogs`).
 #[hdk_extern]
@@ -138,7 +148,7 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
     ensure_contact(&input.email, &input.website)?;
     let owner = agent_info()?.agent_initial_pubkey;
     let geohash = handshake_types::encode(input.location, CATALOG_GEOHASH_PRECISION);
-    let block_salt = random_bytes(handshake_types::block_prints::SALT_BYTES as u32)?.into_vec();
+    let (block_salt, blocked) = no_blocks()?;
     let catalog = MerchantCatalog {
         owner: owner.clone(),
         business_name: input.business_name,
@@ -168,9 +178,8 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
         allergy_policy: None,
         auto_accept_orders: false,
         hold_below_customer_score: None,
-        block_salt: block_salt.clone(),
-        // Padded from the start, so a listing never says it blocked nobody.
-        blocked: handshake_types::block_prints::list(&block_salt, &[], &random_bytes(handshake_types::block_prints::decoy_bytes(0) as u32)?.into_vec()),
+        block_salt,
+        blocked,
         leave_at_door_max_cents: None,
         min_order_cents: None,
         busy_extra_minutes: 0,

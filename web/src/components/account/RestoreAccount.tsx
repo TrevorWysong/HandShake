@@ -408,6 +408,7 @@ function ConfirmDetails({ predecessor, place, recovered, onDone }: { predecessor
         <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{t("restore.reconnectPayments")}</p>
       )}
       {recovered && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{t("restore.allergiesAgain")}</p>}
+      {recovered && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{t("restore.blocksAgain")}</p>}
       {place === "previous" && (
         <p className="mb-3 rounded-lg bg-handshake-50 px-3 py-2 text-xs text-handshake-800">{t("restore.carried")}</p>
       )}

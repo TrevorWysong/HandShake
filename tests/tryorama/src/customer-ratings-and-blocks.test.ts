@@ -15,7 +15,7 @@
 //   a party to it, and lifted only by whoever made it.
 import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
-import type { Record as HcRecord } from "@holochain/client";
+import type { Record as HcRecord, ActionHash as ActionHashBytes } from "@holochain/client";
 import { createHash } from "node:crypto";
 import { acceptOrder, actionHash, customerPaid, decodeEntry, retryUntil, retryUntilOk, retryingCaller, setupPlayersWithProperties, ST_PETE, useTestCoordinators } from "./helpers.js";
 
@@ -155,7 +155,11 @@ await runScenario(async (scenario) => {
   await call(customer, "reputation")("block", { by: { Person: customer.agentPubKey }, blocked: { Store: store } });
   await assert.rejects(call(customer, "dispatch")("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000 }), /You've blocked this store/, "their own list stops them ordering");
   await call(customer, "reputation")("unblock", { by: { Person: customer.agentPubKey }, blocked: { Store: store } });
-  console.log("[PASS] a customer blocking a store stops their own ordering, until they lift it");
+  // Their list is one sealed entry of their own: nobody writes one for them.
+  const lists = await call(customer, "reputation")<ActionHashBytes[]>("test_get_link_hashes", { link_type: "OwnerToBlocks", base: customer.agentPubKey });
+  assert.equal(lists.length, 1, "the customer keeps one list, changed in place");
+  await assert.rejects(call(driver, "reputation")("test_create_link", { link_type: "OwnerToBlocks", base: customer.agentPubKey, target: stew }), /links only its own blocks/, "nobody links a list of blocks to someone else");
+  console.log("[PASS] a customer blocking a store stops their own ordering, until they lift it; their list is their own");
 
   // ===== A block keeps a driver and a customer apart, either way =====
   const delivery = actionHash(await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: 1000, tip_cents: 100 }));
@@ -191,8 +195,8 @@ await runScenario(async (scenario) => {
   const laterDelivery = actionHash(await call(customer, "dispatch")<HcRecord>("request_delivery", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000, dropoff: ST_PETE, max_delivery_fee: 1000, tip_cents: 100 }));
   await sync();
   const storeOpened = await acceptOrder(merchant, laterDelivery, all);
-  const storeOrder = decodeEntry<{ blocked: Uint8Array; store_blocked: Uint8Array; block_salt: Uint8Array }>(storeOpened);
-  assert.ok(listsKey(storeOrder.store_blocked, storeOrder.block_salt, driver.agentPubKey) && !listsKey(storeOrder.blocked, storeOrder.block_salt, driver.agentPubKey), "the store's list names the driver, the customer's no longer does");
+  const storeOrder = decodeEntry<{ blocked: Uint8Array; store_blocked: Uint8Array; block_salt: Uint8Array; store_block_salt: Uint8Array }>(storeOpened);
+  assert.ok(listsKey(storeOrder.store_blocked, storeOrder.store_block_salt, driver.agentPubKey) && !listsKey(storeOrder.blocked, storeOrder.block_salt, driver.agentPubKey), "the store's list names the driver, the customer's no longer does");
   await assert.rejects(call(driver, "dispatch")("submit_bid", { order_ref: laterDelivery, eta_seconds: 600, price_offer: 500 }), /isn't available to you/, "the driver can't bid on the store's orders");
   console.log("[PASS] a store blocking a driver: the orders it accepts after carry it");
 });

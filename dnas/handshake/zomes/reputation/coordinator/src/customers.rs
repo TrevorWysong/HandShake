@@ -8,7 +8,6 @@
 
 use super::*;
 use dispatch_types::{DeliveryOrder, DeliveryStatus, PickupOrder, PickupStatus};
-use handshake_coordinator_support::chain::mine;
 use std::collections::BTreeSet;
 
 // --- rating customers ---
@@ -335,25 +334,29 @@ pub fn block(input: BlockInput) -> ExternResult<()> {
     if !speaks_for(&input.by, &agent_info()?.agent_initial_pubkey)? {
         return Err(guest("You can block only as yourself, or as a store you own."));
     }
-    let current = my_blocks(input.by.clone())?;
+    let mut book = Book::mine()?;
+    let current = book.list(&input.by);
     if current.contains(&input.blocked) {
         return Ok(());
     }
-    create_entry(&EntryTypes::PartyBlock(PartyBlock { by: input.by.clone(), blocked: input.blocked.clone(), on: true }))?;
-    // Newest first: if a list is ever full, it's the oldest that drop off it.
-    let blocked: Vec<Party> = std::iter::once(input.blocked).chain(current).collect();
+    // Newest first: once a list is full, it's the oldest that drop off it.
+    let blocked: Vec<Party> = std::iter::once(input.blocked).chain(current).take(handshake_types::block_prints::most_real()).collect();
+    book.set(&input.by, blocked.clone());
+    book.write()?;
     publish_store_list(&input.by, &blocked)
 }
 
 /// The caller lifting a block they made.
 #[hdk_extern]
 pub fn unblock(input: BlockInput) -> ExternResult<()> {
-    let current = my_blocks(input.by.clone())?;
+    let mut book = Book::mine()?;
+    let current = book.list(&input.by);
     if !current.contains(&input.blocked) {
         return Ok(());
     }
-    create_entry(&EntryTypes::PartyBlock(PartyBlock { by: input.by.clone(), blocked: input.blocked.clone(), on: false }))?;
     let blocked: Vec<Party> = current.into_iter().filter(|party| party != &input.blocked).collect();
+    book.set(&input.by, blocked.clone());
+    book.write()?;
     publish_store_list(&input.by, &blocked)
 }
 
@@ -364,7 +367,7 @@ struct SetBlockedPeopleWire {
 }
 
 /// A store's blocks, rewritten into its listing so the people it blocked
-/// don't see it; a person's blocks stay on their own device.
+/// don't see it; a person's blocks stay in their own sealed list.
 fn publish_store_list(by: &Party, blocked: &[Party]) -> ExternResult<()> {
     let Party::Store(catalog) = by else { return Ok(()) };
     let people: Vec<AgentPubKey> = blocked.iter().filter_map(|party| match party {
@@ -376,19 +379,77 @@ fn publish_store_list(by: &Party, blocked: &[Party]) -> ExternResult<()> {
 }
 
 /// Whom the caller has blocked as `by` (themselves, or a store of theirs),
-/// from their own private list, most recent first: each party's latest word.
+/// most recent first, from their own sealed list.
 #[hdk_extern]
 pub fn my_blocks(by: Party) -> ExternResult<Vec<Party>> {
-    let mut latest: Vec<(Party, bool)> = Vec::new();
-    for record in mine(&[UnitEntryTypes::PartyBlock.try_into()?]).records()? {
-        let Some(block) = decode_or::<PartyBlock>(&record).filter(|b| b.by == by) else { continue };
-        // Newest first: the first word on a party is its latest.
-        if !latest.iter().any(|(party, _)| party == &block.blocked) {
-            latest.push((block.blocked, block.on));
+    Ok(Book::mine()?.list(&by))
+}
+
+/// An account's blocks as it keeps them (`SealedBlocks`, opened): each
+/// party it blocks as, with whom, most recent first.
+#[derive(Serialize, Deserialize, Debug, Default)]
+struct BookContents {
+    lists: Vec<(Party, Vec<Party>)>,
+}
+
+/// The caller's own list of blocks, opened, and where it's kept.
+struct Book {
+    /// Its first version, when it's been written.
+    original: Option<ActionHash>,
+    contents: BookContents,
+}
+
+impl Book {
+    /// The caller's list -- empty if they've never blocked anyone, or if it
+    /// was sealed to a key they no longer hold (a recovered account starts
+    /// afresh, as its old key is gone).
+    fn mine() -> ExternResult<Self> {
+        let me = agent_info()?.agent_initial_pubkey;
+        let mut links = get_links(LinkQuery::try_new(me.clone(), LinkTypes::OwnerToBlocks)?.author(me.clone()), GetStrategy::default())?;
+        links.sort_by_key(|link| link.timestamp);
+        let Some(original) = links.into_iter().find_map(|link| link.target.into_action_hash()) else {
+            return Ok(Self { original: None, contents: BookContents::default() });
+        };
+        let record = resolve_latest(original.clone())?;
+        let contents = decode_or::<SealedBlocks>(&record).map(|sealed| handshake_coordinator_support::open_chunked_padded::<BookContents>(&me, &sealed.sealed)).transpose()?.flatten().unwrap_or_default();
+        Ok(Self { original: Some(original), contents })
+    }
+
+    fn list(&self, by: &Party) -> Vec<Party> {
+        self.contents.lists.iter().find(|(party, _)| party == by).map(|(_, blocked)| blocked.clone()).unwrap_or_default()
+    }
+
+    fn set(&mut self, by: &Party, blocked: Vec<Party>) {
+        self.contents.lists.retain(|(party, _)| party != by);
+        if !blocked.is_empty() {
+            self.contents.lists.push((by.clone(), blocked));
         }
     }
-    Ok(latest.into_iter().filter(|(_, on)| *on).map(|(party, _)| party).collect())
+
+    /// Seals the list to the caller, padded to whole boxes, as a new
+    /// version of the one they keep.
+    fn write(self) -> ExternResult<()> {
+        let me = agent_info()?.agent_initial_pubkey;
+        if ExternIO::encode(&self.contents).map_err(|e| wasm_error!(e))?.0.len() > MAX_BLOCK_BOOK_BYTES - SEAL_PAD_ROOM {
+            return Err(guest("You've blocked as many as the app keeps. Unblock someone first."));
+        }
+        let entry = SealedBlocks { sealed: handshake_coordinator_support::seal_chunked_padded(&me, &self.contents)? };
+        match self.original {
+            Some(original) => {
+                let current = handshake_coordinator_support::resolve_version(original)?;
+                handshake_coordinator_support::update_version(&current, &EntryTypes::SealedBlocks(entry), LinkTypes::Version)?;
+            }
+            None => {
+                let hash = create_entry(&EntryTypes::SealedBlocks(entry))?;
+                create_link(me, hash, LinkTypes::OwnerToBlocks, ())?;
+            }
+        }
+        Ok(())
+    }
 }
+
+/// What padding to whole boxes may add to a list.
+const SEAL_PAD_ROOM: usize = 4_096;
 
 #[cfg(test)]
 mod tests {

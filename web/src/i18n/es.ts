@@ -2287,6 +2287,7 @@ export const es: Catalog = {
   "restore.carried": "Tus valoraciones e historial vienen contigo.",
   "restore.stores": "Tus tiendas vienen contigo, con sus menús y valoraciones. Vuelve a publicarlas desde la pantalla de tu tienda para recibir pedidos.",
   "restore.allergiesAgain": "Si guardaste alergias, vuelve a añadirlas en tu perfil: estaban selladas con tu clave antigua y, hasta que lo hagas, los menús no las señalarán.",
+  "restore.blocksAgain": "A quien hubieras bloqueado, como tú o como tu tienda, vuelve a bloquearlo desde su perfil o la página de tu tienda: tu lista estaba sellada con tu clave antigua.",
   "restore.reconnectPayments": "Para aceptar pagos con tarjeta en este dispositivo, conecta de nuevo tu procesador de tarjetas en Pagos: sus claves nunca salieron de tu dispositivo antiguo.",
   "verify.onlyVerifiers": "Solo los verificadores de la red verifican repartidores.",
   "verify.intro": "Comprueba primero sus documentos y luego escanea el código de su pantalla de Repartir.",

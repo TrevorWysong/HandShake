@@ -351,6 +351,42 @@ pub fn seal_chunked<T: Serialize + std::fmt::Debug>(recipient: &AgentPubKey, val
     Ok(SealedChunks(boxes))
 }
 
+/// `seal_chunked`, padded to whole boxes: every box but none is full, so the
+/// boxes say only how many there are, never how full the last is. Opened
+/// with `open_chunked_padded`.
+pub fn seal_chunked_padded<T: Serialize + std::fmt::Debug>(recipient: &AgentPubKey, value: T) -> ExternResult<SealedChunks> {
+    seal_chunked(recipient, &padded_to_boxes(&value)?)
+}
+
+/// `value`, padded so it encodes to whole boxes of `SEAL_CHUNK_BYTES`.
+fn padded_to_boxes<T: Serialize + std::fmt::Debug>(value: &T) -> ExternResult<Padded<&T>> {
+    let encoded_len = |padded: &Padded<&T>| ExternIO::encode(padded).map(|io| io.0.len()).map_err(|e| wasm_error!(WasmErrorInner::Guest(e.to_string())));
+    let mut padded = Padded { value, pad: String::new() };
+    let bare = encoded_len(&padded)?;
+    let mut step = bare.div_ceil(SEAL_CHUNK_BYTES).max(1) * SEAL_CHUNK_BYTES;
+    loop {
+        // A string's header grows with its length, so a step's exact size
+        // can fall in the gap: then the next step takes it.
+        padded.pad = " ".repeat(step.saturating_sub(bare));
+        for _ in 0..6 {
+            let len = encoded_len(&padded)?;
+            if len == step {
+                return Ok(padded);
+            }
+            if len < step || padded.pad.pop().is_none() {
+                break;
+            }
+        }
+        step += SEAL_CHUNK_BYTES;
+    }
+}
+
+/// Opens `seal_chunked_padded`'s boxes -- `None` unless the caller can open
+/// every one.
+pub fn open_chunked_padded<T: for<'de> Deserialize<'de> + std::fmt::Debug>(counterpart: &AgentPubKey, sealed: &SealedChunks) -> ExternResult<Option<T>> {
+    Ok(open_chunked::<Padded<T>>(counterpart, sealed)?.map(|padded| padded.value))
+}
+
 /// Opens `seal_chunked`'s boxes, as `open` does one -- `None` unless the
 /// caller can open every one.
 pub fn open_chunked<T: for<'de> Deserialize<'de> + std::fmt::Debug>(counterpart: &AgentPubKey, sealed: &SealedChunks) -> ExternResult<Option<T>> {
@@ -814,5 +850,24 @@ mod bridge_tests {
     fn a_list_is_read() {
         let io = ExternIO::encode(vec!["rewards-carry:v2".to_string()]).unwrap();
         assert_eq!(asked(Ok(ZomeCallResponse::Ok(io))), Asked::Answered(vec!["rewards-carry:v2".into()]));
+    }
+}
+
+#[cfg(test)]
+mod padding_tests {
+    use super::*;
+
+    /// Every size pads to whole boxes, and two lists in the same step are
+    /// the same length.
+    #[test]
+    fn a_list_pads_to_whole_boxes() {
+        for n in [0usize, 1, 40, 70, 71, 200, 255, 256, 600, 1200] {
+            let value: Vec<String> = vec!["k".repeat(39); n];
+            let padded = padded_to_boxes(&value).unwrap();
+            let len = ExternIO::encode(&padded).unwrap().0.len();
+            assert_eq!(len % SEAL_CHUNK_BYTES, 0, "{n} entries pad to {len}");
+            let back: Padded<Vec<String>> = ExternIO(ExternIO::encode(&padded).unwrap().0).decode().unwrap();
+            assert_eq!(back.value.len(), n);
+        }
     }
 }

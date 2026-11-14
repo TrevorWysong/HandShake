@@ -2292,6 +2292,7 @@ export const en = {
   "restore.carried": "Your ratings and history come with you.",
   "restore.stores": "Your stores come with you, with their menus and ratings. List them again from your store screen to take orders.",
   "restore.allergiesAgain": "If you saved any allergies, add them again in your profile: they were sealed to your old key, and until you do, menus won't flag them.",
+  "restore.blocksAgain": "Anyone you'd blocked, as yourself or as your store, block again from their profile or your store's page: your list was sealed to your old key.",
   "restore.reconnectPayments": "To take card payments on this device, connect your card processor again in Payments: its keys never left your old device.",
   "verify.onlyVerifiers": "Only the network's verifiers verify drivers.",
   "verify.intro": "Check their documents first, then scan the code on their Drive screen.",

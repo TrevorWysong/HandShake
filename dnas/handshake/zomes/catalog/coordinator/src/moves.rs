@@ -11,6 +11,15 @@ use crate::*;
 use handshake_coordinator_support::{all_arrived, call_local, call_role, chain::mine, record_targets};
 use std::collections::BTreeMap;
 
+/// `store` with an empty list of the people it blocked, freshly salted. Its
+/// owner's list of whom it blocked is sealed to the old key, so the new one
+/// can't read it: a list it couldn't see or lift would hold people out for
+/// good. The store blocks again whom it needs to.
+fn unblocked(store: MerchantCatalog) -> ExternResult<MerchantCatalog> {
+    let (block_salt, blocked) = crate::no_blocks()?;
+    Ok(MerchantCatalog { block_salt, blocked, ..store })
+}
+
 /// How far back a store's line is followed.
 const MAX_STORE_LINE: usize = 16;
 
@@ -60,7 +69,7 @@ pub fn move_store(from: ActionHash) -> ExternResult<ActionHash> {
         return Err(guest("That store wasn't this account's."));
     }
 
-    let to = create_entry(&EntryTypes::MerchantCatalog(MerchantCatalog { owner: me.clone(), dietary_tags: Vec::new(), ..store }))?;
+    let to = create_entry(&EntryTypes::MerchantCatalog(MerchantCatalog { owner: me.clone(), dietary_tags: Vec::new(), ..unblocked(store)? }))?;
     create_link(me, to.clone(), LinkTypes::OwnerToCatalog, ())?;
 
     copy_contents(&Source::Here, &from, &to)?;
@@ -282,7 +291,7 @@ pub fn import_store(from: ActionHash) -> ExternResult<ActionHash> {
     let previous_network: DnaHash = call_role("previous", "account", "network_hash", ())?.map_err(|_| guest("Couldn't reach the previous network."))?;
     // The store's settings are the network's own now: its rules and limits
     // may have changed, so the copy starts from what this network allows.
-    let to = create_entry(&EntryTypes::MerchantCatalog(MerchantCatalog { owner: me.clone(), dietary_tags: Vec::new(), ..store }))?;
+    let to = create_entry(&EntryTypes::MerchantCatalog(MerchantCatalog { owner: me.clone(), dietary_tags: Vec::new(), ..unblocked(store)? }))?;
     create_link(me, to.clone(), LinkTypes::OwnerToCatalog, ())?;
     copy_contents(&Source::Previous, &from, &to)?;
     let hash = create_entry(&EntryTypes::StoreImport(StoreImport { previous_network, from, to: to.clone() }))?;

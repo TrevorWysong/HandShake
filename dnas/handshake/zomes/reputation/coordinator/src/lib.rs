@@ -612,7 +612,7 @@ pub fn get_item_reviews(input: ItemReviewsInput) -> ExternResult<ReviewsPage> {
 mod test_utils {
     use hdk::prelude::*;
     use reputation_integrity::{CustomerRating, EntryTypes, LinkTypes, MarkReply, Review};
-    handshake_coordinator_support::raw_link_test_externs!(StoreToEvent, DriverToEvent, CustomerToEvent, StoreToReview, DriverToReview, OrderToReview, ItemToReview, ReviewerToReview, EventToReply, CustomerToRating, RaterToRating);
+    handshake_coordinator_support::raw_link_test_externs!(StoreToEvent, DriverToEvent, CustomerToEvent, StoreToReview, DriverToReview, OrderToReview, ItemToReview, ReviewerToReview, EventToReply, CustomerToRating, RaterToRating, OwnerToBlocks);
 
     /// Writes a reply to a finding exactly as given, past the coordinator's
     /// checks, so a test can prove what validation refuses.

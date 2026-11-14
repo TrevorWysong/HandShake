@@ -9,6 +9,8 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.the-customer-reported-a-problem-with-this-2": "El cliente reportó un problema con este pedido: responde a su reporte en lugar de valorarlo.",
   "refusal.you-can-block-only-as-yourself-or": "Solo puedes bloquear como tú mismo, o como una tienda tuya.",
   "refusal.you-ve-blocked-that-driver": "Has bloqueado a ese repartidor.",
+  "refusal.that-driver-isn-t-available-for-this": "Ese repartidor no está disponible para los pedidos de esta tienda.",
+  "refusal.you-ve-blocked-as-many-as-the": "Has bloqueado a tantos como la app guarda. Desbloquea a alguien primero.",
   "refusal.you-ve-blocked-this-customer-decline-the": "Has bloqueado a este cliente: rechaza el pedido.",
   "refusal.you-ve-blocked-this-store-unblock-it": "Has bloqueado esta tienda: desbloquéala desde tu perfil para pedir.",
   "refusal.customers-are-rated-within-a-few-days": "Los clientes se valoran a los pocos días de su pedido, y este ya ha pasado.",

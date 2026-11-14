@@ -147,10 +147,14 @@ pub fn accept_bid(input: AcceptBidInput) -> ExternResult<Record> {
         return Err(guest("That driver has withdrawn their offer."));
     }
     crate::accounts::ensure_not_moved(&winning_bid.bidder, "That driver")?;
-    // Not a driver the customer blocked since placing the order (one blocked
-    // before can't have bid: validation refuses it).
+    // Not a driver the customer or the store blocked since the order opened
+    // (one blocked before can't have bid: validation refuses it) -- the
+    // customer's own list, and the store's listing as it stands.
     if crate::blocks::my_own_blocks()?.contains(&crate::blocks::Party::Person(winning_bid.bidder.clone())) {
         return Err(guest("You've blocked that driver."));
+    }
+    if crate::blocks::store_lists(&crate::stores::current_catalog(&order.catalog_ref)?, &winning_bid.bidder) {
+        return Err(guest("That driver isn't available for this store's orders."));
     }
     if !crate::verification::bid_verification_stands(&winning_bid)? {
         return Err(guest("That driver's verification has been withdrawn."));

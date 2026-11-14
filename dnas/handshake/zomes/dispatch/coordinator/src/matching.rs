@@ -182,16 +182,21 @@ fn ranked(order_ref: &ActionHash, latest: &Record, order: &dispatch_integrity::D
         }
         open.push((link, bid_ref, bid));
     }
-    // A driver the customer blocked since placing the order isn't shown or
-    // matched -- read from their own list, on their own device (one blocked
-    // before couldn't bid: validation refuses it; docs/REPUTATION.md, phase 4).
+    // A driver the customer or the store blocked since the order opened isn't
+    // shown or matched -- the customer's own list, on their own device, and
+    // the store's listing as it stands (one blocked before couldn't bid:
+    // validation refuses it; docs/REPUTATION.md, phase 4).
     use crate::blocks::Party;
     let mine = match agent_info()?.agent_initial_pubkey == order.requester {
         true => crate::blocks::my_own_blocks()?,
         false => Vec::new(),
     };
+    let store = match open.is_empty() {
+        true => None,
+        false => Some(crate::stores::current_catalog(&order.catalog_ref)?),
+    };
     for (link, bid_ref, bid) in open {
-        if mine.contains(&Party::Person(bid.bidder.clone())) {
+        if mine.contains(&Party::Person(bid.bidder.clone())) || store.as_ref().is_some_and(|store| crate::blocks::store_lists(store, &bid.bidder)) {
             continue;
         }
         let weight = weigh(bid.price_offer, bid.eta_seconds, &driver_record(&bid.bidder)?, handshake_governance::minute_value_cents());

@@ -1094,6 +1094,7 @@ dependencies = [
  "dispatch_types",
  "handshake_coordinator_support",
  "handshake_governance",
+ "handshake_types",
  "hdk",
  "reputation_integrity",
  "serde",
