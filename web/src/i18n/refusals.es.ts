@@ -90,6 +90,8 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.no-such-verification": "Esa verificación no existe.",
   "refusal.not-connected-you-didn-t-confirm-it": "Sin conectar: no lo confirmaste.",
   "refusal.nothing-has-been-moved-to-this-device": "Todavía no se ha trasladado nada a este dispositivo: primero traslada tu cuenta desde la versión anterior.",
+  "refusal.more-than-one-account-has-moved-to": "Se ha trasladado más de una cuenta a este dispositivo. Elige la tuya para traerla.",
+  "refusal.that-account-hasn-t-moved-to-this": "Esa cuenta no se ha trasladado a este dispositivo.",
   "refusal.only-a-driver-on-this-order-can": "Solo un repartidor de este pedido puede denunciar a su tienda.",
   "refusal.only-the-appeal-s-arbiter-rules-on": "Solo el árbitro de la apelación decide sobre ella.",
   "refusal.only-the-driver-making-a-handoff-can": "Solo el repartidor que hace una entrega puede comprobar su código.",

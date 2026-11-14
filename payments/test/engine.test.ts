@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { Engine, HELD_KEPT_MS, MAX_ATTEMPTS_PER_ORDER, MAX_NEW_PAYER_DECLINES, NEW_PAYER_WINDOW_MS, Refused, Retry, SAVED_CARD_MS, idempotencyKey, retryingCollisions, type Dispatch } from "../src/engine.ts";
 import { testProcessor } from "../src/adapters/test.ts";
-import { emptyState, memoryStore } from "../src/state.ts";
+import { emptyState, memoryStore, type State } from "../src/state.ts";
 import type { PaymentDue } from "../src/types.ts";
 
 const h = (n: number) => new Uint8Array(39).fill(n);
@@ -72,7 +72,7 @@ function answers(d: PaymentDue, fn: string, payload: Record<string, unknown>) {
 }
 
 const authorize = (offer: number, order: number, more: Partial<Extract<PaymentDue, { Authorize: unknown }>["Authorize"]> = {}): PaymentDue => ({
-  Authorize: { offer: h(offer), order: h(order), leg: "Customer", amount: 2500, payer, token: "tok_test_4242", save: false, resumes: null, newcomer_deal: null, payer_established: false, work: null, offered_at: Date.now() * 1000, ...more },
+  Authorize: { offer: h(offer), order: h(order), leg: "Customer", amount: 2500, payer, token: "tok_test_4242", save: false, resumes: null, resumed_offer: null, newcomer_deal: null, payer_established: false, work: null, offered_at: Date.now() * 1000, ...more },
 });
 
 function setup() {
@@ -112,6 +112,31 @@ test("a card its bank challenges asks the payer, then holds once they've answere
   z.due = [authorize(13, 51, { token: null, resumes: h(201) })];
   await engine.round();
   assert.deepEqual(z.recorded("record_declined").map((d) => d.code), ["ActionFailed"]);
+});
+
+test("a challenge the agent stopped before noting is still resumed, by the offer it answered", async () => {
+  const z = zome();
+  const processor = testProcessor("USD");
+  // What's on disk, and an agent that stops dead right after the network
+  // records the challenge: nothing it saves from then on reaches the disk.
+  const disk = memoryStore();
+  let stopped = false;
+  const stopping = { load: () => disk.load(), save: (state: State) => (stopped ? Promise.resolve() : disk.save(state)) };
+  const dispatch = async <T,>(fn: string, payload: unknown): Promise<T> => {
+    const out = await z.dispatch<T>(fn, payload);
+    if (fn === "record_action") stopped = true;
+    return out;
+  };
+  z.due = [authorize(10, 50, { token: "tok_test_3155" })];
+  await new Engine({ dispatch, processor, state: stopping, currency: "USD", account: "Test:test:" }).round();
+  assert.equal(z.recorded("record_action").length, 1, "the challenge reached the network");
+  assert.deepEqual((await disk.load()).challenged, {}, "but its action's hash never reached the disk");
+  // Started again, the payer answers the challenge.
+  const restarted = new Engine({ dispatch: z.dispatch, processor, state: disk, currency: "USD", account: "Test:test:" });
+  z.due = [authorize(12, 50, { token: null, resumes: h(200), resumed_offer: h(10) })];
+  await restarted.round();
+  assert.equal(z.recorded("record_hold").length, 1, "held once they've answered, not declined");
+  assert.deepEqual(z.recorded("record_declined"), []);
 });
 
 test("a card is used again only if its payer saved it here", async () => {

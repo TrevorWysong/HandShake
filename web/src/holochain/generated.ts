@@ -2974,6 +2974,13 @@ export type PaymentDue =
          */
         resumes: ActionHash | null;
         /**
+         * The offer that action answered: what the agent keeps the
+         * authorization by until it knows the action's own hash, so a
+         * crash between writing the action and noting its hash never
+         * loses the authorization to resume.
+         */
+        resumed_offer: ActionHash | null;
+        /**
          * The store, when the order takes its deal for first orders: one
          * card each, which the agent checks by its processor's card
          * fingerprint (on-chain, a first order is one per account).

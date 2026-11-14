@@ -101,7 +101,7 @@ export async function chainClosed(agent: AgentPubKey): Promise<{ network: Uint8A
 }
 
 /// The accounts moved to the caller's key, read on the previous network.
-export async function migrationsToMeOnPrevious(): Promise<{ account: AgentPubKey; close: ActionHash | null; network: Uint8Array }[]> {
+export async function migrationsToMeOnPrevious(): Promise<{ migration: ActionHash; account: AgentPubKey; close: ActionHash | null; network: Uint8Array }[]> {
   return callPrevious("account", "migrations_to_me", null);
 }
 
@@ -111,10 +111,10 @@ export async function openParcelsOnPrevious(account: AgentPubKey): Promise<strin
   return callPrevious("account", "open_parcels", account);
 }
 
-/// Records the caller's arrival from the previous network; returns the
-/// account they arrived as. Safe to repeat.
-export async function arrive(): Promise<AgentPubKey> {
-  return callZome("account", "arrive", null);
+/// Records the caller's arrival from the previous network, as the account
+/// whose `migration` they chose; returns that account. Safe to repeat.
+export async function arrive(migration: ActionHash): Promise<AgentPubKey> {
+  return callZome("account", "arrive", migration);
 }
 
 /// Who `agent` was on the previous network, checked there.

@@ -21,6 +21,13 @@ export interface State {
   /// When each challenge was made (ms), by its action (hex): one older than
   /// an authorization can live is forgotten.
   challengedAt: Record<string, number>;
+  /// A challenged authorization's reference, by the offer it answered
+  /// (hex): kept before the network hears of the challenge, so a crash
+  /// before its action's hash is noted above never loses what to resume
+  /// (`resumed_offer`).
+  challenging: Record<string, string>;
+  /// When each was kept (ms), by offer (hex), forgotten as challenges are.
+  challengingAt: Record<string, number>;
   /// First-order deal cards kept here by an agent from before they were
   /// kept on the network (`claim_newcomer_card`): the order (hex) each card
   /// fingerprint took it on, by store (hex). Claimed on the network on the
@@ -53,7 +60,7 @@ export interface State {
   legacy: string | null;
 }
 
-export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, challengedAt: {}, newcomers: {}, attempts: {}, known: {}, declines: [], busy: null, account: null, heldWith: {}, heldAt: {}, legacy: null });
+export const emptyState = (): State => ({ saved: {}, savedAt: {}, challenged: {}, challengedAt: {}, challenging: {}, challengingAt: {}, newcomers: {}, attempts: {}, known: {}, declines: [], busy: null, account: null, heldWith: {}, heldAt: {}, legacy: null });
 
 export interface StateStore {
   load(): Promise<State>;

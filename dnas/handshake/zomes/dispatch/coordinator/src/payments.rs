@@ -252,6 +252,11 @@ pub enum PaymentDue {
         /// The action this offer answers: resume the authorization that
         /// asked for it.
         resumes: Option<ActionHash>,
+        /// The offer that action answered: what the agent keeps the
+        /// authorization by until it knows the action's own hash, so a
+        /// crash between writing the action and noting its hash never
+        /// loses the authorization to resume.
+        resumed_offer: Option<ActionHash>,
         /// The store, when the order takes its deal for first orders: one
         /// card each, which the agent checks by its processor's card
         /// fingerprint (on-chain, a first order is one per account).
@@ -363,6 +368,7 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
     let mut due = Vec::new();
     let mut offers: Vec<(Timestamp, ActionHash, AgentPubKey, PaymentOffer)> = Vec::new();
     let mut answered: Vec<ActionHash> = Vec::new();
+    let mut my_actions: Vec<(ActionHash, ActionHash)> = Vec::new();
     let mut held_legs: Vec<PaymentLeg> = Vec::new();
     let mut settled: Vec<ActionHash> = Vec::new();
     let mut my_holds: Vec<(ActionHash, PaymentHold)> = Vec::new();
@@ -381,7 +387,8 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
             answered.push(hold.offer.clone());
             my_holds.push((hash, hold));
         } else if let Some(action) = decode_or::<PaymentAction>(&record) {
-            answered.push(action.offer);
+            answered.push(action.offer.clone());
+            my_actions.push((hash, action.offer));
         } else if let Some(declined) = decode_or::<PaymentDeclined>(&record) {
             answered.push(declined.offer);
         } else if let Some(settlement) = decode_or::<PaymentSettlement>(&record) {
@@ -424,7 +431,8 @@ fn due_on(order: &ActionHash, me: &AgentPubKey) -> ExternResult<Vec<PaymentDue>>
         let newcomer_deal = if offer.leg == PaymentLeg::Customer { newcomer_deal(order)? } else { None };
         let payer_established = established(&payer)?;
         let work = offer.work.as_ref().map(|proof| WorkShown { busy: proof.busy.clone(), bits: work_bits(&payer, me, proof) });
-        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, newcomer_deal, payer_established, work, offered_at });
+        let resumed_offer = offer.resumes.as_ref().and_then(|action| my_actions.iter().find(|(hash, _)| hash == action).map(|(_, offer)| offer.clone()));
+        due.push(PaymentDue::Authorize { offer: offer_ref, order: order.clone(), leg: offer.leg, amount: context.required, payer, token, save: offer.save, resumes: offer.resumes, resumed_offer, newcomer_deal, payer_established, work, offered_at });
     }
     // Each of my holds, once nothing can change what it's owed.
     for (hold_ref, hold) in my_holds {

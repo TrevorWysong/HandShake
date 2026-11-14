@@ -109,6 +109,24 @@ mod test_utils {
         create_entry(&EntryTypes::Migration(migration))
     }
 
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct MisleadingMove {
+        pub network: DnaHash,
+        pub successor: AgentPubKey,
+        pub closes_to: DnaHash,
+    }
+
+    /// What a modified app could do: record a move to `network`, linked to
+    /// its successor as a real one is, then close the chain for another
+    /// network -- so a test can prove no arrival takes it for a move.
+    #[hdk_extern]
+    pub fn migrate_closing_elsewhere_for_testing(input: MisleadingMove) -> ExternResult<ActionHash> {
+        let hash = create_entry(&EntryTypes::Migration(account_integrity::Migration { network: input.network, successor: input.successor.clone() }))?;
+        create_link(input.successor, hash.clone(), LinkTypes::SuccessorToMigration, ())?;
+        close_chain(Some(MigrationTarget::Dna(input.closes_to)))?;
+        Ok(hash)
+    }
+
     #[hdk_extern]
     pub fn create_raw_arrival_for_testing(arrival: account_integrity::Arrival) -> ExternResult<ActionHash> {
         create_entry(&EntryTypes::Arrival(arrival))

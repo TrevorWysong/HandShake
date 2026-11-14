@@ -16,7 +16,7 @@
 import { wait } from "../../lib/network/retry";
 import { useState } from "react";
 import { ArrowLeft, HeartHandshake, History, KeyRound, Smartphone } from "lucide-react";
-import type { AgentPubKey, PlanView, VouchView } from "../../holochain/types";
+import type { ActionHash, AgentPubKey, PlanView, VouchView } from "../../holochain/types";
 import { bytesEqual, bytesToHex } from "../../holochain/decode";
 import { accountsForPhraseKey, arrive, arrivedFrom, latestActionOf, migrationsToMeOnPrevious, mySuccession, recoveryPlanOf, takeOver, vouchesForMe } from "../../holochain/zomes/account";
 import { hasPreviousNetwork, thisNetwork } from "../../holochain/client";
@@ -218,28 +218,65 @@ function FromDevice() {
   );
 }
 
+/// An account the previous version moved to this device's key, with its
+/// name there.
+interface Moved {
+  migration: ActionHash;
+  account: AgentPubKey;
+  name: string;
+}
+
 /// Waits for the previous version of the app to move the account here, then
-/// records the arrival (docs/MIGRATION.md).
+/// has its owner confirm it's theirs, by name, before recording the arrival
+/// (docs/MIGRATION.md): anyone shown this device's code could move an
+/// account to it, so none is taken in unasked.
 function FromPreviousVersion({ me, onTaken }: { me: AgentPubKey; onTaken: (predecessor: AgentPubKey) => void }) {
   const t = useT();
   const { data: network } = useResource("this-network", thisNetwork);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [moved, setMoved] = useState<Moved[] | null>(null);
+  const [bringing, setBringing] = useState<ActionHash | null>(null);
   usePolling(
     async () => {
       try {
-        const moved = (await migrationsToMeOnPrevious()).find((m) => m.close);
-        if (!moved) return;
-        const account = await arrive();
-        setDone(true);
-        onTaken(account);
+        const here = network ?? (await thisNetwork());
+        const closed = (await migrationsToMeOnPrevious()).filter((m) => m.close && bytesEqual(m.network, here));
+        if (closed.length === 0) return;
+        setMoved(await Promise.all(closed.map(async (m) => ({ migration: m.migration, account: m.account, name: (await readPredecessor(m.account, "previous")).name }))));
       } catch (err) {
         setError(describeError(err));
       }
     },
     { pollMs: POLL.waitingDevice, background: true },
-    !done,
+    moved === null,
   );
+  const bring = async (m: Moved) => {
+    setBringing(m.migration);
+    setError(null);
+    try {
+      onTaken(await arrive(m.migration));
+    } catch (err) {
+      setError(describeError(err));
+      setBringing(null);
+    }
+  };
+  if (moved) {
+    return (
+      <>
+        <h2 className="mb-1 text-lg font-bold">{t("restore.confirmPrevious")}</h2>
+        <p className="mb-4 text-sm text-ink-500">{t(moved.length > 1 ? "restore.confirmPreviousMany" : "restore.confirmPreviousHow")}</p>
+        <div className="flex flex-col gap-2">
+          {moved.map((m) => (
+            <Button key={bytesToHex(m.migration)} className="w-full" disabled={bringing !== null} onClick={() => bring(m)}>
+              {bringing && bytesEqual(bringing, m.migration) ? <Spinner className="h-4 w-4" /> : null}
+              {t("restore.bringOver", { name: m.name || t("restore.unnamed") })}
+            </Button>
+          ))}
+        </div>
+        {error && <Notice className="mt-3">{error}</Notice>}
+      </>
+    );
+  }
   return (
     <>
       <h2 className="mb-1 text-lg font-bold">{t("restore.fromPrevious")}</h2>

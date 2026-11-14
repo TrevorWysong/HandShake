@@ -102,6 +102,12 @@ pub fn chain_closed(agent: AgentPubKey) -> ExternResult<Option<Closed>> {
     })
 }
 
+/// The close of `account`'s chain, if it closed for `network`: one closed
+/// with no target, or for another network, is no move there.
+fn closed_for(account: &AgentPubKey, network: &DnaHash) -> ExternResult<Option<ActionHash>> {
+    Ok(chain_closed(account.clone())?.filter(|closed| closed.network.as_ref() == Some(network)).map(|closed| closed.close))
+}
+
 /// An account moved to the next network.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MigrationRequest {
@@ -110,7 +116,8 @@ pub struct MigrationRequest {
     pub successor: AgentPubKey,
     pub network: DnaHash,
     pub requested_at: Timestamp,
-    /// The closed chain's last action -- `None` until the close is seen.
+    /// The closed chain's last action -- `None` until a close for the
+    /// migration's own network is seen.
     pub close: Option<ActionHash>,
 }
 
@@ -139,7 +146,7 @@ pub fn migrations_to_me(_: ()) -> ExternResult<Vec<MigrationRequest>> {
         if first_migration_of(&account)?.as_ref() != Some(record.action_address()) {
             continue;
         }
-        let close = chain_closed(account.clone())?.map(|c| c.close);
+        let close = closed_for(&account, &migration.network)?;
         found.push(MigrationRequest { migration: record.action_address().clone(), account, successor: migration.successor, network: migration.network, requested_at: record.action().timestamp(), close });
     }
     Ok(found)
@@ -181,15 +188,29 @@ pub fn get_migration(migration: ActionHash) -> ExternResult<Option<MigrationRequ
     if first_migration_of(&account)?.as_ref() != Some(&migration) {
         return Ok(None);
     }
-    let close = chain_closed(account.clone())?.map(|c| c.close);
+    let close = closed_for(&account, &m.network)?;
     Ok(Some(MigrationRequest { migration, account, successor: m.successor, network: m.network, requested_at: record.action().timestamp(), close }))
 }
 
+/// Whether `migration`, read on the previous network, moved its account
+/// here: its record names this network, and its chain closed for this
+/// network -- checked there directly, since an older version's answer
+/// counted any close.
+fn moved_here(migration: &MigrationRequest, here: &DnaHash) -> ExternResult<bool> {
+    if &migration.network != here || migration.close.is_none() {
+        return Ok(false);
+    }
+    let closed: Option<Closed> = on_previous::<_, Option<Closed>>("account", "chain_closed", migration.account.clone())?.flatten();
+    Ok(closed.is_some_and(|closed| closed.network.as_ref() == Some(here) && Some(&closed.close) == migration.close.as_ref()))
+}
+
 /// Records the caller's arrival from the previous network: the account
-/// there whose migration -- now closed -- names them. Safe to repeat;
-/// returns the account they arrived as.
+/// there whose migration -- now closed -- names them. `migration` is the
+/// one they chose; without it, the only one there is -- never one of
+/// several, since anyone shown this key's move code could move an account
+/// to it. Safe to repeat; returns the account they arrived as.
 #[hdk_extern]
-pub fn arrive(_: ()) -> ExternResult<AgentPubKey> {
+pub fn arrive(migration: Option<ActionHash>) -> ExternResult<AgentPubKey> {
     if let Some(arrival) = my_arrival()? {
         return Ok(arrival.previous_account);
     }
@@ -198,10 +219,17 @@ pub fn arrive(_: ()) -> ExternResult<AgentPubKey> {
     // Read, or why it couldn't be: a network that couldn't be reached is
     // tried again, never taken for one where nothing moved.
     let moved: Vec<MigrationRequest> = on_previous("account", "migrations_to_me", ())?.ok_or(guest("This app has no previous version to arrive from."))?;
-    let migration = moved
-        .into_iter()
-        .find(|m| m.network == here && m.close.is_some())
-        .ok_or(guest("Nothing has been moved to this device yet: move your account from the previous version first."))?;
+    let mut here_now = Vec::new();
+    for candidate in moved {
+        if moved_here(&candidate, &here)? {
+            here_now.push(candidate);
+        }
+    }
+    let migration = match migration {
+        Some(chosen) => here_now.into_iter().find(|m| m.migration == chosen).ok_or(guest("That account hasn't moved to this device."))?,
+        None if here_now.len() > 1 => return Err(guest("More than one account has moved to this device. Choose yours to bring over.")),
+        None => here_now.pop().ok_or(guest("Nothing has been moved to this device yet: move your account from the previous version first."))?,
+    };
     let arrival = Arrival { previous_network, previous_account: migration.account.clone(), migration: migration.migration };
     let hash = create_entry(&EntryTypes::Arrival(arrival))?;
     create_link(me()?, hash, LinkTypes::AccountToArrival, ())?;
@@ -214,7 +242,8 @@ fn my_arrival() -> ExternResult<Option<Arrival>> {
 
 /// The account `agent` was on the previous network, if they arrived from
 /// it -- checked there: its migration, to this network and this key, and
-/// its chain closed. `None` without a previous network to check against.
+/// its chain closed for this network. `None` without a previous network to
+/// check against.
 #[hdk_extern]
 pub fn arrived_from(agent: AgentPubKey) -> ExternResult<Option<AgentPubKey>> {
     let Some(arrival) = linked_records(own_links(&agent, LinkTypes::AccountToArrival)?, GetStrategy::default())?.iter().find_map(decoded::<Arrival>) else {
@@ -225,7 +254,7 @@ pub fn arrived_from(agent: AgentPubKey) -> ExternResult<Option<AgentPubKey>> {
         return Ok(None);
     }
     let Some(migration) = on_previous::<_, Option<MigrationRequest>>("account", "get_migration", arrival.migration)?.flatten() else { return Ok(None) };
-    let genuine = migration.account == arrival.previous_account && migration.successor == agent && migration.network == dna_info()?.hash && migration.close.is_some();
+    let genuine = migration.account == arrival.previous_account && migration.successor == agent && moved_here(&migration, &dna_info()?.hash)?;
     Ok(genuine.then_some(arrival.previous_account))
 }
 

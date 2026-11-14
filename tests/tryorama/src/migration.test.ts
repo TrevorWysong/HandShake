@@ -66,7 +66,29 @@ await runScenario(async (scenario) => {
   // ===== Arriving: the parcel, the store, the history =====
   assert.deepEqual(await on(bobPrevious, "account")<string[]>("open_parcels", aliceKey), [JSON.stringify({ name: "Alice" })], "the new key opens what only the old one could read");
   assert.deepEqual(await on(bobPrevious, "account")<string[]>("open_parcels", peerKey), [], "and only from the account that moved");
-  assert.ok(Buffer.from(await on(bobHere, "account")<Uint8Array>("arrive", null)).equals(Buffer.from(aliceKey)), "it arrives as the account it was");
+
+  // ===== Only a move closed for here, and only the one its owner chose =====
+  // Anyone shown Bob's move code could move an account to his key; and a
+  // modified app could record a move here, then close its chain for
+  // another network.
+  const same = (a: Uint8Array, b: Uint8Array) => Buffer.from(a).equals(Buffer.from(b));
+  const [eveKey, malloryKey] = [await peerHost.adminWs().generateAgentPubKey(), await peerHost.adminWs().generateAgentPubKey()];
+  const eve = await install(peerHost, eveKey, HAPP_PATH, { handshake: settings(OLD, properties) }, "eve-old");
+  const mallory = await install(peerHost, malloryKey, HAPP_PATH, { handshake: settings(OLD, properties) }, "mallory-old");
+  await shareAgentsOn([peerHost, aliceHost, bobHost], oldNetwork);
+  await useTestCoordinators(eve, ["account"]);
+  await on(eve.cells[0], "account")("migrate_closing_elsewhere_for_testing", { network: newNetwork, successor: bobKey, closes_to: oldNetwork });
+  await on(mallory.cells[0], "account")("migrate_out", { network: newNetwork, successor: bobKey, parcel: "" });
+  await dhtSync([peerOld, alice, eve, mallory, { ...bob, cells: [bobPrevious] }], oldNetwork);
+  type Moved = { migration: Uint8Array; account: Uint8Array; close: Uint8Array | null };
+  const moved = await retryUntil(() => on(bobPrevious, "account")<Moved[]>("migrations_to_me", null), (r) => r.length === 3 && r.filter((m) => m.close).length === 2);
+  const of = (key: Uint8Array) => moved.find((m) => same(m.account, key))!;
+  assert.equal(of(eveKey).close, null, "a chain closed for another network is no move here");
+  await assert.rejects(on(bobHere, "account")("arrive", null), /More than one account/, "with two accounts moved to this key, neither is taken unasked");
+  await assert.rejects(on(bobHere, "account")("arrive", of(eveKey).migration), /hasn't moved to this device/, "nor one whose chain closed elsewhere, even chosen");
+  console.log("[PASS] an arrival takes only a move closed for this network, and only the one chosen");
+
+  assert.ok(Buffer.from(await on(bobHere, "account")<Uint8Array>("arrive", of(aliceKey).migration)).equals(Buffer.from(aliceKey)), "it arrives as the account it was");
   const was = await on(bobHere, "account")<Uint8Array | null>("arrived_from", bobKey);
   assert.ok(was && Buffer.from(was).equals(Buffer.from(aliceKey)), "checked on the previous network");
   await useTestCoordinators(peerNew, ["account"]);

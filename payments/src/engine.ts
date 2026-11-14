@@ -199,7 +199,9 @@ export class Engine {
 
     let result: Authorization;
     if (due.resumes) {
-      const reference = state.challenged[hex(due.resumes)];
+      // By its action, or -- the agent stopped before noting that -- by the
+      // offer the action answered.
+      const reference = state.challenged[hex(due.resumes)] ?? (due.resumed_offer ? state.challenging[hex(due.resumed_offer)] : undefined);
       if (!reference) return decline("ActionFailed");
       result = await authorizing(() => processor.resume(reference, offerKey));
     } else {
@@ -230,6 +232,11 @@ export class Engine {
       return decline(result.code);
     }
     if (result.status === "action") {
+      // Kept on disk by its offer before the network hears of it: a crash
+      // between the two never leaves a challenge nothing can resume.
+      state.challenging[hex(due.offer)] = result.reference;
+      state.challengingAt[hex(due.offer)] = now();
+      await this.#o.state.save(state);
       const action = await dispatch<ActionHash>("record_action", { offer: due.offer, action: result.action });
       state.challenged[hex(action)] = result.reference;
       state.challengedAt[hex(action)] = now();
@@ -302,6 +309,7 @@ export class Engine {
       }
     };
     prune(state.challenged, state.challengedAt, ATTEMPTS_KEPT_MS);
+    prune(state.challenging, state.challengingAt, ATTEMPTS_KEPT_MS);
     prune(state.heldWith, state.heldAt, HELD_KEPT_MS);
     if (changed) await store.save(state);
   }
