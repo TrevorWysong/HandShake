@@ -1,5 +1,4 @@
 import { FINISHED_SHOWN_MICROS, useActiveOrders, type ActiveOrder, type FinishedOrder } from "../../store/activeOrders";
-import { customerOrderPath } from "../orders/orderEntries";
 import { customerProgress, type OrderTone } from "../orders/progress";
 import { useClock } from "./useClock";
 
@@ -11,20 +10,22 @@ export interface CardOrder {
   finished: boolean;
 }
 
+/// The screens that are an order's own page: another order's card floating
+/// over it would cover what's being read, and the Orders tab is a tap away.
+const ORDER_PAGE = /^\/customer\/(orders|pickup-orders)\/[^/]+$/;
+
 /// The orders the card shows, on the screen at `pathname`: those not yet just
-/// waiting for their date, those just finished for a little while, and never
-/// the one whose own page is open.
+/// waiting for their date and those just finished for a little while -- on
+/// no order's own page, and not on the Orders tab, which is the list itself.
 export function useCardOrders(pathname: string, owner: string | null): CardOrder[] {
   const state = useActiveOrders();
   const now = useClock();
-  // The Orders tab is the list itself.
-  if (state.owner !== owner || pathname === "/customer/orders") return [];
+  if (state.owner !== owner || pathname === "/customer/orders" || ORDER_PAGE.test(pathname)) return [];
   const nowAt = now.getTime() * 1000;
-  const here = (o: ActiveOrder) => pathname === customerOrderPath(o.row);
   const fresh = (o: FinishedOrder) => nowAt - o.finishedAt < FINISHED_SHOWN_MICROS;
   const cards: CardOrder[] = [
-    ...(state.orders ?? []).filter((o) => o.row.order.status !== "Scheduled" && !here(o)).map((order) => ({ order, finished: false })),
-    ...state.finished.filter((o) => fresh(o) && !here(o)).map((order) => ({ order, finished: true })),
+    ...(state.orders ?? []).filter((o) => o.row.order.status !== "Scheduled").map((order) => ({ order, finished: false })),
+    ...state.finished.filter(fresh).map((order) => ({ order, finished: true })),
   ];
   return cards.sort((a, b) => ORDER[customerProgress(a.order.row, a.order.need).tone] - ORDER[customerProgress(b.order.row, b.order.need).tone]);
 }

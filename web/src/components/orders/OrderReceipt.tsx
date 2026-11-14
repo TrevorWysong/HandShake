@@ -70,15 +70,16 @@ export function OrderReceipt({ orderRef }: { orderRef: Uint8Array }) {
 
       {receipt.payments.length > 0 && (
         <div className="mt-3 border-t border-ink-100 dark:border-ink-800 pt-2">
-          <p className="mb-1 text-xs font-semibold text-ink-500">{t("receipt.paid")}</p>
+          <p className="mb-1 text-xs font-semibold text-ink-500">{t("receipt.payments")}</p>
           {receipt.payments.map((payment) => (
             <div key={bytesToHex(payment.transaction)} className="flex justify-between gap-3 text-xs text-ink-500">
               <span>
                 {legLabel(payment.leg, true)} <span className="font-mono text-ink-300" title={bytesToHex(payment.transaction)}>· {bytesToHex(payment.transaction).slice(0, 10)}</span>
               </span>
-              <span className="tabular-nums">{payment.charged_cents === null ? t("receipt.held", { amount: formatCents(payment.held_cents) }) : formatCents(payment.charged_cents)}</span>
+              <span className="tabular-nums">{payment.charged_cents === null ? t("receipt.pending") : formatCents(payment.charged_cents)}</span>
             </div>
           ))}
+          {receipt.payments.some((payment) => payment.charged_cents === null) && <p className="mt-1 text-[11px] text-ink-400">{t("receipt.pendingDetail")}</p>}
           <p className="mt-1 text-[11px] text-ink-400">{t("receipt.verifiable")}</p>
         </div>
       )}

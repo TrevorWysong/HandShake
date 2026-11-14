@@ -206,7 +206,7 @@ export function AppShell() {
         <DriverDeliveries />
         <ConnectionBanner />
         <DeviceSetupBanner />
-        <main className={clsx("flex-1 lg:px-6 lg:pt-4 lg:pb-12", docked && cards.length > 0 ? "pb-40" : "pb-20")}>
+        <main className={clsx("flex-1 lg:px-6 lg:pt-4 lg:pb-12", docked && cards.length > 0 ? "pb-48" : "pb-20")}>
           <AnimatedOutlet />
         </main>
       </div>

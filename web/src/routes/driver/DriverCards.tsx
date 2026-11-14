@@ -281,8 +281,8 @@ export function BidCard({
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between">
-        <p className="flex items-baseline gap-1 text-sm font-bold text-ink-900 dark:text-ink-50">
-          {t("order.heading")}<StatNumber className="text-base">{formatCents(order.order_total)}</StatNumber>
+        <p className="flex items-baseline gap-1.5 text-xs font-medium text-ink-500 dark:text-ink-400">
+          {t("order.heading")}<StatNumber className="text-base text-ink-900 dark:text-ink-50">{formatCents(order.order_total)}</StatNumber>
         </p>
         <span className="flex items-center gap-1">
           {eta !== null && <span className="text-xs text-ink-400">{formatEta(eta * 60)}</span>}
