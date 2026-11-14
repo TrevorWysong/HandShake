@@ -280,7 +280,10 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         Checked::Delete { .. } => Ok(ValidateCallbackResult::Invalid("reputation entries can't be deleted".into())),
         Checked::CreateLink { link_type: LinkTypes::Version, action } => handshake_integrity_support::versions::validate_version_link(&action.base_address, &action.target_address, &action.tag, action.author()),
         Checked::DeleteLink { link_type: LinkTypes::Version, .. } => Ok(ValidateCallbackResult::Invalid("an entry's versions stay linked".into())),
-        Checked::CreateLink { link_type, action } => links::validate_create_link(link_type, &action.base_address, &action.target_address, &action.tag, action.author()),
+        Checked::CreateLink { link_type, action } => match (links::validate_create_link(link_type, &action.base_address, &action.target_address, &action.tag, action.author())?, link_type) {
+            (ValidateCallbackResult::Valid, LinkTypes::CustomerToRating | LinkTypes::RaterToRating) => links::validate_rating_link_order(link_type, &action),
+            (shape, _) => Ok(shape),
+        },
         Checked::DeleteLink { .. } => links::validate_delete_link(),
         Checked::Other => Ok(ValidateCallbackResult::Valid),
     }

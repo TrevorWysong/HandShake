@@ -90,8 +90,15 @@ await runScenario(async (scenario) => {
   await assert.rejects(raw(merchant, { up: false }), /thumbs-down gives a reason/, "a thumbs-down gives a reason");
   await assert.rejects(raw(merchant, { reason: "Unsafe" }), /thumbs-up none/, "a thumbs-up gives none");
   await assert.rejects(raw(merchant, { completed: first.order }), /completed/, "only on the order completed");
-  await call(merchant, "reputation")("rate_customer", { order: first.order, up: false, reason: "Unreachable" });
+  const firstRating = actionHash(await call(merchant, "reputation")<HcRecord>("rate_customer", { order: first.order, up: false, reason: "Unreachable" }));
   await assert.rejects(call(merchant, "reputation")("rate_customer", { order: first.order, up: true, reason: null }), /already rated/, "once");
+  // A rating is linked under its rater right after it's made, then under its
+  // customer, each strictly later: no rater leaves one out of their own
+  // record, and none links one in later, after ratings that would excuse it.
+  const UNREACHABLE = 1;
+  const link = (link_type: string, base: Uint8Array, tag: number[]) => call(merchant, "reputation")("test_create_link", { link_type, base, target: firstRating, tag });
+  await assert.rejects(link("CustomerToRating", agentAsLinkBase(customer.agentPubKey), [0, UNREACHABLE, ...first.order, ...store]), /right after it's made/, "a customer link comes right after its rater's");
+  await assert.rejects(link("RaterToRating", agentAsLinkBase(merchant.agentPubKey), [...first.order, 0, UNREACHABLE]), /right after it's made/, "and a rater's right after the rating");
   await assert.rejects(raw(merchant, {}), /rated once per order/, "nor can a modified app rate twice");
   await sync();
   const rated = await retryUntil(score, (s) => s.down === 1);

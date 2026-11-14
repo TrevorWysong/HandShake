@@ -87,6 +87,28 @@ pub fn validate_create_link(link_type: LinkTypes, base: &AnyLinkableHash, target
     )
 }
 
+/// A customer rating's two links, written right after it and in order --
+/// its rater's, then its customer's -- each strictly later than the action
+/// before it. So no rater can leave a rating out of their own record, and
+/// everything they rate afterwards comes after its customer link in time:
+/// a rating's fairness is judged on their ratings up to that link and none
+/// later (`get_customer_score`). Holochain's own check allows an action the
+/// same time as the one before; an honest conductor always moves on.
+pub fn validate_rating_link_order(link_type: LinkTypes, action: &TypedAction<CreateLinkData>) -> ExternResult<ValidateCallbackResult> {
+    let Some(prev_ref) = action.prev_action() else { return invalid("a rating's link can't open a chain") };
+    let prev = must_get_action(prev_ref.clone())?;
+    if action.timestamp() <= prev.action().timestamp() {
+        return invalid("a rating's links each come strictly after the action before them");
+    }
+    let rater_link = ScopedLinkType::try_from(LinkTypes::RaterToRating)?;
+    let follows = match link_type {
+        LinkTypes::RaterToRating => AnyLinkableHash::from(prev_ref.clone()) == action.target_address,
+        LinkTypes::CustomerToRating => matches!(&prev.action().data, ActionData::CreateLink(link) if link.zome_index == rater_link.zome_index && link.link_type == rater_link.zome_type && link.target_address == action.target_address),
+        _ => true,
+    };
+    require(follows, "a rating is linked under its rater right after it's made, then under its customer")
+}
+
 /// Reputation is append-only: events and reviews are never unlinked.
 pub fn validate_delete_link() -> ExternResult<ValidateCallbackResult> {
     invalid("reputation links can't be deleted")

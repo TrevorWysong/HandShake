@@ -113,8 +113,9 @@ pub fn rate_customer(input: RateCustomerInput) -> ExternResult<Record> {
     let store = as_store.then(|| terms.catalog_ref.clone());
     let rating = CustomerRating { order_ref: order, completed: latest.action_address().clone(), customer: terms.customer.clone(), up: input.up, reason: input.reason, store };
     let hash = create_entry(&EntryTypes::CustomerRating(rating.clone()))?;
-    create_link(terms.customer, hash.clone(), LinkTypes::CustomerToRating, customer_rating_tag(&rating))?;
+    // Its rater's link first, then its customer's, as validation requires.
     create_link(me, hash.clone(), LinkTypes::RaterToRating, rater_tag(&rating))?;
+    create_link(terms.customer, hash.clone(), LinkTypes::CustomerToRating, customer_rating_tag(&rating))?;
     written(hash)
 }
 
@@ -478,8 +479,9 @@ mod tests {
         assert!(!ReportsOn::default().about(true) && !ReportsOn::default().about(false));
     }
 
-    /// A rater's ratings as links, `ups[i]` given `i` hours after the start.
-    fn ratings(rater: &AgentPubKey, ups: &[bool]) -> Vec<Link> {
+    /// A rater's ratings as their links, `ups[i]` given `i` steps of `step`
+    /// microseconds after the start.
+    fn ratings(rater: &AgentPubKey, ups: &[bool], step: i64) -> Vec<Link> {
         ups.iter().enumerate().map(|(i, up)| {
             let mut tag = vec![0u8; 39];
             tag.push(u8::from(*up));
@@ -487,7 +489,7 @@ mod tests {
                 author: rater.clone(),
                 base: rater.clone().into(),
                 target: EntryHash::from_raw_36(vec![i as u8; 36]).into(),
-                timestamp: Timestamp::from_micros(i as i64 * 3_600_000_000),
+                timestamp: Timestamp::from_micros(i as i64 * step),
                 zome_index: 0.into(),
                 link_type: 0.into(),
                 tag: LinkTag::new(tag),
@@ -497,14 +499,16 @@ mod tests {
     }
 
     /// Whether each of `rater`'s ratings at `at` (by place) counts, judged as
-    /// `counted` does but over `links` in memory, the windows ending at each
-    /// rating -- or, `anchored` false, at `now`.
+    /// `counted` does but over `links` in memory -- the windows ending at its
+    /// customer link, a microsecond after its rater link, as validation
+    /// requires; or, `anchored` false, at `now`. Bounds are inclusive at
+    /// both ends, as Holochain's are (docs/HOLOCHAIN_ISSUES.md #3).
     fn fair_at(rater: &AgentPubKey, links: &[Link], at: &[usize], anchored: bool, now: Timestamp) -> Vec<bool> {
-        let until: Vec<Option<Timestamp>> = at.iter().map(|i| anchored.then(|| links[*i].timestamp)).collect();
+        let until: Vec<Option<Timestamp>> = at.iter().map(|i| anchored.then(|| Timestamp::from_micros(links[*i].timestamp.as_micros() + 1))).collect();
         let read = |open: &[usize], window: std::time::Duration| -> ExternResult<Vec<Vec<Link>>> {
             Ok(open.iter().map(|o| {
                 let (after, before) = crate::window_bounds(until[*o], now, window);
-                links.iter().filter(|l| l.timestamp > after && before.is_none_or(|b| l.timestamp < b)).cloned().collect()
+                links.iter().filter(|l| l.timestamp >= after && before.is_none_or(|b| l.timestamp <= b)).cloned().collect()
             }).collect())
         };
         crate::settle_windows(at.len(), std::time::Duration::from_secs(90 * 86_400), read, &|_, l| rates_fairly(rater, l, FAIRNESS_SAMPLE), &|_, l| rates_fairly(rater, l, 0).unwrap_or(true)).unwrap()
@@ -514,19 +518,24 @@ mod tests {
     /// half of 100 and pass; judged as they stood, each from the tenth on
     /// was given by a rater rating everyone down, and never counts. The
     /// first nine were too few to judge, as for any new rater.
+    /// Hours apart, or as fast as a chain allows -- two microseconds a
+    /// rating, its two links one apart -- so all hundred fall within a
+    /// thousandth of a second.
     #[test]
     fn later_thumbs_up_never_make_earlier_unfair_downs_count() {
-        let rater = AgentPubKey::from_raw_36(vec![7; 36]);
-        let ups: Vec<bool> = (0..100).map(|i| i >= 50).collect();
-        let links = ratings(&rater, &ups);
-        let now = Timestamp::from_micros(101 * 3_600_000_000);
-        let downs: Vec<usize> = (0..50).collect();
-        assert!(fair_at(&rater, &links, &downs, false, now).iter().all(|fair| *fair), "judged now, 50 of 100 down passes");
-        let anchored = fair_at(&rater, &links, &downs, true, now);
-        assert!(anchored[..9].iter().all(|fair| *fair), "too few ratings to judge yet");
-        assert!(anchored[9..].iter().all(|fair| !*fair), "every later down was unfair when given");
-        let ups_at = fair_at(&rater, &links, &[50, 99], true, now);
-        assert_eq!(ups_at, vec![false, true], "the first thumbs-up came from a rater rating nearly everyone down; by the last, half their ratings are up, which the network allows");
+        for step in [3_600_000_000, 2] {
+            let rater = AgentPubKey::from_raw_36(vec![7; 36]);
+            let ups: Vec<bool> = (0..100).map(|i| i >= 50).collect();
+            let links = ratings(&rater, &ups, step);
+            let now = Timestamp::from_micros(101 * step);
+            let downs: Vec<usize> = (0..50).collect();
+            assert!(fair_at(&rater, &links, &downs, false, now).iter().all(|fair| *fair), "judged now, 50 of 100 down passes");
+            let anchored = fair_at(&rater, &links, &downs, true, now);
+            assert!(anchored[..9].iter().all(|fair| *fair), "too few ratings to judge yet");
+            assert!(anchored[9..].iter().all(|fair| !*fair), "every later down was unfair when given (step {step})");
+            let ups_at = fair_at(&rater, &links, &[50, 99], true, now);
+            assert_eq!(ups_at, vec![false, true], "the first thumbs-up came from a rater rating nearly everyone down; by the last, half their ratings are up, which the network allows");
+        }
     }
 
     #[test]

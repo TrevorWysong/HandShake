@@ -121,13 +121,13 @@ pub(crate) fn settled_each_until(bases: Vec<AnyLinkableHash>, until: &[Option<Ti
     settle_windows(bases.len(), longest, read, settles, otherwise)
 }
 
-/// The links a window takes: made after the first time, and -- for one
-/// ending at a given time, not now -- before the second. A second's slack
-/// takes in links written in the same call as the one it ends at.
+/// The links a window takes, both bounds inclusive as Holochain's are: made
+/// from the first time and -- for one ending at a given time, not now --
+/// up to the second, and nothing after it.
 pub(crate) fn window_bounds(until: Option<Timestamp>, now: Timestamp, window: std::time::Duration) -> (Timestamp, Option<Timestamp>) {
     let end = until.unwrap_or(now);
     let after = (end - window).unwrap_or(Timestamp::from_micros(0));
-    (after, until.map(|end| Timestamp::from_micros(end.as_micros().saturating_add(1_000_000))))
+    (after, until)
 }
 
 /// The steps of `settled_each`, over `count` bases whose links in a window
