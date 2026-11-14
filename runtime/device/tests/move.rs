@@ -111,6 +111,23 @@ async fn introduce(nodes: &[&Node]) {
     }
 }
 
+/// An admin call, tried again while the conductor's database is locked for
+/// a moment -- as it is while it integrates what it's been sent -- and only
+/// then: anything else fails the test.
+async fn while_busy<T, E: std::fmt::Debug, F: std::future::Future<Output = Result<T, E>>>(what: &str, mut call: impl FnMut() -> F) -> T {
+    let mut tries = 0;
+    loop {
+        match call().await {
+            Ok(value) => return value,
+            Err(error) if tries < 10 && format!("{error:?}").contains("database is locked") => {
+                tries += 1;
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            Err(error) => panic!("couldn't {what}: {error:?}"),
+        }
+    }
+}
+
 /// A zome call to `node`'s app, as its UI would make it: the answer, or the
 /// zome's refusal as text.
 /// Connected once per install of the app -- each authorization of signing
@@ -126,22 +143,10 @@ async fn app_ws(node: &Node) -> AppWebsocket {
         }
     }
     let signer = ClientAgentSigner::default();
-    // A busy conductor can find its database locked for a moment while it
-    // integrates what it's been sent: that's tried again, anything else isn't.
-    let mut tries = 0;
-    let credentials = loop {
-        match node.admin.authorize_signing_credentials(AuthorizeSigningCredentialsPayload { cell_id: cell.cell_id.clone(), functions: None }).await {
-            Ok(credentials) => break credentials,
-            Err(error) if tries < 10 && format!("{error:?}").contains("database is locked") => {
-                tries += 1;
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
-            Err(error) => panic!("couldn't authorize signing: {error:?}"),
-        }
-    };
+    let credentials = while_busy("authorize signing", || node.admin.authorize_signing_credentials(AuthorizeSigningCredentialsPayload { cell_id: cell.cell_id.clone(), functions: None })).await;
     signer.add_credentials(cell.cell_id.clone(), credentials);
-    let port = node.admin.attach_app_interface(0, None, AllowedOrigins::Any, None).await.unwrap();
-    let token = node.admin.issue_app_auth_token(IssueAppAuthenticationTokenPayload::for_installed_app_id(info.installed_app_id.clone())).await.unwrap().token;
+    let port = while_busy("attach an app interface", || node.admin.attach_app_interface(0, None, AllowedOrigins::Any, None)).await;
+    let token = while_busy("issue an app token", || node.admin.issue_app_auth_token(IssueAppAuthenticationTokenPayload::for_installed_app_id(info.installed_app_id.clone()))).await.token;
     let ws = AppWebsocket::connect(("127.0.0.1", port), token, signer.into(), None).await.unwrap();
     *cached = Some((cell.cell_id.clone(), ws.clone()));
     ws
