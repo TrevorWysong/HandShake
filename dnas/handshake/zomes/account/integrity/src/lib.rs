@@ -79,7 +79,12 @@ const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::v
 
 #[hdk_extern]
 pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
-    match classify(op.flattened::<EntryTypes, LinkTypes>()?)? {
+    let flat = op.flattened::<EntryTypes, LinkTypes>()?;
+    // Every integrity zome is shown a chain's close: this one rules on it.
+    if let FlatOp::CreateRecord(OpRecord::CloseChain { new_target, action }) | FlatOp::AgentActivity(OpActivity::CloseChain { new_target, action }) = &flat {
+        return validate_close(new_target.as_ref(), action);
+    }
+    match classify(flat)? {
         Checked::Create { entry, action } => match entry {
             EntryTypes::RecoveryPlan(plan) => validate_plan(&plan, action.author()),
             EntryTypes::Vouch(vouch) => validate_vouch(&vouch, action.author(), action.timestamp(), action.prev_action()),
@@ -247,14 +252,39 @@ fn validate_parcel(parcel: &Parcel, author: &AgentPubKey) -> ExternResult<Valida
 }
 
 /// An account moves on to another network: this one can't be its own next
-/// version. Its first migration is the one that counts, which readers take
-/// (account coordinator, `first_migration_of`): checking here that it's the
-/// only one would mean walking the account's whole chain, however long.
+/// version. The one that counts is the one its chain closes right after
+/// (`validate_close`), which readers take (account coordinator,
+/// `closing_migration`): one recorded and never closed behind moves
+/// nothing.
 fn validate_migration(migration: &Migration, _author: &AgentPubKey, prev_action: Option<&ActionHash>) -> ExternResult<ValidateCallbackResult> {
     if prev_action.is_none() {
         return invalid("a migration can't open a chain");
     }
     require(migration.network != dna_info()?.hash, "an account migrates to another network")
+}
+
+/// A chain closes only to move: right after its account records the move
+/// -- its `Migration`, then that migration's link to its successor -- and
+/// for the network the migration names. So the close, the link and the
+/// migration are one certificate, the chain's last three actions: no move
+/// recorded and then used on, no close for somewhere else, and no close
+/// that isn't a move. Each is on the author's own chain, so it's there to
+/// read.
+fn validate_close(new_target: Option<&MigrationTarget>, close: &TypedAction<CloseChainData>) -> ExternResult<ValidateCallbackResult> {
+    let Some(MigrationTarget::Dna(network)) = new_target else { return invalid("a chain closes only to move to another network") };
+    let Some(link_ref) = close.prev_action() else { return invalid("a chain can't close before it opens") };
+    let link = must_get_action(link_ref.clone())?;
+    let ActionData::CreateLink(data) = &link.action().data else { return invalid("a chain closes right after its account records its move") };
+    if LinkTypes::from_type(*data.zome_index, *data.link_type)? != Some(LinkTypes::SuccessorToMigration) {
+        return invalid("a chain closes right after its account records its move");
+    }
+    let Some(migration_ref) = link.action().prev_action() else { return invalid("a chain closes right after its account records its move") };
+    if data.target_address != AnyLinkableHash::from(migration_ref.clone()) {
+        return invalid("a chain closes right after the move its link names");
+    }
+    let record = must_get_valid_record(migration_ref.clone())?;
+    let Some(migration) = decode::<Migration>(&record) else { return invalid("a chain closes right after its account records its move") };
+    require(&migration.network == network, "a chain closes for the network its move names")
 }
 
 /// An account arrives once, from another network.

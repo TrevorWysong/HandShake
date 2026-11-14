@@ -114,15 +114,22 @@ mod test_utils {
         pub network: DnaHash,
         pub successor: AgentPubKey,
         pub closes_to: DnaHash,
+        /// Writes something between the move and the close.
+        #[serde(default)]
+        pub in_between: bool,
     }
 
     /// What a modified app could do: record a move to `network`, linked to
     /// its successor as a real one is, then close the chain for another
-    /// network -- so a test can prove no arrival takes it for a move.
+    /// network, or with something written between -- so a test can prove
+    /// validation refuses the close.
     #[hdk_extern]
-    pub fn migrate_closing_elsewhere_for_testing(input: MisleadingMove) -> ExternResult<ActionHash> {
+    pub fn migrate_misleadingly_for_testing(input: MisleadingMove) -> ExternResult<ActionHash> {
         let hash = create_entry(&EntryTypes::Migration(account_integrity::Migration { network: input.network, successor: input.successor.clone() }))?;
-        create_link(input.successor, hash.clone(), LinkTypes::SuccessorToMigration, ())?;
+        create_link(input.successor.clone(), hash.clone(), LinkTypes::SuccessorToMigration, ())?;
+        if input.in_between {
+            create_link(input.successor, hash.clone(), LinkTypes::SuccessorToMigration, ())?;
+        }
         close_chain(Some(MigrationTarget::Dna(input.closes_to)))?;
         Ok(hash)
     }

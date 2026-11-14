@@ -102,10 +102,28 @@ pub fn chain_closed(agent: AgentPubKey) -> ExternResult<Option<Closed>> {
     })
 }
 
-/// The close of `account`'s chain, if it closed for `network`: one closed
-/// with no target, or for another network, is no move there.
-fn closed_for(account: &AgentPubKey, network: &DnaHash) -> ExternResult<Option<ActionHash>> {
-    Ok(chain_closed(account.clone())?.filter(|closed| closed.network.as_ref() == Some(network)).map(|closed| closed.close))
+/// Where `migration` -- `account`'s, naming `network` -- stands: its close,
+/// if the chain closed right behind it, for that network (`Some(Some)`);
+/// not closed yet, and the account's first (`Some(None)`); or no move at
+/// all (`None`): one recorded and then closed behind another, or
+/// recorded after another and never closed.
+fn standing(account: &AgentPubKey, migration: &ActionHash, network: &DnaHash) -> ExternResult<Option<Option<ActionHash>>> {
+    match closing_migration(account)? {
+        Some((closed_behind, close, target)) => Ok((&closed_behind == migration && target.as_ref() == Some(network)).then_some(Some(close))),
+        None => Ok((first_migration_of(account)?.as_ref() == Some(migration)).then_some(None)),
+    }
+}
+
+/// The migration `account`'s chain closed right behind, its close, and the
+/// network the close names -- `None` if the chain hasn't closed. The only
+/// move that counts: validation has a chain close right after its
+/// migration and that migration's link (`validate_close`).
+pub(crate) fn closing_migration(account: &AgentPubKey) -> ExternResult<Option<(ActionHash, ActionHash, Option<DnaHash>)>> {
+    let Some(Closed { network, close }) = chain_closed(account.clone())? else { return Ok(None) };
+    let closed = handshake_coordinator_support::arrived(&close)?;
+    let Some(link_ref) = closed.action().prev_action() else { return Ok(None) };
+    let link = handshake_coordinator_support::arrived(link_ref)?;
+    Ok(link.action().prev_action().map(|migration| (migration.clone(), close, network)))
 }
 
 /// An account moved to the next network.
@@ -121,10 +139,9 @@ pub struct MigrationRequest {
     pub close: Option<ActionHash>,
 }
 
-/// `account`'s first migration -- the only one that counts. An account
-/// moves once: its chain closes behind the move, and a modified app that
-/// wrote a second before closing gets nothing for it (validation leaves
-/// this to readers, so it never walks a long chain to check).
+/// `account`'s first migration: the one shown as on its way while its
+/// chain's close hasn't been seen here yet. Once it has, the one that
+/// counts is the one the close is right behind (`closing_migration`).
 pub(crate) fn first_migration_of(account: &AgentPubKey) -> ExternResult<Option<ActionHash>> {
     let filter = ChainQueryFilter::new().entry_type(EntryType::try_from(UnitEntryTypes::Migration)?);
     Ok(handshake_coordinator_support::agent_activity(account.clone(), filter)?.into_iter().min_by_key(|(seq, _)| *seq).map(|(_, hash)| hash))
@@ -143,10 +160,7 @@ pub fn migrations_to_me(_: ()) -> ExternResult<Vec<MigrationRequest>> {
             continue;
         }
         let account = record.action().author().clone();
-        if first_migration_of(&account)?.as_ref() != Some(record.action_address()) {
-            continue;
-        }
-        let close = closed_for(&account, &migration.network)?;
+        let Some(close) = standing(&account, record.action_address(), &migration.network)? else { continue };
         found.push(MigrationRequest { migration: record.action_address().clone(), account, successor: migration.successor, network: migration.network, requested_at: record.action().timestamp(), close });
     }
     Ok(found)
@@ -185,10 +199,7 @@ pub fn get_migration(migration: ActionHash) -> ExternResult<Option<MigrationRequ
     let Some(record) = get(migration.clone(), GetOptions::default())? else { return Ok(None) };
     let Some(m) = decoded::<Migration>(&record) else { return Ok(None) };
     let account = record.action().author().clone();
-    if first_migration_of(&account)?.as_ref() != Some(&migration) {
-        return Ok(None);
-    }
-    let close = closed_for(&account, &m.network)?;
+    let Some(close) = standing(&account, &migration, &m.network)? else { return Ok(None) };
     Ok(Some(MigrationRequest { migration, account, successor: m.successor, network: m.network, requested_at: record.action().timestamp(), close }))
 }
 

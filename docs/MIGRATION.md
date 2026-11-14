@@ -37,6 +37,20 @@ The old app makes one call, `account::migrate_out`:
 
 Holochain rejects anything after the close: since 0.7.1 the author's own conductor refuses to write it, and the network's authorities reject it.
 
+**The certificate is the chain's last three actions.** Validation (`account_integrity::validate_close`) lets a chain close only right after its account's `Migration` and that migration's link, for the network the migration names. So:
+- no move can be recorded and then used on: the close is right behind it, and nothing comes after the close;
+- no chain can close for somewhere else, or with no target;
+- no chain can close without a move.
+
+Readers take the migration the close is right behind (`closing_migration`), and the new network reads that close through the bridge. It doesn't take a client's word for it. Leaving is one call, which commits whole or not at all, so there's no in-between state to freeze or resume. Arriving is safe to repeat: `arrive` returns the arrival already made.
+
+**What the old network can't check, and why that's sound.** The refusal above runs in the leaving app. Validation can't repeat it, because an account's obligations live partly on other people's chains: the orders it's in, and a ruling it owes a refund on. A modified app could close its chain with an order in progress. That's no more than any account can already do by switching its app off for good, so every obligation is built to resolve without the party who left:
+- an order goes on through its other parties and its deadlines;
+- a driver who vanishes forfeits their collateral to the store;
+- a hold its payee never settles lapses uncharged.
+
+Nothing that happens on the old network afterwards is left behind either. The new network reads the old one's reputation live through the bridge (`get_reputation_summary`), so a no-show the store records after the driver's chain closed still counts against them on the new version.
+
 ### 3. Money
 
 There's no balance to carry: money never lived on the network ([DIRECT_PAYMENTS.md](DIRECT_PAYMENTS.md)). A store or driver connects their processor account on the new version, and payers' cards are held by whoever they pay there.
