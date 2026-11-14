@@ -60,6 +60,7 @@ pub fn validate_create_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCall
         }
         LinkTypes::DriverToVerification => crate::verification::validate_verification_link(&link),
         LinkTypes::OrderToAppeal | LinkTypes::ArbiterToAppeal | LinkTypes::AppealToAnswer | LinkTypes::AppealToRuling | LinkTypes::StoreOwnerToRuling | LinkTypes::StoreOwnerToAppeal => crate::appeals::validate_appeal_link(&link),
+        LinkTypes::CustomerToServedOrder => validate_served_link(&link),
         LinkTypes::OwnerToTemplate => {
             let Some(record) = linked_record(link.target)? else { return invalid("target is not a record") };
             require(
@@ -165,8 +166,27 @@ fn validate_open_order_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCal
     invalid("an open order may only be published under its store's cell's current anchor")
 }
 
+/// A store's record of serving a customer: by the store, at the version it
+/// wrote accepting the order, under the order's customer, tagged with the
+/// order's original action.
+fn validate_served_link(link: &OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
+    let Some(version) = link.target.clone().into_action_hash() else { return invalid("a served order is a version of an order") };
+    let record = must_get_valid_record(version.clone())?;
+    let (merchant, requester, accepting) = match (decode::<DeliveryOrder>(&record), decode::<PickupOrder>(&record)) {
+        (Some(order), _) => (order.merchant, order.requester, order.status == DeliveryStatus::Open),
+        (None, Some(order)) => (order.merchant, order.requester, order.status == PickupStatus::MerchantConfirmed),
+        _ => return invalid("a served order is a version of an order"),
+    };
+    let original = original_creation(version)?;
+    require(
+        accepting && record.action().author() == link.author && &merchant == link.author && link.base == &AnyLinkableHash::from(requester) && link.tag.0 == original.get_raw_39(),
+        "a store records serving a customer at the version accepting their order, under them, tagged with the order",
+    )
+}
+
 pub fn validate_delete_link(link: OpLinkFields<'_>) -> ExternResult<ValidateCallbackResult> {
     match link.link_type {
+        LinkTypes::CustomerToServedOrder => invalid("the orders a store served a customer stay on their record"),
         LinkTypes::OpenOrderGeohashAnchor | LinkTypes::OrderToBid | LinkTypes::OwnerToTemplate | LinkTypes::PromoToOrder | LinkTypes::BagToOrder | LinkTypes::OrderToConfirmation | LinkTypes::OrderToPayment | LinkTypes::AgentToForgottenCard | LinkTypes::OrderToArrivalEvidence | LinkTypes::OrderToVehicleShare => invalid("this dispatch link type can't be deleted"),
         // Disconnecting a processor.
         LinkTypes::AgentToPaymentProfile => require(link.base == &AnyLinkableHash::from(link.author.clone()), "only its own agent unlinks how they're paid"),

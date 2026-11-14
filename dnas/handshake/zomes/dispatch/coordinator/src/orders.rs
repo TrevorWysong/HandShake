@@ -550,6 +550,7 @@ pub fn accept_delivery_order(input: AcceptOrderInput) -> ExternResult<Record> {
     order.status = DeliveryStatus::Open;
     let updated = update_version(&current, &EntryTypes::DeliveryOrder(order.clone()), LinkTypes::Version)?;
     publish_to_open_anchor(&updated, &order, sys_time()?)?;
+    crate::issues::record_served(&order.requester, &original, &updated)?;
     crate::promos::record_promo_use(&original, promo.as_ref())?;
     crate::bags::record_bag_sales(&original, &lines)?;
     crate::acceptance::record_member_order(&original, &updated, rewards.as_ref())?;

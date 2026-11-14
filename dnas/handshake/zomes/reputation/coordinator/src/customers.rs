@@ -180,15 +180,15 @@ pub fn my_recent_deliveries(limit: u32) -> ExternResult<Vec<RecentDelivery>> {
         out.push(RecentDelivery { order, customer: terms.customer, catalog_ref: terms.catalog_ref, delivered_at: latest.action().timestamp() });
     }
     // Not one its customer reported the delivery of: that's answered, not
-    // rated.
-    let mut kept = Vec::with_capacity(out.len());
-    for delivery in out {
-        if reports_on(&delivery.customer, vec![delivery.order.clone()])?.first().is_some_and(|on| on.about(false)) {
-            continue;
-        }
-        kept.push(delivery);
+    // rated. Read a customer at a time, all their orders together.
+    let mut reported: BTreeSet<ActionHash> = BTreeSet::new();
+    let customers: BTreeSet<AgentPubKey> = out.iter().map(|delivery| delivery.customer.clone()).collect();
+    for customer in customers {
+        let orders: Vec<ActionHash> = out.iter().filter(|delivery| delivery.customer == customer).map(|delivery| delivery.order.clone()).collect();
+        let on = reports_on(&customer, orders.clone())?;
+        reported.extend(orders.into_iter().zip(on).filter(|(_, on)| on.about(false)).map(|(order, _)| order));
     }
-    Ok(kept)
+    Ok(out.into_iter().filter(|delivery| !reported.contains(&delivery.order)).collect())
 }
 
 /// A customer's score, as stores and drivers -- and the customer -- read it.
@@ -278,36 +278,40 @@ pub fn get_customer_score(customer: AgentPubKey) -> ExternResult<CustomerScore> 
 /// store (enough completed orders from enough different customers) or
 /// driver (deliveries recorded by enough different stores) -- so a store or
 /// account made to rate doesn't -- who, having rated enough customers,
-/// doesn't rate more of them down than the network allows. Three batched
-/// reads, whatever the number of raters.
+/// doesn't rate more of them down than the network allows. Each check reads
+/// the shortest window that settles it (`settled_each`), batched across the
+/// raters, so a busy rater costs a day of links, not months of them.
 fn counted(words: &[Word]) -> ExternResult<Vec<bool>> {
     let window = handshake_governance::rater_window();
-    let ratings = within_each(words.iter().map(|word| word.rater.clone().into()).collect(), LinkTypes::RaterToRating, window)?;
-    let stores: Vec<&ActionHash> = words.iter().filter_map(|word| word.store.as_ref()).collect();
-    let drivers: Vec<&AgentPubKey> = words.iter().filter(|word| word.store.is_none()).map(|word| &word.rater).collect();
-    let mut store_events = within_each(stores.iter().map(|store| (*store).clone().into()).collect(), LinkTypes::StoreToEvent, window)?.into_iter();
-    let mut driver_events = within_each(drivers.iter().map(|driver| (*driver).clone().into()).collect(), LinkTypes::DriverToEvent, window)?.into_iter();
-    let mut out = Vec::with_capacity(words.len());
-    for (word, ratings) in words.iter().zip(ratings) {
+    let fair = settled_each(words.iter().map(|word| word.rater.clone().into()).collect(), LinkTypes::RaterToRating, window, &|at, links| rates_fairly(&words[at].rater, links, FAIRNESS_SAMPLE), &|at, links| rates_fairly(&words[at].rater, links, 0).unwrap_or(true))?;
+    let stores: Vec<(ActionHash, AgentPubKey)> = words.iter().filter_map(|word| word.store.clone().map(|store| (store, word.rater.clone()))).collect();
+    let drivers: Vec<AnyLinkableHash> = words.iter().filter(|word| word.store.is_none()).map(|word| word.rater.clone().into()).collect();
+    let mut stores_ok = crate::findings::stores_established(stores, window)?.into_iter();
+    let mut drivers_ok = delivered_for_enough(drivers, window)?.into_iter();
+    Ok(words.iter().zip(fair).map(|(word, fair)| {
         let established = match word.store {
-            Some(_) => crate::findings::established_in(&store_events.next().unwrap_or_default(), &word.rater),
-            None => stores_in(&driver_events.next().unwrap_or_default()) >= handshake_governance::min_reporter_stores(),
+            Some(_) => stores_ok.next().unwrap_or(false),
+            None => drivers_ok.next().unwrap_or(false),
         };
-        out.push(established && rates_fairly(&word.rater, &ratings));
-    }
-    Ok(out)
+        established && fair
+    }).collect())
 }
 
-/// Whether a rater's ratings count: not one who, having rated enough
-/// customers, rates more of them down than the network allows.
-fn rates_fairly(rater: &AgentPubKey, links: &[Link]) -> bool {
+/// How many of a rater's latest ratings judge their fairness, at least: a
+/// day of ratings can't wash out the months before it.
+const FAIRNESS_SAMPLE: u32 = 50;
+
+/// Whether a rater's ratings count, once `links` hold at least `sample` of
+/// theirs and `min_rater_ratings`: not one who rates more of the customers
+/// they rated down than the network allows. Too few to judge: `None`.
+fn rates_fairly(rater: &AgentPubKey, links: &[Link], sample: u32) -> Option<bool> {
     let mine: Vec<&Link> = links.iter().filter(|link| &link.author == rater).collect();
     let total = mine.len() as u32;
-    if total < handshake_governance::min_rater_ratings() {
-        return true;
+    if total < handshake_governance::min_rater_ratings().max(sample) {
+        return None;
     }
     let down = mine.iter().filter(|link| link.tag.0.get(39) == Some(&0)).count() as u32;
-    down * 100 <= total * u32::from(handshake_governance::max_rater_down_percent())
+    Some(down * 100 <= total * u32::from(handshake_governance::max_rater_down_percent()))
 }
 
 fn customer_reason(index: u8) -> CustomerReason {

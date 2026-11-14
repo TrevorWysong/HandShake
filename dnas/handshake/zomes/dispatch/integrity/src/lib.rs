@@ -175,6 +175,11 @@ pub enum LinkTypes {
     StoreToNewcomerCard,
     /// A payee's busy records, base = the payee.
     PayeeToBusy,
+    /// An order a store accepted, base = its customer, target = the version
+    /// accepting it, tagged with the order's original action: written by the
+    /// store, so a customer's report pattern counts orders they can't leave
+    /// out of their own history (docs/REPUTATION.md, phase 4).
+    CustomerToServedOrder,
 }
 
 const _: () = assert!(LinkTypes::Version as u8 == handshake_integrity_support::versions::VERSION_LINK_TYPE, "Version must be the first link type");

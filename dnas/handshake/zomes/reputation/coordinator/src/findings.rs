@@ -253,8 +253,14 @@ impl Standing {
 /// customers, for its findings to count: one just opened -- or opened to
 /// flag -- doesn't. Its owner's own completions don't count toward either.
 fn established(catalog: &ActionHash, owner: &AgentPubKey) -> ExternResult<bool> {
-    let (base, link_type) = event_links(&ReputationTarget::Store(catalog.clone()));
-    Ok(established_in(&recent(vec![base], link_type)?, owner))
+    Ok(stores_established(vec![(catalog.clone(), owner.clone())], handshake_governance::reputation_window())?.first().copied().unwrap_or(false))
+}
+
+/// `established` for each store and its owner, within `longest`, read
+/// together.
+pub(crate) fn stores_established(stores: Vec<(ActionHash, AgentPubKey)>, longest: std::time::Duration) -> ExternResult<Vec<bool>> {
+    let enough = |at: usize, links: &[Link]| established_in(links, &stores[at].1).then_some(true);
+    settled_each(stores.iter().map(|(catalog, _)| catalog.clone().into()).collect(), LinkTypes::StoreToEvent, longest, &enough, &|_, _| false)
 }
 
 /// The same, from the store's event links already read.

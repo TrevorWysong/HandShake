@@ -90,6 +90,7 @@ mod test_utils {
     use hdk::prelude::*;
     use dispatch_integrity::LinkTypes;
     handshake_coordinator_support::raw_link_test_externs!(
+        CustomerToServedOrder,
         OpenOrderGeohashAnchor,
         OrderToBid,
         StoreToActiveOrder,

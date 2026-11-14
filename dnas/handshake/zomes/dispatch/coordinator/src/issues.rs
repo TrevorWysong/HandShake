@@ -779,8 +779,7 @@ pub struct ReportPattern {
 
 #[hdk_extern]
 pub fn get_report_pattern(customer: AgentPubKey) -> ExternResult<ReportPattern> {
-    let page = crate::order_queues::history_page(dispatch_integrity::QueueOwner::Customer(&customer), None, Some(handshake_governance::report_pattern_orders()))?;
-    let originals: Vec<ActionHash> = page.orders.iter().map(|entry| entry.original_action.clone()).collect();
+    let originals = recent_orders_of(&customer, handshake_governance::report_pattern_orders() as usize)?;
     let now = sys_time()?;
     let (mut reported, mut upheld) = (0, 0);
     for (order, issues) in originals.iter().zip(reports_by(&customer, &originals)?) {
@@ -800,6 +799,33 @@ pub fn get_report_pattern(customer: AgentPubKey) -> ExternResult<ReportPattern> 
     }
     let orders = originals.len() as u32;
     Ok(ReportPattern { orders, reported, upheld, shown: orders >= handshake_governance::min_report_pattern_orders() })
+}
+
+/// Who a store served: when it accepts an order, it records so under the
+/// customer (`CustomerToServedOrder`), so the orders a report pattern counts
+/// don't rest on the customer's own history alone.
+pub(crate) fn record_served(customer: &AgentPubKey, original: &ActionHash, accepting: &ActionHash) -> ExternResult<()> {
+    create_link(customer.clone(), accepting.clone(), LinkTypes::CustomerToServedOrder, LinkTag::new(original.get_raw_39().to_vec()))?;
+    Ok(())
+}
+
+/// A customer's `most` most recent orders, newest first: those in their own
+/// history and those stores recorded serving them, together -- so neither
+/// they nor a store can leave one out.
+fn recent_orders_of(customer: &AgentPubKey, most: usize) -> ExternResult<Vec<ActionHash>> {
+    let page = crate::order_queues::history_page(dispatch_integrity::QueueOwner::Customer(customer), None, Some(most as u32))?;
+    let placed = |record: &Record| decode_or::<DeliveryOrder>(record).map(|order| order.requested_at).or_else(|| decode_or::<PickupOrder>(record).map(|order| order.requested_at)).unwrap_or(record.action().timestamp());
+    let mut dated: Vec<(Timestamp, ActionHash)> = page.orders.iter().map(|entry| (placed(&entry.record), entry.original_action.clone())).collect();
+    let mut served = LinkQuery::try_new(customer.clone(), LinkTypes::CustomerToServedOrder)?;
+    served.after = Some((sys_time()? - handshake_governance::reputation_window()).unwrap_or(Timestamp::from_micros(0)));
+    for link in get_links(served, GetStrategy::default())? {
+        if let Ok(original) = ActionHash::try_from_raw_39(link.tag.0.clone()) {
+            dated.push((link.timestamp, original));
+        }
+    }
+    dated.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
+    let mut seen = std::collections::BTreeSet::new();
+    Ok(dated.into_iter().map(|(_, order)| order).filter(|order| seen.insert(order.clone())).take(most).collect())
 }
 
 /// The customer's report links on each order, read together.

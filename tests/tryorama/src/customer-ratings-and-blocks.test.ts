@@ -114,6 +114,11 @@ await runScenario(async (scenario) => {
   const pattern = await retryUntil(() => call(merchant, "dispatch")<{ orders: number; reported: number; upheld: number; shown: boolean }>("get_report_pattern", customer.agentPubKey), (p) => p.reported === 1);
   assert.deepEqual([pattern.reported, pattern.orders >= 2, pattern.shown], [1, true, true], "one reported, of their recent orders");
   assert.equal(pattern.upheld, 0, "none accepted yet");
+  // The orders counted include the stores' own records of serving them, which
+  // only the store writes.
+  const served = await call(merchant, "dispatch")<Uint8Array[]>("test_get_link_hashes", { link_type: "CustomerToServedOrder", base: customer.agentPubKey });
+  assert.ok(served.length >= 2, "the store recorded serving each order it accepted");
+  await assert.rejects(call(customer, "dispatch")("test_create_link", { link_type: "CustomerToServedOrder", base: customer.agentPubKey, target: reportedOrder.done, tag: Array.from(reportedOrder.order) }), /records serving a customer/, "nobody else writes the store's record");
   console.log("[PASS] a customer's report pattern counts their own reports over their orders, and what stores accepted");
 
   // ===== A reported order is answered, not rated =====

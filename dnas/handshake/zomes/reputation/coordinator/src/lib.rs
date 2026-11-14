@@ -87,6 +87,38 @@ fn within_each(bases: Vec<AnyLinkableHash>, link_type: LinkTypes, window: std::t
     get_links_many(queries)
 }
 
+/// What a threshold says about one base's links in a window -- by the
+/// base's place among those asked about: settled, or to be read over a
+/// longer one.
+type Settles<'a> = &'a dyn Fn(usize, &[Link]) -> Option<bool>;
+
+/// A threshold judged over each of `bases`' links: in the shortest of a
+/// day, a week, a month or `longest` that `settles` it, or by `otherwise`
+/// over `longest` -- so a busy party costs a day of links, never every
+/// link it ever made, and one that isn't busy has few to read anyway. Each
+/// step is one batched read, of the bases still open.
+pub(crate) fn settled_each(bases: Vec<AnyLinkableHash>, link_type: LinkTypes, longest: std::time::Duration, settles: Settles, otherwise: &dyn Fn(usize, &[Link]) -> bool) -> ExternResult<Vec<bool>> {
+    const DAY: u64 = 86_400;
+    let mut windows: Vec<std::time::Duration> = [DAY, 7 * DAY, 30 * DAY].into_iter().map(std::time::Duration::from_secs).filter(|window| *window < longest).collect();
+    windows.push(longest);
+    let mut out: Vec<Option<bool>> = vec![None; bases.len()];
+    for (step, window) in windows.iter().enumerate() {
+        let open: Vec<usize> = (0..bases.len()).filter(|at| out[*at].is_none()).collect();
+        if open.is_empty() {
+            break;
+        }
+        let last = step + 1 == windows.len();
+        let read = within_each(open.iter().map(|at| bases[*at].clone()).collect(), link_type, *window)?;
+        for (at, links) in open.into_iter().zip(read) {
+            out[at] = match last {
+                true => Some(settles(at, &links).unwrap_or_else(|| otherwise(at, &links))),
+                false => settles(at, &links),
+            };
+        }
+    }
+    Ok(out.into_iter().map(|settled| settled.unwrap_or(false)).collect())
+}
+
 /// Where a `ReviewTarget`'s reviews live.
 fn review_links(target: &ReviewTarget) -> (AnyLinkableHash, LinkTypes) {
     match target {
@@ -199,11 +231,12 @@ const CHECK_IN_REFUSED: u8 = 7;
 /// `event_tag`'s code for a completed order.
 const COMPLETED: u8 = 0;
 
-/// How many different stores have recorded a completed delivery by
-/// `driver` -- each store records its own, so each is a different agent.
-fn stores_delivered_for(driver: &AgentPubKey) -> ExternResult<u32> {
-    let (base, event_link) = event_links(&ReputationTarget::Driver(driver.clone()));
-    Ok(stores_in(&recent(vec![base], event_link)?))
+/// Whether each driver has completed deliveries for at least
+/// `min_reporter_stores` different stores, within `longest` -- each store
+/// records its own, so each is a different agent.
+pub(crate) fn delivered_for_enough(drivers: Vec<AnyLinkableHash>, longest: std::time::Duration) -> ExternResult<Vec<bool>> {
+    let enough = |_: usize, links: &[Link]| (stores_in(links) >= handshake_governance::min_reporter_stores()).then_some(true);
+    settled_each(drivers, LinkTypes::DriverToEvent, longest, &enough, &|_, _| false)
 }
 
 /// How many different stores recorded a completed delivery among a
@@ -247,7 +280,7 @@ pub fn get_reputation_summary(target: ReputationTarget) -> ExternResult<Reputati
             let counts = match seasoned.get(&reporter) {
                 Some(counts) => *counts,
                 None => {
-                    let counts = stores_delivered_for(&reporter)? >= handshake_governance::min_reporter_stores();
+                    let counts = delivered_for_enough(vec![reporter.clone().into()], handshake_governance::reputation_window())?.first().copied().unwrap_or(false);
                     seasoned.insert(reporter, counts);
                     counts
                 }

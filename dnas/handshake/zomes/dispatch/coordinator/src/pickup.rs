@@ -151,7 +151,9 @@ pub fn accept_pickup_order(input: AcceptOrderInput) -> ExternResult<Record> {
     order.customer_payment = crate::payments::step_payment(&original, &PaymentLeg::Customer, &order.merchant, "The customer's payment isn't held yet. Your app holds it as soon as their card comes through.")?;
     order.ready_by = Some(ready_by(&order.catalog_ref, input.prep_minutes)?);
     order.status = PickupStatus::MerchantConfirmed;
+    let customer = order.requester.clone();
     let updated = update_version(&current, &EntryTypes::PickupOrder(order), LinkTypes::Version)?;
+    crate::issues::record_served(&customer, &original, &updated)?;
     crate::promos::record_promo_use(&original, promo.as_ref())?;
     crate::bags::record_bag_sales(&original, &lines)?;
     crate::acceptance::record_member_order(&original, &updated, rewards.as_ref())?;
