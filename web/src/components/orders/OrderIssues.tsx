@@ -69,8 +69,8 @@ export function OrderIssues({ orderRef, role, onAnswered }: { orderRef: Uint8Arr
           <PackageX size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-bold text-ink-900 dark:text-ink-50">{headline(role, decisions, issues.length, settling, items.delivery_report_worth !== null)}</p>
-          <p className="mt-0.5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{subline(role, decisions, settling, answersUntil)}</p>
+          <p className="font-bold text-ink-900 dark:text-ink-50">{headline(role, decisions, issues, settling, items.delivery_report_worth !== null)}</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{subline(role, decisions, issues, settling, answersUntil)}</p>
         </div>
       </div>
 
@@ -129,23 +129,31 @@ export function OrderIssues({ orderRef, role, onAnswered }: { orderRef: Uint8Arr
   );
 }
 
-function headline(role: Role, decisions: OrderDecisions, count: number, settling: boolean, anyProblem: boolean): string {
+/// Every report has the store's answer, while the customer may still add one.
+const allAnswered = (issues: IssueView[]) => issues.length > 0 && issues.every((issue) => issue.accepted !== null);
+
+function headline(role: Role, decisions: OrderDecisions, issues: IssueView[], settling: boolean, anyProblem: boolean): string {
   const refund = decisions.refund;
+  const count = issues.length;
   if (refund !== null) return refund > 0 ? translate("issues.refunded", { amount: formatCents(refund) }) : role === "store" ? translate("issues.noRefund") : translate("issues.declined");
   if (settling) return translate("issues.settling");
-  if (role === "store") return translate("issues.storeReported", { count });
+  if (role === "store") return allAnswered(issues) ? translate("issues.storeAnswered", { count }) : translate("issues.storeReported", { count });
   return count ? translate("issues.reportIn") : translate(anyProblem ? "issues.askAny" : "issues.ask");
 }
 
-function subline(role: Role, decisions: OrderDecisions, settling: boolean, answersUntil: number | null): string {
+function subline(role: Role, decisions: OrderDecisions, issues: IssueView[], settling: boolean, answersUntil: number | null): string {
   if (decisions.refund !== null) {
     const refunded = decisions.refund > 0;
     if (role === "customer") return translate(refunded ? "issues.returned" : "issues.chargedInFull");
     return translate(refunded ? "issues.restYours" : "issues.allYours");
   }
   if (settling) return translate("issues.windowClosed");
-  if (role === "store") return answersUntil !== null ? translate("issues.storeAnswerBy", { time: formatDeadline(answersUntil) }) : translate("issues.storeAnswer");
   const until = decisions.reports_until !== null ? formatDeadline(decisions.reports_until) : null;
+  if (role === "store") {
+    if (allAnswered(issues)) return until ? translate("issues.storeAnsweredUntil", { time: until }) : translate("issues.storeAnsweredSoon");
+    return answersUntil !== null ? translate("issues.storeAnswerBy", { time: formatDeadline(answersUntil) }) : translate("issues.storeAnswer");
+  }
+  if (issues.length > 0) return until ? translate("issues.reportedUntil", { time: until }) : translate("issues.reportForAWhile");
   return until ? translate("issues.reportUntil", { time: until }) : translate("issues.reportForAWhile");
 }
 

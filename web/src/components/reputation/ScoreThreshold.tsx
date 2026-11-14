@@ -2,7 +2,7 @@
 // (docs/REPUTATION.md, phase 4): below it, the store's auto-accept holds an
 // order for review, or the driver's automatic bidding passes it by. Off by
 // default; a customer with no score shown yet is never below it.
-import { Chip } from "../ui";
+import { SegmentedTabs } from "../ui";
 import { SCORE_THRESHOLDS } from "../../lib/reputation/customers";
 import { useT } from "../../i18n";
 
@@ -12,13 +12,13 @@ export function ScoreThreshold({ label, detail, value, onChange, disabled }: { l
     <div className="mt-3 border-t border-ink-100 pt-3 dark:border-ink-800">
       <p className="text-xs font-semibold text-ink-600 dark:text-ink-300">{label}</p>
       <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-ink-400">{detail}</p>
-      <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label={label}>
-        <Chip active={value === null} onClick={() => !disabled && onChange(null)}>{t("scoreThreshold.off")}</Chip>
-        {SCORE_THRESHOLDS.map((percent) => (
-          <Chip key={percent} active={value === percent} onClick={() => !disabled && onChange(percent)}>
-            {t("scoreThreshold.below", { percent })}
-          </Chip>
-        ))}
+      <div className="mt-2">
+        <SegmentedTabs
+          label={label}
+          tabs={[{ value: "off", label: t("scoreThreshold.off") }, ...SCORE_THRESHOLDS.map((percent) => ({ value: String(percent), label: t("scoreThreshold.percent", { percent }) }))]}
+          value={value === null ? "off" : String(value)}
+          onChange={(to) => !disabled && onChange(to === "off" ? null : Number(to))}
+        />
       </div>
     </div>
   );

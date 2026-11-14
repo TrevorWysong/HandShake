@@ -31,7 +31,11 @@ export function MyCustomerRecord({ me }: { me: AgentPubKey }) {
       more={!!findings && findings.length > 0}
       title="ownRecord.customer.title"
       seenBy="ownRecord.customer.seenBy"
-      how={(["what", "who", "recover", "wrong", "reports", "findings"] as const).map((part) => ({ title: t(`ownRecord.customer.${part}`), body: t(`ownRecord.customer.${part}Detail`, { days, stores: terms.min_flagging_stores, orders: terms.report_pattern_orders }) }))}
+      how={[
+        ...(["what", "who", "recover", "wrong"] as const).map((part) => ({ title: t(`ownRecord.customer.${part}`), body: t(`ownRecord.customer.${part}Detail`, { days }) })),
+        { title: t("score.yours"), body: t("score.yoursDetail", { window: terms.customer_rating_window }) },
+        ...(["reports", "findings"] as const).map((part) => ({ title: t(`ownRecord.customer.${part}`), body: t(`ownRecord.customer.${part}Detail`, { stores: terms.min_flagging_stores, orders: terms.report_pattern_orders }) })),
+      ]}
     >
       <OwnScore me={me} />
       <OwnReports me={me} />
@@ -56,7 +60,6 @@ function OwnScore({ me }: { me: AgentPubKey }) {
       ) : (
         <ul className="mt-1"><ScoreLine score={score} percent={percent} /></ul>
       )}
-      <p className="mt-1 text-[0.6875rem] leading-relaxed text-ink-400">{t("score.yoursDetail", { window: terms.customer_rating_window })}</p>
     </div>
   );
 }
@@ -73,17 +76,16 @@ function OwnReports({ me }: { me: AgentPubKey }) {
     <div className="mt-4 border-t border-ink-100 pt-4 dark:border-ink-800">
       <h3 className="text-xs font-bold uppercase tracking-wide text-ink-400">{t("reportPattern.yours")}</h3>
       {pattern.shown ? (
-        <p className="mt-1 text-[0.6875rem] text-ink-600 dark:text-ink-300">
-          <span className="flex items-center gap-1 font-semibold">
-            <History size={12} className="shrink-0" aria-hidden />
+        <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+          <span className="flex items-center gap-1.5">
+            <History size={14} className="shrink-0 text-ink-400" aria-hidden />
             {t("reportPattern.yoursLine", { reported: pattern.reported, count: pattern.orders })}
           </span>
-          {pattern.reported > 0 && <span className="block pl-4 text-ink-500 dark:text-ink-400">{t("reportPattern.yoursUpheld", { count: pattern.upheld })}</span>}
+          {pattern.reported > 0 && <span className="block pl-5 text-xs text-ink-500 dark:text-ink-400">{t("reportPattern.yoursUpheld", { count: pattern.upheld })}</span>}
         </p>
       ) : (
         <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">{t("reportPattern.notYet", { count: pattern.orders, min: terms.min_report_pattern_orders })}</p>
       )}
-      <p className="mt-1 text-[0.6875rem] leading-relaxed text-ink-400">{t("reportPattern.yoursDetail")}</p>
     </div>
   );
 }

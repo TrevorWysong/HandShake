@@ -55,14 +55,9 @@ export function Earnings() {
           {rep === undefined && repError ? (
             <LoadProblem compact error={repError} onRetry={reloadRep} />
           ) : rep === undefined ? (
-            <div className="grid grid-cols-2 gap-3">
-              <Skeleton className="h-16" />
-              <Skeleton className="h-16" />
-              <Skeleton className="h-16" />
-              <Skeleton className="h-16" />
-            </div>
+            <Skeleton className="h-48 w-full" />
           ) : (
-            <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-3 text-sm">
+            <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="divide-y divide-ink-100 rounded-xl bg-ink-50 px-3 text-sm dark:divide-ink-800 dark:bg-ink-800/60">
               <Stat label={t("earnings.completed")} value={rep.completed_count} tone="success" />
               <Stat label={t("earnings.dropped")} value={rep.dropped_count} tone={rep.dropped_count > 0 ? "danger" : "default"} />
               <Stat label={t("earnings.disputes")} value={rep.dispute_raised_count} />
@@ -79,9 +74,9 @@ export function Earnings() {
 
 function Stat({ label, value, tone = "default" }: { label: string; value: number; tone?: "default" | "success" | "danger" }) {
   return (
-    <motion.div variants={fadeSlideUp} className="rounded-xl bg-ink-50 dark:bg-ink-800/60 p-3">
-      <StatNumber tone={tone} className="text-lg">{value}</StatNumber>
-      <p className="text-xs text-ink-400">{label}</p>
+    <motion.div variants={fadeSlideUp} className="flex items-center justify-between gap-3 py-2.5">
+      <p className="text-ink-600 dark:text-ink-300">{label}</p>
+      <StatNumber tone={tone} className="text-base">{value}</StatNumber>
     </motion.div>
   );
 }

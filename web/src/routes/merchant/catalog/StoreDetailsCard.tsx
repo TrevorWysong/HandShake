@@ -267,14 +267,15 @@ export function AutoAcceptCard({ catalog, catalogRef, onSaved }: { catalog: Merc
   );
 }
 
-/// How many held orders lapsed unreviewed this past week: holding below a
-/// score never quietly becomes a ban by score (docs/REPUTATION.md, phase 4).
+/// How many held orders lapsed unreviewed this past week, once any have:
+/// holding below a score never quietly becomes a ban by score
+/// (docs/REPUTATION.md, phase 4).
 const LAPSED_DAYS = 7;
 
 function LapsedHolds({ catalogRef }: { catalogRef: Uint8Array }) {
   const t = useT();
   const { data: lapsed } = useResource(`lapsed-holds:${bytesToHex(catalogRef)}`, () => lapsedHolds(catalogRef, LAPSED_DAYS));
-  if (lapsed === undefined) return null;
+  if (!lapsed) return null;
   return <p className="mt-2 text-xs leading-relaxed text-ink-500 dark:text-ink-400">{t("storeSettings.lapsedHolds", { count: lapsed, days: LAPSED_DAYS })}</p>;
 }
 

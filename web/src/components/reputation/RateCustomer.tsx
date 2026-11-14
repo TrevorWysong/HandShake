@@ -1,10 +1,12 @@
 // The store or the driver rating an order's customer, once (docs/
 // REPUTATION.md, phase 4): a thumbs-up, or a thumbs-down with a reason from
 // a fixed list -- never about tipping. The customer sees how many of each,
-// never who gave them.
+// never who gave them. A store never rates a customer who reported the
+// order -- it answers the report instead -- so it isn't asked to.
 import { useState } from "react";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { myCustomerRating, rateCustomer } from "../../holochain/zomes/reputation";
+import { getIssuesForOrder } from "../../holochain/zomes/dispatch";
 import { bytesToHex } from "../../holochain/decode";
 import type { CustomerReason } from "../../holochain/types";
 import { CUSTOMER_REASONS, CUSTOMER_REASON_LABEL } from "../../lib/reputation/customers";
@@ -13,9 +15,12 @@ import { useAction } from "../../lib/hooks/useAction";
 import { Button, Chip, Notice } from "../ui";
 import { useT } from "../../i18n";
 
-export function RateCustomer({ order, className }: { order: Uint8Array; className?: string }) {
+export function RateCustomer({ order, asStore = false, className }: { order: Uint8Array; asStore?: boolean; className?: string }) {
   const t = useT();
-  const { data: mine, reload } = useResource(`my-customer-rating:${bytesToHex(order)}`, () => myCustomerRating(order));
+  const hex = bytesToHex(order);
+  const { data: mine, reload } = useResource(`my-customer-rating:${hex}`, () => myCustomerRating(order));
+  // Only read while there's still a rating to give.
+  const { data: reports } = useResource(asStore && mine === null ? `issues:${hex}` : null, () => getIssuesForOrder(order));
   const [down, setDown] = useState(false);
   const [reason, setReason] = useState<CustomerReason | null>(null);
   const rating = useAction();
@@ -25,6 +30,7 @@ export function RateCustomer({ order, className }: { order: Uint8Array; classNam
   });
 
   if (mine === undefined) return null;
+  if (asStore && !mine && (reports === undefined || reports.length > 0)) return null;
   if (mine) {
     return (
       <p className={`flex items-center gap-1.5 text-xs text-ink-500 dark:text-ink-400 ${className ?? ""}`} role="status">

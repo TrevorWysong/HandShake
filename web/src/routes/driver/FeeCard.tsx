@@ -35,9 +35,9 @@ export function FeeCard() {
       </div>
       {autoBid.on && (
         <>
-          <label className="block text-xs font-semibold text-ink-500">
+          <label className="flex items-center justify-between gap-3 text-xs font-semibold text-ink-500">
             {t("driverSettings.skip")}
-            <Input type="number" min={1} step={1} value={autoBid.skipRefusals} onChange={(e) => setAutoBid({ skipRefusals: Math.max(1, Math.round(Number(e.target.value)) || 1) })} suffix={t("driverSettings.times")} className="mt-1 py-1.5 text-sm" />
+            <Input type="number" min={1} step={1} value={autoBid.skipRefusals} onChange={(e) => setAutoBid({ skipRefusals: Math.max(1, Math.round(Number(e.target.value)) || 1) })} suffix={t("driverSettings.times")} className="w-28 shrink-0 py-1.5 text-sm" />
           </label>
           <ScoreThreshold
             label={t("driverSettings.skipCustomers")}

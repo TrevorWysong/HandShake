@@ -391,7 +391,7 @@ function OrderCard({ row, storeLabel, showTime, children }: { row: QueueRow; sto
       {/* Once it's out of the kitchen: a thank-you, or an apology no report covers. */}
       {leftTheStore(row) && !bytesEqual(order.requester, order.merchant) && <GivePoints order={row.ref} customer={order.requester} catalogRef={order.catalog_ref} />}
       {/* Done: how the customer was, for the stores and drivers who serve them next. */}
-      {completed(row) && !bytesEqual(order.requester, order.merchant) && <RateCustomer order={row.ref} className="mt-3 border-t border-ink-100 pt-3 dark:border-ink-800" />}
+      {completed(row) && !bytesEqual(order.requester, order.merchant) && <RateCustomer order={row.ref} asStore className="mt-3 border-t border-ink-100 pt-3 dark:border-ink-800" />}
     </Card>
   );
 }
