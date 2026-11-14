@@ -305,7 +305,27 @@ pub(crate) fn settlement_due_waiting(hold_ref: &ActionHash, wait: i64) -> Extern
             }
         }
     }
-    Ok(Some(due))
+    Ok(Some(within_hold(due, hold.amount)))
+}
+
+/// The claims that fit in what was held, in order -- the payee's own parts
+/// first, then what's passed on. One order's history holding two of its
+/// endings at once (two parties acting together, past what validation keeps
+/// apart) could entitle more than any one ending, and a settlement for more
+/// than its hold is refused (`validate_settlement`): taking what fits pays
+/// the payee as fully as the hold allows, rather than leaving it never
+/// settled.
+fn within_hold(due: Vec<DueClaim>, held: u64) -> Vec<DueClaim> {
+    let mut left = held;
+    due.into_iter()
+        .filter(|claim| {
+            let fits = claim.amount <= left;
+            if fits {
+                left -= claim.amount;
+            }
+            fits
+        })
+        .collect()
 }
 
 /// Has the store's conductor make its decisions on one order (its original
@@ -443,4 +463,23 @@ pub fn settle_soon(previous: Option<Schedule>) -> Option<Schedule> {
         _ => FIRST_RETRY,
     };
     (next <= LAST_RETRY).then_some(Schedule::Ephemeral(next))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn claim(n: u8, amount: u64) -> DueClaim {
+        let bid = ActionHash::from_raw_36(vec![n; 36]);
+        DueClaim { claim: Claim { part: Part { purpose: HoldPurpose::DriverPay { bid: bid.clone() }, portion: Portion::Fee }, basis: bid, via: None }, amount }
+    }
+
+    #[test]
+    fn a_settlement_takes_what_fits_in_its_hold_in_order() {
+        let amounts = |claims: Vec<DueClaim>| claims.iter().map(|c| c.amount).collect::<Vec<_>>();
+        assert_eq!(amounts(within_hold(vec![claim(1, 300), claim(2, 300), claim(3, 300)], 900)), vec![300, 300, 300], "all of it, when it fits");
+        assert_eq!(amounts(within_hold(vec![claim(1, 300), claim(2, 300), claim(3, 300), claim(4, 300)], 900)), vec![300, 300, 300], "what fits, the rest left");
+        assert_eq!(amounts(within_hold(vec![claim(1, 600), claim(2, 400), claim(3, 300)], 900)), vec![600, 300], "a later part that fits still counts");
+        assert!(within_hold(vec![claim(1, 300)], 0).is_empty(), "nothing from nothing held");
+    }
 }

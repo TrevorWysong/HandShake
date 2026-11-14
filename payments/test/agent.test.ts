@@ -122,6 +122,49 @@ test("a wake asked for mid-round shares that round's verdict -- it never clears 
   assert.equal((await agent.status())?.trouble?.what, "Settle");
 });
 
+test("an account restored on another device settles the holds its old device placed, once, on the same processor account", async () => {
+  const h = (n: number) => new Uint8Array(39).fill(n);
+  let due: unknown[] = [];
+  const recorded: { fn: string; payload: Record<string, unknown> }[] = [];
+  const dispatch = async <T,>(fn: string, payload: unknown): Promise<T> => {
+    if (fn === "get_network_terms") return { currency: "USD", live_payments: false } as T;
+    if (fn === "payments_due") return due as T;
+    recorded.push({ fn, payload: payload as Record<string, unknown> });
+    if (fn === "record_hold" || fn === "record_settlement") due = [];
+    return null as T;
+  };
+  // The processor account outlives either device: one, shared.
+  const account = testProcessor("USD");
+  const keys = { publishable_key: "pk", restricted_key: "rk" };
+  const device = () => createAgent({ dispatch, credentials: memoryCredentials(), state: memoryStore(), processorFor: () => account, confirm: async () => true, roundMs: 60_000 });
+  const round = async (agent: ReturnType<typeof device>) => {
+    await agent.round();
+    await agent.round();
+  };
+
+  const old = device();
+  await old.connect("Stripe", keys);
+  old.stop();
+  due = [{ Authorize: { offer: h(10), order: h(60), leg: "Customer", amount: 2500, payer: h(1), token: "tok_test_4242", save: false, resumes: null, resumed_offer: null, newcomer_deal: null, payer_established: true, work: null, offered_at: Date.now() * 1000 } }];
+  await round(old);
+  const reference = recorded.find((r) => r.fn === "record_hold")!.payload.reference as string;
+
+  // The old device is gone, and its state with it; the new one connects the
+  // same account and finds the hold due to settle.
+  const restored = device();
+  await restored.connect("Stripe", keys);
+  restored.stop();
+  const settle = { Settle: { hold: h(70), reference, held: 2500, captured: 1800, claims: [] } };
+  due = [settle];
+  await round(restored);
+  assert.equal(account.held.get(reference)?.captured, 1800, "captured from the new device, for what's due");
+  // Asked again before its record is seen, nothing more moves.
+  due = [settle];
+  await round(restored);
+  assert.equal(account.held.get(reference)?.captured, 1800, "captured once");
+  assert.equal((await restored.status())?.trouble, null);
+});
+
 test("switching processor accounts never sends one account's payments to another; they settle when it's back", async () => {
   const h = (n: number) => new Uint8Array(39).fill(n);
   let due: unknown[] = [];

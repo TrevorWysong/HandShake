@@ -435,6 +435,52 @@ mod tests {
         }
     }
 
+    /// The kind of ending a basis is, if it ends the order -- or a driver's
+    /// part in it, paid in full for a store that kept them waiting.
+    fn ending(basis: &Basis) -> Option<String> {
+        match basis {
+            Basis::Delivered { .. } => Some("delivered".into()),
+            Basis::NotDelivered { .. } => Some("not delivered".into()),
+            Basis::Cancelled(c) => Some(format!("cancelled {:?}", c.by)),
+            Basis::Released { store_late: true, .. } => Some("left, the store late".into()),
+            _ => None,
+        }
+    }
+
+    /// Any two decisions an order's history could hold at once: every leg's
+    /// entitlement fits what its payer authorized unless they're two
+    /// different endings of the order -- which can't both be true, and
+    /// which validation keeps apart by deciding each such pair on one
+    /// author's chain (`lineage`). Even then nobody pays more than they
+    /// authorized: a settlement captures within its hold or is refused
+    /// (`validate_settlement`), and the payee's app claims only what fits
+    /// (`settlement::within_hold`).
+    #[test]
+    fn only_contradictory_endings_ask_more_than_was_authorized() {
+        let (t, both) = (terms(), bids());
+        let all = every_basis();
+        let parts = parts(&t, &both);
+        let mut legs = vec![(PaymentLeg::Customer, None)];
+        for (hash, bid) in &both {
+            legs.push((PaymentLeg::DriverPay { bid: hash.clone() }, Some(bid.clone())));
+            legs.push((PaymentLeg::Collateral { bid: hash.clone() }, Some(bid.clone())));
+        }
+        for first in &all {
+            for second in &all {
+                for checks in [false, true] {
+                    let bases = [first.clone(), second.clone()];
+                    for (leg, bid) in &legs {
+                        let asked: u64 = parts.iter().filter(|(part, ..)| leg.includes(part)).map(|(part, _, _, _, amount)| taken(part, *amount, &bases, checks)).sum();
+                        if asked > leg.required(&t, bid.as_ref()).expect("a payable leg") {
+                            let (a, b) = (ending(first), ending(second));
+                            assert!(a.is_some() && b.is_some() && a != b, "{leg:?} asks {asked} on {first:?} + {second:?}, which aren't two endings");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn paying_directly_settles_every_order_as_the_ledger_did() {
         let (dana, eli) = (hash(31), hash(41));

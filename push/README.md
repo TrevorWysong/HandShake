@@ -26,6 +26,19 @@ A wake is the same content-free push every time: an empty Web Push message, an A
 
 One SQLite table: each device's id, a hash of its secret, its channel and address, and when it last asked for tokens. A device that hasn't in `TOKEN_TTL_DAYS` is forgotten, checked hourly: none of its tokens work by then, so nobody loses a wake, and a made-up address or an abandoned install doesn't stay for good. The app asks for a fresh batch before its tokens run out, and registers again, where it already has permission, if the relay has forgotten it. The relay logs how many devices it holds each hour. Nothing about who the device belongs to, and nothing about any wake. How often each device was woken lately is kept in memory, for its limits, as a count per minute and per day: a restart forgets it, loosening a device's limits until they fill again. Anyone flooding a device still meets the per-address limit, and nothing outside lets them restart the relay. Each per-address limit remembers at most 100,000 addresses, letting go of the longest-known, so a flood from many addresses can't grow its memory either.
 
+## Under attack
+
+What holds however many addresses the traffic comes from:
+
+- **One device is woken only so often.** A token can be replayed from anywhere, but a device's limits (a few a minute, so many a day) count every wake it gets, from any address.
+- **The relay's work is bounded.** Wakes go out a few at a time from a bounded queue, and past it they're dropped. Each per-address count remembers a bounded number of addresses. Every request body is bounded too.
+- **Nothing is learned by guessing.** Every wake is answered alike, valid token or not.
+
+What doesn't:
+
+- **A restart drops wakes not yet sent.** A wake is only a nudge: the app reads the network itself when it opens and as it runs, so a lost wake delays a notification. It never loses an order or a payment.
+- **Registrations from many addresses could fill the relay.** Each address registers only so many devices a day, but enough addresses could register junk devices up to `MAX_DEVICES`. The relay would then refuse real ones (a 503, logged) until the junk ones lapse after `TOKEN_TTL_DAYS`, or longer if they're kept fresh. The defences are a rate limit at the network's edge and `MAX_DEVICES` set well above real use. The lasting fix is to register only devices that prove they're the real app (Apple's App Attest, Google's Play Integrity), which comes with the phone builds (docs/MOBILE.md).
+
 ## Channels
 
 Each is on when its credentials are set (`.env.example`); a relay needs at least one.
