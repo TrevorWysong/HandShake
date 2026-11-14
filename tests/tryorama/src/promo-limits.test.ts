@@ -81,8 +81,9 @@ await runScenario(async (scenario) => {
   await customerPaid(merchant, used, all);
   await retryUntilOk(() => call(merchant, "dispatch")("accept_pickup_order", { order_original_action: used }));
   await sync();
-  const confirmation = await retryUntil(() => call(ana, "dispatch")<ActionHash | null>("confirm_what_i_saw", used), (hash) => hash !== null);
-  assert.ok(confirmation, "the customer's app confirms the store started");
+  // Confirmed by this call, or already by the customer's own sweep.
+  const confirmed_ = await retryUntil(() => call(ana, "dispatch")("confirm_what_i_saw", used).then(() => call(ana, "dispatch")<boolean>("i_confirmed", used)), (yes) => yes);
+  assert.ok(confirmed_, "the customer's app confirms the store started");
   const confirmed = await standing(ana, once);
   assert.deepEqual([confirmed.uses, confirmed.blocked], [1, "UsedUp"], "confirmed, still used");
   console.log("[PASS] a once-per-customer code works once, and stays used once the store takes the order on");

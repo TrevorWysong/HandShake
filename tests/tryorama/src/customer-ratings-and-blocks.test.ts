@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { runScenario, dhtSync } from "@holochain-open-dev/tryorama";
 import type { Record as HcRecord, ActionHash as ActionHashBytes } from "@holochain/client";
 import { createHash } from "node:crypto";
-import { acceptOrder, actionHash, customerPaid, decodeEntry, retryUntil, retryUntilOk, retryingCaller, setupPlayersWithProperties, ST_PETE, useTestCoordinators } from "./helpers.js";
+import { acceptOrder, actionHash, agentAsLinkBase, customerPaid, decodeEntry, retryUntil, retryUntilOk, retryingCaller, setupPlayersWithProperties, ST_PETE, useTestCoordinators } from "./helpers.js";
 
 /// Whether a record's list names `key` -- `handshake_types::block_prints`.
 const listsKey = (list: Uint8Array, salt: Uint8Array, key: Uint8Array) => {
@@ -116,9 +116,9 @@ await runScenario(async (scenario) => {
   assert.equal(pattern.upheld, 0, "none accepted yet");
   // The orders counted include the stores' own records of serving them, which
   // only the store writes.
-  const served = await call(merchant, "dispatch")<Uint8Array[]>("test_get_link_hashes", { link_type: "CustomerToServedOrder", base: customer.agentPubKey });
+  const served = await call(merchant, "dispatch")<Uint8Array[]>("test_get_link_hashes", { link_type: "CustomerToServedOrder", base: agentAsLinkBase(customer.agentPubKey) });
   assert.ok(served.length >= 2, "the store recorded serving each order it accepted");
-  await assert.rejects(call(customer, "dispatch")("test_create_link", { link_type: "CustomerToServedOrder", base: customer.agentPubKey, target: reportedOrder.done, tag: Array.from(reportedOrder.order) }), /records serving a customer/, "nobody else writes the store's record");
+  await assert.rejects(call(customer, "dispatch")("test_create_link", { link_type: "CustomerToServedOrder", base: agentAsLinkBase(customer.agentPubKey), target: reportedOrder.done, tag: Array.from(reportedOrder.order) }), /records serving a customer/, "nobody else writes the store's record");
   console.log("[PASS] a customer's report pattern counts their own reports over their orders, and what stores accepted");
 
   // ===== A reported order is answered, not rated =====
@@ -161,9 +161,9 @@ await runScenario(async (scenario) => {
   await assert.rejects(call(customer, "dispatch")("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items: [{ item_ref: stew, quantity: 1 }], order_total: 1000 }), /You've blocked this store/, "their own list stops them ordering");
   await call(customer, "reputation")("unblock", { by: { Person: customer.agentPubKey }, blocked: { Store: store } });
   // Their list is one sealed entry of their own: nobody writes one for them.
-  const lists = await call(customer, "reputation")<ActionHashBytes[]>("test_get_link_hashes", { link_type: "OwnerToBlocks", base: customer.agentPubKey });
+  const lists = await call(customer, "reputation")<ActionHashBytes[]>("test_get_link_hashes", { link_type: "OwnerToBlocks", base: agentAsLinkBase(customer.agentPubKey) });
   assert.equal(lists.length, 1, "the customer keeps one list, changed in place");
-  await assert.rejects(call(driver, "reputation")("test_create_link", { link_type: "OwnerToBlocks", base: customer.agentPubKey, target: stew }), /links only its own blocks/, "nobody links a list of blocks to someone else");
+  await assert.rejects(call(driver, "reputation")("test_create_link", { link_type: "OwnerToBlocks", base: agentAsLinkBase(customer.agentPubKey), target: stew }), /links only its own blocks/, "nobody links a list of blocks to someone else");
   console.log("[PASS] a customer blocking a store stops their own ordering, until they lift it; their list is their own");
 
   // ===== A block keeps a driver and a customer apart, either way =====
