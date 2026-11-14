@@ -14,14 +14,15 @@ import { AllergyRequest } from "../../../components/store/Allergens";
 import { OrderHero } from "../../../components/orders/OrderHero";
 import { customerProgress, orderEstimate } from "../../../lib/orders/progress";
 import { useClock } from "../../../lib/hooks/useClock";
-import { Button, Card, Notice, Skeleton, StatNumber } from "../../../components/ui";
+import { Button, Card, Notice, Skeleton } from "../../../components/ui";
 import { WaitingForStore } from "../../../components/orders/WaitingForStore";
-import { formatCatalogAddress, formatCents, formatClockTime, formatDeadline } from "../../../lib/ui/format";
+import { formatCatalogAddress, formatClockTime, formatDeadline } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useAction } from "../../../lib/hooks/useAction";
 import type { MerchantCatalog, PickupOrder } from "../../../holochain/types";
 import { POLL, isOrderSignal } from "../../../lib/network/poll";
 import { OrderReceipt } from "../../../components/orders/OrderReceipt";
+import { ReorderButton } from "../../../components/orders/ReorderButton";
 import { OrderPointsBadge } from "../../../components/rewards/PendingPoints";
 import { OrderSummary } from "../../../components/orders/OrderLines";
 import { OrderIssues } from "../../../components/orders/OrderIssues";
@@ -125,14 +126,11 @@ export function PickupOrderDetail() {
         </OrderHero>
       </motion.div>
 
-      {order.status !== "PickedUp" ? (
+      {/* What it is and comes to; once picked up, the receipt below says it. */}
+      {order.status !== "PickedUp" && (
         <motion.div variants={fadeSlideUp} className="mt-3">
           <OrderSummary orderRef={orderRef} count={order.lines.reduce((n, l) => n + l.quantity, 0)} total={order.order_total} />
         </motion.div>
-      ) : (
-        <motion.h2 variants={fadeSlideUp} className="mt-3 flex items-baseline gap-1.5 px-1 text-sm font-bold text-ink-900 dark:text-ink-50">
-          {t("pickup.heading")}<StatNumber className="text-sm">{formatCents(order.order_total)}</StatNumber>
-        </motion.h2>
       )}
 
       {/* Their card, held by the store: confirming, or what it needs. */}
@@ -270,6 +268,12 @@ export function PickupOrderDetail() {
 
 
       {order.status === "PickedUp" && <RateOrder orderRef={orderRef} order={order} itemNames={itemNames} selfOrder={selfOrder} />}
+
+      {(order.status === "PickedUp" || order.status === "Cancelled") && (
+        <motion.div variants={fadeSlideUp} className="mt-5">
+          <ReorderButton order={order} />
+        </motion.div>
+      )}
 
       {action.error && <Notice className="mt-4">{action.error}</Notice>}
     </motion.div>

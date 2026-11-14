@@ -1,26 +1,22 @@
 import { useState } from "react";
 import { TimeAgo } from "../../components/TimeAgo";
-import { Link, useNavigate } from "react-router-dom";
-import { Bike, ChevronRight, ClipboardList, Repeat, RotateCcw, ShoppingBag } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Bike, ChevronRight, ClipboardList, Repeat, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { getMyOrderHistory, setRecurringTemplateActive } from "../../holochain/zomes/dispatch";
 import { getCatalog } from "../../holochain/zomes/catalog";
 import { decodeEntry, bytesToHex } from "../../holochain/decode";
-import { cartKey, useCarts } from "../../store/cart";
-import { NoLongerSignedIn, stillSignedIn } from "../../store/identityScope";
-import { useCartReplace } from "../../lib/hooks/useCartReplace";
-import { ReplaceCartSheet } from "../../components/store/ReplaceCartSheet";
 import { usePolling, useResource } from "../../lib/hooks/useResource";
 import { useActiveOrders } from "../../store/activeOrders";
 import { customerProgress, type OrderNeed } from "../../lib/orders/progress";
 import { OrderProgressBar } from "../../components/orders/OrderProgressBar";
 import { OrderToneIcon } from "../../components/orders/OrderHero";
 import { useSession } from "../../store/session";
-import { cartLinesFromOrder, fetchMenu } from "../../lib/storefront/menu";
 import { customerOrderPath, isFinished, itemCount, mergeNewestFirst, toOrderRow, type OrderRow } from "../../lib/orders/orderEntries";
-import { Button, Card, EmptyState, Notice, SectionLabel, SegmentedTabs, Skeleton, StatNumber, Switch } from "../../components/ui";
+import { Card, EmptyState, Notice, SectionLabel, SegmentedTabs, Skeleton, StatNumber, Switch } from "../../components/ui";
 import { OrderRowBadge } from "../../components/orders/OrderRowBadge";
+import { ReorderButton } from "../../components/orders/ReorderButton";
 import { formatCents } from "../../lib/ui/format";
 import { describeRecurrence } from "../../lib/orders/recurrence";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
@@ -123,7 +119,7 @@ function PastOrders() {
     <div className="flex flex-col gap-3">
       {data.rows.map((row) => (
         <OrderCard key={row.hex} row={row} showTime>
-          <ReorderButton row={row} />
+          <ReorderButton order={row.order} compact />
         </OrderCard>
       ))}
       {data.nextBefore !== null && <LoadMore loading={loading.busy} failed={!!loading.error} onMore={() => data.nextBefore && loadMore(data.nextBefore)} />}
@@ -173,7 +169,7 @@ function OrderCard({ row, showTime, children }: { row: OrderRow; showTime?: bool
             {row.kind === "Delivery" ? <Bike size={11} /> : <ShoppingBag size={11} />}
             {t(row.kind === "Delivery" ? "cart.delivery" : "cart.pickup")}
           </span>
-          {showTime && <span className="font-normal normal-case tracking-normal text-ink-300"><TimeAgo at={row.order.requested_at} /></span>}
+          {showTime && <span className="whitespace-nowrap font-normal normal-case tracking-normal text-ink-300"><TimeAgo at={row.order.requested_at} /></span>}
         </div>
         <p className="truncate text-sm font-bold text-ink-900 dark:text-ink-50">{storeName ?? "\u00a0"}</p>
         <p className="text-xs text-ink-400">
@@ -183,36 +179,6 @@ function OrderCard({ row, showTime, children }: { row: OrderRow; showTime?: bool
       <OrderRowBadge row={row} />
       {children}
     </Card>
-  );
-}
-
-/// Rebuilds the cart from a past order against the store's *current* menu:
-/// an item since removed is dropped and a repriced one takes its new price,
-/// rather than failing the whole reorder over one stale line.
-function ReorderButton({ row }: { row: OrderRow }) {
-  const t = useT();
-  const navigate = useNavigate();
-  const reordering = useAction();
-  const replacing = useCartReplace();
-
-  const reorder = () => reordering.run(async () => {
-    const current = stillSignedIn();
-    const { order } = row;
-    const [catalogRecord, menuItems] = await Promise.all([getCatalog(order.catalog_ref), fetchMenu(order.catalog_ref)]);
-    const catalog = decodeEntry<MerchantCatalog>(catalogRecord);
-    const lines = await cartLinesFromOrder(order.catalog_ref, order.lines, menuItems);
-    if (!current()) throw new NoLongerSignedIn();
-    useCarts.getState().setCart(order.catalog_ref, order.merchant, catalog.business_name, lines);
-    navigate(`/customer/cart/${cartKey(order.catalog_ref)}`);
-  });
-
-  return (
-    <>
-      <Button variant="ghost" className="px-2.5 py-1.5 text-xs" loading={reordering.busy} onClick={() => replacing.ask(row.order.catalog_ref, reorder)} aria-label={reordering.error ?? t("orders.reorder")} title={reordering.error ?? undefined}>
-        <RotateCcw size={13} />
-      </Button>
-      <ReplaceCartSheet pending={replacing.pending} onConfirm={replacing.confirm} onCancel={replacing.cancel} />
-    </>
   );
 }
 

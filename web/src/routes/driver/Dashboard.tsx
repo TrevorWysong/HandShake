@@ -154,8 +154,10 @@ export function DriverDashboard() {
       })
     : null;
 
-  // On a wide screen: going online and what they charge beside what they
-  // take on, then what they're carrying beside what's on offer.
+  // The work at hand first, as delivery apps put it: going online, then
+  // what they're carrying beside what's on offer; what they charge and take
+  // on, and the customers they're asked about, below it. On a wide screen,
+  // each pair side by side.
   const carrying = activeOrders.length > 0;
   return (
     <div className="px-4 pt-4 pb-8">
@@ -183,8 +185,6 @@ export function DriverDashboard() {
               <Power size={20} />
             </motion.button>
           </Card>
-          <FeeCard />
-          <RecentCustomers driverHex={driverHex} />
         </div>
         <PhotoNeeded
           open={askingPhoto}
@@ -195,13 +195,10 @@ export function DriverDashboard() {
           }}
         />
         {me && (
-          <div className="lg:order-3 lg:col-span-2">
+          <div className="lg:order-2 lg:col-span-2">
             <VerificationCard me={me} />
           </div>
         )}
-        <div className="lg:order-2">
-          <DriverSettingsCard />
-        </div>
       </div>
 
       {/* Carrying: beside what else is near, or -- offline, with nothing
@@ -276,6 +273,12 @@ export function DriverDashboard() {
       </div>
 
       {bidding.error && <Notice className="mt-4">{bidding.error}</Notice>}
+
+      <div className="mt-5 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-5">
+        <FeeCard />
+        <DriverSettingsCard />
+      </div>
+      <RecentCustomers driverHex={driverHex} />
 
       <Sheet
         open={confirmingOffline}

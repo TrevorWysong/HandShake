@@ -303,6 +303,12 @@ export function StoreRewardsStrip({ catalogHex }: { catalogHex: string }) {
               ? t("rewards.stripJoinWelcome", { points: program.earn.points_per_dollar, name: program.points_name, welcome: program.earn.welcome_bonus })
               : t("rewards.earnRate", { points: program.earn.points_per_dollar, name: program.points_name })}
         </p>
+        {/* How close the next reward is, at a glance: the line above says it in words. */}
+        {joined && next && (
+          <span aria-hidden className="mt-2 block h-1 overflow-hidden rounded-full bg-white/25">
+            <span className="block h-full rounded-full bg-white" style={{ width: `${Math.min(100, Math.round((card.balance / next.cost) * 100))}%` }} />
+          </span>
+        )}
       </div>
       <ChevronRight size={18} className="shrink-0 text-white/80" />
     </motion.button>

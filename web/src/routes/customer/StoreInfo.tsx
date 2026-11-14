@@ -1,5 +1,6 @@
 // Everything about a store that isn't its menu, a page of its own: reached by
 // tapping the store's name on its menu.
+import clsx from "clsx";
 import { LoadProblem } from "../../components/LoadProblem";
 import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
@@ -93,8 +94,9 @@ function InfoPage({ hash }: { hash: string }) {
             <p className="mt-1 text-xs text-ink-400">{avgRating !== null && rating ? t("storeInfo.ratings", { count: rating.count }) : t("storeInfo.noRatings")}</p>
           </Card>
           <Card className="p-4">
-            <p className={status.open ? "flex items-center gap-1.5 text-sm font-bold text-presence-600" : "flex items-center gap-1.5 text-sm font-bold text-red-500"}>
-              <Clock size={15} /> {status.label}
+            {/* Balanced, so a narrow tile breaks before the time, never inside it. */}
+            <p className={clsx("flex items-start gap-1.5 text-sm font-bold text-balance", status.open ? "text-presence-600" : "text-red-500")}>
+              <Clock size={15} className="mt-0.5 shrink-0" /> {status.label}
             </p>
             <p className="mt-1.5 text-xs text-ink-400">{t("storeInfo.prep", { minutes: prepMinutes })}</p>
             {catalog.min_order_cents !== null && <p className="text-xs text-ink-400">{t("store.minimum", { amount: formatCents(catalog.min_order_cents) })}</p>}

@@ -54,25 +54,16 @@ export function PaymentHistory() {
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="visible">
-      <motion.div
-        variants={fadeSlideUp}
-        className="relative mb-5 flex flex-col items-center gap-2 overflow-hidden rounded-3xl bg-gradient-to-br from-handshake-500 to-handshake-700 p-6 text-center text-white shadow-[var(--shadow-float)]"
-      >
-        <div
-          className="pointer-events-none absolute inset-0 opacity-50"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 20% 15%, rgba(255,255,255,0.25) 0%, transparent 45%), radial-gradient(circle at 85% 85%, rgba(255,255,255,0.15) 0%, transparent 40%)",
-          }}
-        />
-        <motion.div animate={{ scale: [1, 1.08, 1] }} transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }} className="relative">
-          <ShieldCheck size={30} />
-        </motion.div>
-        <p className="relative text-4xl font-black tracking-tight">{formatCents(0)}</p>
-        <p className="relative text-sm font-bold opacity-95">{t("transparency.zero")}</p>
-        <p className="relative mt-1 max-w-xs text-xs leading-relaxed opacity-80">
-          {t("transparency.detail")}
-        </p>
+      {/* The one fact behind every row below -- said once, compactly, so the
+          person's own payments lead the page. */}
+      <motion.div variants={fadeSlideUp} className="mb-4 flex items-start gap-3 rounded-2xl border border-handshake-100 bg-handshake-50 p-4 dark:border-handshake-900/40 dark:bg-handshake-900/15">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-handshake-500 text-white">
+          <ShieldCheck size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("transparency.zero")}</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-ink-600 dark:text-ink-300">{t("transparency.detail")}</p>
+        </div>
       </motion.div>
 
       <motion.div variants={fadeSlideUp} className="mb-2 grid grid-cols-3 gap-2">

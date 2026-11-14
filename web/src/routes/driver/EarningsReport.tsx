@@ -6,11 +6,12 @@ import { useState } from "react";
 import { Download } from "lucide-react";
 import { myPaymentHistory } from "../../holochain/zomes/payments";
 import { hexToBytes } from "../../holochain/decode";
-import { Card, Skeleton } from "../../components/ui";
-import { earned, earningsByPeriod, earningsCsv, type Grouping } from "../../lib/driving/earnings";
+import { Card, SegmentedTabs, Skeleton } from "../../components/ui";
+import { earned, earningsByPeriod, earningsCsv, periodStart, type Grouping } from "../../lib/driving/earnings";
 import { formatCents, fromMinorUnits } from "../../lib/ui/format";
 import { appLocale, useT } from "../../i18n";
 import { useResource } from "../../lib/hooks/useResource";
+import { useClock } from "../../lib/hooks/useClock";
 import { describeError } from "../../lib/ui/errors";
 
 /// A year of history: what a report by month needs.
@@ -21,6 +22,10 @@ export function EarningsReport({ meHex }: { meHex: string }) {
   const t = useT();
   const { data: items, error } = useResource(`payment-history:${meHex}`, () => myPaymentHistory(HISTORY_DAYS));
   const periods = items ? earningsByPeriod(items, hexToBytes(meHex), grouping).filter((p) => earned(p) + p.forfeited > 0) : undefined;
+  // The headline: this week, whichever way the list below is grouped.
+  const now = useClock();
+  const thisWeekStart = periodStart(now.getTime(), "week");
+  const thisWeek = items ? earningsByPeriod(items, hexToBytes(meHex), "week").find((p) => p.start === thisWeekStart) : undefined;
   const label = (start: number) =>
     grouping === "week"
       ? t("earnings.weekOf", { date: new Date(start).toLocaleDateString(appLocale(), { day: "numeric", month: "short" }) })
@@ -32,16 +37,20 @@ export function EarningsReport({ meHex }: { meHex: string }) {
   }
 
   return (
+    <>
+    {items && (
+      <div className="mb-4 rounded-3xl bg-gradient-to-br from-handshake-500 to-handshake-700 p-5 text-white shadow-[var(--shadow-float)]">
+        <p className="text-xs font-semibold uppercase tracking-wide text-white/80">{t("earnings.thisWeek")}</p>
+        <p className="mt-1 text-4xl font-black tracking-tight tabular-nums">{formatCents(thisWeek ? earned(thisWeek) : 0)}</p>
+        <p className="mt-1 text-sm text-white/85">
+          {thisWeek ? `${t("earnings.deliveries", { count: thisWeek.deliveries })} · ${t("earnings.tips", { amount: formatCents(thisWeek.tips) })}` : t("earnings.noneThisWeek")}
+        </p>
+      </div>
+    )}
     <Card className="mb-4 p-5">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <p className="text-sm font-bold text-ink-900 dark:text-ink-50">{t("nav.earnings")}</p>
-        <div className="flex items-center gap-1 rounded-full bg-ink-100 p-1 text-xs font-semibold dark:bg-ink-800">
-          {(["week", "month"] as const).map((g) => (
-            <button key={g} aria-pressed={grouping === g} onClick={() => setGrouping(g)} className={`rounded-full px-2.5 py-1 ${grouping === g ? "bg-white shadow-sm dark:bg-ink-950" : "text-ink-400"}`}>
-              {g === "week" ? t("earnings.weekly") : t("earnings.monthly")}
-            </button>
-          ))}
-        </div>
+        <SegmentedTabs label={t("nav.earnings")} tabs={[{ value: "week", label: t("earnings.weekly") }, { value: "month", label: t("earnings.monthly") }] as const} value={grouping} onChange={setGrouping} />
       </div>
       {periods === undefined ? (
         error ? <p className="text-sm text-red-600 dark:text-red-400">{describeError(error)}</p> : <Skeleton className="h-24" />
@@ -70,5 +79,6 @@ export function EarningsReport({ meHex }: { meHex: string }) {
         </>
       )}
     </Card>
+    </>
   );
 }

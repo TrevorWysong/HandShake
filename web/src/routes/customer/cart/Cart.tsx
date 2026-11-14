@@ -11,7 +11,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { CheckoutDraft } from "../../../lib/orders/recurring";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
-import { Button, Checkbox, Notice } from "../../../components/ui";
+import { Button, Checkbox, Notice, SegmentedTabs } from "../../../components/ui";
 import { PaySheet } from "../../../components/payments/PaySheet";
 import { ItemSheet } from "../../../components/store/ItemSheet";
 import { cartItems, menuLines, useCart, useCarts } from "../../../store/cart";
@@ -33,7 +33,7 @@ import { usePolling, useResource } from "../../../lib/hooks/useResource";
 import { formatCents } from "../../../lib/ui/format";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { useT } from "../../../i18n";
-import { AmountChoice, NoteSection, Section, ToggleChip } from "./CartPieces";
+import { AmountChoice, NoteSection, Section } from "./CartPieces";
 import { BagNotices } from "./BagNotices";
 import { bagProblems } from "../../../lib/storefront/bags";
 import { CartLines, type LineEdit } from "./CartLines";
@@ -314,15 +314,13 @@ export function Cart() {
       {/* The choices, then the summary that places it -- side by side on a wide screen, the summary kept in view. */}
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-8">
         <div className="min-w-0">
-          <motion.div variants={fadeSlideUp} className="mb-4 flex gap-2">
-            {!ageRestricted && (
-              <ToggleChip active={delivery} onClick={() => setFulfillment("Delivery")} className="flex-1 text-center">
-                {t("cart.delivery")}
-              </ToggleChip>
-            )}
-            <ToggleChip active={!delivery} onClick={() => setFulfillment("Pickup")} className="flex-1 text-center">
-              {t("cart.pickup")}
-            </ToggleChip>
+          <motion.div variants={fadeSlideUp} className="mb-4">
+            <SegmentedTabs
+              label={t("cart.title")}
+              tabs={[...(ageRestricted ? [] : [{ value: "Delivery" as const, label: t("cart.delivery") }]), { value: "Pickup" as const, label: t("cart.pickup") }]}
+              value={delivery ? "Delivery" : "Pickup"}
+              onChange={setFulfillment}
+            />
           </motion.div>
           {ageRestricted && (
             <motion.label variants={fadeSlideUp} className="mb-4 flex items-start gap-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">

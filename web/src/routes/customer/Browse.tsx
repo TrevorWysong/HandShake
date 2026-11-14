@@ -14,6 +14,7 @@ import { FIRST_PAGE, minutesFrom, useNearbyStores } from "../../store/nearbyStor
 import { inTiers, nearestFirst, pageByPage } from "../../lib/storefront/nearby";
 import { formatCents, nowMicros } from "../../lib/ui/format";
 import { RestaurantCard } from "../../components/store/RestaurantCard";
+import { OrderAgain } from "../../components/store/OrderAgain";
 import { AddressSwitcher } from "../../components/places/AddressSwitcher";
 import { BrowseFilterBar } from "../../components/store/BrowseFilterBar";
 import { Button, EmptyState, SectionLabel, Skeleton } from "../../components/ui";
@@ -205,6 +206,8 @@ export function Browse() {
           </button>
         )}
       </div>
+
+      {!narrowed && <OrderAgain />}
 
       {bags.length > 0 && (
         <div className="mb-5">

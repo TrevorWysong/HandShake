@@ -12,7 +12,7 @@ test("a goodie bag is added to the cart, and checkout steers a pickup-only bag t
   await expect(page.getByText("In cart")).toBeVisible();
 
   await page.goto("/#/customer/cart");
-  await page.getByRole("button", { name: "Delivery", exact: true }).first().click();
+  await page.getByRole("tab", { name: "Delivery", exact: true }).first().click();
   await expect(page.getByText("End-of-day pastry bag is pickup only")).toBeVisible();
   await expect(page.getByText("Sort out the goodie bag above to place your order.")).toBeVisible();
 

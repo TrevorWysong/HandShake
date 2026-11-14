@@ -14,7 +14,7 @@ test("a recurring order reminds its customer, who confirms and pays at checkout"
   await page.getByRole("link", { name: "Cart" }).click();
   await page.getByRole("button", { name: "Set up" }).click();
   const due = new Date(Date.now() + 120_000);
-  await page.getByRole("button", { name: "Daily" }).click();
+  await page.getByRole("tab", { name: "Daily" }).click();
   await page.locator('input[type="time"]').fill(`${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`);
   await page.getByRole("button", { name: "Save recurring order" }).click();
   await expect(page.getByText(/Saved!/)).toBeVisible();

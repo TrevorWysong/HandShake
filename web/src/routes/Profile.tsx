@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronRight, CreditCard, Fingerprint, KeyRound, LogOut, Pencil, Store, Truck, User } from "lucide-react";
+import { ChevronDown, ChevronRight, CreditCard, Fingerprint, KeyRound, LogOut, Pencil, Store, Truck, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { encodeHashToBase64 } from "@holochain/client";
 import { useSession } from "../store/session";
@@ -322,9 +322,14 @@ export function ProfilePage() {
       <LanguagePicker />
       <AppearanceSettings />
       <NotificationSettings rings={chimeFor(profile?.roles ?? [])} />
+      {/* The key itself is for the few who need it: folded until asked for. */}
       <Card className="mb-4 p-4">
-        <SectionLabel className="mb-1">{t("profile.identity")}</SectionLabel>
-        <p className="break-all font-mono text-xs text-ink-500">{agentPubKey ? encodeHashToBase64(agentPubKey) : "–"}</p>
+        <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+          <SectionLabel>{t("profile.identity")}</SectionLabel>
+          <ChevronDown size={16} aria-hidden className="shrink-0 text-ink-400 transition-transform group-open:rotate-180" />
+        </summary>
+        <p className="mt-2 break-all font-mono text-xs text-ink-500">{agentPubKey ? encodeHashToBase64(agentPubKey) : "–"}</p>
         <p className="mt-2 text-xs text-ink-400">
           {t("profile.identityDetail")}
         </p>
@@ -337,6 +342,7 @@ export function ProfilePage() {
               : "Device lock not set up. This device has no passkey gate, so reconnecting here doesn't ask for one."}
           </p>
         )}
+        </details>
       </Card>
       </motion.div>
 

@@ -7,10 +7,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AddressSwitcher } from "../../../components/places/AddressSwitcher";
 import { AddressLine2Field } from "../../../components/places/SplitAddressFields";
 import { InfoTip } from "../../../components/InfoTip";
-import { Button, Checkbox, Input, SectionLabel, Select } from "../../../components/ui";
+import { Button, Checkbox, Input, SectionLabel, SegmentedTabs, Select } from "../../../components/ui";
 import type { DropoffPreference, GeoPoint, RecurrenceRule } from "../../../holochain/types";
 import { appLocale, useT } from "../../../i18n";
-import { Section, ToggleChip } from "./CartPieces";
+import { Section } from "./CartPieces";
 import { DELIVERY_SPEEDS, DROPOFF_PREFERENCE_OPTIONS, MATCHING } from "./options";
 import { validateDropoffRadius } from "./checkout";
 import type { DeliveryOptions } from "./useDeliveryOptions";
@@ -30,13 +30,7 @@ export function DeliverToSection({ options, preference, doorAllowed, store }: { 
         {t("cart.saveDefault")}
       </label>
       <SectionLabel className="mb-2 mt-3">{t("cart.dropoff")}</SectionLabel>
-      <div className="flex gap-2">
-        {DROPOFF_PREFERENCE_OPTIONS.filter(({ value }) => value !== "LeaveAtDoor" || doorAllowed).map(({ value, label }) => (
-          <ToggleChip key={value} active={preference === value} onClick={() => options.choosePreference(value)} className="flex-1">
-            {t(label)}
-          </ToggleChip>
-        ))}
-      </div>
+      <SegmentedTabs label={t("cart.dropoff")} tabs={DROPOFF_PREFERENCE_OPTIONS.filter(({ value }) => value !== "LeaveAtDoor" || doorAllowed).map(({ value, label }) => ({ value, label: t(label) }))} value={preference} onChange={options.choosePreference} />
       {preference === "LeaveAtDoor" ? (
         <label className="mt-3 flex items-start gap-2.5 rounded-xl bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:bg-amber-900/20 dark:text-amber-100">
           <Checkbox checked={options.doorRiskAccepted} onChange={(e) => options.setDoorRiskAccepted(e.target.checked)} className="mt-0.5" />
@@ -67,13 +61,7 @@ export function SpeedSection({ priority, onChange, storeWaitMinutes }: { priorit
         </InfoTip>
       }
     >
-      <div className="flex gap-2">
-        {DELIVERY_SPEEDS.map(({ priority: value, label }) => (
-          <ToggleChip key={label} active={priority === value} onClick={() => onChange(value)} className="flex-1">
-            {t(label)}
-          </ToggleChip>
-        ))}
-      </div>
+      <SegmentedTabs label={t("cart.delivery")} tabs={DELIVERY_SPEEDS.map(({ priority: value, label }) => ({ value: String(value), label: t(label) }))} value={String(priority)} onChange={(value) => onChange(value === "true")} />
       <p className="mt-2 text-xs text-ink-400">{t(DELIVERY_SPEEDS.find((speed) => speed.priority === priority)!.detail)}</p>
     </Section>
   );
@@ -84,13 +72,7 @@ export function MatchingSection({ autoMatch, onChange }: { autoMatch: boolean; o
   const t = useT();
   return (
     <Section title={t("cart.driver")}>
-      <div className="flex gap-2">
-        {MATCHING.map(({ autoMatch: value, label }) => (
-          <ToggleChip key={label} active={autoMatch === value} onClick={() => onChange(value)} className="flex-1">
-            {t(label)}
-          </ToggleChip>
-        ))}
-      </div>
+      <SegmentedTabs label={t("cart.driver")} tabs={MATCHING.map(({ autoMatch: value, label }) => ({ value: String(value), label: t(label) }))} value={String(autoMatch)} onChange={(value) => onChange(value === "true")} />
       <p className="mt-2 text-xs text-ink-400">{t(MATCHING.find((m) => m.autoMatch === autoMatch)!.detail)}</p>
     </Section>
   );
@@ -101,13 +83,8 @@ export function WhenSection({ options }: { options: DeliveryOptions }) {
   const t = useT();
   return (
     <Section title={t("cart.when")}>
-      <div className="mb-2 flex gap-2">
-        <ToggleChip active={!options.scheduled} onClick={() => options.setScheduled(false)}>
-          {t("cart.now")}
-        </ToggleChip>
-        <ToggleChip active={options.scheduled} onClick={() => options.setScheduled(true)}>
-          {t("cart.later")}
-        </ToggleChip>
+      <div className="mb-2">
+        <SegmentedTabs label={t("cart.when")} tabs={[{ value: "now", label: t("cart.now") }, { value: "later", label: t("cart.later") }]} value={options.scheduled ? "later" : "now"} onChange={(value) => options.setScheduled(value === "later")} />
       </div>
       <AnimatePresence initial={false}>
         {options.scheduled && (
@@ -153,14 +130,7 @@ export function RepeatSection({ saving, busy, onSave }: { saving: boolean; busy:
       <AnimatePresence initial={false}>
         {open && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="flex flex-col gap-2">
-            <div className="flex gap-2">
-              <ToggleChip active={kind === "Weekly"} onClick={() => setKind("Weekly")} className="flex-1">
-                {t("cart.repeat.weekly")}
-              </ToggleChip>
-              <ToggleChip active={kind === "Daily"} onClick={() => setKind("Daily")} className="flex-1">
-                {t("cart.repeat.daily")}
-              </ToggleChip>
-            </div>
+            <SegmentedTabs label={t("cart.repeat.title")} tabs={[{ value: "Weekly", label: t("cart.repeat.weekly") }, { value: "Daily", label: t("cart.repeat.daily") }] as const} value={kind} onChange={setKind} />
             {kind === "Weekly" && (
               <Select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
                 {[0, 1, 2, 3, 4, 5, 6].map((i) => (

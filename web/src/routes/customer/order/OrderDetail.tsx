@@ -34,6 +34,7 @@ import { useResource } from "../../../lib/hooks/useResource";
 import type { Bid, DeliveryOrder, DeliveryStatus, Leg, MerchantCatalog } from "../../../holochain/types";
 import { POLL, isOrderOrBidSignal, isOrderSignal } from "../../../lib/network/poll";
 import { OrderReceipt } from "../../../components/orders/OrderReceipt";
+import { ReorderButton } from "../../../components/orders/ReorderButton";
 import { OrderPointsBadge } from "../../../components/rewards/PendingPoints";
 import { RateOrder } from "../../../components/orders/RateOrder";
 import { OrderBids } from "./OrderBids";
@@ -455,6 +456,12 @@ export function OrderDetail() {
           )}
 
           {received(order.status) && <RateOrder orderRef={orderRef} order={order} itemNames={itemNames} driver={driver} selfOrder={selfOrder} />}
+
+          {(received(order.status) || order.status === "Cancelled") && (
+            <motion.div variants={fadeSlideUp} className="mt-5">
+              <ReorderButton order={order} />
+            </motion.div>
+          )}
 
           {action.error && <Notice className="mt-4">{action.error}</Notice>}
         </div>

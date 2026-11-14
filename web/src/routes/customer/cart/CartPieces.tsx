@@ -35,6 +35,8 @@ export function NoteSection({ title, value, onChange, placeholder, privacy }: { 
 export function ToggleChip({ active, onClick, children, className }: { active: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
   return (
     <motion.button
+      type="button"
+      aria-pressed={active}
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
       className={clsx(

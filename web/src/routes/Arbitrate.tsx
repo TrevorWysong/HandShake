@@ -9,7 +9,7 @@ import { Gavel } from "lucide-react";
 import type { AppealsPage, AppealView, Timestamp } from "../holochain/types";
 import { getMyDocket, ruleOnAppeal } from "../holochain/zomes/dispatch";
 import { bytesToHex } from "../holochain/decode";
-import { Button, Card, Input, Notice, Textarea } from "../components/ui";
+import { Button, Card, EmptyState, Input, Notice, Textarea } from "../components/ui";
 import { currencySymbol, formatCents, fromMinorUnits, toMinorUnits } from "../lib/ui/format";
 import { POLL } from "../lib/network/poll";
 import { useResource } from "../lib/hooks/useResource";
@@ -37,7 +37,7 @@ export default function ArbitratePage() {
         <Gavel size={20} /> {t("account.appeals")}
       </h1>
       <p className="mb-5 text-sm text-ink-500">{t("arbitrate.intro")}</p>
-      {docket?.length === 0 && <p className="text-sm text-ink-400">{t("arbitrate.empty")}</p>}
+      {docket?.length === 0 && <EmptyState icon={<Gavel size={36} />} title={t("arbitrate.empty")} subtitle={t("arbitrate.emptyDetail")} />}
       <div className="flex flex-col gap-4">
         {docket?.map((appeal) => <Case key={bytesToHex(appeal.appeal)} appeal={appeal} onRuled={reload} />)}
       </div>

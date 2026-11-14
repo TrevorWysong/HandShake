@@ -186,14 +186,24 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
       <div className="flex gap-3">
         <PhotoInput value={form.photo_data_uri} onChange={(v) => set({ photo_data_uri: v })} shape="circle" className="shrink-0" />
         <div className="flex flex-1 flex-col gap-2">
-          <Input maxLength={MAX_NAME_CHARS} value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("menuEditor.name")} aria-label={t("menuEditor.name")} />
-          <Input type="number" min={0} step={0.5} value={form.price} onChange={(e) => set({ price: Number(e.target.value) })} placeholder="0.00" prefix={currencySymbol()} aria-label={t("menuEditor.price")} aria-invalid={priceProblem} />
+          <Field label={t("menuEditor.name")}>
+            <Input maxLength={MAX_NAME_CHARS} value={form.name} onChange={(e) => set({ name: e.target.value })} aria-label={t("menuEditor.name")} />
+          </Field>
+          <Field label={t("menuEditor.price")}>
+            <Input type="number" min={0} step={0.5} value={form.price} onChange={(e) => set({ price: Number(e.target.value) })} placeholder="0.00" prefix={currencySymbol()} aria-label={t("menuEditor.price")} aria-invalid={priceProblem} />
+          </Field>
           {priceProblem && <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{t("menuEditor.priceProblem")}</p>}
         </div>
       </div>
-      <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={form.description} onChange={(e) => set({ description: e.target.value })} rows={2} placeholder={t("storeSettings.description")} />
-      <Input maxLength={MAX_LABEL_CHARS} value={form.category} onChange={(e) => set({ category: e.target.value })} placeholder={t("menuEditor.category")} />
-      <Input value={form.dietary_tags} onChange={(e) => set({ dietary_tags: e.target.value })} placeholder={t("menuEditor.tags")} />
+      <Field label={t("storeSettings.description")}>
+        <Textarea maxLength={MAX_DESCRIPTION_CHARS} value={form.description} onChange={(e) => set({ description: e.target.value })} rows={2} aria-label={t("storeSettings.description")} />
+      </Field>
+      <Field label={t("menuEditor.categoryLabel")}>
+        <Input maxLength={MAX_LABEL_CHARS} value={form.category} onChange={(e) => set({ category: e.target.value })} placeholder={t("menuEditor.category")} aria-label={t("menuEditor.categoryLabel")} />
+      </Field>
+      <Field label={t("menuEditor.tagsLabel")}>
+        <Input value={form.dietary_tags} onChange={(e) => set({ dietary_tags: e.target.value })} placeholder={t("menuEditor.tags")} aria-label={t("menuEditor.tagsLabel")} />
+      </Field>
       <SaleEditor value={form.sale} fullCents={toMinorUnits(form.price)} problem={salePrice} onChange={(sale) => set({ sale })} />
       <AllergenFactsEditor
         value={form.allergens}

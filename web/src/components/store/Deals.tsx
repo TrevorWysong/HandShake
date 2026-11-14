@@ -52,7 +52,9 @@ export function StoreDeals({ catalogHex, menu }: { catalogHex: string; menu: Ite
             <div
               key={hex}
               className={clsx(
-                "relative flex w-64 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-card)] dark:bg-ink-900",
+                // A lone deal fills the row; several scroll, each a ticket's width.
+                "relative flex shrink-0 snap-start flex-col overflow-hidden rounded-2xl border bg-white shadow-[var(--shadow-card)] dark:bg-ink-900",
+                sorted.length === 1 ? "w-full" : "w-64",
                 blocked ? "border-ink-100 dark:border-ink-800" : "border-handshake-200 dark:border-handshake-900/50",
               )}
             >
