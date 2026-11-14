@@ -108,7 +108,7 @@ step's fields and what it cites (`dispatch_integrity::delivery` and
 | Store accepts (`Placed` → `Open`, pickup `Placed` → `MerchantConfirmed`) | The store's hold on the customer's card for exactly what the order's terms say, priced from its current menu |
 | Driver commits (`BidAccepted` → `DriverEnRouteToMerchant`) | Both of the driver's holds: their collateral on the store's account, and their pay on the store's card. Leaving the order releases both |
 | Handover (`DriverAtStore` → `PickedUp`) | The store's record of handing the food over |
-| Delivered | Proof it reached the customer: the driver scanned their code, the customer confirmed it themselves, or it was left at the door as they chose (`attestation_types::dropoff_proof`) |
+| Delivered | Proof it reached the customer, strongest first: the customer confirmed it themselves; the driver scanned the code only the customer has; or it was left at the door as they chose, with the driver's own photo and location, which the network can't check (`attestation_types::dropoff_proof`) |
 | A store kept the driver waiting; an order lapsed on a silent store | A round of the network's time source (drand), verified in validation, never the writer's own clock |
 
 Payments follow from these states and are settled by each payee's own

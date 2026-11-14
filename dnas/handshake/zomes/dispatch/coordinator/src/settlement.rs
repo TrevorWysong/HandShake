@@ -112,9 +112,12 @@ fn facts(order: &ActionHash) -> ExternResult<Option<Facts>> {
 
 // --- what a payee is owed ---
 
-/// How long the store waits for a driver to settle their pay before it
-/// settles the customer's payment without passing that pay on: by then the
-/// driver's own authorization is days from lapsing anyway.
+/// How long, from the customer's hold, the store waits for a driver to
+/// settle their pay before it settles the customer's payment anyway: the
+/// customer's authorization lapses at about seven days, and a scheduled
+/// order's is placed when it's scheduled, up to five days ahead. Past this
+/// it passes on what the order's decisions give the driver outright, citing
+/// their hold, so their capture whenever it comes is covered.
 const PASS_ON_WAIT_MICROS: i64 = 4 * 86_400_000_000;
 
 /// One part of a settlement the caller can make, and what it takes.
@@ -256,11 +259,12 @@ pub(crate) fn settlement_due(hold_ref: &ActionHash) -> ExternResult<Option<Vec<D
         }
     }
     // The store passes on to each driver exactly what they took of the
-    // customer's share and tip -- once they've settled, or once it's waited
-    // long enough for them.
+    // customer's share and tip, once they've settled. One who hasn't by the
+    // time the customer's hold can't wait any longer is passed what the
+    // order's decisions give them outright, citing their hold.
     if offer.leg == PaymentLeg::Customer && terms.delivery {
         let settlements = settlements_on(&order)?;
-        let mut waiting = false;
+        let mut unsettled = Vec::new();
         for (driver_hold, driver, _, driver_offer) in holds_on(&order)? {
             let PaymentLeg::DriverPay { bid } = &driver_offer.leg else { continue };
             let bid_record = bid_of(bid)?;
@@ -274,12 +278,25 @@ pub(crate) fn settlement_due(hold_ref: &ActionHash) -> ExternResult<Option<Vec<D
                         due.push(DueClaim { claim: Claim { part: claim.part.clone(), basis: claim.basis.clone(), via: Some(settled.clone()) }, amount });
                     }
                 }
-                None => waiting = true,
+                None => unsettled.push((driver_hold, bid.clone(), bid_record)),
             }
         }
         let held_at = record.action().timestamp().as_micros();
-        if waiting && sys_time()?.as_micros() < held_at + PASS_ON_WAIT_MICROS {
+        if !unsettled.is_empty() && sys_time()?.as_micros() < held_at + PASS_ON_WAIT_MICROS {
             return Ok(None);
+        }
+        for (driver_hold, bid_ref, bid_record) in unsettled {
+            for portion in [Portion::Fee, Portion::Tip] {
+                let part = Part { purpose: HoldPurpose::DriverPay { bid: bid_ref.clone() }, portion };
+                let Some((_, amount)) = part_share(&terms, &part, Some(&bid_record)) else { continue };
+                for basis_ref in &bases {
+                    let Ok(basis) = basis_of(basis_ref, &order, &terms.merchant, terms.delivery, &part)? else { continue };
+                    if let Entitlement::Takes(taken) = entitlement(&part, amount, &basis) {
+                        due.push(DueClaim { claim: Claim { part: part.clone(), basis: basis_ref.clone(), via: Some(driver_hold.clone()) }, amount: taken });
+                        break;
+                    }
+                }
+            }
         }
     }
     Ok(Some(due))

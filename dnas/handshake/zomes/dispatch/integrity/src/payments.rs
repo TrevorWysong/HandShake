@@ -356,21 +356,43 @@ fn claim_amount(claim: &Claim, leg: &PaymentLeg, context: &LegContext, author: &
         None => None,
     };
     let Some((_, amount)) = part_share(&context.terms, &claim.part, bid.as_ref()) else { return Ok(Err("this order has no such part")) };
-    // A driver's pay the store passes on: exactly what the driver took.
+    // A driver's pay the store passes on: exactly what the driver took --
+    // or, cited by their hold before they've settled, exactly what the
+    // order's decisions give them outright. Either way the driver's capture
+    // from the store's card is matched by what the store collects for it,
+    // whichever is made first: a store that can't wait any longer for the
+    // driver (the customer's hold would lapse) is never left paying their
+    // share of the fee and tip itself.
     if *leg == PaymentLeg::Customer && matches!(claim.part.purpose, HoldPurpose::DriverPay { .. }) {
-        let Some(via) = &claim.via else { return Ok(Err("the store takes a driver's pay only as the driver takes it, citing their settlement")) };
+        let Some(via) = &claim.via else { return Ok(Err("the store takes a driver's pay only as the driver takes it, citing their settlement or hold")) };
         let record = must_get_valid_record(via.clone())?;
-        let Some(theirs) = decode::<PaymentSettlement>(&record) else { return Ok(Err("a pass-on cites the driver's settlement")) };
-        let (_, driver, offer, _) = match hold_of(&theirs.hold)? {
+        let (driver_hold, taken) = match decode::<PaymentSettlement>(&record) {
+            Some(theirs) => (theirs.hold, Some(theirs.claims)),
+            None if decode::<PaymentHold>(&record).is_some() => (via.clone(), None),
+            None => return Ok(Err("a pass-on cites the driver's settlement or hold")),
+        };
+        let (_, driver, offer, _) = match hold_of(&driver_hold)? {
             Ok(found) => found,
             Err(reason) => return Ok(Err(reason)),
         };
         let their_leg = part_bid(&claim.part).map(|bid| PaymentLeg::DriverPay { bid: bid.clone() });
         let by_its_driver = bid.as_ref().is_some_and(|bid| bid.bidder == driver);
         if offer.order != context.order || Some(&offer.leg) != their_leg.as_ref() || !by_its_driver {
-            return Ok(Err("a pass-on cites the settlement of that part's own driver"));
+            return Ok(Err("a pass-on cites the settlement or hold of that part's own driver"));
         }
-        return Ok(theirs.claims.iter().any(|c| c.part == claim.part).then_some(amount).ok_or("the driver didn't take that part"));
+        if let Some(claims) = taken {
+            return Ok(claims.iter().any(|c| c.part == claim.part).then_some(amount).ok_or("the driver didn't take that part"));
+        }
+        // Only an outright entitlement: one that rests on the driver's own
+        // chain (`TakesIf`) is theirs to show, by settling.
+        let basis = match basis_of(&claim.basis, &context.order, &context.terms.merchant, context.terms.delivery, &claim.part)? {
+            Ok(basis) => basis,
+            Err(reason) => return Ok(Err(reason)),
+        };
+        return Ok(match entitlement(&claim.part, amount, &basis) {
+            Entitlement::Takes(n) => Ok(n),
+            _ => Err("before the driver settles, the store passes on only what the order's decisions give them outright"),
+        });
     }
     if claim.via.is_some() {
         return Ok(Err("only a driver's pay is passed on"));

@@ -16,6 +16,7 @@ import {
   heldBy,
   netOn,
   offerCard,
+  payeeAgent,
   paymentsOn,
   pickUp,
   retryUntil,
@@ -112,6 +113,37 @@ await runScenario(async (scenario) => {
   await handOff(driver, customer, order, "CustomerHandoff", all);
   await retryUntilOk(() => call(customer, "dispatch")("complete_delivery", { order_original_action: order }));
   await sync();
+
+  // ===== A store that can't wait for its driver still passes their pay on =====
+  // Once the customer's hold would lapse first (a scheduled order's is held
+  // when it's scheduled), the store settles citing the driver's hold, not
+  // their settlement: it collects what the order's decisions give the driver
+  // outright, so their capture from its card, whenever it comes, is covered.
+  const same = (a: Uint8Array, b: Uint8Array) => Buffer.from(a).equals(Buffer.from(b));
+  const held = await paymentsOn(customer, order);
+  const holdOf = (leg: string) => held.find((p) => (leg === "Customer" ? p.leg === "Customer" : typeof p.leg === "object" && leg in p.leg))!.hold;
+  const [customerHold, driverHold, collateralHold] = [holdOf("Customer"), holdOf("DriverPay"), holdOf("Collateral")];
+  type Due = { claim: { part: { purpose: unknown; portion: string }; basis: Uint8Array; via: Uint8Array | null }; amount: number };
+  await retryUntil(async () => {
+    await payeeAgent(driver).catch(() => 0);
+    return paymentsOn(driver, order);
+  }, (ps) => ps.some((p) => same(p.hold, driverHold) && p.charged !== null), 60, 1000);
+  await sync(driver);
+  const storeDue = await retryUntil(async () => {
+    await call(store, "dispatch")("settle_order", order).catch(() => 0);
+    const items = await call(store, "dispatch")<{ Settle?: { hold: Uint8Array; claims: Due[] } }[]>("payments_due", null);
+    return items.find((d) => d.Settle && same(d.Settle.hold, customerHold))?.Settle;
+  }, (settle) => settle !== undefined, 60, 1000);
+  const passOn = storeDue!.claims.filter((c) => c.claim.via);
+  assert.equal(passOn.length, 2, "the store passes on the driver's fee share and tip");
+  const citing = (via: Uint8Array, basis?: Uint8Array) => storeDue!.claims.map((c) => (c.claim.via ? { ...c, claim: { ...c.claim, via, basis: basis ?? c.claim.basis } } : c));
+  const settle = (claims: Due[]) => call(store, "dispatch")("record_settlement", { hold: customerHold, claims });
+  await assert.rejects(settle(citing(collateralHold)), /own driver/, "a pass-on cites that part's own driver's pay, not their collateral");
+  const foodBasis = storeDue!.claims.find((c) => !c.claim.via)!.claim.basis;
+  await assert.rejects(settle(citing(driverHold, foodBasis)), /outright|basis|grounds/, "cited by the driver's hold, a pass-on takes only what the order's decisions give them");
+  await settle(citing(driverHold));
+  console.log("[PASS] a store settling before its driver passes on, citing their hold, exactly what the order gives them");
+
   await settleAll(all, order);
   const payments = await paymentsOn(customer, order);
   assert.equal(payments.length, 3, "the customer's payment, the driver's collateral, and the driver's pay");

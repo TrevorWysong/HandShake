@@ -178,7 +178,9 @@ pub struct Claim {
     pub basis: ActionHash,
     /// For a part the store passes on to a driver: the driver's own
     /// `PaymentSettlement` that took it -- the store takes from the
-    /// customer exactly what the driver took from the store.
+    /// customer exactly what the driver took from the store -- or, when the
+    /// store couldn't wait for that, the driver's `PaymentHold`, taking what
+    /// the order's decisions give them outright, which is what they'll take.
     pub via: Option<ActionHash>,
 }
 

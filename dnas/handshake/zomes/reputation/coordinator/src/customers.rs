@@ -214,6 +214,8 @@ struct Word {
     order: ActionHash,
     /// The store, when its owner rated as the store.
     store: Option<ActionHash>,
+    /// When it was given.
+    at: Timestamp,
 }
 
 impl Word {
@@ -224,7 +226,7 @@ impl Word {
             None | Some([]) => None,
             Some(raw) => Some(ActionHash::try_from_raw_39(raw.to_vec()).ok()?),
         };
-        Some(Self { rater: link.author.clone(), up: *tag.first()? == 1, reason: *tag.get(1)?, order, store })
+        Some(Self { rater: link.author.clone(), up: *tag.first()? == 1, reason: *tag.get(1)?, order, store, at: link.timestamp })
     }
 }
 
@@ -282,10 +284,13 @@ pub fn get_customer_score(customer: AgentPubKey) -> ExternResult<CustomerScore> 
 /// account made to rate doesn't -- who, having rated enough customers,
 /// doesn't rate more of them down than the network allows. Each check reads
 /// the shortest window that settles it (`settled_each`), batched across the
-/// raters, so a busy rater costs a day of links, not months of them.
+/// raters, so a busy rater costs a day of links, not months of them. A
+/// rating's fairness is judged over a window reaching back to when it was
+/// given, at least: a good day since can't make an unfair month count.
 fn counted(words: &[Word]) -> ExternResult<Vec<bool>> {
     let window = handshake_governance::rater_window();
-    let fair = settled_each(words.iter().map(|word| word.rater.clone().into()).collect(), LinkTypes::RaterToRating, window, &|at, links| rates_fairly(&words[at].rater, links, FAIRNESS_SAMPLE), &|at, links| rates_fairly(&words[at].rater, links, 0).unwrap_or(true))?;
+    let judged = |at: usize, links: &[Link], since: Timestamp| if words[at].at < since { None } else { rates_fairly(&words[at].rater, links, FAIRNESS_SAMPLE) };
+    let fair = settled_each(words.iter().map(|word| word.rater.clone().into()).collect(), LinkTypes::RaterToRating, window, &judged, &|at, links| rates_fairly(&words[at].rater, links, 0).unwrap_or(true))?;
     let stores: Vec<(ActionHash, AgentPubKey)> = words.iter().filter_map(|word| word.store.clone().map(|store| (store, word.rater.clone()))).collect();
     let drivers: Vec<AnyLinkableHash> = words.iter().filter(|word| word.store.is_none()).map(|word| word.rater.clone().into()).collect();
     let mut stores_ok = crate::findings::stores_established(stores, window)?.into_iter();
@@ -299,8 +304,8 @@ fn counted(words: &[Word]) -> ExternResult<Vec<bool>> {
     }).collect())
 }
 
-/// How many of a rater's latest ratings judge their fairness, at least: a
-/// day of ratings can't wash out the months before it.
+/// How many of a rater's latest ratings judge their fairness, at least, so
+/// one odd rating doesn't swing it.
 const FAIRNESS_SAMPLE: u32 = 50;
 
 /// Whether a rater's ratings count, once `links` hold at least `sample` of
