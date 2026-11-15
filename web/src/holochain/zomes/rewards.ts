@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { ActionHash, AgentPubKey, CardView, OrderPoints, ProgramStats, ProgramView, RewardsProgram } from "../types";
+import type { ActionHash, AgentPubKey, CardView, OrderGift, OrderPoints, ProgramStats, ProgramView, RewardsProgram } from "../types";
 
 /// A store's rewards program at its current version -- `null` if it has none.
 export async function programOf(catalogRef: ActionHash): Promise<ProgramView | null> {
@@ -45,4 +45,10 @@ export async function setBirthMonth(month: number): Promise<void> {
 /// One of the caller's orders, as its points stand -- `null` if it earns none.
 export async function orderPoints(order: ActionHash): Promise<OrderPoints | null> {
   return callZome("rewards", "order_points", order);
+}
+
+/// What the store gave the caller with one of their orders -- an apology
+/// with its answer to a report, say -- newest first.
+export async function orderGifts(order: ActionHash): Promise<OrderGift[]> {
+  return callZome("rewards", "order_gifts", order);
 }

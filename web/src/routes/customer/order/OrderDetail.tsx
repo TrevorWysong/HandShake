@@ -36,6 +36,7 @@ import { POLL, isOrderOrBidSignal, isOrderSignal } from "../../../lib/network/po
 import { OrderReceipt } from "../../../components/orders/OrderReceipt";
 import { ReorderButton } from "../../../components/orders/ReorderButton";
 import { OrderPointsBadge } from "../../../components/rewards/PendingPoints";
+import { OrderGifts } from "../../../components/rewards/OrderGifts";
 import { RateOrder } from "../../../components/orders/RateOrder";
 import { OrderBids } from "./OrderBids";
 import { OrderSummary } from "../../../components/orders/OrderLines";
@@ -432,6 +433,7 @@ export function OrderDetail() {
           {received(order.status) && (
             <motion.div variants={fadeSlideUp}>
               <OrderIssues orderRef={orderRef} role="customer" />
+              <OrderGifts orderRef={orderRef} catalogRef={order.catalog_ref} />
               <OrderReceipt orderRef={orderRef} />
             </motion.div>
           )}

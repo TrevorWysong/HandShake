@@ -5,11 +5,14 @@ import { useState } from "react";
 import { Button } from "./ui";
 import { useT } from "../i18n";
 
-export function ConfirmRemove({ label, confirm, action, busy, removing, onRemove, error, className }: {
+export function ConfirmRemove({ label, confirm, detail, action, busy, removing, onRemove, error, className }: {
   /// The link that starts it: "Remove from menu".
   label: string;
   /// What removing it does, in full.
   confirm: string;
+  /// What else it touches, by name, said first: "Your “Free coffee”
+  /// reward stops being offered".
+  detail?: string | null;
   /// The button that does it: "Remove it".
   action: string;
   busy: boolean;
@@ -30,6 +33,7 @@ export function ConfirmRemove({ label, confirm, action, busy, removing, onRemove
   }
   return (
     <div role="group" aria-label={label} className="rounded-xl bg-red-50 p-3 dark:bg-red-900/20 forced-colors:border forced-colors:border-solid">
+      {detail && <p className="mb-1.5 text-xs font-semibold leading-relaxed text-red-900 dark:text-red-100">{detail}</p>}
       <p className="text-xs leading-relaxed text-red-900 dark:text-red-100">{confirm}</p>
       {error && (
         <p role="alert" className="mt-2 text-xs font-semibold leading-relaxed text-red-700 dark:text-red-300">

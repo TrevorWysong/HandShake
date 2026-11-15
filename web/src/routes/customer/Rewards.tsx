@@ -9,9 +9,9 @@ import { myBirthMonth, myCard, myCards, setBirthMonth } from "../../holochain/zo
 import { PendingList } from "../../components/rewards/PendingPoints";
 import { bytesToHex, hexToBytes } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
-import { fetchMenu } from "../../lib/storefront/menu";
+import { fetchMenu, type ItemRow } from "../../lib/storefront/menu";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
-import { ACCENTS, expiresAt, tierOf } from "../../lib/rewards/rewards";
+import { ACCENTS, expiresAt, offeredOnly, rewardOffered, tierOf } from "../../lib/rewards/rewards";
 import { RewardsCard } from "../../components/rewards/RewardsCard";
 import { HowYouEarn, RewardRail, RewardTile, TierLadder } from "../../components/rewards/RewardPieces";
 import { Button, Card, Skeleton } from "../../components/ui";
@@ -147,7 +147,8 @@ export function RewardsDetail() {
   const { hash } = useParams<{ hash: string }>();
   const catalogRef = hexToBytes(hash ?? "");
   const { data: card, error: cardError, reload: reloadCard } = useResource(hash ? `rewards:card:${hash}` : null, () => myCard(catalogRef));
-  const { data: menu = [] } = useResource(hash ? `store-menu-items:${hash}` : null, () => fetchMenu(catalogRef));
+  const { data: menuRead } = useResource(hash ? `store-menu-items:${hash}` : null, () => fetchMenu(catalogRef));
+  const menu = menuRead ?? [];
   // The reward in this store's cart, whose points are held.
   const bagReward = useCart(hash ?? null).reward;
 
@@ -174,7 +175,7 @@ export function RewardsDetail() {
         <ArrowLeft size={16} /> {t("common.back")}
       </motion.button>
       <motion.div variants={fadeSlideUp}>
-        <RewardsCard program={program} storeName={card.store_name} balance={Math.max(0, card.balance - held)} tier={card.tier} pendingPoints={card.pending_points} expiresAt={card.expires_at ?? expiresAt(program, card.state)} />
+        <RewardsCard program={offeredOnly(program, menuRead)} storeName={card.store_name} balance={Math.max(0, card.balance - held)} tier={card.tier} pendingPoints={card.pending_points} expiresAt={card.expires_at ?? expiresAt(program, card.state)} />
       </motion.div>
 
       <motion.div variants={fadeSlideUp} className="mt-4 grid grid-cols-2 gap-2">
@@ -198,7 +199,7 @@ export function RewardsDetail() {
           <SectionTitle>{t("rewards.yourRewards")}</SectionTitle>
           <RewardRail>
             {rewards.map((reward) => (
-              <RewardTile key={reward.id} program={program} reward={reward} balance={card.balance} tier={card.tier} menu={menu} />
+              <RewardTile key={reward.id} program={program} reward={reward} balance={card.balance} tier={card.tier} menu={menu} menuRead={!!menuRead} />
             ))}
           </RewardRail>
           <button onClick={() => navigate(`/rewards/${hash}/redeem`)} className="mt-1 text-xs font-semibold text-ink-500 hover:underline">
@@ -267,7 +268,7 @@ function Activity({ card }: { card: CardView }) {
 
 /// A store's program on its page: the customer's card at a glance, or what
 /// joining earns -- linking to the full card.
-export function StoreRewardsStrip({ catalogHex }: { catalogHex: string }) {
+export function StoreRewardsStrip({ catalogHex, menu }: { catalogHex: string; menu?: ItemRow[] }) {
   const t = useT();
   const navigate = useNavigate();
   const { data: card } = useResource(`rewards:card:${catalogHex}`, () => myCard(hexToBytes(catalogHex)));
@@ -275,7 +276,7 @@ export function StoreRewardsStrip({ catalogHex }: { catalogHex: string }) {
   const program = card.program.program;
   const colors = ACCENTS[program.accent];
   const tier = card.state ? tierOf(program, card.state) : 0;
-  const next = [...program.rewards].filter((r) => r.min_tier <= tier && r.cost > card.balance).sort((a, b) => a.cost - b.cost)[0];
+  const next = [...program.rewards].filter((r) => r.min_tier <= tier && r.cost > card.balance && rewardOffered(r, menu)).sort((a, b) => a.cost - b.cost)[0];
   const joined = card.state !== null || card.pending.length > 0;
   return (
     <motion.button

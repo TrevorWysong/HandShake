@@ -2,8 +2,9 @@
 // validation enforces (rewards_types::points) -- the same cases run there.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { earnedFor, localTime, nextTier, pointsEarned, tierOf } from "../src/lib/rewards/rewards.ts";
-import type { PointsState, RewardsProgram } from "../src/holochain/types.ts";
+import { earnedFor, localTime, nextTier, pointsEarned, redeemable, rewardOffered, rewardsFor, tierOf } from "../src/lib/rewards/rewards.ts";
+import type { ItemRow } from "../src/lib/storefront/menu.ts";
+import type { PointsState, Reward, RewardsProgram } from "../src/holochain/types.ts";
 
 const hash = (n: number) => new Uint8Array(39).fill(n);
 /// 2026-06-15 (a Monday) at `hour`:00 in New York.
@@ -71,4 +72,26 @@ test("the welcome, the cap and the tier", () => {
   assert.equal(earnedFor(p, state({ earned_this_year: 1000 }), 100), 150);
   assert.deepEqual(nextTier(p, state({ earned_this_year: 250 })), { index: 1, name: "Gold", needed: 750, progress: 0.25 });
   assert.equal(nextTier(p, state({ earned_this_year: 1000 })), null, "at the top");
+});
+
+test("a reward for an item is offered only while the item's on the menu and in stock; a menu not read judges nothing", () => {
+  const latte = new Uint8Array([1]);
+  const muffin = new Uint8Array([2]);
+  const free: Reward = { id: 1, name: "Free latte", cost: 300, benefit: { FreeItem: { item_ref: latte, quantity: 1, choices: [] } }, min_tier: 0 };
+  const half: Reward = { id: 2, name: "Half off a muffin", cost: 200, benefit: { PercentOffItem: { item_ref: muffin, percent: 50 } }, min_tier: 0 } as Reward;
+  const off: Reward = { id: 3, name: "$5 off", cost: 500, benefit: { FlatOffSubtotal: 500 }, min_tier: 0 };
+  const row = (hash: Uint8Array, available: boolean) => ({ hash, version: hash, item: { name: "x", available } }) as unknown as ItemRow;
+  assert.equal(rewardOffered(free, [row(latte, true)]), true);
+  assert.equal(rewardOffered(free, [row(latte, false)]), false, "sold out");
+  assert.equal(rewardOffered(free, []), false, "off the menu");
+  assert.equal(rewardOffered(half, [row(latte, true)]), false, "a share off an item that's gone");
+  assert.equal(rewardOffered(free, undefined), true, "not read yet");
+  assert.equal(rewardOffered(off, []), true, "money off needs no item");
+  const program = { active: true, rewards: [free, half, off] } as unknown as RewardsProgram;
+  assert.equal(redeemable(program, 1000, 0, free, false), "gone", "before points or tier");
+  assert.equal(redeemable({ ...program, active: false }, 1000, 0, free, false), "paused", "a paused program says so first");
+  assert.equal(redeemable(program, 1000, 0, free), "ok");
+  assert.deepEqual(rewardsFor(program, latte), ["Free latte"]);
+  assert.deepEqual(rewardsFor(program, new Uint8Array([9])), []);
+  assert.deepEqual(rewardsFor(null, latte), []);
 });

@@ -107,3 +107,49 @@ pub(crate) struct GrantToMe {
     pub(crate) at: Timestamp,
     pub(crate) payload: GrantPayload,
 }
+
+/// Points the store gave the caller with one of their orders -- an apology
+/// with its answer to a report, say -- for that order's page.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OrderGift {
+    pub grant: ActionHash,
+    pub at: Timestamp,
+    pub points: u32,
+    pub note: String,
+}
+
+/// The most of a store's gifts one order's page reads: a handful at most
+/// is ever given with one order, and a store giving more only slows its
+/// own customer's page.
+const ORDER_GIFTS_READ: usize = 10;
+
+/// The store's gifts to the caller citing `order`, newest first. Only the
+/// caller's own orders; only grants made after it, by its store's key, and
+/// only the newest few of those are opened.
+#[hdk_extern]
+pub fn order_gifts(order: ActionHash) -> ExternResult<Vec<OrderGift>> {
+    let order = original_action_of(order)?;
+    let Some(record) = get(order.clone(), GetOptions::default())? else { return Ok(Vec::new()) };
+    let Some(placed) = OrderForRewards::of(&record) else { return Ok(Vec::new()) };
+    if placed.requester != me()? {
+        return Ok(Vec::new());
+    }
+    let owner = store(&placed.catalog_ref)?.owner;
+    let placed_at = record.action().timestamp();
+    let query = LinkQuery::try_new(me()?, LinkTypes::AgentToGrant)?.author(owner.clone());
+    let mut links: Vec<Link> = get_links(query, GetStrategy::default())?.into_iter().filter(|link| link.timestamp >= placed_at).collect();
+    links.sort_by_key(|link| std::cmp::Reverse(link.timestamp));
+    let mut out = Vec::new();
+    for link in links.into_iter().take(ORDER_GIFTS_READ) {
+        let Some(hash) = link.target.into_action_hash() else { continue };
+        let record = arrived(&hash)?;
+        if record.action().author() != &owner {
+            continue;
+        }
+        let Some(grant) = decode_or::<PointsGrant>(&record).filter(|g| g.order == order && g.catalog_ref == placed.catalog_ref) else { continue };
+        if let Some(GrantPayload { points, reason: GrantReason::Goodwill { note }, .. }) = open::<GrantPayload>(&owner, &grant.sealed)? {
+            out.push(OrderGift { grant: hash, at: record.action().timestamp(), points, note });
+        }
+    }
+    Ok(out)
+}

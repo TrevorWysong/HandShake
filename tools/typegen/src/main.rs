@@ -105,7 +105,7 @@ const SOURCES: &[Source] = &[
     only("dnas/handshake/zomes/rewards/coordinator/src/programs.rs", &["ProgramView", "ProgramVersion"]),
     only("dnas/handshake/zomes/rewards/coordinator/src/member.rs", &["PointsLine", "PointsLineKind", "CardView"]),
     only("dnas/handshake/zomes/rewards/coordinator/src/stats.rs", &["ProgramStats"]),
-    only("dnas/handshake/zomes/rewards/coordinator/src/grants.rs", &["GrantInput"]),
+    only("dnas/handshake/zomes/rewards/coordinator/src/grants.rs", &["GrantInput", "OrderGift"]),
     only("dnas/handshake/zomes/rewards/coordinator/src/history.rs", &["PointsStatus", "OrderPoints"]),
 ];
 

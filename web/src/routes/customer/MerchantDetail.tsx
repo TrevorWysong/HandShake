@@ -233,7 +233,7 @@ function StorePage({ hash }: { hash: string }) {
           </Link>
         </motion.div>
 
-        {hash && <StoreRewardsStrip catalogHex={hash} />}
+        {hash && <StoreRewardsStrip catalogHex={hash} menu={fresh?.items} />}
         {hash && <StoreDeals catalogHex={hash} menu={items ?? []} />}
         <StoreBags store={hash} bags={bags} onAdd={(row) => addLine(bagLine(row))} />
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { goodwillChoices, partIn, pointsIn, quickParts } from "../src/lib/orders/issueAnswer.ts";
+import { enoughFor, goodwillChoices, partIn, pointsIn, quickParts } from "../src/lib/orders/issueAnswer.ts";
 import { MAX_GRANT_POINTS } from "../src/holochain/types.ts";
 
 test("quick parts: a quarter, half and three quarters, whole and strictly between", () => {
@@ -16,8 +16,9 @@ test("a part typed is more than nothing and less than all of it", () => {
   assert.equal(partIn(12.5, 1000), null);
 });
 
+const reward = (name: string, cost: number) => ({ id: 0, name, cost }) as never;
+
 test("goodwill: the cheapest rewards' costs, or round amounts", () => {
-  const reward = (name: string, cost: number) => ({ id: 0, name, cost }) as never;
   assert.deepEqual(goodwillChoices([reward("Cake", 900), reward("Coffee", 300), reward("Cookie", 300), reward("Tea", 500), reward("Huge", MAX_GRANT_POINTS + 1)]), [
     { points: 300, reward: "Coffee" },
     { points: 500, reward: "Tea" },
@@ -31,4 +32,12 @@ test("points typed: whole, between 1 and the most a grant gives", () => {
   assert.equal(pointsIn(0), null);
   assert.equal(pointsIn(MAX_GRANT_POINTS + 1), null);
   assert.equal(pointsIn(2.5), null);
+});
+
+test("what a gift of points is enough for: the costliest reward within them", () => {
+  const rewards = [reward("Coffee", 300), reward("Cake", 900), reward("Tea", 500), reward("Also tea", 500)];
+  assert.equal(enoughFor(rewards, 650), "Tea", "the first of equal cost");
+  assert.equal(enoughFor(rewards, 300), "Coffee", "exactly its cost");
+  assert.equal(enoughFor(rewards, 299), null, "short of every reward");
+  assert.equal(enoughFor(rewards, null), null);
 });

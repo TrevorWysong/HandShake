@@ -417,7 +417,7 @@ export function Cart() {
             </>
           )}
 
-          <RewardsSection discounts={discounts} menuItems={menuItems} onBrowse={() => catalogRef && navigate(`/rewards/${bytesToHex(catalogRef)}/redeem`)} />
+          <RewardsSection discounts={discounts} menuItems={menuItems} menuRead={!!storeInfo?.menuRead} onBrowse={() => catalogRef && navigate(`/rewards/${bytesToHex(catalogRef)}/redeem`)} />
           {/* Promo codes are the menu's: a cart of goodie bags has nothing for one. */}
           {menu.length > 0 && <PromoSection discounts={discounts} />}
         </div>

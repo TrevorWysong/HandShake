@@ -2707,6 +2707,17 @@ export interface OrderDecisions {
 }
 
 /**
+ * Points the store gave the caller with one of their orders -- an apology
+ * with its answer to a report, say -- for that order's page.
+ */
+export interface OrderGift {
+  grant: ActionHash;
+  at: Timestamp;
+  points: number;
+  note: string;
+}
+
+/**
  * Something to order -- an item, how many, and what was chosen -- before
  * it's priced: what a customer's app sends, and what a recurring order
  * keeps.

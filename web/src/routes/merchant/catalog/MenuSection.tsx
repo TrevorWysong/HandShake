@@ -4,7 +4,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { addMenuItem, removeMenuItem, updateMenuItem } from "../../../holochain/zomes/catalog";
 import { bytesEqual, bytesToHex, hexToBytes } from "../../../holochain/decode";
 import { groupByCategory, type ItemRow } from "../../../lib/storefront/menu";
-import { formatCents, toMinorUnits, fromMinorUnits, currencySymbol } from "../../../lib/ui/format";
+import { formatCents, toMinorUnits, fromMinorUnits, currencySymbol, listOf } from "../../../lib/ui/format";
+import { programOf } from "../../../holochain/zomes/rewards";
+import { rewardsFor } from "../../../lib/rewards/rewards";
+import { useResource } from "../../../lib/hooks/useResource";
 import { fadeSlideUp, staggerContainer } from "../../../lib/ui/motion";
 import { ConfirmRemove } from "../../../components/ConfirmRemove";
 import { Button, Card, Checkbox, Field, GroupHeading, Input, Notice, SectionLabel, Select, StatNumber, Textarea } from "../../../components/ui";
@@ -152,6 +155,10 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
   const minAge = useTerms().restricted_min_age;
   const t = useT();
   const saving = useAction();
+  // The rewards that give it or take a share off it, named in the removal's
+  // confirm -- read only for an item already on the menu.
+  const { data: programView } = useResource(row ? `program:${bytesToHex(catalogRef)}` : null, () => programOf(catalogRef));
+  const affected = row ? rewardsFor(programView?.program, row.hash) : [];
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
   const salePrice = form.sale ? saleProblem(form.sale, toMinorUnits(form.price)) : null;
@@ -261,7 +268,7 @@ function ItemForm({ catalogRef, row, others, groups, taxRates, onSaved }: { cata
         {row ? t("menuEditor.save") : t("menuEditor.addToMenu")}
       </Button>
       {/* Taking it off the menu can't be undone: it's only added again as new. */}
-      {row && <ConfirmRemove label={t("menuEditor.remove")} confirm={t("menuEditor.removeConfirm", { name: row.item.name })} action={t("menuEditor.removeButton")} busy={saving.busy} removing={saving.doing === "remove"} onRemove={remove} />}
+      {row && <ConfirmRemove label={t("menuEditor.remove")} confirm={t("menuEditor.removeConfirm", { name: row.item.name })} detail={affected.length > 0 ? t("menuEditor.removeRewards", { count: affected.length, rewards: listOf(affected.map((name) => `“${name}”`)) }) : null} action={t("menuEditor.removeButton")} busy={saving.busy} removing={saving.doing === "remove"} onRemove={remove} />}
     </Card>
   );
 }

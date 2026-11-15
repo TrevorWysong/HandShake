@@ -11,9 +11,9 @@ import { decodeEntry, hexToBytes } from "../../holochain/decode";
 import { useResource } from "../../lib/hooks/useResource";
 import { fetchMenu, itemNamer, type ItemRow } from "../../lib/storefront/menu";
 import { describeReward } from "../../lib/storefront/promotions";
-import { ACCENTS, redeemable, tierOf } from "../../lib/rewards/rewards";
+import { ACCENTS, redeemable, rewardOffered, tierOf } from "../../lib/rewards/rewards";
 import { useRewardChooser } from "../../components/rewards/useRewardChooser";
-import { RewardArt } from "../../components/rewards/RewardPieces";
+import { RewardArt, RewardGone } from "../../components/rewards/RewardPieces";
 import { Sheet } from "../../components/Sheet";
 import { Button, Skeleton } from "../../components/ui";
 import { useCart, useCarts } from "../../store/cart";
@@ -31,7 +31,8 @@ export function RedeemRewards() {
   const { hash } = useParams<{ hash: string }>();
   const catalogRef = useMemo(() => hexToBytes(hash ?? ""), [hash]);
   const { data: card, error: cardError, reload: reloadCard } = useResource(hash ? `rewards:card:${hash}` : null, () => myCard(catalogRef));
-  const { data: menu = [] } = useResource(hash ? `store-menu-items:${hash}` : null, () => fetchMenu(catalogRef));
+  const { data: menuRead } = useResource(hash ? `store-menu-items:${hash}` : null, () => fetchMenu(catalogRef));
+  const menu = menuRead ?? [];
   const { data: store } = useResource(hash ? `catalog:${hash}` : null, () => getCatalog(catalogRef).then((r) => decodeEntry<MerchantCatalog>(r)));
   const cart = useCart(hash ?? null);
   const [bucket, setBucket] = useState<number | null>(null);
@@ -132,7 +133,7 @@ export function RedeemRewards() {
         <motion.div layout className={clsx("grid grid-cols-2 gap-3 px-4 md:grid-cols-3", buckets.length > 1 ? "pt-2" : "pt-5")}>
           <AnimatePresence>
             {shown.map((reward) => (
-              <RedeemTile key={reward.id} program={program} reward={reward} balance={spendable(reward)} tier={tier} menu={menu} inBag={inBag?.id === reward.id} onOpen={() => setOpening(reward)} />
+              <RedeemTile key={reward.id} program={program} reward={reward} balance={spendable(reward)} tier={tier} menu={menu} offered={rewardOffered(reward, menuRead)} inBag={inBag?.id === reward.id} onOpen={() => setOpening(reward)} />
             ))}
           </AnimatePresence>
         </motion.div>
@@ -233,9 +234,9 @@ export function RedeemRewards() {
 
 /// One reward on the redeem screen: its picture and price, and whether it's
 /// theirs now -- or how far off, or for which status level.
-function RedeemTile({ program, reward, balance, tier, menu, inBag, onOpen }: { program: RewardsProgram; reward: Reward; balance: number; tier: number; menu: ItemRow[]; inBag: boolean; onOpen: () => void }) {
+function RedeemTile({ program, reward, balance, tier, menu, offered, inBag, onOpen }: { program: RewardsProgram; reward: Reward; balance: number; tier: number; menu: ItemRow[]; offered: boolean; inBag: boolean; onOpen: () => void }) {
   const t = useT();
-  const state = redeemable(program, balance, tier, reward);
+  const state = redeemable(program, balance, tier, reward, offered);
   const colors = ACCENTS[program.accent];
   const ready = state === "ok";
   return (
@@ -250,7 +251,7 @@ function RedeemTile({ program, reward, balance, tier, menu, inBag, onOpen }: { p
       className={clsx("relative overflow-hidden rounded-3xl bg-white text-left shadow-[var(--shadow-card)] ring-2 dark:bg-ink-900", inBag ? "" : "ring-transparent")}
       style={inBag ? { ["--tw-ring-color" as string]: colors.to } : undefined}
     >
-      <div className={clsx("relative aspect-[4/3] w-full", !ready && !inBag && "grayscale-[60%]")}>
+      <div className={clsx("relative aspect-[4/3] w-full", !ready && !inBag && "grayscale-[60%]", state === "gone" && "opacity-60")}>
         <RewardArt benefit={reward.benefit} menu={menu} accent={program.accent} />
         {inBag && (
           <span className="absolute inset-x-2 top-2 flex items-center justify-center gap-1 rounded-full py-1 text-[11px] font-bold text-white" style={{ background: colors.to }}>
@@ -260,7 +261,7 @@ function RedeemTile({ program, reward, balance, tier, menu, inBag, onOpen }: { p
       </div>
       <div className="p-3">
         <p className="line-clamp-2 min-h-[2.5rem] text-sm font-bold leading-tight text-ink-900 dark:text-ink-50">{reward.name}</p>
-        <p className="mt-1 text-xs font-black tabular-nums" style={{ color: colors.to }}>
+        <p className={clsx("mt-1 text-xs font-black tabular-nums", state === "gone" && "text-ink-400")} style={state === "gone" ? undefined : { color: colors.to }}>
           {formatNumber(reward.cost)} {program.points_name}
         </p>
         {state === "points" && !inBag && (
@@ -277,6 +278,7 @@ function RedeemTile({ program, reward, balance, tier, menu, inBag, onOpen }: { p
           </p>
         )}
         {state === "paused" && <p className="mt-2 text-[11px] text-ink-400">{t("rewards.paused")}</p>}
+        {state === "gone" && <RewardGone />}
         {ready && !inBag && <p className="mt-2 text-xs font-bold text-ink-900 dark:text-ink-50">{t("redeem.tap")}</p>}
       </div>
     </motion.button>

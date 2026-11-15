@@ -1,24 +1,17 @@
 import { motion } from "framer-motion";
-import { Cake, Check, Clock, Crown, Flame, Gift, Hourglass, Lock, Percent, Sparkles, Star, Ticket } from "lucide-react";
+import { Ban, Cake, Check, Clock, Crown, Flame, Gift, Hourglass, Lock, Percent, Sparkles, Star, Ticket } from "lucide-react";
 import clsx from "clsx";
 import type { PointsState, PromoReward, Reward, RewardsProgram } from "../../holochain/types";
 import { itemNamer, type ItemRow } from "../../lib/storefront/menu";
-import { ACCENTS, describeHappyHour, nextTier, redeemable, tierOf } from "../../lib/rewards/rewards";
+import { ACCENTS, describeHappyHour, nextTier, redeemable, rewardItemRef, rewardOffered, tierOf } from "../../lib/rewards/rewards";
 import { describeReward } from "../../lib/storefront/promotions";
 import { bytesEqual, bytesToHex } from "../../holochain/decode";
 import { formatCents, formatNumber } from "../../lib/ui/format";
 import { useT } from "../../i18n";
 
-/// The item a reward gives, if it gives one.
-function rewardItem(benefit: PromoReward): Uint8Array | null {
-  if ("FreeItem" in benefit) return benefit.FreeItem.item_ref;
-  if ("PercentOffItem" in benefit) return benefit.PercentOffItem.item_ref;
-  return null;
-}
-
 /// A reward's look: the item's photo when it's for an item, else a symbol.
 export function RewardArt({ benefit, menu, accent }: { benefit: PromoReward; menu: ItemRow[]; accent: RewardsProgram["accent"] }) {
-  const item = rewardItem(benefit);
+  const item = rewardItemRef(benefit);
   const photo = item ? menu.find((m) => bytesEqual(m.hash, item))?.item.photo_data_uri : undefined;
   if (photo) return <img src={photo} alt="" className="h-full w-full object-cover" />;
   const Icon = "FreeItem" in benefit ? Gift : "FlatOffSubtotal" in benefit ? Ticket : Percent;
@@ -30,11 +23,12 @@ export function RewardArt({ benefit, menu, accent }: { benefit: PromoReward; men
   );
 }
 
-/// One reward, as a member sees it: ready, so many points away, or for a
-/// higher tier.
-export function RewardTile({ program, reward, balance, tier, menu, selected, onSelect }: { program: RewardsProgram; reward: Reward; balance: number; tier: number; menu: ItemRow[]; selected?: boolean; onSelect?: () => void }) {
+/// One reward, as a member sees it: ready, so many points away, for a
+/// higher tier, or not to be had while what it's for is off the menu --
+/// judged only once `menuRead`.
+export function RewardTile({ program, reward, balance, tier, menu, menuRead = false, selected, onSelect }: { program: RewardsProgram; reward: Reward; balance: number; tier: number; menu: ItemRow[]; menuRead?: boolean; selected?: boolean; onSelect?: () => void }) {
   const t = useT();
-  const state = redeemable(program, balance, tier, reward);
+  const state = redeemable(program, balance, tier, reward, rewardOffered(reward, menuRead ? menu : undefined));
   const itemName = itemNamer(menu);
   const progress = Math.min(1, balance / reward.cost);
   const colors = ACCENTS[program.accent];
@@ -51,7 +45,7 @@ export function RewardTile({ program, reward, balance, tier, menu, selected, onS
       )}
       style={selected ? { ["--tw-ring-color" as string]: colors.to } : undefined}
     >
-      <div className={clsx("relative h-24 w-full", state === "tier" && "grayscale")}>
+      <div className={clsx("relative h-24 w-full", (state === "tier" || state === "gone") && "grayscale", state === "gone" && "opacity-60")}>
         <RewardArt benefit={reward.benefit} menu={menu} accent={program.accent} />
         <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-bold text-white backdrop-blur-sm">
           {formatNumber(reward.cost)} {program.points_name}
@@ -80,8 +74,19 @@ export function RewardTile({ program, reward, balance, tier, menu, selected, onS
           </p>
         )}
         {state === "paused" && <p className="mt-2 text-[11px] text-ink-400">{t("rewards.paused")}</p>}
+        {state === "gone" && <RewardGone />}
       </div>
     </motion.button>
+  );
+}
+
+/// What a reward says while what it's for is off the menu or sold out.
+export function RewardGone() {
+  const t = useT();
+  return (
+    <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-ink-500 dark:text-ink-400">
+      <Ban size={11} aria-hidden /> {t("rewards.unavailable")}
+    </p>
   );
 }
 

@@ -40,3 +40,11 @@ export function pointsIn(value: number): number | null {
 export function pickedPoints(program: { rewards: readonly Reward[] }, points: number | null): number | null {
   return points ?? goodwillChoices(program.rewards)[0]?.points ?? null;
 }
+
+/// The best reward `points` alone would buy -- the costliest within them --
+/// so a store sees what its gift is worth to the customer. `null` if they
+/// cover none yet.
+export function enoughFor(rewards: readonly Reward[], points: number | null): string | null {
+  if (points === null) return null;
+  return rewards.reduce<Reward | null>((best, r) => (r.cost > 0 && r.cost <= points && (!best || r.cost > best.cost) ? r : best), null)?.name ?? null;
+}

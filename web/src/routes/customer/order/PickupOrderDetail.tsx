@@ -24,6 +24,7 @@ import { POLL, isOrderSignal } from "../../../lib/network/poll";
 import { OrderReceipt } from "../../../components/orders/OrderReceipt";
 import { ReorderButton } from "../../../components/orders/ReorderButton";
 import { OrderPointsBadge } from "../../../components/rewards/PendingPoints";
+import { OrderGifts } from "../../../components/rewards/OrderGifts";
 import { OrderSummary } from "../../../components/orders/OrderLines";
 import { OrderIssues } from "../../../components/orders/OrderIssues";
 import { ChatPanel } from "../../../components/orders/ChatPanel";
@@ -262,6 +263,7 @@ export function PickupOrderDetail() {
       {order.status === "PickedUp" && (
         <motion.div variants={fadeSlideUp}>
           <OrderIssues orderRef={orderRef} role="customer" />
+          <OrderGifts orderRef={orderRef} catalogRef={order.catalog_ref} />
           <OrderReceipt orderRef={orderRef} />
         </motion.div>
       )}

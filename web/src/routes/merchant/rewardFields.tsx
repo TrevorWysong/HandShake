@@ -61,7 +61,7 @@ export function ItemSelect({ menu, value, onChange }: { menu: ItemRow[]; value: 
   const hex = bytesToHex(value);
   const gone = !menu.some((row) => bytesToHex(row.hash) === hex);
   return (
-    <Select value={hex} onChange={(e) => onChange(hexToBytes(e.target.value))} aria-invalid={gone}>
+    <Select value={hex} onChange={(e) => onChange(hexToBytes(e.target.value))} aria-invalid={gone} className={gone ? "bg-amber-50 font-semibold text-amber-900 ring-2 ring-amber-400 dark:bg-amber-900/20 dark:text-amber-100" : undefined}>
       {gone && (
         <option value={hex} disabled>
           {t("rewardsAdmin.itemGone")}

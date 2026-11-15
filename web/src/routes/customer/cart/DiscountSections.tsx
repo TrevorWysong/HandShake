@@ -14,7 +14,7 @@ import type { Discounts } from "./useDiscounts";
 
 /// The member's rewards at this store, cheapest first: one in the bag holds
 /// its points until the order's placed (or it's taken out).
-export function RewardsSection({ discounts, menuItems, onBrowse }: { discounts: Discounts; menuItems: ItemRow[]; onBrowse: () => void }) {
+export function RewardsSection({ discounts, menuItems, menuRead, onBrowse }: { discounts: Discounts; menuItems: ItemRow[]; menuRead: boolean; onBrowse: () => void }) {
   const t = useT();
   const { rewardsProgram: program, rewardsCard: card, chosenReward, rewardDiscountCents } = discounts;
   if (!program || !card || program.rewards.length === 0) return null;
@@ -34,7 +34,7 @@ export function RewardsSection({ discounts, menuItems, onBrowse }: { discounts: 
         {[...program.rewards]
           .sort((a, b) => a.cost - b.cost)
           .map((reward) => (
-            <RewardTile key={reward.id} program={program} reward={reward} balance={card.balance} tier={card.tier} menu={menuItems} selected={chosenReward?.id === reward.id} onSelect={() => discounts.toggleReward(reward)} />
+            <RewardTile key={reward.id} program={program} reward={reward} balance={card.balance} tier={card.tier} menu={menuItems} menuRead={menuRead} selected={chosenReward?.id === reward.id} onSelect={() => discounts.toggleReward(reward)} />
           ))}
       </RewardRail>
       {chosenReward && rewardDiscountCents === 0 && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t("rewards.addItemToUse")}</p>}

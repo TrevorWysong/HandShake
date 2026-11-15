@@ -166,3 +166,8 @@ export function toLocalDateTime(micros: number | null): string {
   return new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 export const fromLocalDateTime = (value: string): number | null => (value ? new Date(value).getTime() * 1000 : null);
+
+/// Names run together as a sentence says them: "A, B and C".
+export function listOf(parts: string[]): string {
+  return new Intl.ListFormat(appLocale(), { type: "conjunction" }).format(parts);
+}

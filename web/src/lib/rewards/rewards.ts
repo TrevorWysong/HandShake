@@ -99,10 +99,45 @@ export function happyHourNow(program: RewardsProgram, nowMicros: number) {
   return program.earn.happy_hours.find((h) => (h.days & (1 << local.weekday)) !== 0 && local.minute >= h.start_minute && local.minute < h.end_minute) ?? null;
 }
 
-/// Whether a member can redeem `reward` now, and if not why.
-export type Redeemable = "ok" | "points" | "tier" | "paused";
-export function redeemable(program: RewardsProgram, balance: number, tier: number, reward: Reward): Redeemable {
+/// The menu item a reward is for -- one it gives, or takes a share off --
+/// or `null` for one that takes money off the order.
+export function rewardItemRef(benefit: PromoReward): Uint8Array | null {
+  if ("FreeItem" in benefit) return benefit.FreeItem.item_ref;
+  if ("PercentOffItem" in benefit) return benefit.PercentOffItem.item_ref;
+  return null;
+}
+
+/// The names of a program's rewards for `item` -- what taking it off the
+/// menu would stop being offered.
+export function rewardsFor(program: { rewards: readonly Reward[] } | null | undefined, item: Uint8Array): string[] {
+  return (program?.rewards ?? []).filter((r) => {
+    const ref = rewardItemRef(r.benefit);
+    return ref !== null && bytesEqual(ref, item);
+  }).map((r) => r.name);
+}
+
+/// Whether a reward can be had today: one for an item only while its store
+/// still lists the item and it isn't sold out. A menu not read (`undefined`)
+/// judges nothing, so a slow or failed read never hides a reward.
+export function rewardOffered(reward: Reward, menu: readonly ItemRow[] | undefined): boolean {
+  const ref = rewardItemRef(reward.benefit);
+  if (!ref || !menu) return true;
+  return menu.some((m) => bytesEqual(m.hash, ref) && m.item.available);
+}
+
+/// A program with only the rewards to be had today (`rewardOffered`) --
+/// for a card's "so many to [reward]", which should never point at one
+/// that can't be got.
+export function offeredOnly<P extends { rewards: Reward[] }>(program: P, menu: readonly ItemRow[] | undefined): P {
+  return menu ? { ...program, rewards: program.rewards.filter((r) => rewardOffered(r, menu)) } : program;
+}
+
+/// Whether a member can redeem `reward` now, and if not why: `gone` while
+/// what it's for is off the menu or sold out (`rewardOffered`).
+export type Redeemable = "ok" | "points" | "tier" | "paused" | "gone";
+export function redeemable(program: RewardsProgram, balance: number, tier: number, reward: Reward, offered = true): Redeemable {
   if (!program.active) return "paused";
+  if (!offered) return "gone";
   if (tier < reward.min_tier) return "tier";
   return balance >= reward.cost ? "ok" : "points";
 }

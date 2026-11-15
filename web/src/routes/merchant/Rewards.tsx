@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Cake, Clock, Crown, Flame, Gift, Hourglass, Palette, Sparkles, Trash2, Users } from "lucide-react";
+import { AlertTriangle, Cake, Clock, Crown, Flame, Gift, Hourglass, Palette, Sparkles, Trash2, Users } from "lucide-react";
 import clsx from "clsx";
 import { programOf, programStats, saveProgram } from "../../holochain/zomes/rewards";
 import { deviceTimeZone, getCatalog } from "../../holochain/zomes/catalog";
@@ -10,7 +10,7 @@ import { useResource } from "../../lib/hooks/useResource";
 import { fetchMenu, type ItemRow } from "../../lib/storefront/menu";
 import { fadeSlideUp, staggerContainer } from "../../lib/ui/motion";
 import { fromMinorUnits, toMinorUnits, currencySymbol, wholeNumberIn } from "../../lib/ui/format";
-import { ACCENT_NAMES, ACCENTS, describeHappyHour, starterProgram } from "../../lib/rewards/rewards";
+import { ACCENT_NAMES, ACCENTS, describeHappyHour, offeredOnly, rewardItemRef, starterProgram } from "../../lib/rewards/rewards";
 import { RewardsCard } from "../../components/rewards/RewardsCard";
 import { HowYouEarn, RewardRail, RewardTile } from "../../components/rewards/RewardPieces";
 import { StoreSwitcher } from "../../components/store/StoreSwitcher";
@@ -40,11 +40,7 @@ function draftProblem(p: RewardsProgram, menu: ItemRow[], t: Translate): string 
     if (reward.cost < 1) return t("rewardsAdmin.problem.rewardCost");
     if (reward.min_tier > p.tiers.length) return t("rewardsAdmin.problem.rewardTier");
   }
-  // An item since taken off the menu (`remove_menu_item`) can't be earned
-  // on or given.
-  const onMenu = (item: Uint8Array) => menu.some((row) => bytesEqual(row.hash, item));
-  const gifts = p.rewards.flatMap(({ benefit }) => ("FreeItem" in benefit ? [benefit.FreeItem.item_ref] : "PercentOffItem" in benefit ? [benefit.PercentOffItem.item_ref] : []));
-  if ([...p.earn.item_bonuses.map((bonus) => bonus.item_ref), ...gifts].some((item) => !onMenu(item))) return t("rewardsAdmin.problem.itemGone");
+  if (itemsGone(p, menu) > 0) return t("rewardsAdmin.problem.itemGone");
   for (const hour of p.earn.happy_hours) {
     if (hour.days === 0 || hour.start_minute >= hour.end_minute) return t("rewardsAdmin.problem.hours");
   }
@@ -52,6 +48,14 @@ function draftProblem(p: RewardsProgram, menu: ItemRow[], t: Translate): string 
   if (p.max_balance !== null && p.max_balance < dearest) return t("rewardsAdmin.problem.cap");
   if (p.expiry_days !== null && (p.expiry_days < 30 || p.expiry_days > 1095)) return t("rewardsAdmin.problem.expiry");
   return null;
+}
+
+/// How many of a program's rewards and bonuses are for an item since taken
+/// off the menu (`remove_menu_item`): none can be earned on or given.
+function itemsGone(p: RewardsProgram, menu: ItemRow[]): number {
+  const onMenu = (item: Uint8Array) => menu.some((row) => bytesEqual(row.hash, item));
+  const items = [...p.earn.item_bonuses.map((bonus) => bonus.item_ref), ...p.rewards.flatMap(({ benefit }) => rewardItemRef(benefit) ?? [])];
+  return items.filter((item) => !onMenu(item)).length;
 }
 
 /// The Rewards tab: the selected store's program, built with its card
@@ -107,6 +111,9 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
   };
   const problem = draftProblem(draft, menu, t);
   const dirty = JSON.stringify(draft) !== JSON.stringify(data.view?.program ?? null);
+  // Said once, up top, while the program as it stands has any: not a
+  // change to save, so no save bar until there is one.
+  const gone = itemsGone(draft, menu);
   const previewTier = draft.tiers.filter((tier) => previewPoints >= tier.threshold).length;
 
   function save() {
@@ -129,6 +136,19 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
         </div>
         {data.view && <Switch checked={draft.active} onChange={(active) => update((p) => ({ ...p, active }))} label={t("rewardsAdmin.running")} />}
       </motion.div>
+      <AnimatePresence initial={false}>
+        {gone > 0 && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-amber-50 px-4 py-3 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+              <div className="min-w-0 text-sm">
+                <p className="font-semibold">{t("rewardsAdmin.goneTitle", { count: gone })}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-amber-800 dark:text-amber-200">{t("rewardsAdmin.goneDetail", { count: gone })}</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* The settings, and the card as members will see it, live -- kept in
           view while editing: stuck above them on a phone or tablet, beside
@@ -137,7 +157,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
         <div className="contents lg:sticky lg:top-6 lg:col-start-2 lg:row-start-1 lg:block">
           {/* The card as members will see it, live. */}
           <motion.div variants={fadeSlideUp} className="sticky top-[calc(var(--spacing-header)+0.5rem)] z-20 lg:static">
-            <RewardsCard program={draft} storeName={store.business_name} balance={previewPoints} tier={previewTier} />
+            <RewardsCard program={offeredOnly(draft, menu)} storeName={store.business_name} balance={previewPoints} tier={previewTier} />
           </motion.div>
           <motion.div variants={fadeSlideUp} className="mt-3 flex items-center gap-3 px-1">
             <span className="shrink-0 text-xs font-semibold text-ink-400">{t("rewardsAdmin.previewAt")}</span>
@@ -343,7 +363,7 @@ function ProgramBuilder({ storeHex }: { storeHex: string }) {
       {/* Saving, kept in reach -- while there's something to save (or a
           program to launch), or a problem to tell. */}
       <AnimatePresence>
-        {(dirty || !data.view || problem || action.error) && (
+        {(dirty || !data.view || action.error) && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} className="fixed inset-x-0 bottom-20 z-30 px-4 lg:bottom-6 lg:left-sidebar">
             <div className="mx-auto max-w-lg rounded-2xl bg-white/90 p-3 shadow-[var(--shadow-float)] backdrop-blur-md dark:bg-ink-900/90">
               <AnimatePresence>
