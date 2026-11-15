@@ -114,19 +114,22 @@ export function Cart() {
   const repricedKey = checks ? [...checks].filter(([, check]) => check.kind === "repriced").map(([key]) => key).join(";") : "";
   const lineProblems = checks ? [...checks.values()].filter((check) => check.kind === "gone" || check.kind === "choose").length : 0;
   // What only changed in price is priced as the order will be -- what the
-  // network checks its total against -- and the customer told, once.
-  const [pricesUpdated, setPricesUpdated] = useState(false);
+  // network checks its total against -- and each such line shows what it
+  // was, so the customer sees exactly what moved.
+  const [wasPrice, setWasPrice] = useState<ReadonlyMap<string, number>>(new Map());
   usePolling(() => {
     if (!checks) return;
-    let changed = false;
+    const was = new Map<string, number>();
     cart.repriceLines((line) => {
       const check = checks.get(lineKey(line));
       if (check?.kind !== "repriced") return line;
-      changed = true;
+      was.set(lineKey(line), line.priceCents);
       return check.line;
     });
-    if (changed) setPricesUpdated(true);
+    // The first price each was added at stays what it's compared with.
+    if (was.size > 0) setWasPrice((prev) => new Map([...was, ...prev]));
   }, { pollMs: 30_000 }, !!checks && cart.lines.length > 0, repricedKey || null);
+  const repricedShown = cart.lines.filter((line) => wasPrice.has(lineKey(line)) && wasPrice.get(lineKey(line)) !== line.priceCents).length;
   const recheck = () => {
     reloadStore();
     reloadGroups();
@@ -148,7 +151,9 @@ export function Cart() {
   // promo, and nothing scheduled for later.
   const menu = menuLines(cart.lines);
   const hasBags = menu.length < cart.lines.length;
-  const bagIssues = bagProblems(cart.lines, delivery, now.getTime() * 1000);
+  // A bag its store ended is marked on its line, to remove: how it could be
+  // fetched no longer matters.
+  const bagIssues = bagProblems(cart.lines, delivery, now.getTime() * 1000).filter((problem) => checks?.get(lineKey(problem.line))?.kind !== "gone");
 
   const subtotalCents = cart.total();
   const tipCents = tipFor(subtotalCents, options.tipPercent, options.customTip);
@@ -360,13 +365,13 @@ export function Cart() {
 
           <BagNotices store={store} problems={bagIssues} delivery={delivery} onSwitch={ageRestricted && !delivery ? null : () => setFulfillment(delivery ? "Pickup" : "Delivery")} />
 
-          {pricesUpdated && (
-            <motion.p variants={fadeSlideUp} role="status" className="mb-3 flex items-start gap-2 rounded-xl bg-ink-100 px-3 py-2.5 text-xs leading-relaxed text-ink-700 dark:bg-ink-800 dark:text-ink-200">
+          {repricedShown > 0 && (
+            <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} role="status" className="mb-3 flex items-start gap-2 rounded-xl bg-ink-100 px-3 py-2.5 text-xs leading-relaxed text-ink-700 dark:bg-ink-800 dark:text-ink-200">
               <RefreshCw size={14} aria-hidden className="mt-0.5 shrink-0 text-handshake-500" />
-              {t("cart.check.repriced")}
+              {t("cart.check.repriced", { count: repricedShown })}
             </motion.p>
           )}
-          <CartLines store={store} menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} checks={checks} groups={groups ?? null} onEdit={setEditing} />
+          <CartLines store={store} menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} checks={checks} groups={groups ?? null} wasPrice={wasPrice} onEdit={setEditing} />
 
           {delivery && (
             <>

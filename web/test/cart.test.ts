@@ -103,3 +103,15 @@ test("a line holds at most so many units, however they're added", () => {
   cartOf(store).setQuantity(lineKey(line(bread, 400)), MAX_UNITS + 10);
   assert.equal(cartOf(store).lines[0].quantity, MAX_UNITS, "and so does setting it");
 });
+
+test("a line edited stays where it was, unless it's now the same as another", () => {
+  empty();
+  const carts = useCarts.getState();
+  const tea = new Uint8Array([6]);
+  for (const ref of [bread, soup, tea]) carts.addLine(store, owner, "Mo's", line(ref, 400));
+  const choose = (l: CartLine, option: number): CartLine => ({ ...l, selections: [{ group: new Uint8Array([5]), options: [{ option, quantity: 1, nested: [] }] }] });
+  cartOf(store).replaceLine(lineKey(line(soup, 400)), choose(line(soup, 450), 2));
+  assert.deepEqual(cartOf(store).lines.map((l) => [l.itemRef[0], l.priceCents]), [[7, 400], [8, 450], [6, 400]], "in its place, with its new choices");
+  cartOf(store).replaceLine(lineKey(line(tea, 400)), line(bread, 400));
+  assert.deepEqual(cartOf(store).lines.map((l) => [l.itemRef[0], l.quantity]), [[7, 2], [8, 1]], "the same as the bread now: one line, where the bread was");
+});

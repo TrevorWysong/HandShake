@@ -236,7 +236,17 @@ export function cartView(storeKey: string | null, cart: StoreCart | undefined, p
     choosePromo: (promo: string | null) => storeKey && choosePromo(storeKey, promo),
     releaseReward: () => edit((c) => ({ reward: null, lines: c.lines.filter((l) => l.rewardId == null) })),
     /// Puts `line` in place of the line keyed `key` -- editing its choices.
-    replaceLine: (key: string, line: CartLine) => edit((c) => ({ lines: merged(c.lines.filter((l) => lineKey(l) !== key), line) })),
+    /// Puts a line's new choices where it was, so editing never moves it --
+    /// or, now the same as another line, makes them one, where that one is.
+    replaceLine: (key: string, line: CartLine) =>
+      edit((c) => {
+        const at = c.lines.findIndex((l) => lineKey(l) === key);
+        const rest = c.lines.filter((l) => lineKey(l) !== key);
+        if (at === -1 || rest.some((l) => lineKey(l) === lineKey(line))) return { lines: merged(rest, line) };
+        const lines = [...c.lines];
+        lines[at] = { ...line, quantity: Math.min(line.quantity, MAX_UNITS) };
+        return { lines };
+      }),
     /// Brings each line to today's price, if it's moved.
     repriceLines: (update: (line: CartLine) => CartLine) => {
       if (!cart) return;

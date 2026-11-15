@@ -1,7 +1,7 @@
 import type { HTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { ChevronDown, Minus, Plus, type LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { cloneElement, isValidElement, useId, useState } from "react";
 import clsx from "clsx";
 import { Link } from "react-router-dom";
 import { useT } from "../i18n";
@@ -284,11 +284,19 @@ export function Switch({ checked, onChange, label, disabled }: { checked: boolea
   );
 }
 
+/// A labelled field. Holding a single text field, textarea or select, its
+/// label names that control (`for`), so assistive tech reads it and a tap
+/// on the label focuses it; holding several, it names them as a group.
 export function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+  const id = useId();
+  const single = isValidElement<{ id?: string }>(children) && (children.type === Input || children.type === Textarea || children.type === Select);
+  const controlId = single ? (children.props.id ?? `${id}-control`) : undefined;
   return (
-    <div className={className}>
-      <label className="mb-1 block text-xs font-semibold text-ink-500">{label}</label>
-      {children}
+    <div className={className} role={single ? undefined : "group"} aria-labelledby={single ? undefined : `${id}-label`}>
+      <label id={`${id}-label`} htmlFor={controlId} className="mb-1 block text-xs font-semibold text-ink-500">
+        {label}
+      </label>
+      {single ? cloneElement(children, { id: controlId }) : children}
     </div>
   );
 }

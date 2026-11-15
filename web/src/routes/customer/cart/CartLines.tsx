@@ -2,6 +2,7 @@
 // redeemed into it shown as a reward -- its price struck through, free --
 // and a goodie bag as one, with how long it's on offer.
 import { motion } from "framer-motion";
+import clsx from "clsx";
 import { AlertTriangle, Minus, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Card, StatNumber } from "../../../components/ui";
 import { lineKey, MAX_UNITS, useCart, type CartLine } from "../../../store/cart";
@@ -24,7 +25,9 @@ export interface LineEdit {
 
 /// `checks`: each line against the store as it is now, by `lineKey` -- one
 /// that can't be ordered as it is says why beneath it, with what to do.
-export function CartLines({ store, menuItems, program, rewardCost, checks, groups, onEdit }: { store: string; menuItems: ItemRow[]; program: RewardsProgram | null; rewardCost: number; checks: Map<string, LineCheck> | null; groups: Groups | null; onEdit: (edit: LineEdit) => void }) {
+/// `wasPrice`: a line repriced since it was added, by `lineKey`, with the
+/// unit price it was added at.
+export function CartLines({ store, menuItems, program, rewardCost, checks, groups, wasPrice, onEdit }: { store: string; menuItems: ItemRow[]; program: RewardsProgram | null; rewardCost: number; checks: Map<string, LineCheck> | null; groups: Groups | null; wasPrice: ReadonlyMap<string, number>; onEdit: (edit: LineEdit) => void }) {
   const cart = useCart(store);
   return (
     <motion.div variants={fadeSlideUp}>
@@ -36,7 +39,7 @@ export function CartLines({ store, menuItems, program, rewardCost, checks, group
           const problem = check?.kind === "gone" || check?.kind === "choose" ? check : null;
           return (
             <div key={key} className={problem ? "bg-amber-50/60 dark:bg-amber-900/10" : undefined}>
-              <Line line={line} lineId={key} menuItems={menuItems} program={program} rewardCost={rewardCost} store={store} onEdit={onEdit} />
+              <Line line={line} lineId={key} menuItems={menuItems} program={program} rewardCost={rewardCost} store={store} was={wasPrice.get(key)} gone={problem?.kind === "gone"} onEdit={onEdit} />
               {problem && (
                 <LineProblem
                   name={line.name}
@@ -58,7 +61,7 @@ export function CartLines({ store, menuItems, program, rewardCost, checks, group
 function LineProblem({ name, reason, action, onRemove, onChoose }: { name: string; reason: string; action: "remove" | "choose"; onRemove: () => void; onChoose: () => void }) {
   const t = useT();
   return (
-    <div role="alert" className="flex items-center gap-2.5 px-4 pb-3.5 forced-colors:border-t forced-colors:border-solid">
+    <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} role="alert" className="flex items-center gap-2.5 px-4 pb-3.5 forced-colors:border-t forced-colors:border-solid">
       <AlertTriangle size={15} aria-hidden className="shrink-0 text-amber-600 dark:text-amber-400" />
       <p className="min-w-0 flex-1 text-xs leading-snug text-amber-900 dark:text-amber-100">
         <span className="font-semibold">{action === "choose" ? t("cart.check.choicesChanged") : reason}</span>
@@ -72,27 +75,32 @@ function LineProblem({ name, reason, action, onRemove, onChoose }: { name: strin
       >
         {action === "choose" ? t("cart.check.chooseAgain") : t("cart.check.remove")}
       </button>
-    </div>
+    </motion.div>
   );
 }
 
 /// One line of the bag, as it was added: a reward, a goodie bag, or an item.
-function Line({ line, lineId: key, menuItems, program, rewardCost, store, onEdit }: { line: CartLine; lineId: string; menuItems: ItemRow[]; program: RewardsProgram | null; rewardCost: number; store: string; onEdit: (edit: LineEdit) => void }) {
+/// `was`: the unit price it was added at, if the store has repriced it
+/// since. `gone`: it can't be ordered -- shown faded, to remove.
+function Line({ line, lineId: key, menuItems, program, rewardCost, store, was, gone, onEdit }: { line: CartLine; lineId: string; menuItems: ItemRow[]; program: RewardsProgram | null; rewardCost: number; store: string; was: number | undefined; gone: boolean; onEdit: (edit: LineEdit) => void }) {
   const t = useT();
   const cart = useCart(store);
   if (line.rewardId != null && program) return <RewardLine line={line} program={program} cost={rewardCost} onRemove={() => cart.removeLine(key)} />;
-  if (line.bag) return <BagLine line={line} onRemove={() => cart.removeLine(key)} />;
+  if (line.bag) return <BagLine line={line} gone={gone} onRemove={() => cart.removeLine(key)} />;
+  const repriced = was !== undefined && was !== line.priceCents;
   // Only an item with choices has anything to edit.
   const row = line.selections.length > 0 ? menuItems.find((m) => bytesEqual(m.hash, line.itemRef)) : undefined;
   // The quantity and price wrap under the name when there isn't room for
   // all three -- large text, a narrow screen -- rather than squeezing it.
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
-      <div className="min-w-[8rem] flex-1">
+      <div className={clsx("min-w-[8rem] flex-1", gone && "opacity-55")}>
         <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{line.name}</p>
         {line.choiceLabels.length > 0 && <p className="line-clamp-2 text-xs text-ink-500 dark:text-ink-400">{line.choiceLabels.join(", ")}</p>}
         <p className="text-xs text-ink-400">
+          {repriced && <span className="mr-1.5 line-through decoration-ink-300">{formatCents(was)}</span>}
           {t("cart.each", { price: formatCents(line.priceCents) })}
+          {repriced && <span className="ml-1.5 inline-block whitespace-nowrap rounded-full bg-handshake-50 px-1.5 py-0.5 text-[10px] font-bold text-handshake-700 dark:bg-handshake-900/30 dark:text-handshake-300 forced-colors:border forced-colors:border-solid">{t("cart.check.priceUpdated")}</span>}
           {!line.bag && menuItems.find((row) => bytesEqual(row.hash, line.itemRef))?.fullPriceCents && <span className="ml-1.5 font-semibold text-handshake-600 dark:text-handshake-400">{t("sale.onLine")}</span>}
           {row && (
             <button type="button" onClick={() => onEdit({ key, line, row })} className="ml-2 font-semibold text-handshake-600 hover:underline dark:text-handshake-400">
@@ -101,6 +109,8 @@ function Line({ line, lineId: key, menuItems, program, rewardCost, store, onEdit
           )}
         </p>
       </div>
+      {/* Nothing more of something that can't be ordered: only its removal, below. */}
+      {!gone && (
       <div className="flex items-center gap-2 rounded-full bg-ink-100 dark:bg-ink-800 px-1.5 py-1">
         <motion.button whileTap={{ scale: 0.85 }} onClick={() => cart.setQuantity(key, line.quantity - 1)} aria-label={t("item.fewer")} className="grid h-6 w-6 place-items-center rounded-full hover:bg-ink-200 dark:hover:bg-ink-700">
           {line.quantity === 1 ? <Trash2 size={14} className="text-ink-400" /> : <Minus size={14} className="text-ink-400" />}
@@ -110,12 +120,13 @@ function Line({ line, lineId: key, menuItems, program, rewardCost, store, onEdit
           <Plus size={14} className="text-ink-400" />
         </motion.button>
       </div>
-      <StatNumber className="ml-auto w-16 text-right text-sm">{formatCents(line.priceCents * line.quantity)}</StatNumber>
+      )}
+      <StatNumber className={clsx("ml-auto w-16 text-right text-sm", gone && "text-ink-400 line-through opacity-70")}>{formatCents(line.priceCents * line.quantity)}</StatNumber>
     </div>
   );
 }
 
-function BagLine({ line, onRemove }: { line: CartLine; onRemove: () => void }) {
+function BagLine({ line, gone, onRemove }: { line: CartLine; gone: boolean; onRemove: () => void }) {
   const t = useT();
   const bag = line.bag!;
   const only = bag.pickup && bag.delivery ? null : bag.pickup ? t("cart.bag.pickupOnly") : t("cart.bag.deliveryOnly");
@@ -124,17 +135,19 @@ function BagLine({ line, onRemove }: { line: CartLine; onRemove: () => void }) {
       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-amber-300 to-handshake-500 text-base" aria-hidden>
         🎁
       </span>
-      <div className="min-w-0 flex-1">
+      <div className={clsx("min-w-0 flex-1", gone && "opacity-55")}>
         <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-50">{line.name}</p>
         <p className="text-xs text-ink-400">
           {t("cart.bag.until", { time: formatClockTime(bag.closes) })}
           {only && ` · ${only}`}
         </p>
       </div>
-      <button type="button" onClick={onRemove} aria-label={t("cart.bag.remove")} className="grid h-8 w-8 place-items-center rounded-full text-ink-400 hover:bg-ink-100 hover:text-red-500 dark:hover:bg-ink-800">
-        <Trash2 size={15} />
-      </button>
-      <StatNumber className="w-16 text-right text-sm">{formatCents(line.priceCents)}</StatNumber>
+      {!gone && (
+        <button type="button" onClick={onRemove} aria-label={t("cart.bag.remove")} className="grid h-8 w-8 place-items-center rounded-full text-ink-400 hover:bg-ink-100 hover:text-red-500 dark:hover:bg-ink-800">
+          <Trash2 size={15} />
+        </button>
+      )}
+      <StatNumber className={clsx("w-16 text-right text-sm", gone && "text-ink-400 line-through opacity-70")}>{formatCents(line.priceCents)}</StatNumber>
     </div>
   );
 }
