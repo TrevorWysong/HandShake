@@ -151,6 +151,8 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
         { name: "Horchata", price: 375, category: "Drinks", description: "Rice and cinnamon, made fresh daily." },
       ],
       promos: [{ code: "PICKUP15", requirement: "None", reward: { PercentOffSubtotal: 15 }, only: "Pickup" }],
+      // Free delivery on big orders -- past any the other tests place here.
+      deliveryShare: { base: 50, tiers: [{ from_cents: 3000, percent: 100 }] },
     },
     {
       key: "cafe",

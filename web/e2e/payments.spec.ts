@@ -103,3 +103,35 @@ test("everyone's record of what they paid and were paid", async ({ page, browser
   await expect(customer.getByText("Getting paid")).toHaveCount(0);
   await shoot(customer, "payments-customer");
 });
+
+test("an order past the store's free-delivery tier is held with no delivery fee", async ({ page, browser }) => {
+  const tacos = store("tacos");
+  await signInAs(page, "lee");
+  await page.locator("main").getByText(tacos.name, { exact: true }).first().click();
+  // Its deal, on its page.
+  await expect(page.getByText("Free delivery").first()).toBeVisible();
+  await expect(page.getByText("On orders $30.00+").first()).toBeVisible();
+  // $5.00 Elote, six times: $30.00 of food.
+  for (let i = 0; i < 6; i++) await page.getByRole("button", { name: "Add Elote" }).click();
+  await page.getByRole("link", { name: "Cart" }).click();
+  await page.getByText("Delivery", { exact: true }).first().click();
+  await expect(page.getByText("You've unlocked free delivery")).toBeVisible();
+  await shoot(page, "cart-free-delivery");
+
+  // What the card's held for is the order as checkout shows it: the food
+  // and the tip, no fee.
+  const place = page.getByRole("button", { name: /^Place order · up to / });
+  const total = (await place.innerText()).match(/\$[\d.,]+/)![0];
+  await expect(page.getByText(total).first()).toBeVisible();
+  await place.click();
+  const hold = page.getByRole("button", { name: `Hold ${total} on my card` });
+  await expect(hold).toBeEnabled();
+  await hold.click();
+  await expect(page.getByText(/Waiting for the store to accept your order/)).toBeVisible();
+
+  // The store's agent holds it, and the store can take the order.
+  const storeSide = await (await browser.newContext()).newPage();
+  await signInAs(storeSide, "mo");
+  await storeSide.getByRole("button", { name: "Sell" }).click();
+  await expect(storeSide.getByRole("button", { name: /^Accept · \d+ min$/ }).first()).toBeVisible();
+});
