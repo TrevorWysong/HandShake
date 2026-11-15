@@ -20,16 +20,21 @@ export type LineCheck =
   /// It can't be ordered any more: take it out.
   | { kind: "gone"; reason: string }
   /// Its choices no longer fit the item: choose again.
-  | { kind: "choose"; reason: string };
+  | { kind: "choose"; reason: string }
+  /// What it's checked against couldn't be read: not known to be fine, so
+  /// the order waits while it's read again.
+  | { kind: "unchecked" };
 
 /// `line` against the store's menu (`menu`, as sold now: sale prices
 /// applied), its choice groups at their latest, and the goodie bags it has
-/// on offer (`liveBags`, original actions in hex -- `null` if they couldn't
-/// be read, when a bag isn't judged).
-export function checkLine(line: CartLine, menu: readonly ItemRow[], groups: Groups, liveBags: ReadonlySet<string> | null): LineCheck {
+/// on offer (`liveBags`, original actions in hex). Any of them `null` --
+/// couldn't be read -- leaves what depends on it `unchecked`, never passed.
+export function checkLine(line: CartLine, menu: readonly ItemRow[] | null, groups: Groups | null, liveBags: ReadonlySet<string> | null): LineCheck {
   if (line.bag) {
-    return liveBags !== null && !liveBags.has(bytesToHex(line.itemRef)) ? { kind: "gone", reason: t("cart.check.bagEnded") } : { kind: "ok" };
+    if (liveBags === null) return { kind: "unchecked" };
+    return liveBags.has(bytesToHex(line.itemRef)) ? { kind: "ok" } : { kind: "gone", reason: t("cart.check.bagEnded") };
   }
+  if (menu === null || groups === null) return { kind: "unchecked" };
   const row = menu.find((candidate) => bytesEqual(candidate.hash, line.itemRef));
   if (!row) return { kind: "gone", reason: t("cart.check.removed") };
   if (!row.item.available) return { kind: "gone", reason: t("cart.check.soldOut") };

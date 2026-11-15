@@ -154,6 +154,8 @@ export const es: Catalog = {
   "cart.check.remove": "Quitar",
   "cart.check.chooseAgain": "Elegir de nuevo",
   "cart.check.choicesChanged": "Sus opciones cambiaron",
+  "cart.check.unchecked": "Comprobando esto con la tienda…",
+  "cart.check.checking": "Seguimos comprobando tu pedido con la tienda. Podrás hacerlo en cuanto se confirme.",
   "cart.check.blocked": "Algunos productos cambiaron desde que los añadiste. Arregla los marcados arriba para hacer tu pedido.",
   "cart.check.repriced": { one: "Un precio cambió desde que lo añadiste. Está marcado abajo, y tu total está al día.", other: "{count} precios cambiaron desde que los añadiste. Están marcados abajo, y tu total está al día." },
   "cart.check.priceWas": "antes {price}",

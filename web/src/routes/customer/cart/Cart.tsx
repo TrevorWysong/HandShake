@@ -109,8 +109,13 @@ export function Cart() {
   // choices, whether it's still sold. Judged only on a menu that was read,
   // never on one that failed to load.
   const chosenKey = cart.lines.map(lineKey).join(";");
-  const { data: groups, reload: reloadGroups } = useResource(storeInfo?.menuRead && catalogRef ? `cart-groups:${bytesToHex(catalogRef)}:${chosenKey}` : null, () => fetchChosenGroups(catalogRef!, cart.lines.map((line) => line.selections)));
-  const checks = storeInfo?.menuRead && groups ? new Map(cart.lines.map((line) => [lineKey(line), checkLine(line, menuItems, groups, storeInfo.liveBags)])) : null;
+  const { data: groups, error: groupsError, reload: reloadGroups } = useResource(storeInfo?.menuRead && catalogRef ? `cart-groups:${bytesToHex(catalogRef)}:${chosenKey}` : null, () => fetchChosenGroups(catalogRef!, cart.lines.map((line) => line.selections)));
+  // Judged once the store's been read -- what couldn't be read leaves its
+  // lines unchecked, which holds the order (`checkLine`) -- and not while
+  // its choice groups are still on their way.
+  const groupsRead = storeInfo?.menuRead ? (groups ?? (groupsError ? null : undefined)) : null;
+  const checks = storeInfo && groupsRead !== undefined ? new Map(cart.lines.map((line) => [lineKey(line), checkLine(line, storeInfo.menuRead ? menuItems : null, groupsRead, storeInfo.liveBags)])) : null;
+  const unchecked = checks ? [...checks.values()].filter((check) => check.kind === "unchecked").length : 0;
   const repricedKey = checks ? [...checks].filter(([, check]) => check.kind === "repriced").map(([key]) => key).join(";") : "";
   const lineProblems = checks ? [...checks.values()].filter((check) => check.kind === "gone" || check.kind === "choose").length : 0;
   // What only changed in price is priced as the order will be -- what the
@@ -134,6 +139,8 @@ export function Cart() {
     reloadStore();
     reloadGroups();
   };
+  // Read again soon while anything couldn't be checked, not on the slow poll.
+  usePolling(recheck, { pollMs: 10_000 }, unchecked > 0);
   const allergyPolicy = storeInfo?.allergyPolicy ?? null;
   const allergiesRefused = tellingStore && hasAllergies(allergies) && allergyPolicy?.requests === "NotAccepted";
   const allergyMatches = useCartAllergies(catalogRef, cart.lines, menuItems, allergyPolicy, tellingStore ? allergies : mine);
@@ -216,6 +223,7 @@ export function Cart() {
   const tooManyLines = cartItems(cart.lines).length > MAX_ORDER_LINES;
   const notes = [
     lineProblems > 0 && t("cart.check.blocked"),
+    lineProblems === 0 && unchecked > 0 && t("cart.check.checking"),
     bagIssues.length > 0 && t("cart.bag.blocked"),
     allergiesRefused && t("cart.allergy.blocked"),
     storeInfo && storeInfo.busyExtraMinutes > 0 && t("cart.busy", { minutes: storeInfo.busyExtraMinutes }),
@@ -229,6 +237,7 @@ export function Cart() {
   ].filter((note): note is string => !!note);
   const blocked =
     lineProblems > 0 ||
+    unchecked > 0 ||
     tooManyLines ||
     bagIssues.length > 0 ||
     allergiesRefused ||
@@ -371,7 +380,7 @@ export function Cart() {
               {t("cart.check.repriced", { count: repricedShown })}
             </motion.p>
           )}
-          <CartLines store={store} menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} checks={checks} groups={groups ?? null} wasPrice={wasPrice} onEdit={setEditing} />
+          <CartLines store={store} menuItems={menuItems} program={program} rewardCost={discounts.chosenReward?.cost ?? 0} checks={checks} groups={groups ?? null} wasPrice={wasPrice} onEdit={setEditing} onRetry={recheck} />
 
           {delivery && (
             <>

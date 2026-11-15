@@ -61,11 +61,11 @@ test("a reward's line stays free; only its item going matters", () => {
   assert.equal(checkLine(reward, [], groups(size(75)), null).kind, "gone");
 });
 
-test("a goodie bag its store ended can't be ordered; unread bags aren't judged", () => {
+test("a goodie bag its store ended can't be ordered; one whose store's bags couldn't be read waits, unchecked", () => {
   const bag = { ...line, bag: { pickup: true, delivery: true, closes: 0 } } as unknown as CartLine;
   assert.equal(checkLine(bag, [], new Map(), new Set()).kind, "gone");
   assert.deepEqual(checkLine(bag, [], new Map(), new Set([bytesToHex(LATTE)])), { kind: "ok" });
-  assert.deepEqual(checkLine(bag, [], new Map(), null), { kind: "ok" });
+  assert.deepEqual(checkLine(bag, [], new Map(), null), { kind: "unchecked" }, "never passed unread");
 });
 
 test("choosing again keeps what still fits and lets go of what doesn't", () => {
@@ -74,4 +74,9 @@ test("choosing again keeps what still fits and lets go of what doesn't", () => {
   assert.deepEqual(choicesToKeep(item(400), line.selections, groups(size(75)))[0].options, line.selections[0].options, "still on offer: kept");
   const regrouped = choicesToKeep(item(400, { modifier_groups: [hash(11), SIZE] }), line.selections, groups(size(75)));
   assert.deepEqual(regrouped.map((s) => s.options.length), [0, 0], "groups changed: afresh, in the item's order");
+});
+
+test("a line whose menu or choices couldn't be read waits, unchecked -- never passed", () => {
+  assert.deepEqual(checkLine(line, null, groups(size(75)), null), { kind: "unchecked" });
+  assert.deepEqual(checkLine(line, [row(item(400))], null, null), { kind: "unchecked" });
 });

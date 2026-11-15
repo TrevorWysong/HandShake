@@ -159,6 +159,8 @@ export const en = {
   "cart.check.remove": "Remove",
   "cart.check.chooseAgain": "Choose again",
   "cart.check.choicesChanged": "Its choices changed",
+  "cart.check.unchecked": "Checking this with the store…",
+  "cart.check.checking": "Still checking your bag with the store. You can place your order as soon as it's confirmed.",
   "cart.check.blocked": "Some items changed since you added them. Fix the ones marked above to place your order.",
   "cart.check.repriced": { one: "A price changed since you added it. It's marked below, and your total is up to date.", other: "{count} prices changed since you added them. They're marked below, and your total is up to date." },
   "cart.check.priceWas": "was {price}",

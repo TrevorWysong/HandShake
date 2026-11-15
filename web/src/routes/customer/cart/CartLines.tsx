@@ -3,7 +3,7 @@
 // and a goodie bag as one, with how long it's on offer.
 import { motion } from "framer-motion";
 import clsx from "clsx";
-import { AlertTriangle, Minus, Plus, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Loader2, Minus, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Card, StatNumber } from "../../../components/ui";
 import { lineKey, MAX_UNITS, useCart, type CartLine } from "../../../store/cart";
 import { bytesEqual } from "../../../holochain/decode";
@@ -27,7 +27,7 @@ export interface LineEdit {
 /// that can't be ordered as it is says why beneath it, with what to do.
 /// `wasPrice`: a line repriced since it was added, by `lineKey`, with the
 /// unit price it was added at.
-export function CartLines({ store, menuItems, program, rewardCost, checks, groups, wasPrice, onEdit }: { store: string; menuItems: ItemRow[]; program: RewardsProgram | null; rewardCost: number; checks: Map<string, LineCheck> | null; groups: Groups | null; wasPrice: ReadonlyMap<string, number>; onEdit: (edit: LineEdit) => void }) {
+export function CartLines({ store, menuItems, program, rewardCost, checks, groups, wasPrice, onEdit, onRetry }: { store: string; menuItems: ItemRow[]; program: RewardsProgram | null; rewardCost: number; checks: Map<string, LineCheck> | null; groups: Groups | null; wasPrice: ReadonlyMap<string, number>; onEdit: (edit: LineEdit) => void; onRetry: () => void }) {
   const cart = useCart(store);
   return (
     <motion.div variants={fadeSlideUp}>
@@ -49,6 +49,7 @@ export function CartLines({ store, menuItems, program, rewardCost, checks, group
                   onChoose={() => row && onEdit({ key, line: groups ? { ...line, selections: choicesToKeep(row.item, line.selections, groups) } : line, row })}
                 />
               )}
+              {check?.kind === "unchecked" && <LineUnchecked onRetry={onRetry} />}
             </div>
           );
         })}
@@ -74,6 +75,21 @@ function LineProblem({ name, reason, action, onRemove, onChoose }: { name: strin
         className="shrink-0 rounded-full bg-ink-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-ink-700 dark:bg-white dark:text-ink-900 dark:hover:bg-ink-200 forced-colors:border forced-colors:border-solid"
       >
         {action === "choose" ? t("cart.check.chooseAgain") : t("cart.check.remove")}
+      </button>
+    </motion.div>
+  );
+}
+
+/// A line not yet checked against its store, a read having failed: said
+/// quietly, read again on its own, and once more at a tap.
+function LineUnchecked({ onRetry }: { onRetry: () => void }) {
+  const t = useT();
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} role="status" className="flex items-center gap-2.5 px-4 pb-3.5">
+      <Loader2 size={15} aria-hidden className="shrink-0 animate-spin text-ink-400 motion-reduce:animate-none" />
+      <p className="min-w-0 flex-1 text-xs leading-snug text-ink-500 dark:text-ink-400">{t("cart.check.unchecked")}</p>
+      <button type="button" onClick={onRetry} className="shrink-0 text-xs font-semibold text-handshake-600 hover:underline dark:text-handshake-400">
+        {t("load.retry")}
       </button>
     </motion.div>
   );
