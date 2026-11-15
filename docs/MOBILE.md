@@ -82,7 +82,7 @@ On a machine with Xcode (for iOS) and Android Studio (SDK, NDK, and a JDK 17 or 
 2. `cargo tauri android dev` on a mid-range Android phone, then measure:
    - the conductor's startup time;
    - a store's validation time for a twenty-item order;
-   - battery drain per hour as a foreground service, idle and during a lunch rush (`npm run dev:seed` traffic);
+   - battery drain per hour as a foreground service, idle and during a lunch rush (`npm run seed` traffic);
    - memory.
 3. `cargo tauri ios dev` with the interpreter build, then measure the same, and how long iOS lets a backgrounded conductor finish a sync after a push.
 4. Decide from the numbers. Proposed thresholds, to be checked against a real device:

@@ -18,7 +18,8 @@ The seed writes the dev network's properties (a five-minute report window, so pa
 | `npm run dev` | Starts the UI. Onboarding is prefilled with the dev conductor's address, and lists every identity already on it under "Use an existing identity". |
 | `npm run backend` | After any Rust change: builds the zomes, regenerates the TS wire types, packs the DNA and hApp, publishes the bundle to `web/public/handshake.happ`, and updates the running conductor (see below). |
 | `npm run typegen` | Regenerates `src/holochain/generated.ts` from the Rust types (`tools/typegen`). `npm run backend` runs it for you; CI fails if it's stale. |
-| `npm run seed` | Creates a demo world on an empty conductor: three stores (two with the same owner), a driver, customers, and orders in every state. `-- --at lat,lon` seeds around any location. |
+| `npm run seed` | Creates a demo world on an empty conductor: three stores (two with the same owner), two drivers (one of them that owner), customers, and orders in every state. `-- --at lat,lon` seeds around any location. |
+| `npm run lint`, `npm test`, `npx tsc -b` | The checks CI runs on the app: lint, the unit tests in `web/test/`, and the typecheck. Run them before pushing. |
 | `npm run dev:reset` | Wipes all dev data, restarts the conductor on the current build, and seeds it. |
 | `npm run dev:payments` | Runs the payment agent (`payments/`) for every identity on the dev conductor that's connected a processor, standing in for the desktop app's: holds, captures and releases what the network says is due. Leave it running beside `npm run dev`. To try a processor's sandbox, paste its test keys under Profile → Payments. |
 | `npm run package -- --network-seed <name>` | Builds the production `deploy/handshake.webhapp` for a network -- see [DEPLOYMENT.md](DEPLOYMENT.md). |

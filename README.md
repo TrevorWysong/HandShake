@@ -135,8 +135,8 @@ sequenceDiagram
 
     Customer->>Store: Places an order, priced from the store's own menu
     Peers-->>Peers: Check the price, the area, the limits
+    Note over Customer: The store holds the order on the customer's card:<br/>the food, their share of the delivery fee at most, and the tip
     Store->>Customer: Accepts within its response window
-    Note over Customer: The store holds the food's price on the customer's card
     Driver->>Customer: Bids a fee and an arrival time
     Customer->>Driver: Accepts a bid, or the app picks by the published rule
     Note over Customer: The driver's pay is held
@@ -222,7 +222,7 @@ There is no password to reset and no company to call, so HandShake gives people 
 | Path | What it is |
 | --- | --- |
 | [`dnas/handshake/`](dnas/handshake) | The network's rules and its API: one DNA. |
-| [`dnas/handshake/zomes/`](dnas/handshake/zomes) | One module per concern, each an **integrity** crate (record types and validation) and a **coordinator** crate (what the app calls): `profiles`, `catalog` (stores, menus, promos, goodie bags), `dispatch` (orders, drivers, bids, payments), `attestation` (handoffs), `reputation` (ratings), `account` (recovery, new phones, new networks), `rewards` (stores' rewards programs and members' points). |
+| [`dnas/handshake/zomes/`](dnas/handshake/zomes) | One module per concern, each an **integrity** crate (record types and validation) and a **coordinator** crate (what the app calls): `profiles`, `catalog` (stores, menus and their choices, sale prices, tax rates, promos, goodie bags), `dispatch` (orders, scheduled and recurring orders, drivers, bids, payments, reports and appeals), `attestation` (handoffs), `reputation` (ratings, findings and blocks), `account` (recovery, new phones, new networks), `rewards` (stores' rewards programs and members' points). |
 | [`dnas/handshake/governance/`](dnas/handshake/governance) | The network's settings: currency, live or test payments, deadlines, limits, services. |
 | [`web/`](web) | The app, in React and TypeScript, speaking only to the device's own Holochain node. |
 | [`tests/tryorama/`](tests/tryorama) | The integration suite: real Holochain nodes running the real rules, one scenario per file. |
@@ -256,7 +256,7 @@ To use it rather than work on it, install the desktop app from [Releases](https:
 
 ## Status
 
-HandShake runs end to end on a local network: stores, menus, deliveries and pickups, bidding, handoffs, card holds and settlement, refunds and appeals, ratings, recovery, direct card payments (Stripe; Square written, awaiting its sandbox; Clover paused), two languages, and waking a closed app. It is tested by an integration suite of real Holochain nodes, and it builds as a desktop app for macOS, Windows and Linux.
+HandShake runs end to end on a local network: stores and menus (with choices, sale prices, allergen facts and sales tax), deliveries and pickups (now, scheduled or recurring), bidding, handoffs, card holds and settlement, missing-item reports, refunds and appeals, ratings and blocks, promo codes, goodie bags, stores' own rewards programs, recovery and moving to a new phone, direct card payments (Stripe; Square written, awaiting its sandbox; Clover paused), English and Spanish, and waking a closed app. It is tested by an integration suite of real Holochain nodes, and it builds as a desktop app for macOS, Windows and Linux.
 
 Not yet: signed desktop installers, the phone builds, which wait on Holochain's mobile tooling, and HoloFuel as a second way to pay, which waits on its launch for third-party apps.
 
@@ -266,9 +266,9 @@ Not yet: signed desktop installers, the phone builds, which wait on Holochain's 
 
 | | |
 | --- | --- |
-| **Running it** | [Development](docs/DEVELOPMENT.md) &nbsp;&middot;&nbsp; [Deployment](docs/DEPLOYMENT.md) &nbsp;&middot;&nbsp; [Upgrading the network](docs/MIGRATION.md) &nbsp;&middot;&nbsp; [Phones](docs/MOBILE.md) |
-| **How it works** | [Security](docs/SECURITY.md) &nbsp;&middot;&nbsp; [Order states](docs/ORDER_STATES.md) &nbsp;&middot;&nbsp; [Accounts and recovery](docs/RECOVERY.md) &nbsp;&middot;&nbsp; [Rewards](docs/REWARDS.md) &nbsp;&middot;&nbsp; [Languages](docs/I18N.md) &nbsp;&middot;&nbsp; [Holochain notes](docs/HOLOCHAIN_ISSUES.md) |
-| **Plans** | [Direct payments](docs/DIRECT_PAYMENTS.md) &nbsp;&middot;&nbsp; [Allergens](docs/ALLERGENS.md) &nbsp;&middot;&nbsp; [Payment rails](docs/PAYMENT_RAILS.md) &nbsp;&middot;&nbsp; [Menu choices](docs/MENU_CUSTOMIZATION.md) &nbsp;&middot;&nbsp; [Sales tax](docs/SALES_TAX.md) &nbsp;&middot;&nbsp; [Tax reporting](docs/TAX_REPORTING.md) |
+| **Running it** | [Development](docs/DEVELOPMENT.md) &nbsp;&middot;&nbsp; [Deployment](docs/DEPLOYMENT.md) &nbsp;&middot;&nbsp; [Operations](docs/OPERATIONS.md) &nbsp;&middot;&nbsp; [Upgrading the network](docs/MIGRATION.md) |
+| **How it works** | [Security](docs/SECURITY.md) &nbsp;&middot;&nbsp; [Payments](docs/DIRECT_PAYMENTS.md) &nbsp;&middot;&nbsp; [Order states](docs/ORDER_STATES.md) &nbsp;&middot;&nbsp; [Accounts and recovery](docs/RECOVERY.md) &nbsp;&middot;&nbsp; [Reputation](docs/REPUTATION.md) &nbsp;&middot;&nbsp; [Rewards](docs/REWARDS.md) &nbsp;&middot;&nbsp; [Menu choices](docs/MENU_CUSTOMIZATION.md) &nbsp;&middot;&nbsp; [Allergens](docs/ALLERGENS.md) &nbsp;&middot;&nbsp; [Sales tax](docs/SALES_TAX.md) &nbsp;&middot;&nbsp; [Languages](docs/I18N.md) &nbsp;&middot;&nbsp; [Holochain notes](docs/HOLOCHAIN_ISSUES.md) |
+| **Plans** | [Phones](docs/MOBILE.md) &nbsp;&middot;&nbsp; [Trust from real connections](docs/TRUST.md) &nbsp;&middot;&nbsp; [Tax reporting](docs/TAX_REPORTING.md) &nbsp;&middot;&nbsp; [HoloFuel](docs/PAYMENT_RAILS.md) |
 
 ## License
 

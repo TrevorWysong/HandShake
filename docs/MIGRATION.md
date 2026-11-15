@@ -79,7 +79,7 @@ The old network runs whatever release it was, which may be older than the bridge
 | `rewards-carry:v2` | members' points, earned and given, are carried as a grant on their first order at the store that came over | the program comes over; points don't: members start afresh, and the store can give them points itself |
 | `deal-cards:v3` | the store's first-order deal checks the cards its old store claimed | its claims start afresh on the new network; one first order per account still holds |
 
-Releases 0.1.0 and 0.2.0 have neither: this release is the first to list them. `tests/tryorama/src/cross-version.test.ts` moves a store and a member from an earlier release's real DNA (`fixtures/previous-release`, built from its commit by `scripts/previous-release.sh`; rebuild it as each release ships). It checks that everything this version does without fails nothing. `rewards-migration.test.ts` covers the carry between two networks that both have it.
+Releases 0.1.0 and 0.2.0 have neither: this release is the first to list them. `tests/tryorama/src/cross-version.test.ts` moves a store and a member from an earlier release's real DNA (`tests/tryorama/fixtures/previous-release`, built from its commit by `tests/tryorama/scripts/previous-release.sh`; rebuild it as each release ships). It checks that everything this version does without fails nothing. `rewards-migration.test.ts` covers the carry between two networks that both have it.
 
 ### What doesn't move, and the limits
 

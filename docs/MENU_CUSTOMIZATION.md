@@ -79,11 +79,11 @@ All of it is deterministic and bounded.
   - nested groups expanding under their option.
 - **Cart:** a line's choices and its unit price; editing a line reopens the sheet.
 - **A store changing its menu under a cart** (`web/src/lib/storefront/cartCheck.ts`): checkout reads the store again every minute, and after any refused order, and checks each line against it.
-  - A line whose choices still fit but whose prices moved is repriced in place, and the customer is told once.
+  - A line whose choices still fit but whose prices moved is repriced in place, its old price struck through beside the new one, and the customer is told how many changed.
   - An item taken off the menu, or sold out, and a goodie bag its store ended, can only be removed.
   - A line whose choices no longer fit is chosen again, starting from what still fits.
   - Placing the order waits until every marked line is dealt with.
-  - None of this is judged on a menu that failed to load. The network prices the order again either way and refuses a different total (`dispatch::pricing::price_order`), and the store's own acceptance declines one priced from an outdated menu.
+  - A line whose store couldn't be read (its menu, its choices or its goodie bags) is never taken as fine: it says it's still being checked, and the order waits while checkout reads again every ten seconds, or at a tap. The network prices the order again either way and refuses a different total (`dispatch::pricing::price_order`), and the store's own acceptance declines one priced from an outdated menu.
 
 ## What to build
 1. Types, validation and limits: `ModifierGroup`, item references, line choices, and price recomputation in the shared pricing function. Unit tests for the price and min/max rules, including free selections and nesting.
