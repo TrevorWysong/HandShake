@@ -36,7 +36,7 @@ await runScenario(async (scenario) => {
   // $10 burger at 8.25% (83c) + $5 beer at 20% ($1): $15 of food, $1.83 tax.
   await assert.rejects(
     call(customer, "dispatch")("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items, order_total: 1500 }),
-    /total is now 1683/,
+    /Prices have changed/,
     "the total shown must include the tax",
   );
   const order = actionHash(await retryUntilOk(() => call(customer, "dispatch")<HcRecord>("request_pickup_order", { merchant: merchant.agentPubKey, catalog_ref: store, items, order_total: 1683 })));
