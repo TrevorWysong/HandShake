@@ -100,9 +100,19 @@ await runScenario(async (scenario) => {
     // under it -- is tried again, then declined as the store's app would.
     // Its client repeats a write refused for a moved chain (the store's own
     // background work can still be writing), so this does too.
+    // A burst's calls outlive the client's wait: the store's conductor is
+    // still working through them when the client stops waiting, and a call
+    // made then queues behind them. A timeout isn't an answer -- the order
+    // may have been taken meanwhile -- so its status is read again, and it's
+    // asked again, a few times; anything else must be the points refusal.
     for (const { owner, order } of placed) {
-      if ((await statusOf(owner, order)) !== "Placed") continue;
-      await call(owner, "dispatch")("accept_pickup_order", { order_original_action: order }).catch((err) => assert.match(String(err), /points don't cover/, `round ${round}: refused for its points`));
+      for (let attempt = 0; attempt < 5 && (await statusOf(owner, order)) === "Placed"; attempt++) {
+        const answer = await call(owner, "dispatch")("accept_pickup_order", { order_original_action: order }).then(
+          () => "accepted",
+          (err) => (/timed out/.test(String(err)) ? "busy" : (assert.match(String(err), /points don't cover/, `round ${round}: refused for its points`), "refused")),
+        );
+        if (answer !== "busy") break;
+      }
       if ((await statusOf(owner, order)) === "Placed") await retryUntilOk(() => owner.cells[0].callZome({ zome_name: "dispatch", fn_name: "decline_pickup_order", payload: { order_original_action: order, reason: "RewardUnavailable" } }));
     }
     await sync();
