@@ -70,7 +70,7 @@ const en: TermsSection[] = [
     points: [
       "You must be at least [MINIMUM AGE] to use HandShake.",
       "If these terms change, the app asks you to agree again before you carry on. If you don't agree, stop using it.",
-      "The software itself is licensed separately under the PolyForm Shield License 1.0.0, with third-party components under their own licenses. Contact: [CONTACT].",
+      "The software itself is licensed separately under the Cryptographic Autonomy License 1.0, with third-party components under their own licenses. Contact: [CONTACT].",
     ],
   },
 ];
@@ -137,7 +137,7 @@ const es: TermsSection[] = [
     points: [
       "Debes tener al menos [EDAD MÍNIMA] para usar HandShake.",
       "Si estas condiciones cambian, la app te pedirá aceptarlas de nuevo antes de continuar. Si no estás de acuerdo, deja de usarla.",
-      "El software en sí tiene una licencia aparte, la PolyForm Shield License 1.0.0, y los componentes de terceros tienen las suyas. Contacto: [CONTACTO].",
+      "El software en sí tiene una licencia aparte, la Cryptographic Autonomy License 1.0, y los componentes de terceros tienen las suyas. Contacto: [CONTACTO].",
     ],
   },
 ];
