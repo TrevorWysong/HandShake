@@ -26,6 +26,10 @@ await runScenario(async (scenario) => {
   await scenario.shareAllAgents();
   for (const p of players) await useTestCoordinators(p, ["rewards", "dispatch"]);
   const sync = () => dhtSync(players, ada.cells[0].cell_id[0]);
+  // After a burst, four conductors on one machine integrate dozens of
+  // answers at once, and their databases are busy ("database is locked",
+  // retried by Holochain): the round's ops arrive, but past a minute.
+  const settle = () => dhtSync(players, ada.cells[0].cell_id[0], 500, 300_000);
   const call = (p: typeof ada, zome: string) => retryingCaller(p.cells[0], zome);
 
   const now = Date.now() * 1000;
@@ -95,7 +99,7 @@ await runScenario(async (scenario) => {
     // Each store answers all of its members' orders at the same moment.
     const accept = (owner: typeof ada, order: Uint8Array) => owner.cells[0].callZome({ zome_name: "dispatch", fn_name: "accept_pickup_order", payload: { order_original_action: order } });
     await Promise.allSettled(placed.map(({ owner, order }) => accept(owner, order)));
-    await sync();
+    await settle();
     // Whatever was turned away -- its points, or its store's chain moving
     // under it -- is tried again, then declined as the store's app would.
     // Its client repeats a write refused for a moved chain (the store's own
@@ -115,7 +119,7 @@ await runScenario(async (scenario) => {
       }
       if ((await statusOf(owner, order)) === "Placed") await retryUntilOk(() => owner.cells[0].callZome({ zome_name: "dispatch", fn_name: "decline_pickup_order", payload: { order_original_action: order, reason: "RewardUnavailable" } }));
     }
-    await sync();
+    await settle();
     for (const { owner, catalog } of stores) {
       for (const member of [ada, bo]) {
         const theirs = placed.filter((p) => p.owner === owner && p.member === member);
