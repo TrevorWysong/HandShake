@@ -47,7 +47,7 @@ Reviewed 2026-11-06 for the project's owner. **This isn't legal advice and no la
 4. **Erasure.** Sealed copies and orders can't be erased from the network by design, though only their holders can open them. Is that compatible with deletion rights? Would destroying a key count as erasure?
 5. **Warranty language.** "As is, without warranty" appears in the policies. Is it enforceable for food-safety information, and are there terms anyone actually accepts?
 6. **Stores' accuracy.** Is telling stores they're responsible enough, or should they accept terms before stating allergens?
-7. **Licenses.** HandShake is under CAL-1.0 (`LICENSE`), the same license as Holochain's HDK and HDI that its zomes compile in, so the earlier question of how PolyForm Shield met CAL no longer arises. Worth confirming that versions released under PolyForm Shield before the change need nothing further.
+7. **Licenses.** HandShake is under CAL-1.0 (`LICENSE`), the same license as Holochain's HDK and HDI that its zomes compile in, so the zomes and the libraries they compile in share one license.
 8. **Terms of use.** `web/src/lib/policies/terms.ts` is placeholder text with bracketed blanks. Acceptance is a checkbox recorded on the device, and asked again when `TERMS_VERSION` changes. Is that enough evidence of agreement, or should it be recorded per account? Should stores and drivers accept separate terms? No network with live payments can be packaged until `TERMS_DRAFT` is cleared.
 9. **Exact notices.** Should Massachusetts, Rhode Island and New York wording be verbatim?
 

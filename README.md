@@ -272,6 +272,6 @@ Not yet: signed desktop installers, the phone builds, which wait on Holochain's 
 
 ## License
 
-Copyright (c) 2026 Trevor Wysong. HandShake is open source under the [Cryptographic Autonomy License 1.0](LICENSE) (CAL-1.0), the license Holochain itself uses. You can use it, change it and share it, including to run your own network, as long as you offer the source code of what you run or share to the people who use it, keep its notices, and never withhold people's own keys and data from them. Versions released before 15 November 2026 were under the PolyForm Shield License 1.0.0. Third-party components keep their own licenses: see [NOTICE](NOTICE.md).
+Copyright (c) 2026 Trevor Wysong. HandShake is open source under the [Cryptographic Autonomy License 1.0](LICENSE) (CAL-1.0), the license Holochain itself uses. You can use it, change it and share it, including to run your own network, as long as you offer the source code of what you run or share to the people who use it, keep its notices, and never withhold people's own keys and data from them.
 
 **This is the original HandShake**, at <https://github.com/TrevorWysong/HandShake>, written by the people in [AUTHORS](AUTHORS.md). The license doesn't cover the HandShake name or logo: if you fork it, please give your version its own name and link back here as where it came from.
