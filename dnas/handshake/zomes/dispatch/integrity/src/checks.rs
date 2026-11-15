@@ -364,6 +364,9 @@ fn earlier_orders(requester: &AgentPubKey, chain_top: &ActionHash, since: Timest
 /// customers, is the store's to enforce -- see `PromoLimits`.)
 fn check_promo_limits(order: &OrderPricing<'_>, promo_ref: &ActionHash, promo: &PromoCode) -> ExternResult<Option<String>> {
     let limits = &promo.limits;
+    if !limits.allows(order.delivery) {
+        return Ok(Some(if order.delivery { "this promo code is for pickup orders only" } else { "this promo code is for delivery orders only" }.into()));
+    }
     if !limits.first_order_only && limits.per_customer.is_none() && limits.once_per.is_none() {
         return Ok(None);
     }

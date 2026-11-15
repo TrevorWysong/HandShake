@@ -6,6 +6,7 @@
 // money (`pricing`, CartTotals) and the bar that places it (CheckoutBar).
 // What's sent is checked again by the network: totals, discount, range,
 // hours, and what the store may hold on the card.
+import { NO_SHARE } from "../../../lib/storefront/deliveryShare";
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { CheckoutDraft } from "../../../lib/orders/recurring";
@@ -82,7 +83,6 @@ export function Cart() {
   // A recurring order brought here to confirm starts as it was set up.
   const draft = (useLocation().state as { recurring?: CheckoutDraft } | null)?.recurring;
   const options = useDeliveryOptions(draft);
-  const discounts = useDiscounts(store, storeInfo, now);
   // Pickup orders skip the whole driver half of this screen: there's no
   // driver in that vertical at all.
   const [chosenFulfillment, setFulfillment] = useState<"Delivery" | "Pickup" | null>(null);
@@ -154,6 +154,7 @@ export function Cart() {
   const outOfRange = validateDropoffRadius(options.dropoff, storeInfo?.merchantLocation ?? null, storeInfo?.merchantRadiusKm ?? null);
   const fulfillment = ageRestricted ? "Pickup" : (chosenFulfillment ?? (outOfRange ? "Pickup" : "Delivery"));
   const delivery = fulfillment === "Delivery";
+  const discounts = useDiscounts(store, storeInfo, now, delivery);
   // Goodie bags run on their own windows: no store hours, no minimum, no
   // promo, and nothing scheduled for later.
   const menu = menuLines(cart.lines);
@@ -179,7 +180,7 @@ export function Cart() {
     taxIncluded,
     tipCents,
     maxFeeCents,
-    subsidyPercent: storeInfo?.subsidyPercent ?? 0,
+    deliveryShare: storeInfo?.deliveryShare ?? NO_SHARE,
     minOrderCents: storeInfo?.minOrderCents ?? null,
     menuSubtotalCents: menu.reduce((sum, line) => sum + line.priceCents * line.quantity, 0),
     leaveAtDoorMaxCents: storeInfo?.leaveAtDoorMaxCents ?? null,
@@ -253,7 +254,7 @@ export function Cart() {
   function placeOrder(payment: PaymentInput | null) {
     if (!cart.catalogRef || !cart.merchant) return;
     const [catalog_ref, merchant] = [cart.catalogRef, cart.merchant];
-    const promo_code_ref = discounts.appliedPromo?.hash ?? null;
+    const promo_code_ref = discounts.usablePromo?.hash ?? null;
     const reward = discounts.chosenReward?.id ?? null;
     // Refused, the store's menu is read again at once: what changed shows on
     // the lines it changed.
@@ -331,7 +332,7 @@ export function Cart() {
           tip_cents: tipCents,
           dropoff_preference: dropoffPreference,
           priority: options.priority,
-          promo_code_ref: discounts.appliedPromo?.hash ?? null,
+          promo_code_ref: discounts.usablePromo?.hash ?? null,
           recurrence,
           time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
@@ -428,7 +429,7 @@ export function Cart() {
 
           <RewardsSection discounts={discounts} menuItems={menuItems} menuRead={!!storeInfo?.menuRead} onBrowse={() => catalogRef && navigate(`/rewards/${bytesToHex(catalogRef)}/redeem`)} />
           {/* Promo codes are the menu's: a cart of goodie bags has nothing for one. */}
-          {menu.length > 0 && <PromoSection discounts={discounts} />}
+          {menu.length > 0 && <PromoSection discounts={discounts} onSwitch={ageRestricted ? null : (way) => setFulfillment(way)} />}
         </div>
 
         <div className="lg:sticky lg:top-6">
@@ -437,11 +438,10 @@ export function Cart() {
             fulfillment={fulfillment}
             subtotalCents={subtotalCents}
             price={price}
-            promo={discounts.appliedPromo && { code: discounts.appliedPromo.promo.code, cents: discounts.discountCents }}
+            promo={discounts.usablePromo && { code: discounts.usablePromo.promo.code, cents: discounts.discountCents }}
             reward={discounts.chosenReward && { name: discounts.chosenReward.name, cents: discounts.rewardDiscountCents }}
             taxRates={taxRates}
             taxIncluded={taxIncluded}
-            subsidyPercent={storeInfo?.subsidyPercent ?? 0}
             tipCents={tipCents}
             program={program}
             pointsPreview={pointsPreview}

@@ -292,6 +292,9 @@ mod test_utils {
         pub max_delivery_fee: Option<u64>,
         #[serde(default)]
         pub tip_cents: Option<u64>,
+        /// A promo code to cite in its place.
+        #[serde(default)]
+        pub promo_code_ref: Option<ActionHash>,
         /// A "sealed" kitchen note of this many bytes -- forged ciphertext,
         /// as only a modified client could write: the conductor won't seal
         /// more than a box holds.
@@ -320,6 +323,9 @@ mod test_utils {
         }
         if let Some(tip) = input.tip_cents {
             order.tip_cents = tip;
+        }
+        if input.promo_code_ref.is_some() {
+            order.promo_code_ref = input.promo_code_ref;
         }
         if let Some(bytes) = input.kitchen_note_bytes {
             let real = handshake_coordinator_support::seal(&order.merchant, &String::new())?;

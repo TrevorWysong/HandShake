@@ -8,7 +8,7 @@
 // `case`/`in` arm in exactly one place (here), not a new code path threaded
 // through Cart.tsx or the merchant catalog UI.
 import { lineKey, type CartLine } from "../../store/cart";
-import type { ActionHash, ChoiceTerms, PromoBlock, PromoCode, PromoLimits, PromoRequirement, PromoReward, PromoStanding } from "../../holochain/types";
+import type { ActionHash, ChoiceTerms, Fulfilment, PromoBlock, PromoCode, PromoLimits, PromoRequirement, PromoReward, PromoStanding } from "../../holochain/types";
 import { bytesToHex } from "../../holochain/decode";
 import { formatCents } from "../ui/format";
 import { appLocale, t } from "../../i18n";
@@ -154,9 +154,22 @@ const withChoices = (text: string, choices: ChoiceTerms[]) => (choices.length > 
 
 /// A promo's terms, as short chips: who it's for, how often, until when,
 /// how many are left.
+/// Whether a promo may be used on an order had this way -- validation's
+/// rule (`PromoLimits::allows`).
+export function promoAllows(limits: PromoLimits, delivery: boolean): boolean {
+  return limits.only === null || (limits.only === "Delivery") === delivery;
+}
+
+/// "Delivery only", "Pickup only" -- or nothing, for either.
+export function describeOnly(only: Fulfilment | null): string | null {
+  return only === null ? null : t(only === "Delivery" ? "deals.chip.deliveryOnly" : "deals.chip.pickupOnly");
+}
+
 export function describeLimits(promo: PromoCode, standing?: PromoStanding): string[] {
   const limits: PromoLimits = promo.limits;
   const chips: string[] = [];
+  const only = describeOnly(limits.only ?? null);
+  if (only) chips.push(only);
   if (limits.first_order_only) chips.push(t("deals.chip.new"));
   if (limits.per_customer === 1) chips.push(t("deals.chip.once"));
   else if (limits.per_customer) chips.push(t("deals.chip.uses", { count: limits.per_customer }));

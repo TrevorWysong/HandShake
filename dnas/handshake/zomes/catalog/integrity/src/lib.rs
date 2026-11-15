@@ -18,7 +18,7 @@ pub use links::{catalog_geohash_path, listing_cells, listing_tag, AREA_PRECISION
 // a direct dependency on this crate wouldn't work. Re-exported here so
 // nothing else in this crate or the coordinator crate (which imports via
 // `catalog_integrity::*`) needs to change.
-pub use catalog_types::{DEFAULT_MAX_TIP_FLOOR, DEFAULT_MAX_TIP_PERCENT, MAX_STORES_PER_OWNER, MAX_TIP_PERCENT, ChoiceTerms, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, TaxRate};
+pub use catalog_types::{DEFAULT_MAX_TIP_FLOOR, DEFAULT_MAX_TIP_PERCENT, MAX_STORES_PER_OWNER, MAX_TIP_PERCENT, ChoiceTerms, Fulfilment, GoodieBag, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoCode, PromoLimits, PromoPeriod, PromoRequirement, PromoReward, StoreImport, StoreSuccession, SubsidyTier, TaxRate, MAX_SUBSIDY_TIERS};
 
 /// Precision used for the merchant-discovery anchor -- coarse (city-block
 /// scale), matching open orders' drop-off precision so both discovery paths
@@ -225,10 +225,8 @@ fn validate_catalog(catalog: &MerchantCatalog, author: &AgentPubKey) -> ExternRe
             "geohash does not match the encoded location".into(),
         ));
     }
-    if catalog.delivery_subsidy_percent > 100 {
-        return Ok(ValidateCallbackResult::Invalid(
-            "delivery_subsidy_percent must be between 0 and 100".into(),
-        ));
+    if let Some(problem) = catalog.delivery_share_problem() {
+        return Ok(ValidateCallbackResult::Invalid(problem.into()));
     }
     if catalog.weekly_hours.len() > MAX_OPENING_PERIODS {
         return Ok(ValidateCallbackResult::Invalid(format!("a store has at most {MAX_OPENING_PERIODS} opening periods a week")));

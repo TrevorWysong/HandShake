@@ -2,22 +2,24 @@
 // redeemed into the bag, or else a promo code -- one the customer typed, a
 // deal chosen on the store's page, or the best code that applies itself.
 // Each is re-checked against the live cart every render, so adding or
-// removing items changes what applies, and what it takes off.
+// removing items changes what applies, and what it takes off -- and
+// against how it's had: a code for pickups only takes nothing off a
+// delivery, and says so, with a deal the other way offered in its place.
 import { useMemo, useState } from "react";
 import { menuLines, useCart, useCarts } from "../../../store/cart";
 import { myCard } from "../../../holochain/zomes/rewards";
 import { bytesToHex, hexToBytes } from "../../../holochain/decode";
-import { describeBlock, describeRequirement, evaluatePromo, isPromoEligible } from "../../../lib/storefront/promotions";
+import { computePromoEffect, describeBlock, describeRequirement, evaluatePromo, isPromoEligible, promoAllows } from "../../../lib/storefront/promotions";
 import { itemNamer } from "../../../lib/storefront/menu";
 import { rewardDiscount } from "../../../lib/rewards/rewards";
 import { useRewardChooser } from "../../../components/rewards/useRewardChooser";
 import { useResource } from "../../../lib/hooks/useResource";
 import { nowMicros } from "../../../lib/ui/format";
 import { useT } from "../../../i18n";
-import type { Reward } from "../../../holochain/types";
+import type { Fulfilment, Reward } from "../../../holochain/types";
 import { bestAutoApplyPromo, NO_ITEMS, NO_PROMOS, type CartStoreInfo, type PromoRow } from "./checkout";
 
-export function useDiscounts(store: string, storeInfo: CartStoreInfo | undefined, now: Date) {
+export function useDiscounts(store: string, storeInfo: CartStoreInfo | undefined, now: Date, delivery: boolean) {
   const t = useT();
   const cart = useCart(store);
   const promoCodes = storeInfo?.promoCodes ?? NO_PROMOS;
@@ -50,12 +52,26 @@ export function useDiscounts(store: string, storeInfo: CartStoreInfo | undefined
   const [manualPromo, setManualPromo] = useState<PromoRow | null>(null);
   const [autoPromoDismissed, setAutoPromoDismissed] = useState(false);
   const nowUs = now.getTime() * 1000;
+  const thisWay = useMemo(() => promoCodes.filter((p) => promoAllows(p.promo.limits, delivery)), [promoCodes, delivery]);
+  const otherWay = useMemo(() => promoCodes.filter((p) => !promoAllows(p.promo.limits, delivery)), [promoCodes, delivery]);
   const autoPromo = useMemo(
-    () => (autoPromoDismissed ? null : bestAutoApplyPromo(promoCodes, lines, subtotal, completedOrderCount, nowUs)),
-    [autoPromoDismissed, promoCodes, lines, subtotal, completedOrderCount, nowUs],
+    () => (autoPromoDismissed ? null : bestAutoApplyPromo(thisWay, lines, subtotal, completedOrderCount, nowUs)),
+    [autoPromoDismissed, thisWay, lines, subtotal, completedOrderCount, nowUs],
   );
   const dealPromo = promoCodes.find((p) => cart.promoHex === bytesToHex(p.hash) && !p.standing?.blocked) ?? null;
   const appliedPromo = chosenReward ? null : (manualPromo ?? dealPromo ?? autoPromo);
+  // A code chosen for the other way stays chosen, taking nothing off, so
+  // switching back brings it back; the order carries it only if it fits.
+  const wrongWay: Fulfilment | null = appliedPromo && !promoAllows(appliedPromo.promo.limits, delivery) ? appliedPromo.promo.limits.only : null;
+  const usablePromo = wrongWay ? null : appliedPromo;
+  // With nothing off this way, the best deal that applies itself the other
+  // way, and what it would take off -- offered as a reason to switch.
+  const otherWayDeal = useMemo(() => {
+    if (chosenReward || usablePromo) return null;
+    const best = bestAutoApplyPromo(otherWay, lines, subtotal, completedOrderCount, nowUs);
+    const cents = best ? computePromoEffect(best.promo.reward, lines, subtotal).subtotalDiscountCents : 0;
+    return best && cents > 0 && best.promo.limits.only ? { promo: best, cents, way: best.promo.limits.only } : null;
+  }, [chosenReward, usablePromo, otherWay, lines, subtotal, completedOrderCount, nowUs]);
 
   function applyPromo() {
     setPromoError(null);
@@ -82,7 +98,7 @@ export function useDiscounts(store: string, storeInfo: CartStoreInfo | undefined
   // requirement can stop being met, or a reward newly find its item.
   const promoEvaluation = appliedPromo ? evaluatePromo(appliedPromo.promo, lines, subtotal, completedOrderCount) : null;
   const rewardDiscountCents = chosenReward ? rewardDiscount(chosenReward.benefit, lines) : 0;
-  const discountCents = chosenReward ? rewardDiscountCents : (promoEvaluation?.effect.subtotalDiscountCents ?? 0);
+  const discountCents = chosenReward ? rewardDiscountCents : wrongWay ? 0 : (promoEvaluation?.effect.subtotalDiscountCents ?? 0);
   const promoNeedsItem = appliedPromo ? "FreeItem" in appliedPromo.promo.reward || "PercentOffItem" in appliedPromo.promo.reward : false;
   const promoAwaitingItem = !!appliedPromo && !!promoEvaluation?.eligible && promoNeedsItem && promoEvaluation.effect.itemEffects.length === 0;
 
@@ -100,6 +116,9 @@ export function useDiscounts(store: string, storeInfo: CartStoreInfo | undefined
     applyPromo,
     removePromo,
     appliedPromo,
+    usablePromo,
+    wrongWay,
+    otherWayDeal,
     promoEvaluation,
     promoAwaitingItem,
     discountCents,

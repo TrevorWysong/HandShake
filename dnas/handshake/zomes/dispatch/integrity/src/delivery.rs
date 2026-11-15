@@ -126,8 +126,8 @@ fn check_store_terms(order: &DeliveryOrder) -> ExternResult<Result<MerchantCatal
         Ok(store) => store,
         Err(reason) => return Ok(Err(reason)),
     };
-    if order.delivery_subsidy_percent != store.delivery_subsidy_percent {
-        return Ok(Err("an order's fee split is its store's, as it stood when the order was placed".into()));
+    if order.delivery_subsidy_percent != store.delivery_share(catalog_types::fee_basis(order.order_total, order.tax_cents, store.prices_include_tax)) {
+        return Ok(Err("an order's fee split is its store's, for an order its size, as it stood when the order was placed".into()));
     }
     if order.max_delivery_fee.is_some_and(|cap| cap > store.max_delivery_fee) {
         return Ok(Err("a delivery's fee is at most its store's most".into()));

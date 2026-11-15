@@ -244,17 +244,25 @@ pub fn update_catalog_details(input: UpdateCatalogDetailsInput) -> ExternResult<
 pub struct SetDeliverySubsidyPercentInput {
     pub original_action: ActionHash,
     pub delivery_subsidy_percent: u8,
+    /// Larger shares for larger orders (`MerchantCatalog::delivery_subsidy_tiers`).
+    /// Left out: none.
+    #[serde(default)]
+    pub delivery_subsidy_tiers: Vec<SubsidyTier>,
 }
 
-/// The standard delivery-cost-sharing model, not a rare promotion --
-/// defaults to 50 (an even
-/// split with the customer) at `publish_catalog` time, adjustable here if a
-/// merchant needs a different split. A percentage, not a flat amount, so
-/// it stays proportional to whatever the winning bid turns out to be.
+/// The store's share of each delivery fee -- 50 (an even split with the
+/// customer) from `publish_catalog`, unless the network says otherwise --
+/// and, if it likes, larger shares for larger orders, up to free delivery.
+/// A percentage, not a flat amount, so it stays proportional to whatever
+/// the winning bid turns out to be.
 #[hdk_extern]
 pub fn set_delivery_subsidy_percent(input: SetDeliverySubsidyPercentInput) -> ExternResult<Record> {
     let (current, mut catalog): (_, MerchantCatalog) = resolve_version_decoded(input.original_action, "MerchantCatalog")?;
     catalog.delivery_subsidy_percent = input.delivery_subsidy_percent;
+    catalog.delivery_subsidy_tiers = input.delivery_subsidy_tiers;
+    if catalog.delivery_share_problem().is_some() {
+        return Err(guest("Each larger order you cover more of delivery for must be bigger than the last, and covered more."));
+    }
     let updated = update_version(&current, &EntryTypes::MerchantCatalog(catalog), LinkTypes::Version)?;
     written(updated)
 }

@@ -219,7 +219,11 @@ async function seedStore(store: WorldStore, owner: Agent, center: Point): Promis
     items.set(item.name, { ref: hash(record), price: item.sale?.price_cents ?? item.price });
   }
   for (const promo of store.promos) {
-    await owner.call("catalog", "create_promo_code", { catalog_ref: ref, code: promo.code, requirement: promo.requirement, reward: promo.reward, expires_at: null, auto_apply: promo.auto_apply ?? false });
+    const limits = { first_order_only: false, only: promo.only ?? null, per_customer: null, once_per: null, total: null };
+    await owner.call("catalog", "create_promo_code", { catalog_ref: ref, code: promo.code, requirement: promo.requirement, reward: promo.reward, expires_at: null, auto_apply: promo.auto_apply ?? false, limits });
+  }
+  if (store.deliveryShare) {
+    await owner.call("catalog", "set_delivery_subsidy_percent", { original_action: ref, delivery_subsidy_percent: store.deliveryShare.base, delivery_subsidy_tiers: store.deliveryShare.tiers });
   }
   if (store.rewards) {
     const r = store.rewards;

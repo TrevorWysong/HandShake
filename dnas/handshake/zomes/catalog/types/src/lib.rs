@@ -18,9 +18,11 @@ use handshake_types::GeoPoint;
 mod hours;
 mod modifiers;
 mod pricing;
+mod share;
 pub use hours::*;
 pub use modifiers::*;
 pub use pricing::*;
+pub use share::{fee_basis, SubsidyTier, MAX_SUBSIDY_TIERS};
 
 #[hdk_entry_helper]
 #[derive(Clone)]
@@ -81,6 +83,12 @@ pub struct MerchantCatalog {
     /// covers. A new store starts at the network's default
     /// (`handshake_governance::default_delivery_subsidy_percent`).
     pub delivery_subsidy_percent: u8,
+    /// Larger shares for larger orders, smallest first: from each tier's
+    /// order size up, the store covers its percent instead
+    /// (`delivery_share`). "Free delivery on orders $25+" is one tier of
+    /// 100%. None: `delivery_subsidy_percent` on every order.
+    #[serde(default)]
+    pub delivery_subsidy_tiers: Vec<SubsidyTier>,
     /// The most a delivery fee may be on the store's orders, in minor units:
     /// a customer's cap (`max_delivery_fee`), and so any bid, is at most
     /// this. The store's card pays its driver the whole fee, its share
@@ -393,12 +401,22 @@ pub struct PromoCode {
 pub struct PromoLimits {
     /// Only on a customer's first order at the store.
     pub first_order_only: bool,
+    /// Only on deliveries, or only on pickups. `None`: either.
+    #[serde(default)]
+    pub only: Option<Fulfilment>,
     /// How many orders of one customer's may use it, in all. `None`: any.
     pub per_customer: Option<u32>,
     /// At most once each day, week or month (the store's time) per customer.
     pub once_per: Option<PromoPeriod>,
     /// How many orders may use it, across every customer. `None`: any.
     pub total: Option<u32>,
+}
+
+/// How an order reaches its customer.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fulfilment {
+    Delivery,
+    Pickup,
 }
 
 /// A calendar period, in the store's time zone. A week starts on Monday.
@@ -414,6 +432,16 @@ pub const MAX_PROMO_USES_PER_CUSTOMER: u32 = 1_000;
 pub const MAX_PROMO_USES_TOTAL: u32 = 1_000_000;
 
 impl PromoLimits {
+    /// Whether an order had this way -- delivered, or picked up -- may use
+    /// the promo.
+    pub fn allows(&self, delivery: bool) -> bool {
+        match self.only {
+            None => true,
+            Some(Fulfilment::Delivery) => delivery,
+            Some(Fulfilment::Pickup) => !delivery,
+        }
+    }
+
     /// What's wrong with these limits, if anything.
     pub fn problem(&self) -> Option<&'static str> {
         if self.per_customer.is_some_and(|n| n == 0 || n > MAX_PROMO_USES_PER_CUSTOMER) {
@@ -522,6 +550,17 @@ impl MenuItem {
 }
 
 impl MerchantCatalog {
+    /// The share of the delivery fee the store covers on an order whose
+    /// food comes to `basis` (`fee_basis`).
+    pub fn delivery_share(&self, basis: u64) -> u8 {
+        share::share_at(self.delivery_subsidy_percent, &self.delivery_subsidy_tiers, basis)
+    }
+
+    /// What's wrong with the store's delivery share, if anything.
+    pub fn delivery_share_problem(&self) -> Option<&'static str> {
+        share::problem(self.delivery_subsidy_percent, &self.delivery_subsidy_tiers)
+    }
+
     /// The most a customer may tip on an order of `order_total` here: its
     /// `max_tip_percent`, or its `max_tip_floor`, whichever is more.
     pub fn max_tip(&self, order_total: u64) -> u64 {
@@ -537,7 +576,7 @@ impl MerchantCatalog {
     pub fn offers_more_than(&self, current: &MerchantCatalog) -> bool {
         self.min_order_cents.unwrap_or(0) < current.min_order_cents.unwrap_or(0)
             || self.max_delivery_radius_km > current.max_delivery_radius_km
-            || self.delivery_subsidy_percent > current.delivery_subsidy_percent
+            || share::covers_more((self.delivery_subsidy_percent, &self.delivery_subsidy_tiers), (current.delivery_subsidy_percent, &current.delivery_subsidy_tiers))
             || self.max_delivery_fee > current.max_delivery_fee
             || self.max_tip_percent > current.max_tip_percent
             || self.max_tip_floor > current.max_tip_floor

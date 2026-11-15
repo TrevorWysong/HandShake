@@ -82,7 +82,7 @@ pub(crate) fn price_order(catalog_ref: &ActionHash, store: &MerchantCatalog, ite
     if menu.is_empty() && (promo_ref.is_some() || reward.is_some()) {
         return Err(guest("Promo codes and rewards apply to menu items, not goodie bags."));
     }
-    let priced_menu = if menu.is_empty() { None } else { Some(price_menu(catalog_ref, store, items_merged(&menu)?, promo_ref, reward)?) };
+    let priced_menu = if menu.is_empty() { None } else { Some(price_menu(catalog_ref, store, items_merged(&menu)?, promo_ref, reward, delivery)?) };
     let bag_lines = bags.iter().map(|(item, bag)| bag_line(catalog_ref, item, bag, delivery)).collect::<ExternResult<Vec<_>>>()?;
     if bag_lines.iter().enumerate().any(|(i, (line, _))| bag_lines[..i].iter().any(|(l, _)| l.item_ref == line.item_ref)) {
         return Err(guest("A goodie bag is one to an order."));
@@ -175,7 +175,7 @@ fn items_merged(items: &[OrderItem]) -> ExternResult<Vec<OrderItem>> {
     Ok(merged)
 }
 
-fn price_menu(catalog_ref: &ActionHash, store: &MerchantCatalog, merged: Vec<OrderItem>, promo_ref: Option<&ActionHash>, reward: Option<&PromoReward>) -> ExternResult<MenuPrice> {
+fn price_menu(catalog_ref: &ActionHash, store: &MerchantCatalog, merged: Vec<OrderItem>, promo_ref: Option<&ActionHash>, reward: Option<&PromoReward>, delivery: bool) -> ExternResult<MenuPrice> {
     let now = sys_time()?.as_micros();
     let mut lines = Vec::with_capacity(merged.len());
     let mut priced = Vec::with_capacity(merged.len());
@@ -204,6 +204,13 @@ fn price_menu(catalog_ref: &ActionHash, store: &MerchantCatalog, merged: Vec<Ord
         Some(promo_ref) => Some(decode_latest::<PromoCode>(promo_ref, "PromoCode")?),
         None => None,
     };
+    if let Some(promo) = promo.as_ref().filter(|promo| !promo.limits.allows(delivery)) {
+        let code = &promo.code;
+        if delivery {
+            return Err(guest(format!("The code {code} is for pickup orders only. Switch to pickup to use it.")));
+        }
+        return Err(guest(format!("The code {code} is for delivery orders only. Switch to delivery to use it.")));
+    }
     let needed = promo.as_ref().map_or(0, |p| p.requirement.completed_orders_needed()) as usize;
     let loyalty_proof: Vec<ActionHash> = if needed > 0 { my_completions_at(catalog_ref)?.into_iter().take(needed).collect() } else { Vec::new() };
     let food = match reward {

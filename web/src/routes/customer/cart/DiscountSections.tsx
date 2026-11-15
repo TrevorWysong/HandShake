@@ -1,13 +1,14 @@
 // The order's one discount, as the customer chooses it: a reward from the
 // store's program, or else a promo code (`useDiscounts`).
-import { formatNumber } from "../../../lib/ui/format";
+import { formatCents, formatNumber } from "../../../lib/ui/format";
+import { Tag } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { RewardRail, RewardTile } from "../../../components/rewards/RewardPieces";
 import { Button, Input } from "../../../components/ui";
 import { ACCENTS } from "../../../lib/rewards/rewards";
 import { describeLimits, describeRequirement, describeReward } from "../../../lib/storefront/promotions";
 import type { ItemRow } from "../../../lib/storefront/menu";
-import { MAX_PROMO_CODE_CHARS } from "../../../holochain/types";
+import { MAX_PROMO_CODE_CHARS, type Fulfilment } from "../../../holochain/types";
 import { useT } from "../../../i18n";
 import { Section } from "./CartPieces";
 import type { Discounts } from "./useDiscounts";
@@ -49,15 +50,45 @@ export function RewardsSection({ discounts, menuItems, menuRead, onBrowse }: { d
 /// The code applying -- what it takes off, its limits, and whether the cart
 /// still meets it -- or a box to enter one. Hidden while a reward is in the
 /// bag: it takes the promo's place.
-export function PromoSection({ discounts }: { discounts: Discounts }) {
+export function PromoSection({ discounts, onSwitch }: { discounts: Discounts; onSwitch: ((way: Fulfilment) => void) | null }) {
   const t = useT();
-  const { appliedPromo: applied, promoEvaluation, itemName } = discounts;
+  const { appliedPromo: applied, promoEvaluation, itemName, wrongWay, otherWayDeal } = discounts;
   if (discounts.chosenReward) return null;
   const limits = applied ? describeLimits(applied.promo, applied.standing) : [];
   return (
     <Section title={t("cart.promo.title")}>
+      <AnimatePresence initial={false}>
+        {otherWayDeal && !applied && onSwitch && (
+          <motion.div key="other-way" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className="mb-2 flex items-center gap-3 rounded-xl bg-handshake-50 px-3 py-2.5 dark:bg-handshake-900/20">
+              <Tag size={16} aria-hidden className="shrink-0 text-handshake-600 dark:text-handshake-400" />
+              <p className="min-w-0 flex-1 text-xs leading-snug text-ink-700 dark:text-ink-200">
+                {t(otherWayDeal.way === "Pickup" ? "cart.promo.pickupSaves" : "cart.promo.deliverySaves", { amount: formatCents(otherWayDeal.cents) })}
+              </p>
+              <button type="button" onClick={() => onSwitch(otherWayDeal.way)} className="shrink-0 rounded-full bg-ink-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-ink-700 dark:bg-white dark:text-ink-900 forced-colors:border forced-colors:border-solid">
+                {t(otherWayDeal.way === "Pickup" ? "cart.promo.switchToPickup" : "cart.promo.switchToDelivery")}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AnimatePresence mode="wait">
-        {applied ? (
+        {applied && wrongWay ? (
+          <motion.div key="wrong-way" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} role="status" className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-100">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-mono font-semibold">{applied.promo.code}</span>
+              <button onClick={discounts.removePromo} className="text-xs underline">
+                {t("common.remove")}
+              </button>
+            </div>
+            <p className="mt-0.5 text-xs">{t(wrongWay === "Pickup" ? "cart.promo.forPickup" : "cart.promo.forDelivery", { reward: describeReward(applied.promo.reward, itemName) })}</p>
+            {onSwitch && (
+              <button type="button" onClick={() => onSwitch(wrongWay)} className="mt-2 rounded-full bg-ink-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-ink-700 dark:bg-white dark:text-ink-900 forced-colors:border forced-colors:border-solid">
+                {t(wrongWay === "Pickup" ? "cart.promo.switchToPickup" : "cart.promo.switchToDelivery")}
+              </button>
+            )}
+          </motion.div>
+        ) : applied ? (
           <motion.div key="applied" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} className="rounded-lg bg-presence-500/10 px-3 py-2 text-sm text-presence-600 dark:text-presence-400">
             <div className="flex items-center justify-between">
               <span className="font-mono font-semibold">

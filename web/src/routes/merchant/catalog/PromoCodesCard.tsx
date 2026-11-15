@@ -233,6 +233,17 @@ function NewPromoForm({ catalogRef, items, itemName, onCreated }: { catalogRef: 
         <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-400">
           <Users size={13} className="text-handshake-500" /> {t("promoEditor.limits")}
         </p>
+        <p className="mb-1.5 text-xs font-semibold text-ink-500">{t("promoEditor.forOrders")}</p>
+        <SegmentedTabs
+          tabs={[
+            { value: "any", label: t("promoEditor.only.any") },
+            { value: "Delivery", label: t("promoEditor.only.Delivery") },
+            { value: "Pickup", label: t("promoEditor.only.Pickup") },
+          ]}
+          value={form.only}
+          onChange={(only) => set({ only })}
+        />
+        <p className="mb-3 mt-1.5 text-xs text-ink-400">{t(`promoEditor.only.${form.only}Hint`)}</p>
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">{t("promoEditor.newOnly")}</p>

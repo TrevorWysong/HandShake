@@ -427,7 +427,7 @@ pub fn request_delivery(input: RequestDeliveryInput) -> ExternResult<Record> {
         delivery_receipts: Vec::new(),
         requested_at: now,
         tip_cents: input.tip_cents,
-        delivery_subsidy_percent: catalog.delivery_subsidy_percent,
+        delivery_subsidy_percent: catalog.delivery_share(catalog_types::fee_basis(priced.order_total, priced.tax_cents, catalog.prices_include_tax)),
         requested_delivery_time: input.requested_delivery_time,
         promo_code_ref: input.promo_code_ref,
         dropoff_preference: input.dropoff_preference,

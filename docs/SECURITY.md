@@ -38,7 +38,7 @@ Peers choose their own action timestamps. Holochain only requires each agent's t
 - Every free-text field, list and sealed field has a size limit (`handshake_integrity_support::limits`, shared with the app's forms). A sealed photo is stored as chunks the conductor can seal, bounded in number and size.
 - Every link indexes a record. Anchors are computed hashes, never trees of links, so nobody can clutter one with links to nothing. A history day is indexed only by an order's customer, for the day the order was placed.
 
-**Orders cite the terms they were placed under.** Each delivery names the store version it was placed against (`catalog_version`). Validation checks the order's fee split is that version's, its public drop-off area (a geohash cell of fixed size) lies within that version's delivery radius, and its subtotal meets that version's minimum. Validation can't tell an old version from the current one, so the store's acceptance refuses an order whose cited terms give it more than the store's current terms (a lower minimum, a wider area, a larger fee share), unless it raced the change -- the same check, on the store's own chain, as for prices. Pickup orders cite their store version too.
+**Orders cite the terms they were placed under.** Each delivery names the store version it was placed against (`catalog_version`). Validation checks the order's fee split is that version's for an order its size (`MerchantCatalog::delivery_share`), its public drop-off area (a geohash cell of fixed size) lies within that version's delivery radius, and its subtotal meets that version's minimum. Validation can't tell an old version from the current one, so the store's acceptance refuses an order whose cited terms give it more than the store's current terms (a lower minimum, a wider area, a larger fee share), unless it raced the change -- the same check, on the store's own chain, as for prices. Pickup orders cite their store version too.
 - The production UI ships a Content-Security-Policy that allows only its own code, inline images, the local conductor and OpenStreetMap.
 
 **Signals.** `recv_remote_signal` checks who actually sent a signal against the order it's about. Anything it tells the user is read from the order, not from the payload. A signal that doesn't check out is dropped.
@@ -383,6 +383,16 @@ Reads that only show something -- menus, bags and promos while browsing, a birth
 
 - **Contact links can only be what they say.** A store's email must be a plain address (letters, digits and `._+-'`, so a `mailto:` link can't carry `?cc=` or anything else), and its website an `http(s)://` address with a real host. No `user@` before the host, which could dress one site up as another. No characters that could break out of a link. Validation holds every peer to this (`handshake_integrity_support::contact`). The app builds every link only from details that pass (`web/src/lib/storefront/contact.ts`), a phone link from its digits alone, and directions from the store's coordinates.
 - **Pickup chat is between the order's customer and its store**, as delivery chat is between the customer and the driver (`live_counterpart`). A location is accepted only from a delivery's driver. Chat is never stored. A panel keeps at most 200 lines, and it hears only while that order's screen is open, so nobody can push messages to a closed app.
+
+## Delivery shares by order size, and deals for one way of ordering
+
+A store covers a base share of each delivery fee, and may cover more from order sizes it sets, up to free delivery (`delivery_subsidy_tiers`, at most four, each for a bigger order than the last and covering more). A promo code may be for deliveries only or pickups only (`PromoLimits::only`).
+
+- **A customer can't claim a larger share.** The order records its share at placement, and validation recomputes it from the store version the order cites and the order's own food total (after discounts, before tax: `fee_basis`). Settlement and every payment rule read only the order's share, so nothing downstream changed.
+- **An older, more generous version can't be cited.** The store's acceptance already refuses an order whose cited terms give it more than the current ones; "more" now compares the two shares at every order size where either steps (`share::covers_more`).
+- **What a tier can cost a store is bounded.** Its share is of a fee at most its own `max_delivery_fee`, as before.
+- **A code the wrong way is refused twice:** the app refuses it plainly (with the switch to make), and validation refuses it whatever the app says (`check_promo_limits`). A code's limits can't be changed after it's made.
+- **Left to the store.** A customer can reach a tier and later report items missing: the order keeps the share it was placed with, as a refund doesn't re-price delivery. Refunds are the store's to decide, bounded by what was reported, as on the big apps.
 
 ## What remains
 

@@ -55,7 +55,11 @@ export interface WorldStore {
   hours?: { opens: string; closes: string };
   groups?: WorldChoiceGroup[];
   menu: WorldMenuItem[];
-  promos: { code: string; requirement: unknown; reward: unknown; auto_apply?: boolean }[];
+  /// Only on deliveries, or only on pickups; none, either.
+  promos: { code: string; requirement: unknown; reward: unknown; auto_apply?: boolean; only?: "Delivery" | "Pickup" }[];
+  /// Its share of each delivery fee, when not the network's default, and
+  /// larger shares for larger orders (`delivery_subsidy_tiers`).
+  deliveryShare?: { base: number; tiers: { from_cents: number; percent: number }[] };
   /// Its rewards program (`rewards_types::RewardsProgram`), items named
   /// by their menu names -- set up before any of its orders, so they earn.
   rewards?: {
@@ -146,7 +150,7 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
         { name: "Elote", price: 500, category: "Sides", dietary_tags: ["Vegetarian", "Gluten-free"], description: "Grilled corn, lime crema, chili and cotija." },
         { name: "Horchata", price: 375, category: "Drinks", description: "Rice and cinnamon, made fresh daily." },
       ],
-      promos: [],
+      promos: [{ code: "PICKUP15", requirement: "None", reward: { PercentOffSubtotal: 15 }, only: "Pickup" }],
     },
     {
       key: "cafe",
@@ -168,6 +172,7 @@ export const WORLD: { people: WorldPerson[]; stores: WorldStore[]; orders: World
         { name: "Lentil Soup", price: 795, category: "Lunch", dietary_tags: ["Vegan", "Gluten-free"], description: "Red lentils slow-cooked with cumin and lemon." },
       ],
       promos: [{ code: "REGULAR", requirement: { LoyaltyOrderCount: 3 }, reward: { PercentOffSubtotal: 15 }, auto_apply: true }],
+      deliveryShare: { base: 50, tiers: [{ from_cents: 2500, percent: 100 }] },
       rewards: {
         name: "Café Club",
         points_name: "beans",

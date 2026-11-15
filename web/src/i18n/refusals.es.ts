@@ -301,4 +301,7 @@ export const refusalsEs: Record<keyof typeof REFUSALS, Message> = {
   "refusal.your-birthday-month-is-already-set": "El mes de tu cumpleaños ya está fijado.",
   "refusal.your-driver-left-your-order-while-it": "Tu repartidor dejó tu pedido mientras se preparaba, así que responde de él: espera a otro repartidor (se te reembolsa todo si no viene ninguno) o recógelo tú.",
   "refusal.your-payments-are-still-settling-move-once": "Tus pagos aún se están liquidando: muévete cuando se hayan cobrado.",
+  "refusal.each-larger-order-you-cover-more-of": "Cada pedido mayor para el que cubres más del envío debe ser mayor que el anterior, y cubrir más.",
+  "refusal.the-code-is-for-delivery-orders-only": "El código {code} es solo para pedidos a domicilio. Cambia a domicilio para usarlo.",
+  "refusal.the-code-is-for-pickup-orders-only": "El código {code} es solo para pedidos para recoger. Cambia a recoger para usarlo.",
 };

@@ -1,3 +1,4 @@
+import { deliveryShareOf } from "../../lib/storefront/deliveryShare";
 import { useMemo, useState } from "react";
 import { LoadProblem } from "../../components/LoadProblem";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
@@ -234,7 +235,7 @@ function StorePage({ hash }: { hash: string }) {
         </motion.div>
 
         {hash && <StoreRewardsStrip catalogHex={hash} menu={fresh?.items} />}
-        {hash && <StoreDeals catalogHex={hash} menu={items ?? []} />}
+        {hash && <StoreDeals catalogHex={hash} menu={items ?? []} share={deliveryShareOf(catalog)} />}
         <StoreBags store={hash} bags={bags} onAdd={(row) => addLine(bagLine(row))} />
 
         {/* The menu: categories beside it and the cart beside that, as the window allows. */}

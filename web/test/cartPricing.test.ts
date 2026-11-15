@@ -12,7 +12,7 @@ const base: PriceInput = {
   taxIncluded: false,
   tipCents: 0,
   maxFeeCents: 500,
-  subsidyPercent: 0,
+  deliveryShare: { base: 0, tiers: [] },
   minOrderCents: null,
   leaveAtDoorMaxCents: null,
 };
@@ -32,7 +32,7 @@ test("a scheduled delivery is for the picked local time, in microseconds", () =>
 });
 
 test("tax on top, the fee split as settlement splits it, and the worst case", () => {
-  const price = priceCheckout({ ...base, discountCents: 200, taxRates: [{ category: "", label: "Tax", basis_points: 700 }], tipCents: 300, maxFeeCents: 999, subsidyPercent: 50 });
+  const price = priceCheckout({ ...base, discountCents: 200, taxRates: [{ category: "", label: "Tax", basis_points: 700 }], tipCents: 300, maxFeeCents: 999, deliveryShare: { base: 50, tiers: [] } });
   assert.equal(price.discountedSubtotalCents, 1800);
   assert.equal(price.taxCents, 126);
   assert.equal(price.orderTotalCents, 1926);
@@ -40,6 +40,21 @@ test("tax on top, the fee split as settlement splits it, and the worst case", ()
   assert.equal(price.customerFeeShareCents, 500);
   assert.equal(price.estimatedTotalCents, 1926 + 300 + 500);
   assert.equal(price.holdCents, price.estimatedTotalCents);
+});
+
+test("a larger order reaches a larger share of the fee: measured on the food after its discount, before tax", () => {
+  const share = { base: 50, tiers: [{ from_cents: 2500, percent: 100 }] };
+  const taxed = { ...base, taxRates: [{ category: "", label: "Tax", basis_points: 1000 }], maxFeeCents: 600, deliveryShare: share };
+  const short = priceCheckout({ ...taxed, subtotalCents: 2600, discountCents: 200 });
+  assert.equal(short.subsidyPercent, 50, "$24 of food, though $26.40 with tax");
+  assert.equal(short.customerFeeShareCents, 300);
+  assert.deepEqual(short.nextShare, { percent: 100, fromCents: 2500, moreCents: 100 });
+  const free = priceCheckout({ ...taxed, subtotalCents: 2500 });
+  assert.equal(free.subsidyPercent, 100);
+  assert.equal(free.customerFeeShareCents, 0, "free delivery: the customer's hold carries no fee");
+  assert.equal(free.nextShare, null);
+  assert.equal(free.reachedTier, true, "said, once reached");
+  assert.equal(short.reachedTier, false);
 });
 
 test("tax already in the prices isn't added again", () => {

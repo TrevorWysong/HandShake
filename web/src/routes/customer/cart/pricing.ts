@@ -6,6 +6,7 @@
 import { orderTax, totalWithTax } from "../../../lib/storefront/tax";
 import { toMinorUnits } from "../../../lib/ui/format";
 import type { TaxRate } from "../../../holochain/types";
+import { nextShare, shareAt, type DeliveryShare } from "../../../lib/storefront/deliveryShare";
 
 /// The tip: a share of the food (before any discount), or an amount typed.
 export function tipCents(subtotalCents: number, percent: number | null, custom: string): number {
@@ -36,8 +37,8 @@ export interface PriceInput {
   taxIncluded: boolean;
   tipCents: number;
   maxFeeCents: number;
-  /// The share of a delivery fee the store covers, 0-100.
-  subsidyPercent: number;
+  /// The share of a delivery fee the store covers, by order size.
+  deliveryShare: DeliveryShare;
   minOrderCents: number | null;
   /// The menu items' part of the food -- what the minimum is measured
   /// against; goodie bags are already discounted.
@@ -51,6 +52,13 @@ export interface Price {
   taxCents: number;
   /// What the store is paid: the food and its tax.
   orderTotalCents: number;
+  /// The store's share of a delivery fee on an order this size, 0-100 --
+  /// what the order records, and validation checks.
+  subsidyPercent: number;
+  /// Whether the order's size reached a larger share than the store's base.
+  reachedTier: boolean;
+  /// The next larger share more food would reach, if any.
+  nextShare: { percent: number; moreCents: number } | null;
   /// The customer's share of a delivery fee at its cap -- the store's
   /// share floor-rounded, as `dispatch_types::split_delivery_fee` splits it.
   customerFeeShareCents: number;
@@ -76,13 +84,19 @@ export function priceCheckout(input: PriceInput): Price {
     input.taxIncluded,
   );
   const orderTotalCents = totalWithTax(discountedSubtotalCents, taxCents, input.taxIncluded);
-  const customerFeeShareCents = input.maxFeeCents - Math.floor((input.maxFeeCents * input.subsidyPercent) / 100);
+  // Measured on the food as paid for, before tax is added -- which, in
+  // prices that include it, is the food as shown (`fee_basis`).
+  const subsidyPercent = shareAt(input.deliveryShare, discountedSubtotalCents);
+  const customerFeeShareCents = input.maxFeeCents - Math.floor((input.maxFeeCents * subsidyPercent) / 100);
   const estimatedTotalCents = orderTotalCents + input.tipCents + customerFeeShareCents;
   const holdCents = input.fulfillment === "Pickup" ? orderTotalCents : estimatedTotalCents;
   return {
     discountedSubtotalCents,
     taxCents,
     orderTotalCents,
+    subsidyPercent,
+    reachedTier: subsidyPercent > input.deliveryShare.base,
+    nextShare: nextShare(input.deliveryShare, discountedSubtotalCents),
     customerFeeShareCents,
     estimatedTotalCents,
     holdCents,

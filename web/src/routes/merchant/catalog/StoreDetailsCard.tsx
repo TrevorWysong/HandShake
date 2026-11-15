@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { closeListing, detailsOf, isStoreListed, reopenListing, setAutoAcceptOrders, setBusy, setDeliverySubsidyPercent, setMaxDeliveryFee, setTipLimit, setLeaveAtDoorLimit, setMinimumOrder, updateCatalogDetails, setStoreWait } from "../../../holochain/zomes/catalog";
 import { formatCatalogAddress, formatDistance, toMinorUnits, fromMinorUnits, currencySymbol, formatCents } from "../../../lib/ui/format";
 import { useT } from "../../../i18n";
+import { deliveryShareOf } from "../../../lib/storefront/deliveryShare";
+import { DeliveryShareEditor, DeliveryShareSummary } from "./DeliveryShareEditor";
 import { useResource } from "../../../lib/hooks/useResource";
 import { useAction } from "../../../lib/hooks/useAction";
 import { bytesToHex } from "../../../holochain/decode";
@@ -173,11 +175,12 @@ export function DeliverySubsidyCard({ catalog, catalogRef, onSaved }: { catalog:
         {t("storeSettings.sharingDetail")}
       </p>
       {editing ? (
-        <DeliveryFeeEditor
-          initialPercent={catalog.delivery_subsidy_percent}
+        <DeliveryShareEditor
+          initial={deliveryShareOf(catalog)}
           initialMaxCents={catalog.max_delivery_fee}
-          onSave={async (percent, maxCents) => {
-            if (percent !== catalog.delivery_subsidy_percent) await setDeliverySubsidyPercent(catalogRef, percent);
+          onSave={async (share, maxCents) => {
+            const saved = deliveryShareOf(catalog);
+            if (JSON.stringify(share) !== JSON.stringify({ base: saved.base, tiers: saved.tiers })) await setDeliverySubsidyPercent(catalogRef, share.base, share.tiers);
             if (maxCents !== catalog.max_delivery_fee) await setMaxDeliveryFee(catalogRef, maxCents);
             await onSaved();
             setEditing(false);
@@ -185,10 +188,8 @@ export function DeliverySubsidyCard({ catalog, catalogRef, onSaved }: { catalog:
         />
       ) : (
         <>
-          <p className="text-sm font-semibold text-ink-900 dark:text-ink-50">
-            {catalog.delivery_subsidy_percent > 0 ? t("storeSettings.youCover", { percent: catalog.delivery_subsidy_percent }) : t("storeSettings.customerCovers")}
-          </p>
-          <p className="mt-0.5 text-xs text-ink-500 dark:text-ink-400">{t("storeSettings.feesUpTo", { amount: formatCents(catalog.max_delivery_fee) })}</p>
+          <DeliveryShareSummary share={deliveryShareOf(catalog)} />
+          <p className="mt-2 text-xs text-ink-500 dark:text-ink-400">{t("storeSettings.feesUpTo", { amount: formatCents(catalog.max_delivery_fee) })}</p>
         </>
       )}
     </Card>
@@ -405,34 +406,6 @@ function LimitEditor({ initialCents, placeholder, onSave }: { initialCents: numb
       <div className="flex flex-wrap items-center gap-2">
         <Input type="number" min={0} step={5} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder ?? t("storeSettings.noLimit")} prefix={currencySymbol()} className="w-32" />
         <Button loading={save.busy} disabled={cents === initialCents} onClick={() => save.run(() => onSave(cents))} className="px-4 py-2 text-xs">
-          {t("common.save")}
-        </Button>
-      </div>
-      {save.error && <Notice className="mt-3">{save.error}</Notice>}
-    </div>
-  );
-}
-
-/// Seeded from the saved share and most fee when it mounts.
-function DeliveryFeeEditor({ initialPercent, initialMaxCents, onSave }: { initialPercent: number; initialMaxCents: number; onSave: (percent: number, maxCents: number) => Promise<void> }) {
-  const t = useT();
-  const [percentDraft, setPercentDraft] = useState(String(initialPercent));
-  const [maxDraft, setMaxDraft] = useState(String(fromMinorUnits(initialMaxCents)));
-  const save = useAction();
-  const percent = Math.min(100, Math.max(0, Math.round(Number(percentDraft || 0))));
-  const dollars = Number(maxDraft);
-  const maxCents = Number.isFinite(dollars) && dollars > 0 ? toMinorUnits(dollars) : null;
-  const unchanged = percent === initialPercent && maxCents === initialMaxCents;
-  return (
-    <div>
-      <div className="flex flex-wrap items-end gap-3">
-        <Field label={t("storeSettings.yourShare")}>
-          <Input type="number" min={0} max={100} step={5} value={percentDraft} onChange={(e) => setPercentDraft(e.target.value)} placeholder="50" suffix="%" className="w-24" />
-        </Field>
-        <Field label={t("storeSettings.mostFee")}>
-          <Input type="number" min={0} step={1} value={maxDraft} onChange={(e) => setMaxDraft(e.target.value)} prefix={currencySymbol()} className="w-28" />
-        </Field>
-        <Button loading={save.busy} disabled={unchanged || maxCents === null} onClick={() => save.run(() => onSave(percent, maxCents!))} className="px-4 py-2 text-xs">
           {t("common.save")}
         </Button>
       </div>

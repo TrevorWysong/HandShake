@@ -170,6 +170,7 @@ pub fn publish_catalog(input: PublishCatalogInput) -> ExternResult<Record> {
         time_zone: input.time_zone,
         prep_minutes: input.prep_minutes.unwrap_or_else(handshake_governance::default_prep_minutes),
         delivery_subsidy_percent: handshake_governance::default_delivery_subsidy_percent(),
+        delivery_subsidy_tiers: Vec::new(),
         max_delivery_fee: handshake_governance::default_max_delivery_fee(),
         max_tip_percent: DEFAULT_MAX_TIP_PERCENT,
         max_tip_floor: DEFAULT_MAX_TIP_FLOOR,

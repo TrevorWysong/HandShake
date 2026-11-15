@@ -1,5 +1,5 @@
 import { hexToBytes } from "../../../holochain/decode";
-import type { ChoiceTerms, PromoLimits, PromoPeriod, PromoRequirement, PromoReward } from "../../../holochain/types";
+import type { ChoiceTerms, Fulfilment, PromoLimits, PromoPeriod, PromoRequirement, PromoReward } from "../../../holochain/types";
 import { toMinorUnits } from "../../../lib/ui/format";
 
 // Requirement and reward are picked independently (two dropdowns), the
@@ -23,6 +23,8 @@ export const EMPTY_PROMO_FORM = {
   /// Which of the reward item's choices it covers.
   rewardChoices: [] as ChoiceTerms[],
   autoApply: false,
+  /// The orders it's for: delivered, picked up, or either.
+  only: "any" as "any" | Fulfilment,
   /// Who may use it, and how often.
   firstOrderOnly: false,
   /// "any", "once", or a number of uses per customer.
@@ -41,6 +43,7 @@ export type PromoForm = typeof EMPTY_PROMO_FORM;
 export function buildLimits(form: PromoForm): PromoLimits {
   return {
     first_order_only: form.firstOrderOnly,
+    only: form.only === "any" ? null : form.only,
     per_customer: form.perCustomer === "once" ? 1 : form.perCustomer === "custom" ? Math.min(1000, Math.max(1, Math.round(form.perCustomerCount))) : null,
     once_per: form.oncePer === "any" ? null : form.oncePer,
     total: form.totalLimited ? Math.min(1_000_000, Math.max(1, Math.round(form.total))) : null,

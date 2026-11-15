@@ -1,6 +1,7 @@
 // What the cart reads of the store it's ordering from, and works out from
 // it: the store's terms and menu, the codes the customer can use, the best
 // one that applies itself, and whether a drop-off is in range.
+import { deliveryShareOf, type DeliveryShare } from "../../../lib/storefront/deliveryShare";
 import { distanceKm } from "../../../lib/places/geohash";
 import { type CartLine } from "../../../store/cart";
 import { countMyCompletedOrders, myPromoStanding } from "../../../holochain/zomes/dispatch";
@@ -31,7 +32,8 @@ export const NO_PROMOS: PromoRow[] = [];
 export const NO_ITEMS: ItemRow[] = [];
 
 export interface CartStoreInfo {
-  subsidyPercent: number;
+  /// The store's share of a delivery fee, by order size.
+  deliveryShare: DeliveryShare;
   /// The most a delivery fee may be here (`max_delivery_fee`).
   maxDeliveryFeeCents: number | null;
   /// How big a tip may be here (`max_tip_percent`, `max_tip_floor`).
@@ -102,7 +104,7 @@ export async function fetchCartStoreInfo(catalogRef: ActionHash): Promise<CartSt
   ]);
   const promoCodes = livePromos.map((row) => ({ ...row, standing: standings.find((s) => bytesEqual(s.promo, row.hash)) }));
   return {
-    subsidyPercent: catalog?.delivery_subsidy_percent ?? 0,
+    deliveryShare: deliveryShareOf(catalog),
     maxDeliveryFeeCents: catalog?.max_delivery_fee ?? null,
     tipLimit: catalog ? { percent: catalog.max_tip_percent, floorCents: catalog.max_tip_floor } : null,
     merchantLocation: catalog?.location ?? null,

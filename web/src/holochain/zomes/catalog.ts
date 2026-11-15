@@ -1,5 +1,5 @@
 import { callZome } from "../client";
-import type { AllergenFacts, ActionHash, AgentPubKey, GeoPoint, TaxRate, HcRecord, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoRequirement, PromoReward, GoodieBag, Timestamp, PromoLimits, AllergyPolicy } from "../types";
+import type { AllergenFacts, ActionHash, AgentPubKey, GeoPoint, TaxRate, HcRecord, MenuItem, MerchantCatalog, ModifierGroup, OpeningPeriod, PromoRequirement, PromoReward, GoodieBag, Timestamp, PromoLimits, AllergyPolicy, SubsidyTier } from "../types";
 import { nowMicros } from "../../lib/ui/format";
 
 // An entry's stable identity (its original action) alongside its latest
@@ -173,8 +173,10 @@ export async function setAllergyPolicy(originalAction: ActionHash, allergyPolicy
   return callZome("catalog", "set_allergy_policy", { original_action: originalAction, allergy_policy: allergyPolicy });
 }
 
-export async function setDeliverySubsidyPercent(originalAction: ActionHash, deliverySubsidyPercent: number): Promise<HcRecord> {
-  return callZome("catalog", "set_delivery_subsidy_percent", { original_action: originalAction, delivery_subsidy_percent: deliverySubsidyPercent });
+/// The store's share of each delivery fee, and larger shares for larger
+/// orders (`MerchantCatalog::delivery_subsidy_tiers`).
+export async function setDeliverySubsidyPercent(originalAction: ActionHash, deliverySubsidyPercent: number, tiers: readonly SubsidyTier[] = []): Promise<HcRecord> {
+  return callZome("catalog", "set_delivery_subsidy_percent", { original_action: originalAction, delivery_subsidy_percent: deliverySubsidyPercent, delivery_subsidy_tiers: tiers });
 }
 
 const EMPTY_ITEM_DETAILS = { description: "", photo_data_uri: "", category: "", dietary_tags: [] as string[], allergens: null, modifier_groups: [] as ActionHash[] };

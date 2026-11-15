@@ -1289,6 +1289,11 @@ export interface FindingView {
 }
 
 /**
+ * How an order reaches its customer.
+ */
+export type Fulfilment = "Delivery" | "Pickup";
+
+/**
  * The bytes of salt a grant's payload carries.
  */
 export const GRANT_SALT_BYTES = 16;
@@ -2025,6 +2030,11 @@ export const MAX_STORES_PER_OWNER = 10;
 
 export const MAX_STREET_CHARS = 200;
 
+/**
+ * The most tiers a store's delivery share has.
+ */
+export const MAX_SUBSIDY_TIERS = 4;
+
 export const MAX_TAGLINE_CHARS = 120;
 
 export const MAX_TAX_BASIS_POINTS = 5000;
@@ -2167,6 +2177,13 @@ export interface MerchantCatalog {
    * (`handshake_governance::default_delivery_subsidy_percent`).
    */
   delivery_subsidy_percent: number;
+  /**
+   * Larger shares for larger orders, smallest first: from each tier's
+   * order size up, the store covers its percent instead
+   * (`delivery_share`). "Free delivery on orders $25+" is one tier of
+   * 100%. None: `delivery_subsidy_percent` on every order.
+   */
+  delivery_subsidy_tiers: SubsidyTier[];
   /**
    * The most a delivery fee may be on the store's orders, in minor units:
    * a customer's cap (`max_delivery_fee`), and so any bid, is at most
@@ -3783,6 +3800,10 @@ export interface PromoLimits {
    */
   first_order_only: boolean;
   /**
+   * Only on deliveries, or only on pickups. `None`: either.
+   */
+  only: Fulfilment | null;
+  /**
    * How many orders of one customer's may use it, in all. `None`: any.
    */
   per_customer: number | null;
@@ -4683,6 +4704,22 @@ export interface StoreSuccession {
    * The author's succession of the old store's owner.
    */
   succession: ActionHash;
+}
+
+/**
+ * A larger share of the delivery fee a store covers from an order size up
+ * (`MerchantCatalog::delivery_subsidy_tiers`).
+ */
+export interface SubsidyTier {
+  /**
+   * From this much food, in minor units -- after any discount, before
+   * tax is added (`fee_basis`).
+   */
+  from_cents: number;
+  /**
+   * The share of the fee the store covers there, 0-100.
+   */
+  percent: number;
 }
 
 /**
