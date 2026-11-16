@@ -173,6 +173,17 @@ jobs:
       - name: Build the earlier release's DNA
         if: steps.previous-release.outputs.cache-hit != 'true'
         run: tests/tryorama/scripts/previous-release.sh
+      # Each conductor here takes 2-4 GB, mostly compiled zomes it holds
+      # but seldom touches, and a file with seven of them fills the runner's
+      # 16 GB in three minutes (scripts/watch-resources.sh's log). Swap keeps
+      # the rarely used part on disk instead of the runner running out.
+      - name: Add swap
+        run: |
+          sudo fallocate -l 16G /handshake.swap
+          sudo chmod 600 /handshake.swap
+          sudo mkswap /handshake.swap
+          sudo swapon /handshake.swap
+          free -m
       - name: Run the suite
         working-directory: tests/tryorama
         # CI runs a file 2-3 times slower than a laptop. Each file may run
