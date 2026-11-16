@@ -183,6 +183,8 @@ jobs:
         run: |
           npm ci
           npm run build:test-coordinators
+          scripts/watch-resources.sh &
+          trap "kill $! 2>/dev/null" EXIT
           npm test -- --shard ${{ matrix.shard }}/10
       # Cancelled at the time limit counts too: that's when the logs matter.
       - if: failure() || cancelled()
